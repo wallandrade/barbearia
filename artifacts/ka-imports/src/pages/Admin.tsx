@@ -6104,7 +6104,17 @@ function OrdersPanel({
 
   const fileToDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Leitura da imagem excedeu o tempo limite."));
+    }, 15000);
+
     reader.onload = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       const result = String(reader.result || "");
       if (!result.startsWith("data:image/")) {
         reject(new Error("Formato de imagem inválido."));
@@ -6112,13 +6122,28 @@ function OrdersPanel({
       }
       resolve(result);
     };
-    reader.onerror = () => reject(new Error("Falha ao ler imagem."));
+    reader.onerror = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      reject(new Error("Falha ao ler imagem."));
+    };
     reader.readAsDataURL(file);
   });
 
   const compressImageDataUrl = (source: string): Promise<string> => new Promise((resolve) => {
     const img = new Image();
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(source);
+    }, 8000);
+
     img.onload = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       const max = 1800;
       const scale = Math.min(1, max / Math.max(img.width || 1, img.height || 1));
       const canvas = document.createElement("canvas");
@@ -6132,7 +6157,12 @@ function OrdersPanel({
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL("image/jpeg", 0.82));
     };
-    img.onerror = () => resolve(source);
+    img.onerror = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(source);
+    };
     img.src = source;
   });
 
@@ -6358,9 +6388,12 @@ function OrdersPanel({
     try {
       const rawDataUrl = await fileToDataUrl(file);
       const imageData = await compressImageDataUrl(rawDataUrl);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 30000);
       const res = await fetch(`${BASE}/api/admin/orders/tracking-label/match`, {
         method: "POST",
         headers: authHeaders(),
+        signal: controller.signal,
         body: JSON.stringify({
           imageData,
           candidateOrders: availableCandidates.map((order) => ({
@@ -6380,6 +6413,7 @@ function OrdersPanel({
           })),
         }),
       });
+      window.clearTimeout(timeout);
 
       const data = await res.json().catch(() => ({})) as {
         message?: string;
