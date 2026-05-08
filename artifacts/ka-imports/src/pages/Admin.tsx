@@ -6186,7 +6186,49 @@ function OrdersPanel({
     const full = cropToCanvas(img, { x: 0, y: 0, w, h });
     const lowerHalf = cropToCanvas(img, { x: 0, y: h * 0.45, w, h: h * 0.55 });
     const lowerThird = cropToCanvas(img, { x: 0, y: h * 0.58, w, h: h * 0.42 });
+    const barcodeBand = cropToCanvas(img, { x: w * 0.05, y: h * 0.60, w: w * 0.90, h: h * 0.18 });
+    const barcodeBandWide = cropToCanvas(img, { x: w * 0.03, y: h * 0.52, w: w * 0.94, h: h * 0.28 });
     const midBand = cropToCanvas(img, { x: w * 0.05, y: h * 0.24, w: w * 0.9, h: h * 0.30 });
+
+    const rotateCanvas = (source: HTMLCanvasElement, degrees: 90 | 180 | 270): HTMLCanvasElement => {
+      const rotated = document.createElement("canvas");
+      const ctx = rotated.getContext("2d");
+      if (!ctx) return source;
+
+      if (degrees === 180) {
+        rotated.width = source.width;
+        rotated.height = source.height;
+        ctx.translate(rotated.width, rotated.height);
+        ctx.rotate(Math.PI);
+      } else {
+        rotated.width = source.height;
+        rotated.height = source.width;
+        if (degrees === 90) {
+          ctx.translate(rotated.width, 0);
+          ctx.rotate(Math.PI / 2);
+        } else {
+          ctx.translate(0, rotated.height);
+          ctx.rotate(-Math.PI / 2);
+        }
+      }
+
+      ctx.drawImage(source, 0, 0);
+      return rotated;
+    };
+
+    const barcodeBandVariants = [
+      barcodeBand,
+      barcodeBandWide,
+      applyHighContrast(barcodeBand),
+      applyHighContrast(barcodeBandWide),
+    ];
+
+    const rotatedBarcodeBandVariants = barcodeBandVariants.flatMap((source) => [
+      source,
+      rotateCanvas(source, 90),
+      rotateCanvas(source, 180),
+      rotateCanvas(source, 270),
+    ]);
 
     return [
       img,
@@ -6196,6 +6238,7 @@ function OrdersPanel({
       applyHighContrast(lowerHalf),
       lowerThird,
       applyHighContrast(lowerThird),
+      ...rotatedBarcodeBandVariants,
       midBand,
       applyHighContrast(midBand),
     ];
@@ -6254,6 +6297,15 @@ function OrdersPanel({
           zxingValues.push(String(result?.getText?.() || ""));
         } catch {
           // try next source
+        }
+      }
+      const barcodeBandOnly = decodeSources.filter((source) => source instanceof HTMLCanvasElement && source.width < source.height * 2);
+      for (const source of barcodeBandOnly) {
+        try {
+          const result = reader.decodeFromCanvas(source);
+          zxingValues.push(String(result?.getText?.() || ""));
+        } catch {
+          // ignore
         }
       }
       reader.reset();
