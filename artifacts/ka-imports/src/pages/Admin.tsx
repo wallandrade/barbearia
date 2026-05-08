@@ -5998,6 +5998,18 @@ function OrdersPanel({
   const [trackingSelectedOrderId, setTrackingSelectedOrderId] = useState<string | null>(null);
   const trackingBatchInputRef = useRef<HTMLInputElement | null>(null);
 
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
+    let timeoutId: number | null = null;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error(message)), ms);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    }
+  };
+
   const reshipmentStatusLabel = (status?: string) => {
     if (status === "reenvio_aguardando_estoque") return "Reenvio · Aguardando estoque";
     if (status === "reenvio_pronto_para_envio") return "Reenvio · Pronto para envio";
@@ -6386,11 +6398,11 @@ function OrdersPanel({
 
     setTrackingBatchProcessing(true);
     try {
-      const rawDataUrl = await fileToDataUrl(file);
-      const imageData = await compressImageDataUrl(rawDataUrl);
+      const rawDataUrl = await withTimeout(fileToDataUrl(file), 20000, "Leitura da imagem demorou demais.");
+      const imageData = await withTimeout(compressImageDataUrl(rawDataUrl), 12000, "Compressão da imagem demorou demais.");
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 30000);
-      const res = await fetch(`${BASE}/api/admin/orders/tracking-label/match`, {
+      const abortId = window.setTimeout(() => controller.abort(), 30000);
+      const res = await withTimeout(fetch(`${BASE}/api/admin/orders/tracking-label/match`, {
         method: "POST",
         headers: authHeaders(),
         signal: controller.signal,
@@ -6412,8 +6424,8 @@ function OrdersPanel({
             enviado: order.enviado,
           })),
         }),
-      });
-      window.clearTimeout(timeout);
+      }), 35000, "Consulta de match demorou demais.");
+      window.clearTimeout(abortId);
 
       const data = await res.json().catch(() => ({})) as {
         message?: string;
@@ -6447,10 +6459,10 @@ function OrdersPanel({
       if (!orderForReview) {
         const reason = data?.match?.reason || "Não foi possível identificar o cliente na etiqueta.";
         toast.warning(`Imagem ${index + 1}: ${reason} Escolha manualmente ou pule.`);
-        const img = await createImageFromDataUrl(imageData);
+        const img = await withTimeout(createImageFromDataUrl(imageData), 8000, "Pré-visualização da etiqueta demorou demais.");
         let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
         if (!suggestedTracking && img) {
-          const detectedByBarcode = await detectTrackingByBarcode(imageData);
+          const detectedByBarcode = await withTimeout(detectTrackingByBarcode(imageData), 15000, "Leitura de código de barras demorou demais.");
           if (detectedByBarcode) {
             suggestedTracking = detectedByBarcode;
           }
@@ -6473,7 +6485,7 @@ function OrdersPanel({
 
       let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
       if (!suggestedTracking) {
-        const detectedByBarcode = await detectTrackingByBarcode(imageData);
+        const detectedByBarcode = await withTimeout(detectTrackingByBarcode(imageData), 15000, "Leitura de código de barras demorou demais.");
         if (detectedByBarcode) {
           suggestedTracking = detectedByBarcode;
         }
