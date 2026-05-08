@@ -262,31 +262,6 @@ async function runOpenAIMatchTrackingOrderOnImageDataUrl(params: {
   const rankedCandidates = rankTrackingCandidates(params.parsed, params.candidates).slice(0, 20);
   if (rankedCandidates.length === 0) return null;
 
-  const scoredCandidates = params.candidates.map((candidate) => {
-    let score = 0;
-    const parsedName = normalizeForMatching(params.parsed.detectedName);
-    const parsedCep = normalizeTrackingCode(params.parsed.detectedCep || "").replace(/\D/g, "");
-
-    const candidateName = normalizeForMatching(candidate.clientName);
-    const candidateCep = normalizeTrackingCode(candidate.addressCep || "").replace(/\D/g, "");
-
-    if (parsedCep && candidateCep && parsedCep === candidateCep) score += 200;
-    if (parsedName && candidateName) {
-      const parsedTokens = parsedName.split(" ").filter(Boolean);
-      if (parsedTokens.some((token) => token.length >= 3 && candidateName.includes(token))) score += 120;
-    }
-
-    return { candidate, score };
-  }).sort((a, b) => b.score - a.score);
-
-  if (scoredCandidates[0] && scoredCandidates[0].score >= 250) {
-    return {
-      matchedOrderId: scoredCandidates[0].candidate.id,
-      confidence: Math.min(0.95, scoredCandidates[0].score / 300),
-      reason: "Correspondência automática por CEP e nome com alta confiança.",
-    };
-  }
-
   const candidateList = rankedCandidates.map((candidate, index) => {
     return [
       `${index + 1}. id=${candidate.id}`,
