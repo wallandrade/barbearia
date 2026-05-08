@@ -6751,6 +6751,9 @@ function OrdersPanel({
         .map((order) => {
           const isCard     = order.paymentMethod === "card_simulation";
           const isExpanded = expandedOrder === order.id;
+          const orderStockCheck = enviados[order.id]
+            ? { hasStock: true, message: "", missingItems: [] as string[] }
+            : verifyOrderStock(order.id);
           const orderProducts = getOrderProducts(order.products);
           const grossAmount = Number(order.cardTotalActual ?? order.total) || 0;
           const orderProductsCost = orderProducts.reduce((sum, item) => {
@@ -6789,6 +6792,16 @@ function OrdersPanel({
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Enviado</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Pendente para envio</span>
+                        )}
+                        {!enviados[order.id] && (
+                          <span
+                            title={orderStockCheck.hasStock ? "Estoque suficiente para envio" : orderStockCheck.missingItems.join("\n")}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${orderStockCheck.hasStock
+                              ? "bg-green-100 text-green-800 border-green-200"
+                              : "bg-red-100 text-red-800 border-red-200"}`}
+                          >
+                            {orderStockCheck.hasStock ? "Estoque OK" : "Faltando estoque"}
+                          </span>
                         )}
                         {isReshipment && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${rs === "reenvio_aguardando_estoque" ? "bg-red-100 text-red-800 border-red-200" : rs === "reenvio_pronto_para_envio" ? "bg-red-50 text-red-700 border-red-200" : "bg-rose-100 text-rose-800 border-rose-200"}`}>
