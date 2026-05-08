@@ -6078,13 +6078,82 @@ function OrdersPanel({
   };
 
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
+  const verifyOrderStock = (orderId: string): { hasStock: boolean; message: string; missingItems: string[] } => {
+    // Only check stock when marking as enviado (novoValor = true)
+    const order = orders.find(o => o.id === orderId);
+    if (!order) {
+      return { hasStock: false, message: "Pedido não encontrado", missingItems: [] };
+    }
+
+    // If currently marked as enviado and trying to unmark (revert to pendente), skip stock check
+    if (enviados[orderId]) {
+      return { hasStock: true, message: "", missingItems: [] };
+    }
+
+    // Build stock maps from inventory balances
+    const stockById = new Map(
+      inventoryBalances.map(
+        (row) => [String(row.productId || "").trim(), Number(row.quantity || 0)] as const
+      )
+    );
+    const stockByName = new Map(
+      inventoryBalances.map(
+        (row) => [String(row.productName || "").trim().toLowerCase(), Number(row.quantity || 0)] as const
+      )
+    );
+
+    // Check each product in the order
+    const products = getOrderProducts(order.products);
+    const missingItems: string[] = [];
+
+    for (const product of products) {
+      const productQty = Number(product.quantity || 0);
+      if (productQty <= 0) continue;
+
+      const productName = String(product.name || "").trim().toLowerCase();
+      const productId = String(product.id || "").trim();
+
+      // Try to find stock by ID first, then by name
+      const availableQty = productId
+        ? (stockById.get(productId) ?? stockByName.get(productName) ?? 0)
+        : (stockByName.get(productName) ?? 0);
+
+      if (availableQty < productQty) {
+        missingItems.push(
+          `${product.name}: faltam ${productQty - availableQty} un. (tem ${availableQty}, precisa ${productQty})`
+        );
+      }
+    }
+
+    if (missingItems.length > 0) {
+      return {
+        hasStock: false,
+        message: `Faltando estoque dos produtos do cliente:\n${missingItems.join("\n")}`,
+        missingItems,
+      };
+    }
+
+    return { hasStock: true, message: "", missingItems: [] };
+  };
+
   const toggleEnviado = async (orderId: string) => {
     if (!orderId || typeof orderId !== "string" || orderId.length === 0) {
       toast.error("ID do pedido inválido!");
       return;
     }
-    setEnviando(prev => ({ ...prev, [orderId]: true }));
+
+    // Verify stock before marking as enviado
     const novoValor = !enviados[orderId];
+    if (novoValor) {
+      // Only check stock when marking as enviado (not when unmarking)
+      const stockCheck = verifyOrderStock(orderId);
+      if (!stockCheck.hasStock) {
+        toast.error(stockCheck.message);
+        return;
+      }
+    }
+
+    setEnviando(prev => ({ ...prev, [orderId]: true }));
     try {
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/enviado`, {
         method: "PATCH",
