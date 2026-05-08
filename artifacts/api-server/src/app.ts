@@ -307,18 +307,35 @@ const VERBOSE_LOG_PATHS = new Set([
   "/api/custom-charges",
 ]);
 
+const NOISY_LOG_PATH_PREFIXES = [
+  "/api/admin/tracking/live",
+];
+
+const LOG_REQUEST_HEADERS = String(process.env.LOG_REQUEST_HEADERS || "false").toLowerCase() === "true";
+
+function isNoisyLogPath(path: string): boolean {
+  return NOISY_LOG_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 app.use((req, res, next) => {
-  // Only log if it's a sensitive path or if we're in development
-  const shouldLog = process.env.NODE_ENV === "development" || 
-                   Array.from(VERBOSE_LOG_PATHS).some(path => req.path.startsWith(path));
-  
+  // Only log if it's a sensitive path or development mode, excluding known poll endpoints.
+  const isVerbosePath = Array.from(VERBOSE_LOG_PATHS).some((path) => req.path.startsWith(path));
+  const shouldLog = (process.env.NODE_ENV === "development" || isVerbosePath) && !isNoisyLogPath(req.path);
+
   if (shouldLog) {
-    const safeHeaders = {
-      ...req.headers,
-      authorization: req.headers.authorization ? "[REDACTED]" : undefined,
-      cookie: req.headers.cookie ? "[REDACTED]" : undefined,
-    };
-    console.log(`[REQ] ${req.method} ${req.originalUrl} | headers:`, safeHeaders);
+    const startedAt = Date.now();
+    res.on("finish", () => {
+      if (LOG_REQUEST_HEADERS) {
+        const safeHeaders = {
+          ...req.headers,
+          authorization: req.headers.authorization ? "[REDACTED]" : undefined,
+          cookie: req.headers.cookie ? "[REDACTED]" : undefined,
+        };
+        console.log(`[REQ] ${req.method} ${req.originalUrl} -> ${res.statusCode} ${Date.now() - startedAt}ms | headers:`, safeHeaders);
+      } else {
+        console.log(`[REQ] ${req.method} ${req.originalUrl} -> ${res.statusCode} ${Date.now() - startedAt}ms`);
+      }
+    });
   }
   next();
 });

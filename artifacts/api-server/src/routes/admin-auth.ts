@@ -5,6 +5,7 @@ import { lt, eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const ADMIN_AUTH_VERBOSE_LOGS = String(process.env.ADMIN_AUTH_VERBOSE_LOGS || "false").toLowerCase() === "true";
 
 type AdminSessionRecord = {
   username: string;
@@ -169,7 +170,9 @@ seedFromEnvIfEmpty().catch(console.error);
 // --------------------------------------------------------------------------
 export async function requireAdminAuth(req: Request, res: Response, next: NextFunction) {
   try {
-    console.log('[requireAdminAuth] INICIO', { headers: sanitizeHeadersForLog(req.headers), query: req.query });
+    if (ADMIN_AUTH_VERBOSE_LOGS) {
+      console.log('[requireAdminAuth] INICIO', { headers: sanitizeHeadersForLog(req.headers), query: req.query });
+    }
     const tokenFromQuery = (req.query as Record<string, string>)["token"];
     if (tokenFromQuery && !req.headers.authorization) {
       req.headers.authorization = `Bearer ${tokenFromQuery}`;
@@ -180,13 +183,17 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
     await purgeExpiredSessions();
 
     if (!token) {
-      console.log('[requireAdminAuth] Sem token');
+      if (ADMIN_AUTH_VERBOSE_LOGS) {
+        console.log('[requireAdminAuth] Sem token');
+      }
       res.status(401).json({ error: "UNAUTHORIZED", message: "Acesso não autorizado." });
       return;
     }
     const sessionRows = await db.select().from(adminSessionsTable).where(eq(adminSessionsTable.token, token)).limit(1);
     if (!sessionRows[0]) {
-      console.log('[requireAdminAuth] Sessão não encontrada para token', redactToken(token));
+      if (ADMIN_AUTH_VERBOSE_LOGS) {
+        console.log('[requireAdminAuth] Sessão não encontrada para token', redactToken(token));
+      }
       res.status(401).json({ error: "UNAUTHORIZED", message: "Acesso não autorizado." });
       return;
     }
@@ -202,13 +209,15 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
 
     // Anexa info da sessão para downstream
     (req as any).adminSession = { ...sessionRows[0], ...scope };
-    console.log('[requireAdminAuth] Sessão OK', {
-      username: scope.username,
-      isPrimary: scope.isPrimary,
-      hasGlobalAccess: scope.hasGlobalAccess,
-      sellerCode: scope.sellerCode,
-      expiresAt: sessionRows[0].expiresAt,
-    });
+    if (ADMIN_AUTH_VERBOSE_LOGS) {
+      console.log('[requireAdminAuth] Sessão OK', {
+        username: scope.username,
+        isPrimary: scope.isPrimary,
+        hasGlobalAccess: scope.hasGlobalAccess,
+        sellerCode: scope.sellerCode,
+        expiresAt: sessionRows[0].expiresAt,
+      });
+    }
     next();
   } catch (err) {
     console.error('[requireAdminAuth] Erro:', err);
