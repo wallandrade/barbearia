@@ -1611,7 +1611,7 @@ export default function Admin() {
 
   const fetchAll = useCallback(() => {
     fetchStatsData();
-    if (tab === "orders")          { fetchOrders(); fetchProducts(); }
+    if (tab === "orders")          { fetchOrders(); fetchProducts(); fetchInventoryOverview(); }
     else if (tab === "charges")    fetchCharges();
     else if (tab === "users")      fetchUsers();
     else if (tab === "customers")  fetchCustomers();
@@ -3059,6 +3059,11 @@ export default function Admin() {
               (products as Array<{ id?: string; costPrice?: number | null }>)
                 .map((p) => [String(p?.id || "").trim(), Number(p?.costPrice || 0)] as const)
                 .filter(([id]) => !!id),
+            )}
+            productNameById={Object.fromEntries(
+              (products as Array<{ id?: string; name?: string | null }>)
+                .map((p) => [String(p?.id || "").trim(), String(p?.name || "").trim()] as const)
+                .filter(([id, name]) => !!id && !!name),
             )}
             inventoryBalances={inventoryBalances}
             getCommissionRate={getCommissionRate}
@@ -5920,6 +5925,7 @@ function InventoryPanel({
 function OrdersPanel({
   productImageById,
   productCostById,
+  productNameById,
   inventoryBalances,
   getCommissionRate,
   gatewayFeePercent,
@@ -5932,6 +5938,7 @@ function OrdersPanel({
 }: {
   productImageById: Record<string, string>;
   productCostById: Record<string, number>;
+  productNameById: Record<string, string>;
   inventoryBalances: InventoryBalanceRecord[];
   getCommissionRate: (sellerCode?: string | null, snapshot?: number | null) => number;
   gatewayFeePercent: number;
@@ -6093,37 +6100,64 @@ function OrdersPanel({
       return { hasStock: true, message: "", missingItems: [] };
     }
 
+    // Avoid false negatives while inventory snapshot is still loading.
+    if (inventoryBalances.length === 0) {
+      return { hasStock: true, message: "", missingItems: [] };
+    }
+
+    const normalizeStockName = (value: string) => value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
     // Build stock maps from inventory balances
     const stockById = new Map(
       inventoryBalances.map(
         (row) => [String(row.productId || "").trim(), Number(row.quantity || 0)] as const
       )
     );
-    const stockByName = new Map(
-      inventoryBalances.map(
-        (row) => [String(row.productName || "").trim().toLowerCase(), Number(row.quantity || 0)] as const
-      )
-    );
+    const stockByName = new Map<string, number>();
+    for (const row of inventoryBalances) {
+      const normalized = normalizeStockName(String(row.productName || ""));
+      if (!normalized) continue;
+      stockByName.set(normalized, Number(row.quantity || 0));
+    }
 
-    // Check each product in the order
+    // Group order items by product identity, preventing duplicate-line mismatch.
     const products = getOrderProducts(order.products);
-    const missingItems: string[] = [];
-
+    const totals = new Map<string, { label: string; qty: number; productId: string | null }>();
     for (const product of products) {
       const productQty = Number(product.quantity || 0);
       if (productQty <= 0) continue;
+      const idFromLine = String((product as { id?: string }).id || "").trim();
+      const altIdFromLine = String((product as { productId?: string }).productId || "").trim();
+      const productId = idFromLine || altIdFromLine || null;
+      const label = String(product.name || "Produto").trim() || "Produto";
+      const key = productId ? `id:${productId}` : `name:${normalizeStockName(label)}`;
+      const prev = totals.get(key);
+      totals.set(key, {
+        label: prev?.label || label,
+        qty: (prev?.qty || 0) + productQty,
+        productId,
+      });
+    }
 
-      const productName = String(product.name || "").trim().toLowerCase();
-      const productId = String(product.id || "").trim();
+    const missingItems: string[] = [];
 
-      // Try to find stock by ID first, then by name
-      const availableQty = productId
-        ? (stockById.get(productId) ?? stockByName.get(productName) ?? 0)
-        : (stockByName.get(productName) ?? 0);
+    for (const item of totals.values()) {
+      const normalizedLabel = normalizeStockName(item.label);
+      const fallbackCatalogName = item.productId ? normalizeStockName(String(productNameById[item.productId] || "")) : "";
 
-      if (availableQty < productQty) {
+      // Try ID first, then catalog name, then line-item name.
+      const availableQty = item.productId
+        ? (stockById.get(item.productId) ?? stockByName.get(fallbackCatalogName) ?? stockByName.get(normalizedLabel) ?? 0)
+        : (stockByName.get(normalizedLabel) ?? 0);
+
+      if (availableQty < item.qty) {
         missingItems.push(
-          `${product.name}: faltam ${productQty - availableQty} un. (tem ${availableQty}, precisa ${productQty})`
+          `${item.label}: faltam ${item.qty - availableQty} un. (tem ${availableQty}, precisa ${item.qty})`
         );
       }
     }
@@ -6703,6 +6737,7 @@ function OrdersPanel({
   const trackingTargetOrder = trackingReview
     ? (orders.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
     : null;
+  const hasInventorySnapshot = inventoryBalances.length > 0;
   const trackingTargetStock = trackingTargetOrderId
     ? verifyOrderStock(trackingTargetOrderId)
     : { hasStock: true, message: "", missingItems: [] as string[] };
@@ -6754,7 +6789,7 @@ function OrdersPanel({
         .map((order) => {
           const isCard     = order.paymentMethod === "card_simulation";
           const isExpanded = expandedOrder === order.id;
-          const orderStockCheck = enviados[order.id]
+          const orderStockCheck = enviados[order.id] || !hasInventorySnapshot
             ? { hasStock: true, message: "", missingItems: [] as string[] }
             : verifyOrderStock(order.id);
           const orderProducts = getOrderProducts(order.products);
@@ -6798,12 +6833,18 @@ function OrdersPanel({
                         )}
                         {!enviados[order.id] && (
                           <span
-                            title={orderStockCheck.hasStock ? "Estoque suficiente para envio" : orderStockCheck.missingItems.join("\n")}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${orderStockCheck.hasStock
+                            title={!hasInventorySnapshot
+                              ? "Carregando saldo de estoque"
+                              : orderStockCheck.hasStock
+                                ? "Estoque suficiente para envio"
+                                : orderStockCheck.missingItems.join("\n")}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!hasInventorySnapshot
+                              ? "bg-slate-100 text-slate-700 border-slate-200"
+                              : orderStockCheck.hasStock
                               ? "bg-green-100 text-green-800 border-green-200"
                               : "bg-red-100 text-red-800 border-red-200"}`}
                           >
-                            {orderStockCheck.hasStock ? "Estoque OK" : "Faltando estoque"}
+                            {!hasInventorySnapshot ? "Estoque carregando" : (orderStockCheck.hasStock ? "Estoque OK" : "Faltando estoque")}
                           </span>
                         )}
                         {isReshipment && (
@@ -7250,7 +7291,7 @@ function OrdersPanel({
                       Cancelar
                     </Button>
                   )}
-                  <Button type="button" className="gap-2" disabled={trackingSaving || !trackingTargetStock.hasStock} onClick={confirmTrackingSave}>
+                  <Button type="button" className="gap-2" disabled={trackingSaving || (hasInventorySnapshot && !trackingTargetStock.hasStock)} onClick={confirmTrackingSave}>
                     {trackingSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                     Confirmar Rastreio
                   </Button>
@@ -7332,11 +7373,13 @@ function OrdersPanel({
                       </p>
                     </div>
 
-                    <div className={`rounded-xl border p-3 ${trackingTargetStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
-                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${trackingTargetStock.hasStock ? "text-green-700" : "text-red-700"}`}>
+                    <div className={`rounded-xl border p-3 ${!hasInventorySnapshot ? "border-amber-200 bg-amber-50/60" : trackingTargetStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${!hasInventorySnapshot ? "text-amber-700" : trackingTargetStock.hasStock ? "text-green-700" : "text-red-700"}`}>
                         Verificação de estoque para envio
                       </p>
-                      {trackingTargetStock.hasStock ? (
+                      {!hasInventorySnapshot ? (
+                        <p className="text-sm text-amber-800 font-medium">Carregando saldo de estoque. Tente novamente em alguns segundos.</p>
+                      ) : trackingTargetStock.hasStock ? (
                         <p className="text-sm text-green-800 font-medium">Estoque OK para confirmar rastreio e marcar pedido como enviado.</p>
                       ) : (
                         <div className="space-y-1">
