@@ -6385,6 +6385,23 @@ function OrdersPanel({
       toast.warning(`${skipped} arquivo(s) ignorado(s). Formatos aceitos: JPG, PNG, WebP, GIF.`);
     }
 
+    // Capture candidates BEFORE state change to avoid closure issues
+    const candidatesToUse = (trackingCandidates || [])
+      .filter((order) => !order.enviado && order.status !== "cancelled")
+      .filter((order) => order.status === "paid" || order.status === "completed")
+      .sort((a, b) => {
+        const ta = new Date(a.createdAt || 0).getTime() || 0;
+        const tb = new Date(b.createdAt || 0).getTime() || 0;
+        return tb - ta;
+      })
+      .slice(0, 180);
+
+    if (candidatesToUse.length === 0) {
+      console.log(`[Batch] No available candidates for matching`);
+      toast.error("Nenhum pedido disponível para envio neste lote.");
+      return;
+    }
+
     if (trackingBatchWatchdogRef.current != null) {
       window.clearTimeout(trackingBatchWatchdogRef.current);
       trackingBatchWatchdogRef.current = null;
@@ -6402,10 +6419,10 @@ function OrdersPanel({
     setTrackingBatchIndex(0);
     setTrackingBatchProcessing(true);
     console.log(`[Batch] Calling processTrackingBatchFile for first file`);
-    await processTrackingBatchFile(0, validFiles);
+    await processTrackingBatchFile(0, validFiles, candidatesToUse);
   };
 
-  const processTrackingBatchFile = async (index: number, files: File[]) => {
+  const processTrackingBatchFile = async (index: number, files: File[], availableCandidates: AdminOrder[] = []) => {
     console.log(`[Batch] Processing file ${index + 1}/${files.length}`);
     const file = files[index];
     if (!file) {
@@ -6420,16 +6437,7 @@ function OrdersPanel({
       return;
     }
 
-    console.log(`[Batch] Available candidates from prop:`, trackingCandidates?.length || 0);
-    const availableCandidates = (trackingCandidates || [])
-      .filter((order) => !order.enviado && order.status !== "cancelled")
-      .filter((order) => order.status === "paid" || order.status === "completed")
-      .sort((a, b) => {
-        const ta = new Date(a.createdAt || 0).getTime() || 0;
-        const tb = new Date(b.createdAt || 0).getTime() || 0;
-        return tb - ta;
-      })
-      .slice(0, 180);
+    console.log(`[Batch] Available candidates from parameter:`, availableCandidates?.length || 0);
     if (availableCandidates.length === 0) {
       console.log(`[Batch] No available candidates for matching`);
       toast.error("Nenhum pedido disponível para envio neste lote.");
@@ -6543,14 +6551,14 @@ function OrdersPanel({
       const message = error instanceof Error ? error.message : "Erro ao processar etiqueta de rastreio.";
       console.error(`[Batch] Error processing file ${index + 1}:`, message);
       toast.error(`Imagem ${index + 1}: ${message}`);
-      await advanceTrackingBatch(index + 1, files);
+      await advanceTrackingBatch(index + 1, files, availableCandidates);
     } finally {
       console.log(`[Batch] Finally block executing for file ${index + 1}`);
       setTrackingBatchProcessing(false);
     }
   };
 
-  const advanceTrackingBatch = async (nextIndex: number, files: File[] = trackingBatchFiles) => {
+  const advanceTrackingBatch = async (nextIndex: number, files: File[] = trackingBatchFiles, candidates: AdminOrder[] = []) => {
     console.log(`[Batch] Advancing to next file: index ${nextIndex}/${files.length}`);
     if (nextIndex >= files.length) {
       console.log(`[Batch] All files processed, cleaning up`);
@@ -6566,7 +6574,7 @@ function OrdersPanel({
     }
 
     setTrackingBatchIndex(nextIndex);
-    await processTrackingBatchFile(nextIndex, files);
+    await processTrackingBatchFile(nextIndex, files, candidates);
   };
 
   const uploadTrackingLabel = async (orderId: string, file: File) => {
@@ -6670,7 +6678,16 @@ function OrdersPanel({
       toast.success(`Rastreio salvo: ${normalized}`);
       console.log(`[Batch] Tracking saved, advancing batch. Batch files length: ${trackingBatchFiles.length}`);
       if (trackingBatchFiles.length > 0) {
-        await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
+        const currentCandidates = (trackingCandidates || [])
+          .filter((order) => !order.enviado && order.status !== "cancelled")
+          .filter((order) => order.status === "paid" || order.status === "completed")
+          .sort((a, b) => {
+            const ta = new Date(a.createdAt || 0).getTime() || 0;
+            const tb = new Date(b.createdAt || 0).getTime() || 0;
+            return tb - ta;
+          })
+          .slice(0, 180);
+        await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles, currentCandidates);
       } else if (trackingBatchWatchdogRef.current != null) {
         window.clearTimeout(trackingBatchWatchdogRef.current);
         trackingBatchWatchdogRef.current = null;
