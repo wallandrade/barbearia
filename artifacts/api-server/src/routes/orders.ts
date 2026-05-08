@@ -51,6 +51,22 @@ type TrackingVisionResult = TrackingParseResult & {
   source: "ocr" | "openai" | "manual";
 };
 
+type TrackingMatchCandidateInput = {
+  id: string;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  clientDocument?: string | null;
+  addressCep?: string | null;
+  addressStreet?: string | null;
+  addressNumber?: string | null;
+  addressComplement?: string | null;
+  addressNeighborhood?: string | null;
+  addressCity?: string | null;
+  addressState?: string | null;
+  status?: string | null;
+  enviado?: boolean;
+};
+
 function extractTrackingCode(text: string): string | null {
   const upper = String(text || "").toUpperCase();
   if (!upper) return null;
@@ -168,6 +184,188 @@ function parseVisionTrackingPayload(rawText: string): TrackingVisionResult {
     confidence,
     source: "openai",
   };
+}
+
+function normalizeForMatching(value: unknown): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function buildCandidateAddress(candidate: TrackingMatchCandidateInput): string {
+  const cityState = [candidate.addressCity || "", candidate.addressState || ""].filter(Boolean).join("/");
+  return [
+    candidate.addressStreet,
+    candidate.addressNumber,
+    candidate.addressComplement,
+    candidate.addressNeighborhood,
+    cityState,
+    candidate.addressCep ? `CEP ${candidate.addressCep}` : "",
+  ].filter(Boolean).join(", ");
+}
+
+function rankTrackingCandidates(parsed: TrackingVisionResult, candidates: TrackingMatchCandidateInput[]): TrackingMatchCandidateInput[] {
+  const parsedName = normalizeForMatching(parsed.detectedName);
+  const parsedAddress = normalizeForMatching(parsed.detectedAddress);
+  const parsedCep = normalizeTrackingCode(parsed.detectedCep || "").replace(/\D/g, "");
+
+  const scored = candidates.map((candidate) => {
+    let score = 0;
+    const candidateName = normalizeForMatching(candidate.clientName);
+    const candidateAddress = normalizeForMatching(buildCandidateAddress(candidate));
+    const candidateCep = normalizeTrackingCode(candidate.addressCep || "").replace(/\D/g, "");
+
+    if (parsedCep && candidateCep) {
+      if (parsedCep === candidateCep) score += 200;
+      else if (parsedCep.slice(0, 5) === candidateCep.slice(0, 5)) score += 80;
+      else if (parsedCep.slice(0, 3) === candidateCep.slice(0, 3)) score += 30;
+    }
+
+    if (parsedName && candidateName) {
+      const parsedTokens = parsedName.split(" ").filter(Boolean);
+      if (parsedTokens.length > 0) {
+        const exactMatch = parsedTokens.some((token) => token.length >= 3 && candidateName.includes(token));
+        if (exactMatch) score += 120;
+
+        const partialTokens = parsedTokens.filter((token) => token.length >= 2 && candidateName.includes(token));
+        score += Math.min(60, partialTokens.length * 15);
+      }
+    }
+
+    if (parsedAddress && candidateAddress) {
+      const parsedTokens = parsedAddress.split(" ").filter(Boolean);
+      const hitCount = parsedTokens.filter((token) => token.length >= 3 && candidateAddress.includes(token)).length;
+      score += Math.min(45, hitCount * 9);
+    }
+
+    if (candidate.enviado) score -= 200;
+    if (String(candidate.status || "").toLowerCase() === "cancelled") score -= 300;
+
+    return { candidate, score };
+  });
+
+  return scored.sort((a, b) => b.score - a.score).map((row) => row.candidate);
+}
+
+async function runOpenAIMatchTrackingOrderOnImageDataUrl(params: {
+  imageData: string;
+  parsed: TrackingVisionResult;
+  candidates: TrackingMatchCandidateInput[];
+}): Promise<{ matchedOrderId: string | null; confidence: number | null; reason: string | null } | null> {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) return null;
+
+  const model = String(process.env.OPENAI_VISION_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
+  const rankedCandidates = rankTrackingCandidates(params.parsed, params.candidates).slice(0, 20);
+  if (rankedCandidates.length === 0) return null;
+
+  const scoredCandidates = params.candidates.map((candidate) => {
+    let score = 0;
+    const parsedName = normalizeForMatching(params.parsed.detectedName);
+    const parsedCep = normalizeTrackingCode(params.parsed.detectedCep || "").replace(/\D/g, "");
+
+    const candidateName = normalizeForMatching(candidate.clientName);
+    const candidateCep = normalizeTrackingCode(candidate.addressCep || "").replace(/\D/g, "");
+
+    if (parsedCep && candidateCep && parsedCep === candidateCep) score += 200;
+    if (parsedName && candidateName) {
+      const parsedTokens = parsedName.split(" ").filter(Boolean);
+      if (parsedTokens.some((token) => token.length >= 3 && candidateName.includes(token))) score += 120;
+    }
+
+    return { candidate, score };
+  }).sort((a, b) => b.score - a.score);
+
+  if (scoredCandidates[0] && scoredCandidates[0].score >= 250) {
+    return {
+      matchedOrderId: scoredCandidates[0].candidate.id,
+      confidence: Math.min(0.95, scoredCandidates[0].score / 300),
+      reason: "Correspondência automática por CEP e nome com alta confiança.",
+    };
+  }
+
+  const candidateList = rankedCandidates.map((candidate, index) => {
+    return [
+      `${index + 1}. id=${candidate.id}`,
+      `nome=${candidate.clientName || "-"}`,
+      `endereco=${buildCandidateAddress(candidate) || "-"}`,
+      `cep=${candidate.addressCep || "-"}`,
+      `telefone=${candidate.clientPhone || "-"}`,
+      `documento=${candidate.clientDocument || "-"}`,
+      `status=${candidate.status || "-"}`,
+      `enviado=${candidate.enviado ? "sim" : "nao"}`,
+    ].join(" | ");
+  }).join("\n");
+
+  const prompt = [
+    "A imagem mostra uma etiqueta de envio. Compare a etiqueta com a lista de pedidos em aberto e escolha o pedido mais provável.",
+    "Retorne SOMENTE JSON válido neste formato:",
+    '{"matchedOrderId":"string|null","confidence":0.0,"reason":"string|null"}',
+    "Use apenas os pedidos listados abaixo. Se nenhum parecer compatível, retorne matchedOrderId null.",
+    `Dados extraídos da etiqueta: ${JSON.stringify({
+      trackingCode: params.parsed.trackingCode,
+      detectedName: params.parsed.detectedName,
+      detectedAddress: params.parsed.detectedAddress,
+      detectedCep: params.parsed.detectedCep,
+      confidence: params.parsed.confidence,
+      source: params.parsed.source,
+    })}`,
+    "Pedidos candidatos:",
+    candidateList,
+  ].join(" ");
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: "Você é um assistente que compara etiquetas de envio com pedidos em aberto e escolhe o pedido correto com base em nome, endereço, CEP e rastreio.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: params.imageData, detail: "high" } },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: string | null } }> };
+    const content = String(payload?.choices?.[0]?.message?.content || "").trim();
+    if (!content) return null;
+
+    const obj = extractJsonObject(content);
+    if (!obj) return null;
+
+    const matchedOrderId = String(obj.matchedOrderId ?? obj.orderId ?? obj.id ?? "").trim() || null;
+    const allowedIds = new Set(rankedCandidates.map((candidate) => candidate.id));
+    const confidence = normalizeConfidence(obj.confidence ?? obj.score);
+    const reason = String(obj.reason ?? obj.explanation ?? "").trim() || null;
+
+    return {
+      matchedOrderId: matchedOrderId && allowedIds.has(matchedOrderId) ? matchedOrderId : null,
+      confidence,
+      reason,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeTrackingCode(raw: unknown): string {
@@ -1671,6 +1869,109 @@ router.patch("/admin/orders/:id/tracking-code", requireAdminAuth, async (req, re
   } catch (err) {
     console.error("Update order tracking code error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar código de rastreio." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/orders/tracking-label/match  (protected)
+// ---------------------------------------------------------------------------
+router.post("/admin/orders/tracking-label/match", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    const { imageData, candidateOrders } = req.body as {
+      imageData?: string;
+      candidateOrders?: TrackingMatchCandidateInput[];
+    };
+
+    const candidates = Array.isArray(candidateOrders)
+      ? candidateOrders
+          .filter((candidate) => candidate && typeof candidate.id === "string")
+          .filter((candidate) => candidate.enviado !== true)
+          .filter((candidate) => String(candidate.status || "").toLowerCase() !== "cancelled")
+      : [];
+
+    if (!imageData?.startsWith("data:image/")) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Envie uma imagem válida em JPG, PNG, WebP ou GIF." });
+      return;
+    }
+    if (candidates.length === 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Envie ao menos um pedido candidato em aberto." });
+      return;
+    }
+    if (!isR2Configured()) {
+      res.status(503).json({
+        error: "R2_NOT_CONFIGURED",
+        message: "Cloudflare R2 não está configurado no servidor.",
+        missing: getR2MissingConfig(),
+      });
+      return;
+    }
+
+    const labelUrl = await uploadOrderTrackingLabelToR2({ dataUrl: imageData, orderId: null });
+    const ocrText = await runOcrOnImageDataUrl(imageData);
+    let parsed: TrackingVisionResult = { ...parseTrackingText(ocrText), confidence: null, source: "ocr" };
+
+    if (!parsed.trackingCode || !parsed.detectedName || !parsed.detectedAddress) {
+      const vision = await runOpenAIVisionOnImageDataUrl(imageData);
+      if (vision) {
+        parsed = vision;
+        if (!parsed.rawText) {
+          parsed.rawText = ocrText.slice(0, 20000);
+        }
+      }
+    }
+
+    const aiMatch = await runOpenAIMatchTrackingOrderOnImageDataUrl({ imageData, parsed, candidates });
+    let matchedOrderId: string | null = aiMatch?.matchedOrderId || null;
+    let matchedOrder: ReturnType<typeof mapOrder> | null = null;
+
+    if (matchedOrderId) {
+      const rows = await db.select().from(ordersTable).where(buildAdminOrderWhere(matchedOrderId, adminScope)).limit(1);
+      matchedOrder = rows[0] ? mapOrder(rows[0]) : null;
+      if (!matchedOrder) {
+        matchedOrderId = null;
+      }
+    }
+
+    res.status(201).json({
+      ok: true,
+      imageUrl: labelUrl,
+      matchedOrderId,
+      order: matchedOrder,
+      parsed: {
+        suggestedTrackingCode: parsed.trackingCode,
+        detectedName: parsed.detectedName,
+        detectedAddress: parsed.detectedAddress,
+        detectedCep: parsed.detectedCep,
+        confidence: parsed.confidence,
+        source: parsed.source,
+        ocrEnabled: !!String(process.env.OCR_SPACE_API_KEY || "").trim(),
+        openaiEnabled: !!String(process.env.OPENAI_API_KEY || "").trim(),
+      },
+      match: aiMatch,
+      candidateCount: candidates.length,
+      message: matchedOrderId
+        ? "Etiqueta processada e pedido candidato encontrado para confirmação."
+        : "Etiqueta processada, mas não foi possível associar a um pedido com segurança.",
+    });
+  } catch (err) {
+    console.error("Match tracking label error:", err);
+    const code = err instanceof Error ? err.message : "INTERNAL_ERROR";
+    if (code === "INVALID_IMAGE_DATA_URL" || code === "UNSUPPORTED_IMAGE_TYPE" || code === "EMPTY_IMAGE") {
+      res.status(400).json({ error: code, message: "Imagem inválida para upload." });
+      return;
+    }
+    if (code === "CLOUDFLARE_R2_NOT_CONFIGURED") {
+      res.status(503).json({
+        error: code,
+        message: "Cloudflare R2 não está configurado no servidor.",
+        missing: getR2MissingConfig(),
+      });
+      return;
+    }
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao processar etiqueta de rastreio." });
   }
 });
 

@@ -3049,6 +3049,7 @@ export default function Admin() {
         ) : tab === "orders" ? (
           <OrdersPanel
             orders={filteredOrders}
+            trackingCandidates={orders.filter((order) => !order.enviado && order.status !== "cancelled")}
             productImageById={Object.fromEntries(
               (products as Array<{ id?: string; image?: string | null }>)
                 .map((p) => [String(p?.id || "").trim(), String(p?.image || "").trim()] as const)
@@ -5934,6 +5935,7 @@ function OrdersPanel({
   gatewayFeeFixed: number;
   gatewayFeeMin: number;
   orders: AdminOrder[];
+  trackingCandidates: AdminOrder[];
   statusUpdating: string | null;
   expandedOrder: string | null;
   setExpandedOrder: (id: string | null) => void;
@@ -5990,6 +5992,10 @@ function OrdersPanel({
   }>(null);
   const [trackingDraftCode, setTrackingDraftCode] = useState("");
   const [trackingSaving, setTrackingSaving] = useState(false);
+  const [trackingBatchFiles, setTrackingBatchFiles] = useState<File[]>([]);
+  const [trackingBatchIndex, setTrackingBatchIndex] = useState(0);
+  const [trackingBatchProcessing, setTrackingBatchProcessing] = useState(false);
+  const trackingBatchInputRef = useRef<HTMLInputElement | null>(null);
 
   const reshipmentStatusLabel = (status?: string) => {
     if (status === "reenvio_aguardando_estoque") return "Reenvio · Aguardando estoque";
@@ -6316,6 +6322,125 @@ function OrdersPanel({
     }
   };
 
+  const startTrackingBatch = async (files: File[]) => {
+    const validFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (validFiles.length === 0) {
+      toast.info("Selecione ao menos uma imagem válida.");
+      return;
+    }
+
+    setTrackingBatchFiles(validFiles);
+    setTrackingBatchIndex(0);
+    setTrackingBatchProcessing(true);
+    await processTrackingBatchFile(0, validFiles);
+  };
+
+  const processTrackingBatchFile = async (index: number, files: File[]) => {
+    const file = files[index];
+    if (!file) {
+      setTrackingBatchProcessing(false);
+      setTrackingBatchFiles([]);
+      setTrackingBatchIndex(0);
+      return;
+    }
+
+    setTrackingBatchProcessing(true);
+    try {
+      const rawDataUrl = await fileToDataUrl(file);
+      const imageData = await compressImageDataUrl(rawDataUrl);
+      const res = await fetch(`${BASE}/api/admin/orders/tracking-label/match`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          imageData,
+          candidateOrders: trackingCandidates.filter((order) => !order.enviado && order.status !== "cancelled").map((order) => ({
+            id: order.id,
+            clientName: order.clientName,
+            clientPhone: order.clientPhone,
+            clientDocument: order.clientDocument,
+            addressCep: order.addressCep,
+            addressStreet: order.addressStreet,
+            addressNumber: order.addressNumber,
+            addressComplement: order.addressComplement,
+            addressNeighborhood: order.addressNeighborhood,
+            addressCity: order.addressCity,
+            addressState: order.addressState,
+            status: order.status,
+            enviado: order.enviado,
+          })),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        imageUrl?: string;
+        order?: AdminOrder | null;
+        parsed?: {
+          suggestedTrackingCode?: string | null;
+          detectedName?: string | null;
+          detectedAddress?: string | null;
+          detectedCep?: string | null;
+          ocrEnabled?: boolean;
+        };
+      };
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao processar etiqueta de rastreio.");
+      }
+
+      if (data.order) {
+        onSetOrderPatched(data.order);
+      }
+
+      const orderForReview = data.order || trackingCandidates.find((candidate) => candidate.id === (data as any)?.matchedOrderId) || null;
+      if (!orderForReview) {
+        toast.info(`Imagem ${index + 1} sem pedido correspondente. Pulando.`);
+        await advanceTrackingBatch(index + 1, files);
+        return;
+      }
+
+      let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
+      if (!suggestedTracking) {
+        const detectedByBarcode = await detectTrackingByBarcode(imageData);
+        if (detectedByBarcode) {
+          suggestedTracking = detectedByBarcode;
+          toast.success(`Rastreio detectado por código de barras: ${detectedByBarcode}`);
+        }
+      }
+
+      setTrackingDraftCode(suggestedTracking || String((orderForReview as any)?.trackingCode || "").trim());
+      setTrackingReview({
+        order: orderForReview,
+        imageUrl: String(data?.imageUrl || (orderForReview as any)?.trackingLabelUrl || "").trim(),
+        suggestedTrackingCode: suggestedTracking,
+        detectedName: String(data?.parsed?.detectedName || (orderForReview as any)?.trackingDetectedName || "").trim(),
+        detectedAddress: String(data?.parsed?.detectedAddress || (orderForReview as any)?.trackingDetectedAddress || "").trim(),
+        detectedCep: String(data?.parsed?.detectedCep || "").trim(),
+        ocrEnabled: !!data?.parsed?.ocrEnabled,
+      });
+      setTrackingBatchIndex(index);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao processar etiqueta de rastreio.";
+      toast.error(message);
+      await advanceTrackingBatch(index + 1, files);
+    } finally {
+      setTrackingBatchProcessing(false);
+    }
+  };
+
+  const advanceTrackingBatch = async (nextIndex: number, files: File[] = trackingBatchFiles) => {
+    if (nextIndex >= files.length) {
+      setTrackingBatchFiles([]);
+      setTrackingBatchIndex(0);
+      setTrackingBatchProcessing(false);
+      toast.success("Lote de etiquetas concluído.");
+      return;
+    }
+
+    setTrackingBatchIndex(nextIndex);
+    await processTrackingBatchFile(nextIndex, files);
+  };
+
   const uploadTrackingLabel = async (orderId: string, file: File) => {
     if (!orderId) return;
     setTrackingUploading((prev) => ({ ...prev, [orderId]: true }));
@@ -6411,6 +6536,9 @@ function OrdersPanel({
       setTrackingReview(null);
       setTrackingDraftCode("");
       toast.success(`Rastreio salvo: ${normalized}`);
+      if (trackingBatchFiles.length > 0) {
+        await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao salvar código de rastreio.";
       toast.error(message);
@@ -6428,6 +6556,39 @@ function OrdersPanel({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-2xl border border-dashed border-indigo-200 bg-gradient-to-r from-indigo-50 via-white to-sky-50 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-indigo-900">Upload em lote de etiquetas</p>
+            <p className="text-xs text-indigo-700/90">Envia várias imagens de uma vez e a IA abre a revisão uma por uma, só com pedidos ainda não enviados.</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              ref={trackingBatchInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                event.target.value = "";
+                void startTrackingBatch(files);
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              disabled={trackingBatchProcessing || trackingSaving}
+              onClick={() => trackingBatchInputRef.current?.click()}
+            >
+              {trackingBatchProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {trackingBatchProcessing ? "Processando lote..." : "Selecionar várias etiquetas"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {orders
         .filter(order => typeof order.id === "string" && order.id.length > 0)
         .map((order) => {
@@ -6871,7 +7032,26 @@ function OrdersPanel({
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Revisar Etiqueta</p>
                   <h3 className="text-lg sm:text-xl font-bold">Pedido #{trackingReview.order.id}</h3>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 items-center justify-end">
+                  {trackingBatchFiles.length > 0 && (
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                      Lote {trackingBatchIndex + 1}/{trackingBatchFiles.length}
+                    </span>
+                  )}
+                  {trackingBatchFiles.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={trackingSaving}
+                      onClick={async () => {
+                        setTrackingReview(null);
+                        setTrackingDraftCode("");
+                        await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
+                      }}
+                    >
+                      Pular
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="outline"
@@ -6879,6 +7059,8 @@ function OrdersPanel({
                     onClick={() => {
                       setTrackingReview(null);
                       setTrackingDraftCode("");
+                      setTrackingBatchFiles([]);
+                      setTrackingBatchIndex(0);
                     }}
                   >
                     Cancelar
