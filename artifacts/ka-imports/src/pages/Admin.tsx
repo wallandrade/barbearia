@@ -3060,6 +3060,7 @@ export default function Admin() {
                 .map((p) => [String(p?.id || "").trim(), Number(p?.costPrice || 0)] as const)
                 .filter(([id]) => !!id),
             )}
+            inventoryBalances={inventoryBalances}
             getCommissionRate={getCommissionRate}
             gatewayFeePercent={Number(settings["gateway_fee_percent"] || 0)}
             gatewayFeeFixed={Number(settings["gateway_fee_fixed"] || 0)}
@@ -5919,6 +5920,7 @@ function InventoryPanel({
 function OrdersPanel({
   productImageById,
   productCostById,
+  inventoryBalances,
   getCommissionRate,
   gatewayFeePercent,
   gatewayFeeFixed,
@@ -5930,6 +5932,7 @@ function OrdersPanel({
 }: {
   productImageById: Record<string, string>;
   productCostById: Record<string, number>;
+  inventoryBalances: InventoryBalanceRecord[];
   getCommissionRate: (sellerCode?: string | null, snapshot?: number | null) => number;
   gatewayFeePercent: number;
   gatewayFeeFixed: number;
