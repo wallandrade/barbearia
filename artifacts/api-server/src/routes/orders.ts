@@ -46,6 +46,11 @@ type TrackingParseResult = {
   detectedCep: string | null;
 };
 
+type TrackingVisionResult = TrackingParseResult & {
+  confidence: number | null;
+  source: "ocr" | "openai" | "manual";
+};
+
 function extractTrackingCode(text: string): string | null {
   const upper = String(text || "").toUpperCase();
   if (!upper) return null;
@@ -109,6 +114,62 @@ function parseTrackingText(rawText: string): TrackingParseResult {
   return { rawText: limitedText, trackingCode, detectedName, detectedAddress, detectedCep };
 }
 
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeConfidence(value: unknown): number | null {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num < 0) return 0;
+  if (num > 1) return 1;
+  return num;
+}
+
+function parseVisionTrackingPayload(rawText: string): TrackingVisionResult {
+  const fallback: TrackingVisionResult = {
+    rawText: String(rawText || "").slice(0, 20000),
+    trackingCode: null,
+    detectedName: null,
+    detectedAddress: null,
+    detectedCep: null,
+    confidence: null,
+    source: "manual",
+  };
+
+  const obj = extractJsonObject(rawText);
+  if (!obj) return fallback;
+
+  const trackingCode = normalizeTrackingCode(obj.trackingCode ?? obj.tracking ?? obj.codigoRastreio ?? obj.codigo ?? "");
+  const detectedName = String(obj.detectedName ?? obj.name ?? obj.destinatario ?? obj.nome ?? "").trim() || null;
+  const detectedAddress = String(obj.detectedAddress ?? obj.address ?? obj.endereco ?? obj.addressLine ?? "").trim() || null;
+  const detectedCep = String(obj.detectedCep ?? obj.cep ?? "").trim() || null;
+  const confidence = normalizeConfidence(obj.confidence ?? obj.score ?? obj.trust);
+
+  return {
+    rawText: fallback.rawText,
+    trackingCode: trackingCode || null,
+    detectedName: detectedName ? detectedName.slice(0, 255) : null,
+    detectedAddress: detectedAddress ? detectedAddress.slice(0, 500) : null,
+    detectedCep: detectedCep ? detectedCep.slice(0, 32) : null,
+    confidence,
+    source: "openai",
+  };
+}
+
 function normalizeTrackingCode(raw: unknown): string {
   return String(raw || "")
     .toUpperCase()
@@ -160,6 +221,69 @@ async function runOcrOnImageDataUrl(imageData: string): Promise<string> {
       .trim();
   } catch {
     return "";
+  }
+}
+
+async function runOpenAIVisionOnImageDataUrl(imageData: string): Promise<TrackingVisionResult | null> {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) return null;
+
+  const model = String(process.env.OPENAI_VISION_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
+
+  const prompt = [
+    "Analise a etiqueta de envio na imagem.",
+    "Extraia apenas dados que estiverem visíveis com alta confiança.",
+    "Retorne SOMENTE JSON válido, sem texto adicional, no formato:",
+    '{"trackingCode":"string|null","detectedName":"string|null","detectedAddress":"string|null","detectedCep":"string|null","confidence":0.0}',
+    "O trackingCode normalmente fica abaixo do código de barras/QR e pode começar com BR.",
+    "Se não tiver certeza, use null.",
+  ].join(" ");
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: "Você é um extrator de dados de etiquetas de envio. Responda apenas em JSON válido.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: imageData, detail: "high" } },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = await response.json().catch(() => ({})) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    };
+
+    const content = String(payload?.choices?.[0]?.message?.content || "").trim();
+    if (!content) return null;
+
+    const parsed = parseVisionTrackingPayload(content);
+    const normalizedTracking = parsed.trackingCode ? normalizeTrackingCode(parsed.trackingCode) : "";
+    return {
+      ...parsed,
+      trackingCode: isTrackingCodeValid(normalizedTracking) ? normalizedTracking : null,
+      source: "openai",
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -1591,7 +1715,17 @@ router.post("/admin/orders/tracking-label/parse", requireAdminAuth, async (req, 
 
     const labelUrl = await uploadOrderTrackingLabelToR2({ dataUrl: imageData, orderId: normalizedOrderId });
     const ocrText = await runOcrOnImageDataUrl(imageData);
-    const parsed = parseTrackingText(ocrText);
+    let parsed: TrackingVisionResult = { ...parseTrackingText(ocrText), confidence: null, source: "ocr" };
+
+    if (!parsed.trackingCode || !parsed.detectedName || !parsed.detectedAddress) {
+      const vision = await runOpenAIVisionOnImageDataUrl(imageData);
+      if (vision) {
+        parsed = vision;
+        if (!parsed.rawText) {
+          parsed.rawText = ocrText.slice(0, 20000);
+        }
+      }
+    }
 
     await db
       .update(ordersTable)
@@ -1619,7 +1753,10 @@ router.post("/admin/orders/tracking-label/parse", requireAdminAuth, async (req, 
         detectedName: parsed.detectedName,
         detectedAddress: parsed.detectedAddress,
         detectedCep: parsed.detectedCep,
+        confidence: parsed.confidence,
+        source: parsed.source,
         ocrEnabled: !!String(process.env.OCR_SPACE_API_KEY || "").trim(),
+        openaiEnabled: !!String(process.env.OPENAI_API_KEY || "").trim(),
       },
       message: parsed.trackingCode
         ? "Etiqueta processada. Código identificado, aguardando confirmação do admin."
