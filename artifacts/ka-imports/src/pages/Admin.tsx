@@ -7164,11 +7164,12 @@ function OrdersPanel({
                       onClick={async () => {
                         setTrackingReview(null);
                         setTrackingDraftCode("");
+                        setTrackingSelectedOrderId(null);
                         if (trackingBatchWatchdogRef.current != null) {
                           window.clearTimeout(trackingBatchWatchdogRef.current);
                           trackingBatchWatchdogRef.current = null;
                         }
-                        await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
+                        await advanceToNextBatchFile();
                       }}
                     >
                       Pular
