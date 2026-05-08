@@ -6367,109 +6367,56 @@ function OrdersPanel({
   };
 
   const startTrackingBatch = async (files: File[]) => {
-    console.log(`[Batch] Starting batch with ${files.length} files`);
     const supportedMime = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
     const hasSupportedExtension = (name: string) => /\.(jpe?g|png|webp|gif)$/i.test(String(name || ""));
-    const imageFiles = files.filter((file) => file.type.startsWith("image/") || hasSupportedExtension(file.name));
-    const validFiles = imageFiles.filter((file) => supportedMime.has(file.type) || hasSupportedExtension(file.name));
-    const skipped = files.length - validFiles.length;
-
+    const validFiles = files.filter((file) => supportedMime.has(file.type) || hasSupportedExtension(file.name));
+    
     if (validFiles.length === 0) {
-      console.log(`[Batch] No valid image files selected`);
       toast.info("Selecione imagens JPG, PNG, WebP ou GIF.");
       return;
     }
 
+    const skipped = files.length - validFiles.length;
     if (skipped > 0) {
-      console.log(`[Batch] Skipped ${skipped} unsupported files`);
       toast.warning(`${skipped} arquivo(s) ignorado(s). Formatos aceitos: JPG, PNG, WebP, GIF.`);
     }
 
-    // Capture candidates BEFORE state change to avoid closure issues
-    const candidatesToUse = (trackingCandidates || [])
-      .filter((order) => !order.enviado && order.status !== "cancelled")
-      .filter((order) => order.status === "paid" || order.status === "completed")
-      .sort((a, b) => {
-        const ta = new Date(a.createdAt || 0).getTime() || 0;
-        const tb = new Date(b.createdAt || 0).getTime() || 0;
-        return tb - ta;
-      })
-      .slice(0, 180);
-
-    if (candidatesToUse.length === 0) {
-      console.log(`[Batch] No available candidates for matching`);
-      toast.error("Nenhum pedido disponível para envio neste lote.");
-      return;
-    }
-
-    if (trackingBatchWatchdogRef.current != null) {
-      window.clearTimeout(trackingBatchWatchdogRef.current);
-      trackingBatchWatchdogRef.current = null;
-    }
-    trackingBatchWatchdogRef.current = window.setTimeout(() => {
-      console.error(`[Batch] Watchdog timeout - batch exceeded 120 seconds`);
-      setTrackingBatchProcessing(false);
-      setTrackingBatchFiles([]);
-      setTrackingBatchIndex(0);
-      toast.error("Lote interrompido por tempo limite global. Tente com menos imagens por vez.");
-    }, 120000);
-
-    console.log(`[Batch] Setting state and starting processing`);
     setTrackingBatchFiles(validFiles);
     setTrackingBatchIndex(0);
     setTrackingBatchProcessing(true);
-    console.log(`[Batch] Calling processTrackingBatchFile for first file`);
-    await processTrackingBatchFile(0, validFiles, candidatesToUse);
+
+    // Process first file
+    await processBatchFileSimple(0, validFiles);
   };
 
-  const processTrackingBatchFile = async (index: number, files: File[], availableCandidates: AdminOrder[] = []) => {
-    console.log(`[Batch] Processing file ${index + 1}/${files.length}`);
-    const file = files[index];
-    if (!file) {
-      console.log(`[Batch] No file at index ${index}, finishing batch`);
+  const processBatchFileSimple = async (index: number, files: File[]) => {
+    if (index >= files.length) {
       setTrackingBatchProcessing(false);
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
-      if (trackingBatchWatchdogRef.current != null) {
-        window.clearTimeout(trackingBatchWatchdogRef.current);
-        trackingBatchWatchdogRef.current = null;
-      }
+      toast.success("Lote de etiquetas concluído.");
       return;
     }
 
-    console.log(`[Batch] Available candidates from parameter:`, availableCandidates?.length || 0);
-    if (availableCandidates.length === 0) {
-      console.log(`[Batch] No available candidates for matching`);
-      toast.error("Nenhum pedido disponível para envio neste lote.");
-      setTrackingBatchProcessing(false);
-      setTrackingBatchFiles([]);
-      setTrackingBatchIndex(0);
-      return;
-    }
+    const file = files[index];
+    setTrackingBatchIndex(index);
+    setTrackingBatchProcessing(true);
 
     try {
-      console.log(`[Batch] Starting image processing for file ${index + 1}`);
-      const rawDataUrl = await withTimeout(fileToDataUrl(file), 20000, "Leitura da imagem demorou demais.");
-      console.log(`[Batch] File converted to data URL, compressing...`);
-      const imageData = await withTimeout(compressImageDataUrl(rawDataUrl), 12000, "Compressão da imagem demorou demais.");
-      console.log(`[Batch] Image compressed, sending to server...`);
-      const controller = new AbortController();
-      const abortId = window.setTimeout(() => controller.abort(), 30000);
-      const res = await withTimeout(fetch(`${BASE}/api/admin/orders/tracking-label/match`, {
+      // Use same logic as single upload but without orderId (auto-match)
+      const rawDataUrl = await fileToDataUrl(file);
+      const imageData = await compressImageDataUrl(rawDataUrl);
+      
+      const res = await fetch(`${BASE}/api/admin/orders/tracking-label/parse`, {
         method: "POST",
         headers: authHeaders(),
-        signal: controller.signal,
-        body: JSON.stringify({
-          imageData,
-        }),
-      }), 35000, "Consulta de match demorou demais.");
-      window.clearTimeout(abortId);
-      console.log(`[Batch] Response received, status=${res.status}`);
+        body: JSON.stringify({ imageData }), // No orderId - triggers auto-match
+      });
 
       const data = await res.json().catch(() => ({})) as {
         message?: string;
-        imageUrl?: string;
         order?: AdminOrder | null;
+        imageUrl?: string;
         parsed?: {
           suggestedTrackingCode?: string | null;
           detectedName?: string | null;
@@ -6477,65 +6424,33 @@ function OrdersPanel({
           detectedCep?: string | null;
           ocrEnabled?: boolean;
         };
-        match?: {
-          matchedOrderId?: string | null;
-          confidence?: number | null;
-          reason?: string | null;
-        };
       };
-      console.log(`[Batch] Response parsed, order=${data.order?.id || data?.match?.matchedOrderId || "none"}`);
 
       if (!res.ok) {
-        throw new Error(data?.message || "Erro ao processar etiqueta de rastreio.");
+        throw new Error(data?.message || "Erro ao processar etiqueta.");
       }
 
       if (data.order) {
         onSetOrderPatched(data.order);
       }
 
-      const matchedOrderId = (data as any)?.matchedOrderId || data?.order?.id;
-      const orderForReview = data.order || availableCandidates.find((candidate) => candidate.id === matchedOrderId) || null;
-      console.log(`[Batch] Match result: orderForReview=${orderForReview?.id || "null"}, matchedOrderId=${matchedOrderId || "none"}`);
-
+      const orderForReview = data.order || orders.find((item) => item.id === (data as any)?.matchedOrderId);
       if (!orderForReview) {
-        console.log(`[Batch] No order found, showing manual selection modal`);
-        toast.warning(`Imagem ${index + 1}: Não foi possível identificar o cliente na etiqueta. Escolha manualmente ou pule.`);
-        const img = await withTimeout(createImageFromDataUrl(imageData), 8000, "Pré-visualização da etiqueta demorou demais.");
-        let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
-        if (!suggestedTracking && img) {
-          const detectedByBarcode = await withTimeout(detectTrackingByBarcode(imageData), 15000, "Leitura de código de barras demorou demais.");
-          if (detectedByBarcode) {
-            suggestedTracking = detectedByBarcode;
-          }
-        }
-        setTrackingDraftCode(suggestedTracking);
-        setTrackingSelectedOrderId(null);
-        setTrackingReview({
-          order: availableCandidates[0],
-          imageUrl: String(data?.imageUrl || "").trim(),
-          suggestedTrackingCode: suggestedTracking,
-          detectedName: String(data?.parsed?.detectedName || "").trim(),
-          detectedAddress: String(data?.parsed?.detectedAddress || "").trim(),
-          detectedCep: String(data?.parsed?.detectedCep || "").trim(),
-          ocrEnabled: !!data?.parsed?.ocrEnabled,
-        });
-        setTrackingBatchIndex(index);
-        setTrackingBatchProcessing(false);
-        console.log(`[Batch] Manual selection modal set, waiting for user input`);
+        toast.warning(`Imagem ${index + 1}: Não foi possível identificar o pedido.`);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+        await processBatchFileSimple(index + 1, files);
         return;
       }
 
-      console.log(`[Batch] Order matched, setting modal for review: ${orderForReview.id}`);
       let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
       if (!suggestedTracking) {
-        const detectedByBarcode = await withTimeout(detectTrackingByBarcode(imageData), 15000, "Leitura de código de barras demorou demais.");
+        const detectedByBarcode = await detectTrackingByBarcode(imageData);
         if (detectedByBarcode) {
           suggestedTracking = detectedByBarcode;
         }
       }
 
       setTrackingDraftCode(suggestedTracking || String((orderForReview as any)?.trackingCode || "").trim());
-      setTrackingSelectedOrderId(null);
       setTrackingReview({
         order: orderForReview,
         imageUrl: String(data?.imageUrl || (orderForReview as any)?.trackingLabelUrl || "").trim(),
@@ -6545,36 +6460,27 @@ function OrdersPanel({
         detectedCep: String(data?.parsed?.detectedCep || "").trim(),
         ocrEnabled: !!data?.parsed?.ocrEnabled,
       });
-      setTrackingBatchIndex(index);
-      console.log(`[Batch] Modal set, waiting for user confirmation`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Erro ao processar etiqueta de rastreio.";
-      console.error(`[Batch] Error processing file ${index + 1}:`, message);
-      toast.error(`Imagem ${index + 1}: ${message}`);
-      await advanceTrackingBatch(index + 1, files, availableCandidates);
-    } finally {
-      console.log(`[Batch] Finally block executing for file ${index + 1}`);
       setTrackingBatchProcessing(false);
+      // Modal is now open - user will confirm or skip
+      // confirmTrackingSave will call advanceToNextBatchFile
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao processar etiqueta.";
+      toast.error(`Imagem ${index + 1}: ${message}`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await processBatchFileSimple(index + 1, files);
     }
   };
 
-  const advanceTrackingBatch = async (nextIndex: number, files: File[] = trackingBatchFiles, candidates: AdminOrder[] = []) => {
-    console.log(`[Batch] Advancing to next file: index ${nextIndex}/${files.length}`);
-    if (nextIndex >= files.length) {
-      console.log(`[Batch] All files processed, cleaning up`);
+  const advanceToNextBatchFile = async () => {
+    const nextIndex = trackingBatchIndex + 1;
+    if (nextIndex >= trackingBatchFiles.length) {
+      setTrackingBatchProcessing(false);
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
-      setTrackingBatchProcessing(false);
-      if (trackingBatchWatchdogRef.current != null) {
-        window.clearTimeout(trackingBatchWatchdogRef.current);
-        trackingBatchWatchdogRef.current = null;
-      }
-      toast.success("Lote de etiquetas concluído.");
+      toast.success("Lote concluído!");
       return;
     }
-
-    setTrackingBatchIndex(nextIndex);
-    await processTrackingBatchFile(nextIndex, files, candidates);
+    await processBatchFileSimple(nextIndex, trackingBatchFiles);
   };
 
   const uploadTrackingLabel = async (orderId: string, file: File) => {
@@ -6676,18 +6582,8 @@ function OrdersPanel({
       setTrackingDraftCode("");
       setTrackingSelectedOrderId(null);
       toast.success(`Rastreio salvo: ${normalized}`);
-      console.log(`[Batch] Tracking saved, advancing batch. Batch files length: ${trackingBatchFiles.length}`);
       if (trackingBatchFiles.length > 0) {
-        const currentCandidates = (trackingCandidates || [])
-          .filter((order) => !order.enviado && order.status !== "cancelled")
-          .filter((order) => order.status === "paid" || order.status === "completed")
-          .sort((a, b) => {
-            const ta = new Date(a.createdAt || 0).getTime() || 0;
-            const tb = new Date(b.createdAt || 0).getTime() || 0;
-            return tb - ta;
-          })
-          .slice(0, 180);
-        await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles, currentCandidates);
+        await advanceToNextBatchFile();
       } else if (trackingBatchWatchdogRef.current != null) {
         window.clearTimeout(trackingBatchWatchdogRef.current);
         trackingBatchWatchdogRef.current = null;
