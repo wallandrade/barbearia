@@ -3048,6 +3048,7 @@ export default function Admin() {
           </div>
         ) : tab === "orders" ? (
           <OrdersPanel
+            allOrders={orders}
             orders={filteredOrders}
             trackingCandidates={orders.filter((order) => !order.enviado && order.status !== "cancelled")}
             productImageById={Object.fromEntries(
@@ -5923,6 +5924,7 @@ function InventoryPanel({
 }
 
 function OrdersPanel({
+  allOrders,
   productImageById,
   productCostById,
   productNameById,
@@ -5936,6 +5938,7 @@ function OrdersPanel({
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
   onSetOrderEnviado, onSetOrderPatched, onSetReshipmentStatus, onRemoveOrder,
 }: {
+  allOrders: AdminOrder[];
   productImageById: Record<string, string>;
   productCostById: Record<string, number>;
   productNameById: Record<string, string>;
@@ -5965,6 +5968,7 @@ function OrdersPanel({
 }) {
 
   const normalizeIp = (ip?: string | null) => String(ip || "").trim().replace(/^::ffff:/, "") || "-";
+  const ordersLookup = allOrders.length > 0 ? allOrders : orders;
 
   const riskCfg = (risk?: string) => {
     if (risk === "low") {
@@ -6043,11 +6047,11 @@ function OrdersPanel({
   // Inicializa enviados com base nos pedidos carregados
   useEffect(() => {
     const map: Record<string, boolean> = {};
-    for (const order of orders) {
+    for (const order of ordersLookup) {
       map[order.id] = !!order.enviado;
     }
     setEnviados(map);
-  }, [orders]);
+  }, [ordersLookup]);
 
   useEffect(() => {
     if (!imagePreview) return;
@@ -6090,7 +6094,7 @@ function OrdersPanel({
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
   const verifyOrderStock = (orderId: string): { hasStock: boolean; message: string; missingItems: string[] } => {
     // Only check stock when marking as enviado (novoValor = true)
-    const order = orders.find(o => o.id === orderId);
+    const order = ordersLookup.find(o => o.id === orderId);
     if (!order) {
       return { hasStock: false, message: "Pedido não encontrado", missingItems: [] };
     }
@@ -6552,7 +6556,7 @@ function OrdersPanel({
         onSetOrderPatched(data.order);
       }
 
-      const orderForReview = data.order || orders.find((item) => item.id === (data as any)?.matchedOrderId);
+      const orderForReview = data.order || ordersLookup.find((item) => item.id === (data as any)?.matchedOrderId);
       if (!orderForReview) {
         toast.warning(`Imagem ${index + 1}: Não foi possível identificar o pedido.`);
         await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
@@ -6634,7 +6638,7 @@ function OrdersPanel({
         onSetOrderPatched(data.order);
       }
 
-      const orderForReview = data.order || orders.find((item) => item.id === orderId);
+      const orderForReview = data.order || ordersLookup.find((item) => item.id === orderId);
       if (!orderForReview) {
         toast.error("Pedido não encontrado para revisão do rastreio.");
         return;
@@ -6678,7 +6682,7 @@ function OrdersPanel({
     }
 
     const targetOrderId = trackingSelectedOrderId || trackingReview.order.id;
-    const targetOrder = orders.find((o) => o.id === targetOrderId) || trackingReview.order;
+    const targetOrder = ordersLookup.find((o) => o.id === targetOrderId) || trackingReview.order;
     const stockCheck = verifyOrderStock(targetOrderId);
     if (!stockCheck.hasStock) {
       toast.error(stockCheck.message);
@@ -6747,7 +6751,7 @@ function OrdersPanel({
 
   const trackingTargetOrderId = trackingReview ? (trackingSelectedOrderId || trackingReview.order.id) : "";
   const trackingTargetOrder = trackingReview
-    ? (orders.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
+    ? (ordersLookup.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
     : null;
   const hasInventorySnapshot = inventoryBalances.length > 0;
   const trackingTargetStock = trackingTargetOrderId
@@ -7372,6 +7376,7 @@ function OrdersPanel({
                         className="w-full h-10 px-3 rounded-lg border border-border bg-white focus:border-primary outline-none text-sm"
                       >
                         {orders
+                          .concat(ordersLookup.filter((item) => !orders.some((o) => o.id === item.id)))
                           .filter((order) => !order.enviado && order.status !== "cancelled")
                           .sort((a, b) => (a.id === trackingReview.order.id ? -1 : b.id === trackingReview.order.id ? 1 : 0))
                           .map((order) => (
