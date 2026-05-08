@@ -1897,7 +1897,11 @@ router.post("/admin/orders/tracking-label/match", requireAdminAuth, async (req, 
       return;
     }
     if (candidates.length === 0) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Envie ao menos um pedido candidato em aberto." });
+      res.status(400).json({
+        error: "NO_CANDIDATES_AVAILABLE",
+        message: "Nenhum pedido disponível para envio. Todos os pedidos já foram enviados ou cancelados.",
+        matchedOrderId: null,
+      });
       return;
     }
     if (!isR2Configured()) {

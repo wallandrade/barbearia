@@ -5995,6 +5995,7 @@ function OrdersPanel({
   const [trackingBatchFiles, setTrackingBatchFiles] = useState<File[]>([]);
   const [trackingBatchIndex, setTrackingBatchIndex] = useState(0);
   const [trackingBatchProcessing, setTrackingBatchProcessing] = useState(false);
+  const [trackingSelectedOrderId, setTrackingSelectedOrderId] = useState<string | null>(null);
   const trackingBatchInputRef = useRef<HTMLInputElement | null>(null);
 
   const reshipmentStatusLabel = (status?: string) => {
@@ -6344,6 +6345,15 @@ function OrdersPanel({
       return;
     }
 
+    const availableCandidates = trackingCandidates.filter((order) => !order.enviado && order.status !== "cancelled");
+    if (availableCandidates.length === 0) {
+      toast.error("Nenhum pedido disponível para envio neste lote.");
+      setTrackingBatchProcessing(false);
+      setTrackingBatchFiles([]);
+      setTrackingBatchIndex(0);
+      return;
+    }
+
     setTrackingBatchProcessing(true);
     try {
       const rawDataUrl = await fileToDataUrl(file);
@@ -6353,7 +6363,7 @@ function OrdersPanel({
         headers: authHeaders(),
         body: JSON.stringify({
           imageData,
-          candidateOrders: trackingCandidates.filter((order) => !order.enviado && order.status !== "cancelled").map((order) => ({
+          candidateOrders: availableCandidates.map((order) => ({
             id: order.id,
             clientName: order.clientName,
             clientPhone: order.clientPhone,
@@ -6382,6 +6392,11 @@ function OrdersPanel({
           detectedCep?: string | null;
           ocrEnabled?: boolean;
         };
+        match?: {
+          matchedOrderId?: string | null;
+          confidence?: number | null;
+          reason?: string | null;
+        };
       };
 
       if (!res.ok) {
@@ -6392,10 +6407,33 @@ function OrdersPanel({
         onSetOrderPatched(data.order);
       }
 
-      const orderForReview = data.order || trackingCandidates.find((candidate) => candidate.id === (data as any)?.matchedOrderId) || null;
+      const matchedOrderId = (data as any)?.matchedOrderId || data?.order?.id;
+      const orderForReview = data.order || availableCandidates.find((candidate) => candidate.id === matchedOrderId) || null;
+
       if (!orderForReview) {
-        toast.info(`Imagem ${index + 1} sem pedido correspondente. Pulando.`);
-        await advanceTrackingBatch(index + 1, files);
+        const reason = data?.match?.reason || "Não foi possível identificar o cliente na etiqueta.";
+        toast.warning(`Imagem ${index + 1}: ${reason} Escolha manualmente ou pule.`);
+        const img = await createImageFromDataUrl(imageData);
+        let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
+        if (!suggestedTracking && img) {
+          const detectedByBarcode = await detectTrackingByBarcode(imageData);
+          if (detectedByBarcode) {
+            suggestedTracking = detectedByBarcode;
+          }
+        }
+        setTrackingDraftCode(suggestedTracking);
+        setTrackingSelectedOrderId(null);
+        setTrackingReview({
+          order: availableCandidates[0],
+          imageUrl: String(data?.imageUrl || "").trim(),
+          suggestedTrackingCode: suggestedTracking,
+          detectedName: String(data?.parsed?.detectedName || "").trim(),
+          detectedAddress: String(data?.parsed?.detectedAddress || "").trim(),
+          detectedCep: String(data?.parsed?.detectedCep || "").trim(),
+          ocrEnabled: !!data?.parsed?.ocrEnabled,
+        });
+        setTrackingBatchIndex(index);
+        setTrackingBatchProcessing(false);
         return;
       }
 
@@ -6404,11 +6442,11 @@ function OrdersPanel({
         const detectedByBarcode = await detectTrackingByBarcode(imageData);
         if (detectedByBarcode) {
           suggestedTracking = detectedByBarcode;
-          toast.success(`Rastreio detectado por código de barras: ${detectedByBarcode}`);
         }
       }
 
       setTrackingDraftCode(suggestedTracking || String((orderForReview as any)?.trackingCode || "").trim());
+      setTrackingSelectedOrderId(null);
       setTrackingReview({
         order: orderForReview,
         imageUrl: String(data?.imageUrl || (orderForReview as any)?.trackingLabelUrl || "").trim(),
@@ -6421,7 +6459,7 @@ function OrdersPanel({
       setTrackingBatchIndex(index);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao processar etiqueta de rastreio.";
-      toast.error(message);
+      toast.error(`Imagem ${index + 1}: ${message}`);
       await advanceTrackingBatch(index + 1, files);
     } finally {
       setTrackingBatchProcessing(false);
@@ -6516,12 +6554,14 @@ function OrdersPanel({
       return;
     }
 
-    const currentTracking = String((trackingReview.order as any)?.trackingCode || "").toUpperCase().replace(/\s+/g, "").trim();
+    const targetOrderId = trackingSelectedOrderId || trackingReview.order.id;
+    const targetOrder = orders.find((o) => o.id === targetOrderId) || trackingReview.order;
+    const currentTracking = String((targetOrder as any)?.trackingCode || "").toUpperCase().replace(/\s+/g, "").trim();
     const overwrite = !!currentTracking && currentTracking !== normalized;
 
     setTrackingSaving(true);
     try {
-      const saveRes = await fetch(`${BASE}/api/admin/orders/${trackingReview.order.id}/tracking-code`, {
+      const saveRes = await fetch(`${BASE}/api/admin/orders/${targetOrderId}/tracking-code`, {
         method: "PATCH",
         headers: authHeaders(),
         body: JSON.stringify({ trackingCode: normalized, overwrite }),
@@ -6535,6 +6575,7 @@ function OrdersPanel({
       }
       setTrackingReview(null);
       setTrackingDraftCode("");
+      setTrackingSelectedOrderId(null);
       toast.success(`Rastreio salvo: ${normalized}`);
       if (trackingBatchFiles.length > 0) {
         await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
@@ -7052,19 +7093,22 @@ function OrdersPanel({
                       Pular
                     </Button>
                   )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={trackingSaving}
-                    onClick={() => {
-                      setTrackingReview(null);
-                      setTrackingDraftCode("");
-                      setTrackingBatchFiles([]);
-                      setTrackingBatchIndex(0);
-                    }}
-                  >
-                    Cancelar
-                  </Button>
+                  {trackingBatchFiles.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={trackingSaving}
+                      onClick={() => {
+                        setTrackingReview(null);
+                        setTrackingDraftCode("");
+                        setTrackingSelectedOrderId(null);
+                        setTrackingBatchFiles([]);
+                        setTrackingBatchIndex(0);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                  )}
                   <Button type="button" className="gap-2" disabled={trackingSaving} onClick={confirmTrackingSave}>
                     {trackingSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                     Confirmar Rastreio
@@ -7121,6 +7165,29 @@ function OrdersPanel({
                       <p className="mt-2 text-xs text-muted-foreground">
                         Confira os dados ao lado. O sistema só salva no pedido quando você clicar em Confirmar.
                         {!trackingReview.ocrEnabled && " OCR automático está desativado no servidor (tentamos leitura local por código de barras quando possível)."}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <label className="text-xs font-semibold text-amber-700 uppercase tracking-wide block mb-2">
+                        Pedido de destino
+                      </label>
+                      <select
+                        value={trackingSelectedOrderId || trackingReview.order.id}
+                        onChange={(event) => setTrackingSelectedOrderId(event.target.value || null)}
+                        className="w-full h-10 px-3 rounded-lg border border-border bg-white focus:border-primary outline-none text-sm"
+                      >
+                        {trackingCandidates
+                          .filter((order) => !order.enviado && order.status !== "cancelled")
+                          .sort((a, b) => (a.id === trackingReview.order.id ? -1 : b.id === trackingReview.order.id ? 1 : 0))
+                          .map((order) => (
+                            <option key={order.id} value={order.id}>
+                              #{order.id} · {order.clientName} · {order.addressCity}/{order.addressState}
+                            </option>
+                          ))}
+                      </select>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Se o pedido sugerido não for o correto, escolha manualmente entre os pedidos em aberto.
                       </p>
                     </div>
                   </div>
