@@ -5997,6 +5997,7 @@ function OrdersPanel({
   const [trackingBatchProcessing, setTrackingBatchProcessing] = useState(false);
   const [trackingSelectedOrderId, setTrackingSelectedOrderId] = useState<string | null>(null);
   const trackingBatchInputRef = useRef<HTMLInputElement | null>(null);
+  const trackingBatchWatchdogRef = useRef<number | null>(null);
 
   const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
     let timeoutId: number | null = null;
@@ -6366,11 +6367,31 @@ function OrdersPanel({
   };
 
   const startTrackingBatch = async (files: File[]) => {
-    const validFiles = files.filter((file) => file.type.startsWith("image/"));
+    const supportedMime = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    const hasSupportedExtension = (name: string) => /\.(jpe?g|png|webp|gif)$/i.test(String(name || ""));
+    const imageFiles = files.filter((file) => file.type.startsWith("image/") || hasSupportedExtension(file.name));
+    const validFiles = imageFiles.filter((file) => supportedMime.has(file.type) || hasSupportedExtension(file.name));
+    const skipped = files.length - validFiles.length;
+
     if (validFiles.length === 0) {
-      toast.info("Selecione ao menos uma imagem válida.");
+      toast.info("Selecione imagens JPG, PNG, WebP ou GIF.");
       return;
     }
+
+    if (skipped > 0) {
+      toast.warning(`${skipped} arquivo(s) ignorado(s). Formatos aceitos: JPG, PNG, WebP, GIF.`);
+    }
+
+    if (trackingBatchWatchdogRef.current != null) {
+      window.clearTimeout(trackingBatchWatchdogRef.current);
+      trackingBatchWatchdogRef.current = null;
+    }
+    trackingBatchWatchdogRef.current = window.setTimeout(() => {
+      setTrackingBatchProcessing(false);
+      setTrackingBatchFiles([]);
+      setTrackingBatchIndex(0);
+      toast.error("Lote interrompido por tempo limite global. Tente com menos imagens por vez.");
+    }, 120000);
 
     setTrackingBatchFiles(validFiles);
     setTrackingBatchIndex(0);
@@ -6384,6 +6405,10 @@ function OrdersPanel({
       setTrackingBatchProcessing(false);
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
+      if (trackingBatchWatchdogRef.current != null) {
+        window.clearTimeout(trackingBatchWatchdogRef.current);
+        trackingBatchWatchdogRef.current = null;
+      }
       return;
     }
 
@@ -6521,6 +6546,10 @@ function OrdersPanel({
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
       setTrackingBatchProcessing(false);
+      if (trackingBatchWatchdogRef.current != null) {
+        window.clearTimeout(trackingBatchWatchdogRef.current);
+        trackingBatchWatchdogRef.current = null;
+      }
       toast.success("Lote de etiquetas concluído.");
       return;
     }
@@ -6629,6 +6658,9 @@ function OrdersPanel({
       toast.success(`Rastreio salvo: ${normalized}`);
       if (trackingBatchFiles.length > 0) {
         await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
+      } else if (trackingBatchWatchdogRef.current != null) {
+        window.clearTimeout(trackingBatchWatchdogRef.current);
+        trackingBatchWatchdogRef.current = null;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao salvar código de rastreio.";
@@ -7137,6 +7169,10 @@ function OrdersPanel({
                       onClick={async () => {
                         setTrackingReview(null);
                         setTrackingDraftCode("");
+                        if (trackingBatchWatchdogRef.current != null) {
+                          window.clearTimeout(trackingBatchWatchdogRef.current);
+                          trackingBatchWatchdogRef.current = null;
+                        }
                         await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
                       }}
                     >
@@ -7152,6 +7188,10 @@ function OrdersPanel({
                         setTrackingReview(null);
                         setTrackingDraftCode("");
                         setTrackingSelectedOrderId(null);
+                        if (trackingBatchWatchdogRef.current != null) {
+                          window.clearTimeout(trackingBatchWatchdogRef.current);
+                          trackingBatchWatchdogRef.current = null;
+                        }
                         setTrackingBatchFiles([]);
                         setTrackingBatchIndex(0);
                       }}
