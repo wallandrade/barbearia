@@ -610,6 +610,63 @@ function buildAdminOrderWhere(orderId: string, scope: { hasGlobalAccess: boolean
   return and(eq(ordersTable.id, orderId), eq(ordersTable.sellerCode, scope.sellerCode!));
 }
 
+function buildOpenTrackingCandidatesWhere(scope: { hasGlobalAccess: boolean; sellerCode: string | null }) {
+  if (scope.hasGlobalAccess) {
+    return and(
+      inArray(ordersTable.status, ["paid", "completed"]),
+      eq(ordersTable.enviado, false),
+    );
+  }
+  return and(
+    eq(ordersTable.sellerCode, scope.sellerCode!),
+    inArray(ordersTable.status, ["paid", "completed"]),
+    eq(ordersTable.enviado, false),
+  );
+}
+
+async function fetchOpenTrackingCandidates(scope: { hasGlobalAccess: boolean; sellerCode: string | null }): Promise<TrackingMatchCandidateInput[]> {
+  const dbCandidates = await db
+    .select({
+      id: ordersTable.id,
+      clientName: ordersTable.clientName,
+      clientPhone: ordersTable.clientPhone,
+      clientDocument: ordersTable.clientDocument,
+      addressCep: ordersTable.addressCep,
+      addressStreet: ordersTable.addressStreet,
+      addressNumber: ordersTable.addressNumber,
+      addressComplement: ordersTable.addressComplement,
+      addressNeighborhood: ordersTable.addressNeighborhood,
+      addressCity: ordersTable.addressCity,
+      addressState: ordersTable.addressState,
+      status: ordersTable.status,
+      enviado: ordersTable.enviado,
+    })
+    .from(ordersTable)
+    .where(buildOpenTrackingCandidatesWhere(scope))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(500);
+
+  return dbCandidates
+    .map((row) => ({
+      id: row.id,
+      clientName: row.clientName,
+      clientPhone: row.clientPhone,
+      clientDocument: row.clientDocument,
+      addressCep: row.addressCep,
+      addressStreet: row.addressStreet,
+      addressNumber: row.addressNumber,
+      addressComplement: row.addressComplement,
+      addressNeighborhood: row.addressNeighborhood,
+      addressCity: row.addressCity,
+      addressState: row.addressState,
+      status: row.status,
+      enviado: !!row.enviado,
+    }))
+    .filter((candidate) => candidate && typeof candidate.id === "string")
+    .filter((candidate) => candidate.enviado !== true)
+    .filter((candidate) => String(candidate.status || "").toLowerCase() !== "cancelled");
+}
+
 function parseOrderItemsForInventory(raw: unknown): Array<{ productId: string | null; productName: string; quantity: number }> {
   const parsed = Array.isArray(raw)
     ? raw
@@ -1859,57 +1916,7 @@ router.post("/admin/orders/tracking-label/match", requireAdminAuth, async (req, 
       imageData?: string;
     };
 
-    const openOrdersWhere = adminScope.hasGlobalAccess
-      ? and(
-          inArray(ordersTable.status, ["paid", "completed"]),
-          eq(ordersTable.enviado, false),
-        )
-      : and(
-          eq(ordersTable.sellerCode, adminScope.sellerCode!),
-          inArray(ordersTable.status, ["paid", "completed"]),
-          eq(ordersTable.enviado, false),
-        );
-
-    const dbCandidates = await db
-      .select({
-        id: ordersTable.id,
-        clientName: ordersTable.clientName,
-        clientPhone: ordersTable.clientPhone,
-        clientDocument: ordersTable.clientDocument,
-        addressCep: ordersTable.addressCep,
-        addressStreet: ordersTable.addressStreet,
-        addressNumber: ordersTable.addressNumber,
-        addressComplement: ordersTable.addressComplement,
-        addressNeighborhood: ordersTable.addressNeighborhood,
-        addressCity: ordersTable.addressCity,
-        addressState: ordersTable.addressState,
-        status: ordersTable.status,
-        enviado: ordersTable.enviado,
-      })
-      .from(ordersTable)
-      .where(openOrdersWhere)
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(500);
-
-    const candidates: TrackingMatchCandidateInput[] = dbCandidates
-      .map((row) => ({
-        id: row.id,
-        clientName: row.clientName,
-        clientPhone: row.clientPhone,
-        clientDocument: row.clientDocument,
-        addressCep: row.addressCep,
-        addressStreet: row.addressStreet,
-        addressNumber: row.addressNumber,
-        addressComplement: row.addressComplement,
-        addressNeighborhood: row.addressNeighborhood,
-        addressCity: row.addressCity,
-        addressState: row.addressState,
-        status: row.status,
-        enviado: !!row.enviado,
-      }))
-      .filter((candidate) => candidate && typeof candidate.id === "string")
-      .filter((candidate) => candidate.enviado !== true)
-      .filter((candidate) => String(candidate.status || "").toLowerCase() !== "cancelled");
+    const candidates = await fetchOpenTrackingCandidates(adminScope);
 
     if (!imageData?.startsWith("data:image/")) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Envie uma imagem válida em JPG, PNG, WebP ou GIF." });
@@ -2009,10 +2016,6 @@ router.post("/admin/orders/tracking-label/parse", requireAdminAuth, async (req, 
     const { orderId, imageData } = req.body as { orderId?: string | null; imageData?: string };
     const normalizedOrderId = String(orderId || "").trim();
 
-    if (!normalizedOrderId) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "ID do pedido é obrigatório." });
-      return;
-    }
     if (!imageData?.startsWith("data:image/")) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Envie uma imagem válida em JPG, PNG, WebP ou GIF." });
       return;
@@ -2022,6 +2025,67 @@ router.post("/admin/orders/tracking-label/parse", requireAdminAuth, async (req, 
         error: "R2_NOT_CONFIGURED",
         message: "Cloudflare R2 não está configurado no servidor.",
         missing: getR2MissingConfig(),
+      });
+      return;
+    }
+
+    if (!normalizedOrderId) {
+      const candidates = await fetchOpenTrackingCandidates(adminScope);
+      if (candidates.length === 0) {
+        res.status(400).json({
+          error: "NO_CANDIDATES_AVAILABLE",
+          message: "Nenhum pedido pago/concluído pendente de envio encontrado para o escopo deste admin.",
+          matchedOrderId: null,
+        });
+        return;
+      }
+
+      const labelUrl = await uploadOrderTrackingLabelToR2({ dataUrl: imageData, orderId: null });
+      const ocrText = await runOcrOnImageDataUrl(imageData);
+      let parsed: TrackingVisionResult = { ...parseTrackingText(ocrText), confidence: null, source: "ocr" };
+
+      if (!parsed.trackingCode || !parsed.detectedName || !parsed.detectedAddress) {
+        const vision = await runOpenAIVisionOnImageDataUrl(imageData);
+        if (vision) {
+          parsed = vision;
+          if (!parsed.rawText) {
+            parsed.rawText = ocrText.slice(0, 20000);
+          }
+        }
+      }
+
+      const aiMatch = await runOpenAIMatchTrackingOrderOnImageDataUrl({ imageData, parsed, candidates });
+      let matchedOrderId: string | null = aiMatch?.matchedOrderId || null;
+      let matchedOrder: ReturnType<typeof mapOrder> | null = null;
+
+      if (matchedOrderId) {
+        const rows = await db.select().from(ordersTable).where(buildAdminOrderWhere(matchedOrderId, adminScope)).limit(1);
+        matchedOrder = rows[0] ? mapOrder(rows[0]) : null;
+        if (!matchedOrder) {
+          matchedOrderId = null;
+        }
+      }
+
+      res.status(201).json({
+        ok: true,
+        imageUrl: labelUrl,
+        matchedOrderId,
+        order: matchedOrder,
+        parsed: {
+          suggestedTrackingCode: parsed.trackingCode,
+          detectedName: parsed.detectedName,
+          detectedAddress: parsed.detectedAddress,
+          detectedCep: parsed.detectedCep,
+          confidence: parsed.confidence,
+          source: parsed.source,
+          ocrEnabled: !!String(process.env.OCR_SPACE_API_KEY || "").trim(),
+          openaiEnabled: !!String(process.env.OPENAI_API_KEY || "").trim(),
+        },
+        match: aiMatch,
+        candidateCount: candidates.length,
+        message: matchedOrderId
+          ? "Etiqueta processada e pedido candidato encontrado para confirmação."
+          : "Etiqueta processada, mas não foi possível associar a um pedido com segurança.",
       });
       return;
     }
