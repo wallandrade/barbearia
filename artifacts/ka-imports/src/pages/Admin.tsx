@@ -6420,7 +6420,8 @@ function OrdersPanel({
       return;
     }
 
-    const availableCandidates = trackingCandidates
+    console.log(`[Batch] Available candidates from prop:`, trackingCandidates?.length || 0);
+    const availableCandidates = (trackingCandidates || [])
       .filter((order) => !order.enviado && order.status !== "cancelled")
       .filter((order) => order.status === "paid" || order.status === "completed")
       .sort((a, b) => {
