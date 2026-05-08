@@ -6129,35 +6129,66 @@ function OrdersPanel({
     img.src = source;
   });
 
+  const pickBestTrackingCode = (values: string[]): string => {
+    const normalized = values
+      .map((value) => String(value || "").toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9-]/g, "").trim())
+      .filter(Boolean);
+
+    return normalized.find((value) => /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(value))
+      || normalized.find((value) => /^BR[0-9A-Z]{8,24}$/.test(value))
+      || normalized.find((value) => /^[A-Z0-9-]{8,30}$/.test(value) && /\d/.test(value))
+      || "";
+  };
+
   const detectTrackingByBarcode = async (imageData: string): Promise<string> => {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const temp = new Image();
+      temp.onload = () => resolve(temp);
+      temp.onerror = () => reject(new Error("barcode_image_load_error"));
+      temp.src = imageData;
+    }).catch(() => null);
+
+    if (!img) return "";
+
     try {
       const BarcodeDetectorCtor = (window as any)?.BarcodeDetector;
-      if (!BarcodeDetectorCtor) return "";
+      if (BarcodeDetectorCtor) {
+        const detector = new BarcodeDetectorCtor({
+          formats: ["code_128", "code_39", "itf", "ean_13", "ean_8", "qr_code", "data_matrix", "pdf417", "codabar"],
+        });
+        const detections = await detector.detect(img);
+        const rawValues = detections.map((item: any) => String(item?.rawValue || ""));
+        const bestNative = pickBestTrackingCode(rawValues);
+        if (bestNative) return bestNative;
+      }
+    } catch {
+      // ignore native detector failures and try ZXing fallback
+    }
 
-      const detector = new BarcodeDetectorCtor({
-        formats: ["code_128", "code_39", "itf", "ean_13", "qr_code", "data_matrix"],
-      });
+    try {
+      const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
+        import("@zxing/browser"),
+        import("@zxing/library"),
+      ]);
 
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const temp = new Image();
-        temp.onload = () => resolve(temp);
-        temp.onerror = () => reject(new Error("barcode_image_load_error"));
-        temp.src = imageData;
-      });
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.ITF,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.CODABAR,
+        BarcodeFormat.PDF_417,
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.DATA_MATRIX,
+      ]);
 
-      const detections = await detector.detect(img);
-      const values = detections
-        .map((item: any) => String(item?.rawValue || "").toUpperCase().replace(/\s+/g, "").trim())
-        .filter(Boolean);
-
-      if (values.length === 0) return "";
-
-      const best = values.find((value) => /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(value))
-        || values.find((value) => /^BR[0-9A-Z]{8,24}$/.test(value))
-        || values.find((value) => /^[A-Z0-9-]{8,30}$/.test(value) && /\d/.test(value))
-        || "";
-
-      return best;
+      const reader = new BrowserMultiFormatReader(hints);
+      const result = await reader.decodeFromImageElement(img);
+      const bestZxing = pickBestTrackingCode([String(result?.getText?.() || "")]);
+      reader.reset();
+      return bestZxing;
     } catch {
       return "";
     }
