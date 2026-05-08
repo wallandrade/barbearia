@@ -7280,7 +7280,7 @@ function OrdersPanel({
                         onChange={(event) => setTrackingSelectedOrderId(event.target.value || null)}
                         className="w-full h-10 px-3 rounded-lg border border-border bg-white focus:border-primary outline-none text-sm"
                       >
-                        {trackingCandidates
+                        {(trackingCandidates || [])
                           .filter((order) => !order.enviado && order.status !== "cancelled")
                           .sort((a, b) => (a.id === trackingReview.order.id ? -1 : b.id === trackingReview.order.id ? 1 : 0))
                           .map((order) => (
