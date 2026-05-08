@@ -6630,6 +6630,11 @@ function OrdersPanel({
 
     const targetOrderId = trackingSelectedOrderId || trackingReview.order.id;
     const targetOrder = orders.find((o) => o.id === targetOrderId) || trackingReview.order;
+    const stockCheck = verifyOrderStock(targetOrderId);
+    if (!stockCheck.hasStock) {
+      toast.error(stockCheck.message);
+      return;
+    }
     const currentTracking = String((targetOrder as any)?.trackingCode || "").toUpperCase().replace(/\s+/g, "").trim();
     const overwrite = !!currentTracking && currentTracking !== normalized;
 
@@ -6647,10 +6652,36 @@ function OrdersPanel({
       if (saveData.order) {
         onSetOrderPatched(saveData.order);
       }
+
+      // Mark as shipped right after tracking confirmation so inventory can be decremented.
+      if (!enviados[targetOrderId]) {
+        const envioRes = await fetch(`${BASE}/api/admin/orders/${targetOrderId}/enviado`, {
+          method: "PATCH",
+          headers: {
+            ...authHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ enviado: true }),
+        });
+
+        if (envioRes.status === 404) {
+          onRemoveOrder(targetOrderId);
+          throw new Error("Rastreio salvo, mas pedido não foi encontrado para marcar como enviado.");
+        }
+
+        if (!envioRes.ok) {
+          const envioData = await envioRes.json().catch(() => ({})) as { message?: string };
+          throw new Error(envioData?.message || "Rastreio salvo, mas falhou ao marcar pedido como enviado.");
+        }
+
+        onSetOrderEnviado(targetOrderId, true);
+        setEnviados((prev) => ({ ...prev, [targetOrderId]: true }));
+      }
+
       setTrackingReview(null);
       setTrackingDraftCode("");
       setTrackingSelectedOrderId(null);
-      toast.success(`Rastreio salvo: ${normalized}`);
+      toast.success(`Rastreio salvo e pedido marcado como enviado: ${normalized}`);
       if (trackingBatchFiles.length > 0) {
         await advanceToNextBatchFile();
       } else if (trackingBatchWatchdogRef.current != null) {
@@ -6664,6 +6695,14 @@ function OrdersPanel({
       setTrackingSaving(false);
     }
   };
+
+  const trackingTargetOrderId = trackingReview ? (trackingSelectedOrderId || trackingReview.order.id) : "";
+  const trackingTargetOrder = trackingReview
+    ? (orders.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
+    : null;
+  const trackingTargetStock = trackingTargetOrderId
+    ? verifyOrderStock(trackingTargetOrderId)
+    : { hasStock: true, message: "", missingItems: [] as string[] };
 
   if (orders.length === 0) return (
     <div className="text-center py-16 bg-muted/30 rounded-2xl border border-dashed">
@@ -7195,7 +7234,7 @@ function OrdersPanel({
                       Cancelar
                     </Button>
                   )}
-                  <Button type="button" className="gap-2" disabled={trackingSaving} onClick={confirmTrackingSave}>
+                  <Button type="button" className="gap-2" disabled={trackingSaving || !trackingTargetStock.hasStock} onClick={confirmTrackingSave}>
                     {trackingSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                     Confirmar Rastreio
                   </Button>
@@ -7231,10 +7270,10 @@ function OrdersPanel({
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
                       <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">Dados do pedido</p>
                       <div className="space-y-1 text-sm">
-                        <p><span className="font-semibold">Cliente:</span> {trackingReview.order.clientName}</p>
-                        <p><span className="font-semibold">Telefone:</span> {trackingReview.order.clientPhone}</p>
-                        <p><span className="font-semibold">Endereço:</span> {orderAddressText(trackingReview.order)}</p>
-                        <p><span className="font-semibold">Rastreio atual:</span> {String((trackingReview.order as any)?.trackingCode || "").trim() || "-"}</p>
+                        <p><span className="font-semibold">Cliente:</span> {trackingTargetOrder?.clientName || trackingReview.order.clientName}</p>
+                        <p><span className="font-semibold">Telefone:</span> {trackingTargetOrder?.clientPhone || trackingReview.order.clientPhone}</p>
+                        <p><span className="font-semibold">Endereço:</span> {orderAddressText(trackingTargetOrder || trackingReview.order)}</p>
+                        <p><span className="font-semibold">Rastreio atual:</span> {String((trackingTargetOrder as any)?.trackingCode || "").trim() || "-"}</p>
                       </div>
                     </div>
 
@@ -7275,6 +7314,22 @@ function OrdersPanel({
                       <p className="mt-2 text-xs text-muted-foreground">
                         Se o pedido sugerido não for o correto, escolha manualmente entre os pedidos em aberto.
                       </p>
+                    </div>
+
+                    <div className={`rounded-xl border p-3 ${trackingTargetStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${trackingTargetStock.hasStock ? "text-green-700" : "text-red-700"}`}>
+                        Verificação de estoque para envio
+                      </p>
+                      {trackingTargetStock.hasStock ? (
+                        <p className="text-sm text-green-800 font-medium">Estoque OK para confirmar rastreio e marcar pedido como enviado.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="text-sm text-red-800 font-medium">Faltando estoque dos produtos do cliente.</p>
+                          {trackingTargetStock.missingItems.map((item) => (
+                            <p key={item} className="text-xs text-red-700">• {item}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
