@@ -6140,15 +6140,73 @@ function OrdersPanel({
       || "";
   };
 
-  const detectTrackingByBarcode = async (imageData: string): Promise<string> => {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+  const createImageFromDataUrl = (dataUrl: string): Promise<HTMLImageElement | null> =>
+    new Promise((resolve) => {
       const temp = new Image();
       temp.onload = () => resolve(temp);
-      temp.onerror = () => reject(new Error("barcode_image_load_error"));
-      temp.src = imageData;
-    }).catch(() => null);
+      temp.onerror = () => resolve(null);
+      temp.src = dataUrl;
+    });
+
+  const cropToCanvas = (img: HTMLImageElement, crop: { x: number; y: number; w: number; h: number }): HTMLCanvasElement => {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(crop.w));
+    canvas.height = Math.max(1, Math.round(crop.h));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return canvas;
+    ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  };
+
+  const applyHighContrast = (source: HTMLCanvasElement): HTMLCanvasElement => {
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return source;
+
+    ctx.drawImage(source, 0, 0);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = frame.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const gray = Math.round((pixels[i] * 0.299) + (pixels[i + 1] * 0.587) + (pixels[i + 2] * 0.114));
+      const bw = gray > 145 ? 255 : 0;
+      pixels[i] = bw;
+      pixels[i + 1] = bw;
+      pixels[i + 2] = bw;
+    }
+    ctx.putImageData(frame, 0, 0);
+    return canvas;
+  };
+
+  const buildBarcodeSources = (img: HTMLImageElement): Array<HTMLImageElement | HTMLCanvasElement> => {
+    const w = img.width || 1;
+    const h = img.height || 1;
+
+    const full = cropToCanvas(img, { x: 0, y: 0, w, h });
+    const lowerHalf = cropToCanvas(img, { x: 0, y: h * 0.45, w, h: h * 0.55 });
+    const lowerThird = cropToCanvas(img, { x: 0, y: h * 0.58, w, h: h * 0.42 });
+    const midBand = cropToCanvas(img, { x: w * 0.05, y: h * 0.24, w: w * 0.9, h: h * 0.30 });
+
+    return [
+      img,
+      full,
+      applyHighContrast(full),
+      lowerHalf,
+      applyHighContrast(lowerHalf),
+      lowerThird,
+      applyHighContrast(lowerThird),
+      midBand,
+      applyHighContrast(midBand),
+    ];
+  };
+
+  const detectTrackingByBarcode = async (imageData: string): Promise<string> => {
+    const img = await createImageFromDataUrl(imageData);
 
     if (!img) return "";
+
+    const decodeSources = buildBarcodeSources(img);
 
     try {
       const BarcodeDetectorCtor = (window as any)?.BarcodeDetector;
@@ -6156,10 +6214,12 @@ function OrdersPanel({
         const detector = new BarcodeDetectorCtor({
           formats: ["code_128", "code_39", "itf", "ean_13", "ean_8", "qr_code", "data_matrix", "pdf417", "codabar"],
         });
-        const detections = await detector.detect(img);
-        const rawValues = detections.map((item: any) => String(item?.rawValue || ""));
-        const bestNative = pickBestTrackingCode(rawValues);
-        if (bestNative) return bestNative;
+        for (const source of decodeSources) {
+          const detections = await detector.detect(source as any);
+          const rawValues = detections.map((item: any) => String(item?.rawValue || ""));
+          const bestNative = pickBestTrackingCode(rawValues);
+          if (bestNative) return bestNative;
+        }
       }
     } catch {
       // ignore native detector failures and try ZXing fallback
@@ -6185,9 +6245,19 @@ function OrdersPanel({
       ]);
 
       const reader = new BrowserMultiFormatReader(hints);
-      const result = await reader.decodeFromImageElement(img);
-      const bestZxing = pickBestTrackingCode([String(result?.getText?.() || "")]);
+      const zxingValues: string[] = [];
+      for (const source of decodeSources) {
+        try {
+          const result = source instanceof HTMLCanvasElement
+            ? reader.decodeFromCanvas(source)
+            : await reader.decodeFromImageElement(source);
+          zxingValues.push(String(result?.getText?.() || ""));
+        } catch {
+          // try next source
+        }
+      }
       reader.reset();
+      const bestZxing = pickBestTrackingCode(zxingValues);
       return bestZxing;
     } catch {
       return "";
