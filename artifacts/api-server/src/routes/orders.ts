@@ -20,6 +20,7 @@ import {
 } from "../lib/affiliates";
 import { getReshipmentByOrderIds, registerInventoryEntry } from "../lib/reshipments";
 import { lookupIpGeo } from "../lib/ip-geo";
+import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 
 const router: IRouter = Router();
 
@@ -36,6 +37,131 @@ type OrderProductInput = {
   price: number;
   isBump?: boolean;
 };
+
+type TrackingParseResult = {
+  rawText: string;
+  trackingCode: string | null;
+  detectedName: string | null;
+  detectedAddress: string | null;
+  detectedCep: string | null;
+};
+
+function extractTrackingCode(text: string): string | null {
+  const upper = String(text || "").toUpperCase();
+  if (!upper) return null;
+
+  const patterns = [
+    /\b([A-Z]{2}\d{9}[A-Z]{2})\b/g,
+    /\b(BR[0-9A-Z]{8,24})\b/g,
+    /(?:RASTREIO|TRACK(?:ING)?|OBJETO|CODIGO)\s*[:#-]?\s*([A-Z0-9-]{8,30})/g,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(upper);
+    if (match?.[1]) {
+      return match[1].replace(/\s+/g, "").trim() || null;
+    }
+  }
+
+  const candidates = upper.match(/\b[A-Z0-9]{10,25}\b/g) || [];
+  const mixed = candidates.find((value) => /[A-Z]/.test(value) && /\d/.test(value));
+  return mixed || null;
+}
+
+function extractNameAndAddress(text: string): { detectedName: string | null; detectedAddress: string | null; detectedCep: string | null } {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const full = lines.join("\n");
+  const cepMatch = full.match(/\b(\d{5})[-\s]?(\d{3})\b/);
+  const detectedCep = cepMatch ? `${cepMatch[1]}-${cepMatch[2]}` : null;
+
+  let detectedName: string | null = null;
+  const nameLabelIdx = lines.findIndex((line) => /DESTINATARIO|RECEBEDOR|NOME/i.test(line));
+  if (nameLabelIdx >= 0 && lines[nameLabelIdx + 1]) {
+    detectedName = lines[nameLabelIdx + 1] || null;
+  }
+  if (!detectedName) {
+    detectedName =
+      lines.find((line) => {
+        const plain = line.replace(/[^A-Za-zÀ-ÿ\s]/g, " ").trim();
+        const words = plain.split(/\s+/).filter(Boolean);
+        return words.length >= 2 && plain.length >= 8 && plain.length <= 80;
+      }) || null;
+  }
+
+  const addressLine = lines.find((line) => /\b(RUA|AV\.?|AVENIDA|TRAVESSA|ALAMEDA|LOGRADOURO|N[ÚU]MERO|BAIRRO|CEP)\b/i.test(line));
+  const detectedAddress = addressLine || (detectedCep ? lines.find((line) => line.includes(detectedCep.replace("-", "")) || line.includes(detectedCep)) || null : null);
+
+  return {
+    detectedName: detectedName ? detectedName.slice(0, 255) : null,
+    detectedAddress: detectedAddress ? detectedAddress.slice(0, 500) : null,
+    detectedCep,
+  };
+}
+
+function parseTrackingText(rawText: string): TrackingParseResult {
+  const limitedText = String(rawText || "").slice(0, 20000);
+  const trackingCode = extractTrackingCode(limitedText);
+  const { detectedName, detectedAddress, detectedCep } = extractNameAndAddress(limitedText);
+  return { rawText: limitedText, trackingCode, detectedName, detectedAddress, detectedCep };
+}
+
+function normalizeTrackingCode(raw: unknown): string {
+  return String(raw || "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function isTrackingCodeValid(value: string): boolean {
+  if (!value) return false;
+  if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(value)) return true;
+  if (/^BR[0-9A-Z]{8,24}$/.test(value)) return true;
+  if (/^[A-Z0-9-]{8,30}$/.test(value) && /\d/.test(value)) return true;
+  return false;
+}
+
+async function runOcrOnImageDataUrl(imageData: string): Promise<string> {
+  const apiKey = String(process.env.OCR_SPACE_API_KEY || "").trim();
+  if (!apiKey) return "";
+
+  try {
+    const response = await fetch("https://api.ocr.space/parse/image", {
+      method: "POST",
+      headers: {
+        apikey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        base64Image: imageData,
+        language: "por",
+        detectOrientation: true,
+        scale: true,
+        isOverlayRequired: false,
+      }),
+    });
+
+    if (!response.ok) return "";
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      ParsedResults?: Array<{ ParsedText?: string | null }>;
+      IsErroredOnProcessing?: boolean;
+    };
+
+    if (payload.IsErroredOnProcessing) return "";
+
+    return (payload.ParsedResults || [])
+      .map((entry) => String(entry?.ParsedText || ""))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  } catch {
+    return "";
+  }
+}
 
 function parseBulkDiscountTiers(raw: unknown): BulkDiscountTierInput[] {
   if (!raw) return [];
@@ -1240,6 +1366,11 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipIsp:                  o.ipIsp ?? null,
     ipIsProxy:              o.ipIsProxy ?? null,
     enviado:                !!o.enviado,
+    trackingCode:           o.trackingCode ?? null,
+    trackingLabelUrl:       o.trackingLabelUrl ?? null,
+    trackingLabelText:      o.trackingLabelText ?? null,
+    trackingDetectedName:   o.trackingDetectedName ?? null,
+    trackingDetectedAddress:o.trackingDetectedAddress ?? null,
   };
 }
 
@@ -1354,6 +1485,162 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
   } catch (err) {
     console.error("Update order enviado error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar status de envio." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/tracking-code  (protected)
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/tracking-code", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+    const { trackingCode, overwrite } = req.body as { trackingCode?: string; overwrite?: boolean };
+
+    const normalized = normalizeTrackingCode(trackingCode);
+    if (!isTrackingCodeValid(normalized)) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Código de rastreio inválido." });
+      return;
+    }
+
+    const existing = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+
+    const current = existing[0];
+    if (!current) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const currentTracking = normalizeTrackingCode(current.trackingCode || "");
+    if (currentTracking && currentTracking !== normalized && overwrite !== true) {
+      res.status(409).json({
+        error: "TRACKING_ALREADY_SET",
+        message: "O pedido já possui código de rastreio. Confirme substituição para atualizar.",
+        currentTrackingCode: currentTracking,
+      });
+      return;
+    }
+
+    await db
+      .update(ordersTable)
+      .set({
+        trackingCode: normalized,
+        updatedAt: new Date(),
+      })
+      .where(buildAdminOrderWhere(id, adminScope));
+
+    const updated = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+
+    broadcastNotification({ type: "order_tracking_updated", data: { id, trackingCode: normalized } });
+    res.json({ ok: true, order: updated[0] ? mapOrder(updated[0]) : null });
+  } catch (err) {
+    console.error("Update order tracking code error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar código de rastreio." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/orders/tracking-label/parse  (protected)
+// ---------------------------------------------------------------------------
+router.post("/admin/orders/tracking-label/parse", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    const { orderId, imageData } = req.body as { orderId?: string | null; imageData?: string };
+    const normalizedOrderId = String(orderId || "").trim();
+
+    if (!normalizedOrderId) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "ID do pedido é obrigatório." });
+      return;
+    }
+    if (!imageData?.startsWith("data:image/")) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Envie uma imagem válida em JPG, PNG, WebP ou GIF." });
+      return;
+    }
+    if (!isR2Configured()) {
+      res.status(503).json({
+        error: "R2_NOT_CONFIGURED",
+        message: "Cloudflare R2 não está configurado no servidor.",
+        missing: getR2MissingConfig(),
+      });
+      return;
+    }
+
+    const existing = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(normalizedOrderId, adminScope))
+      .limit(1);
+
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const labelUrl = await uploadOrderTrackingLabelToR2({ dataUrl: imageData, orderId: normalizedOrderId });
+    const ocrText = await runOcrOnImageDataUrl(imageData);
+    const parsed = parseTrackingText(ocrText);
+
+    await db
+      .update(ordersTable)
+      .set({
+        trackingLabelUrl: labelUrl,
+        trackingLabelText: parsed.rawText || null,
+        trackingDetectedName: parsed.detectedName,
+        trackingDetectedAddress: parsed.detectedAddress,
+        updatedAt: new Date(),
+      })
+      .where(buildAdminOrderWhere(normalizedOrderId, adminScope));
+
+    const updated = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(normalizedOrderId, adminScope))
+      .limit(1);
+
+    res.status(201).json({
+      ok: true,
+      order: updated[0] ? mapOrder(updated[0]) : null,
+      imageUrl: labelUrl,
+      parsed: {
+        suggestedTrackingCode: parsed.trackingCode,
+        detectedName: parsed.detectedName,
+        detectedAddress: parsed.detectedAddress,
+        detectedCep: parsed.detectedCep,
+        ocrEnabled: !!String(process.env.OCR_SPACE_API_KEY || "").trim(),
+      },
+      message: parsed.trackingCode
+        ? "Etiqueta processada. Código identificado, aguardando confirmação do admin."
+        : "Etiqueta enviada. Não foi possível identificar automaticamente o código de rastreio.",
+    });
+  } catch (err) {
+    console.error("Parse tracking label error:", err);
+    const code = err instanceof Error ? err.message : "INTERNAL_ERROR";
+    if (code === "INVALID_IMAGE_DATA_URL" || code === "UNSUPPORTED_IMAGE_TYPE" || code === "EMPTY_IMAGE") {
+      res.status(400).json({ error: code, message: "Imagem inválida para upload." });
+      return;
+    }
+    if (code === "CLOUDFLARE_R2_NOT_CONFIGURED") {
+      res.status(503).json({
+        error: code,
+        message: "Cloudflare R2 não está configurado no servidor.",
+        missing: getR2MissingConfig(),
+      });
+      return;
+    }
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao processar etiqueta de rastreio." });
   }
 });
 

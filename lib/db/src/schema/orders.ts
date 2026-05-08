@@ -50,6 +50,11 @@ export const ordersTable = mysqlTable("orders", {
   pixCode: mediumtext("pix_code"),
   pixBase64: mediumtext("pix_base64"),
   enviado: boolean("enviado").notNull().default(false),
+  trackingCode: varchar("tracking_code", { length: 255 }),
+  trackingLabelUrl: mediumtext("tracking_label_url"),
+  trackingLabelText: mediumtext("tracking_label_text"),
+  trackingDetectedName: varchar("tracking_detected_name", { length: 255 }),
+  trackingDetectedAddress: text("tracking_detected_address"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

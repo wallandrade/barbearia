@@ -70,6 +70,12 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "ip_region",   sql: "ALTER TABLE orders ADD COLUMN ip_region VARCHAR(100) NULL" },
     { name: "ip_isp",      sql: "ALTER TABLE orders ADD COLUMN ip_isp VARCHAR(255) NULL" },
     { name: "ip_is_proxy", sql: "ALTER TABLE orders ADD COLUMN ip_is_proxy TINYINT(1) NULL" },
+    // Campos de rastreio por etiqueta
+    { name: "tracking_code", sql: "ALTER TABLE orders ADD COLUMN tracking_code VARCHAR(255) NULL" },
+    { name: "tracking_label_url", sql: "ALTER TABLE orders ADD COLUMN tracking_label_url MEDIUMTEXT NULL" },
+    { name: "tracking_label_text", sql: "ALTER TABLE orders ADD COLUMN tracking_label_text MEDIUMTEXT NULL" },
+    { name: "tracking_detected_name", sql: "ALTER TABLE orders ADD COLUMN tracking_detected_name VARCHAR(255) NULL" },
+    { name: "tracking_detected_address", sql: "ALTER TABLE orders ADD COLUMN tracking_detected_address TEXT NULL" },
   ];
 
   for (const definition of definitions) {

@@ -127,7 +127,15 @@ export interface AdminOrder {
   paymentMethod?: string;
   cardInstallments?: number | null;
   proofUrl?: string | null;
+  proofUrls?: string[];
   transactionId?: string | null;
+  observation?: string | null;
+  enviado?: boolean;
+  trackingCode?: string | null;
+  trackingLabelUrl?: string | null;
+  trackingLabelText?: string | null;
+  trackingDetectedName?: string | null;
+  trackingDetectedAddress?: string | null;
   createdAt: string;
 }
 

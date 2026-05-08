@@ -3078,6 +3078,9 @@ export default function Admin() {
             onSetOrderEnviado={(id, enviado) => {
               setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, enviado } : o)));
             }}
+            onSetOrderPatched={(order) => {
+              setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
+            }}
             onSetReshipmentStatus={async (reshipmentId, status) => {
               if (!reshipmentId) return;
               setReshipmentUpdatingId(reshipmentId);
@@ -5922,7 +5925,7 @@ function OrdersPanel({
   orders, statusUpdating, expandedOrder, setExpandedOrder,
   updateOrderStatus, setProofModal, setProofViewer, openWhatsApp,
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
-  onSetOrderEnviado, onSetReshipmentStatus, onRemoveOrder,
+  onSetOrderEnviado, onSetOrderPatched, onSetReshipmentStatus, onRemoveOrder,
 }: {
   productImageById: Record<string, string>;
   productCostById: Record<string, number>;
@@ -5944,6 +5947,7 @@ function OrdersPanel({
   onEditOrder: (order: AdminOrder) => void;
   onOpenKycModal: (orderId: string) => void;
   onSetOrderEnviado: (id: string, enviado: boolean) => void;
+  onSetOrderPatched: (order: AdminOrder) => void;
   onSetReshipmentStatus: (reshipmentId: string, status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado") => void;
   onRemoveOrder: (id: string) => void;
 }) {
@@ -5973,12 +5977,37 @@ function OrdersPanel({
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
+  const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
+  const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [trackingReview, setTrackingReview] = useState<null | {
+    order: AdminOrder;
+    imageUrl: string;
+    suggestedTrackingCode: string;
+    detectedName: string;
+    detectedAddress: string;
+    detectedCep: string;
+    ocrEnabled: boolean;
+  }>(null);
+  const [trackingDraftCode, setTrackingDraftCode] = useState("");
+  const [trackingSaving, setTrackingSaving] = useState(false);
 
   const reshipmentStatusLabel = (status?: string) => {
     if (status === "reenvio_aguardando_estoque") return "Reenvio · Aguardando estoque";
     if (status === "reenvio_pronto_para_envio") return "Reenvio · Pronto para envio";
     if (status === "reenvio_enviado") return "Reenvio · Enviado";
     return "Reenvio";
+  };
+
+  const orderAddressText = (order: AdminOrder) => {
+    const cityState = [order.addressCity || "", order.addressState || ""].filter(Boolean).join("/");
+    return [
+      order.addressStreet,
+      order.addressNumber,
+      order.addressComplement,
+      order.addressNeighborhood,
+      cityState,
+      order.addressCep ? `CEP ${order.addressCep}` : "",
+    ].filter(Boolean).join(", ") || "Endereço não informado";
   };
 
   // Inicializa enviados com base nos pedidos carregados
@@ -6063,6 +6092,136 @@ function OrdersPanel({
       toast.error(message);
     } finally {
       setEnviando(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const fileToDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      if (!result.startsWith("data:image/")) {
+        reject(new Error("Formato de imagem inválido."));
+        return;
+      }
+      resolve(result);
+    };
+    reader.onerror = () => reject(new Error("Falha ao ler imagem."));
+    reader.readAsDataURL(file);
+  });
+
+  const compressImageDataUrl = (source: string): Promise<string> => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1800;
+      const scale = Math.min(1, max / Math.max(img.width || 1, img.height || 1));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((img.width || 1) * scale));
+      canvas.height = Math.max(1, Math.round((img.height || 1) * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(source);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => resolve(source);
+    img.src = source;
+  });
+
+  const uploadTrackingLabel = async (orderId: string, file: File) => {
+    if (!orderId) return;
+    setTrackingUploading((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      const rawDataUrl = await fileToDataUrl(file);
+      const imageData = await compressImageDataUrl(rawDataUrl);
+      const res = await fetch(`${BASE}/api/admin/orders/tracking-label/parse`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ orderId, imageData }),
+      });
+
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        order?: AdminOrder;
+        imageUrl?: string;
+        parsed?: {
+          suggestedTrackingCode?: string | null;
+          detectedName?: string | null;
+          detectedAddress?: string | null;
+          detectedCep?: string | null;
+          ocrEnabled?: boolean;
+        };
+      };
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao processar etiqueta de rastreio.");
+      }
+
+      if (data.order) {
+        onSetOrderPatched(data.order);
+      }
+
+      const orderForReview = data.order || orders.find((item) => item.id === orderId);
+      if (!orderForReview) {
+        toast.error("Pedido não encontrado para revisão do rastreio.");
+        return;
+      }
+
+      const suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
+      setTrackingDraftCode(suggestedTracking || String((orderForReview as any)?.trackingCode || "").trim());
+      setTrackingReview({
+        order: orderForReview,
+        imageUrl: String(data?.imageUrl || (orderForReview as any)?.trackingLabelUrl || "").trim(),
+        suggestedTrackingCode: suggestedTracking,
+        detectedName: String(data?.parsed?.detectedName || (orderForReview as any)?.trackingDetectedName || "").trim(),
+        detectedAddress: String(data?.parsed?.detectedAddress || (orderForReview as any)?.trackingDetectedAddress || "").trim(),
+        detectedCep: String(data?.parsed?.detectedCep || "").trim(),
+        ocrEnabled: !!data?.parsed?.ocrEnabled,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao processar etiqueta de rastreio.";
+      toast.error(message);
+    } finally {
+      setTrackingUploading((prev) => ({ ...prev, [orderId]: false }));
+      const input = trackingInputRefs.current[orderId];
+      if (input) input.value = "";
+    }
+  };
+
+  const confirmTrackingSave = async () => {
+    if (!trackingReview) return;
+    const normalized = trackingDraftCode.toUpperCase().replace(/\s+/g, "").trim();
+    if (!normalized) {
+      toast.error("Informe o código de rastreio antes de confirmar.");
+      return;
+    }
+
+    const currentTracking = String((trackingReview.order as any)?.trackingCode || "").toUpperCase().replace(/\s+/g, "").trim();
+    const overwrite = !!currentTracking && currentTracking !== normalized;
+
+    setTrackingSaving(true);
+    try {
+      const saveRes = await fetch(`${BASE}/api/admin/orders/${trackingReview.order.id}/tracking-code`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ trackingCode: normalized, overwrite }),
+      });
+      const saveData = await saveRes.json().catch(() => ({})) as { message?: string; order?: AdminOrder };
+      if (!saveRes.ok) {
+        throw new Error(saveData?.message || "Erro ao salvar código de rastreio.");
+      }
+      if (saveData.order) {
+        onSetOrderPatched(saveData.order);
+      }
+      setTrackingReview(null);
+      setTrackingDraftCode("");
+      toast.success(`Rastreio salvo: ${normalized}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao salvar código de rastreio.";
+      toast.error(message);
+    } finally {
+      setTrackingSaving(false);
     }
   };
 
@@ -6177,6 +6336,20 @@ function OrdersPanel({
                   {order.addressCity && (
                     <p className="text-xs text-muted-foreground mt-0.5">{order.addressCity}{order.addressState && `/${order.addressState}`}</p>
                   )}
+                  {((order as any).trackingCode || (order as any).trackingDetectedName || (order as any).trackingDetectedAddress) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {(order as any).trackingCode && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-semibold border border-indigo-200">
+                          Rastreio: {(order as any).trackingCode}
+                        </span>
+                      )}
+                      {(order as any).trackingDetectedName && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-xs font-semibold border border-cyan-200">
+                          Detectado: {(order as any).trackingDetectedName}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {previewProducts.length > 0 && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       {previewProducts.map((product, index) => {
@@ -6252,6 +6425,27 @@ function OrdersPanel({
                     onClick={() => setProofModal(order.id)}>
                     <Upload className="w-3.5 h-3.5" />
                     {(order.proofUrls && order.proofUrls.length > 0) || order.proofUrl ? "Adicionar Comprovante" : "Upload Comprovante"}
+                  </Button>
+                  <input
+                    ref={(el) => { trackingInputRefs.current[order.id] = el; }}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      uploadTrackingLabel(order.id, file);
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                    disabled={!!trackingUploading[order.id]}
+                    onClick={() => trackingInputRefs.current[order.id]?.click()}
+                  >
+                    {trackingUploading[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {trackingUploading[order.id] ? "Lendo Etiqueta..." : "Etiqueta/Rastreio"}
                   </Button>
                   {(order.proofUrls && order.proofUrls.length > 0) && (
                     <div className="flex items-center gap-1 flex-wrap">
@@ -6453,6 +6647,109 @@ function OrdersPanel({
               <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground truncate max-w-[86vw]">
                 {imagePreview.name}
               </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {trackingReview && (
+          <motion.div
+            className="fixed inset-0 z-[130] bg-black/65 backdrop-blur-[1px] p-4 sm:p-6 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (trackingSaving) return;
+              setTrackingReview(null);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 8 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              onClick={(event) => event.stopPropagation()}
+              className="w-full max-w-6xl max-h-[92vh] overflow-auto rounded-2xl border border-border bg-white shadow-2xl"
+            >
+              <div className="p-4 sm:p-6 border-b border-border/70 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Revisar Etiqueta</p>
+                  <h3 className="text-lg sm:text-xl font-bold">Pedido #{trackingReview.order.id}</h3>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={trackingSaving}
+                    onClick={() => {
+                      setTrackingReview(null);
+                      setTrackingDraftCode("");
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="button" className="gap-2" disabled={trackingSaving} onClick={confirmTrackingSave}>
+                    {trackingSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                    Confirmar Rastreio
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-4">
+                  <div className="rounded-xl border border-border bg-slate-50/40 p-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Etiqueta carregada</p>
+                    {trackingReview.imageUrl ? (
+                      <img
+                        src={trackingReview.imageUrl}
+                        alt={`Etiqueta do pedido ${trackingReview.order.id}`}
+                        className="w-full max-h-[60vh] object-contain rounded-lg border border-border bg-white"
+                      />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Imagem da etiqueta não disponível.</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+                      <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">OCR detectado</p>
+                      <div className="space-y-1 text-sm">
+                        <p><span className="font-semibold">Rastreio sugerido:</span> {trackingReview.suggestedTrackingCode || "-"}</p>
+                        <p><span className="font-semibold">Nome detectado:</span> {trackingReview.detectedName || "-"}</p>
+                        <p><span className="font-semibold">Endereço detectado:</span> {trackingReview.detectedAddress || "-"}</p>
+                        <p><span className="font-semibold">CEP detectado:</span> {trackingReview.detectedCep || "-"}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                      <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">Dados do pedido</p>
+                      <div className="space-y-1 text-sm">
+                        <p><span className="font-semibold">Cliente:</span> {trackingReview.order.clientName}</p>
+                        <p><span className="font-semibold">Telefone:</span> {trackingReview.order.clientPhone}</p>
+                        <p><span className="font-semibold">Endereço:</span> {orderAddressText(trackingReview.order)}</p>
+                        <p><span className="font-semibold">Rastreio atual:</span> {String((trackingReview.order as any)?.trackingCode || "").trim() || "-"}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border p-3">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
+                        Código de rastreio para salvar
+                      </label>
+                      <input
+                        value={trackingDraftCode}
+                        onChange={(event) => setTrackingDraftCode(event.target.value.toUpperCase())}
+                        placeholder="Ex.: AA123456789BR"
+                        className="w-full h-10 px-3 rounded-lg border border-border bg-white focus:border-primary outline-none font-mono text-sm"
+                      />
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Confira os dados ao lado. O sistema só salva no pedido quando você clicar em Confirmar.
+                        {!trackingReview.ocrEnabled && " OCR automático está desativado no servidor."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}
