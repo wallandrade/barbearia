@@ -6367,6 +6367,7 @@ function OrdersPanel({
   };
 
   const startTrackingBatch = async (files: File[]) => {
+    console.log(`[Batch] Starting batch with ${files.length} files`);
     const supportedMime = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
     const hasSupportedExtension = (name: string) => /\.(jpe?g|png|webp|gif)$/i.test(String(name || ""));
     const imageFiles = files.filter((file) => file.type.startsWith("image/") || hasSupportedExtension(file.name));
@@ -6374,11 +6375,13 @@ function OrdersPanel({
     const skipped = files.length - validFiles.length;
 
     if (validFiles.length === 0) {
+      console.log(`[Batch] No valid image files selected`);
       toast.info("Selecione imagens JPG, PNG, WebP ou GIF.");
       return;
     }
 
     if (skipped > 0) {
+      console.log(`[Batch] Skipped ${skipped} unsupported files`);
       toast.warning(`${skipped} arquivo(s) ignorado(s). Formatos aceitos: JPG, PNG, WebP, GIF.`);
     }
 
@@ -6387,21 +6390,26 @@ function OrdersPanel({
       trackingBatchWatchdogRef.current = null;
     }
     trackingBatchWatchdogRef.current = window.setTimeout(() => {
+      console.error(`[Batch] Watchdog timeout - batch exceeded 120 seconds`);
       setTrackingBatchProcessing(false);
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
       toast.error("Lote interrompido por tempo limite global. Tente com menos imagens por vez.");
     }, 120000);
 
+    console.log(`[Batch] Setting state and starting processing`);
     setTrackingBatchFiles(validFiles);
     setTrackingBatchIndex(0);
     setTrackingBatchProcessing(true);
+    console.log(`[Batch] Calling processTrackingBatchFile for first file`);
     await processTrackingBatchFile(0, validFiles);
   };
 
   const processTrackingBatchFile = async (index: number, files: File[]) => {
+    console.log(`[Batch] Processing file ${index + 1}/${files.length}`);
     const file = files[index];
     if (!file) {
+      console.log(`[Batch] No file at index ${index}, finishing batch`);
       setTrackingBatchProcessing(false);
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
@@ -6422,6 +6430,7 @@ function OrdersPanel({
       })
       .slice(0, 180);
     if (availableCandidates.length === 0) {
+      console.log(`[Batch] No available candidates for matching`);
       toast.error("Nenhum pedido disponível para envio neste lote.");
       setTrackingBatchProcessing(false);
       setTrackingBatchFiles([]);
@@ -6429,10 +6438,12 @@ function OrdersPanel({
       return;
     }
 
-    setTrackingBatchProcessing(true);
     try {
+      console.log(`[Batch] Starting image processing for file ${index + 1}`);
       const rawDataUrl = await withTimeout(fileToDataUrl(file), 20000, "Leitura da imagem demorou demais.");
+      console.log(`[Batch] File converted to data URL, compressing...`);
       const imageData = await withTimeout(compressImageDataUrl(rawDataUrl), 12000, "Compressão da imagem demorou demais.");
+      console.log(`[Batch] Image compressed, sending to server...`);
       const controller = new AbortController();
       const abortId = window.setTimeout(() => controller.abort(), 30000);
       const res = await withTimeout(fetch(`${BASE}/api/admin/orders/tracking-label/match`, {
@@ -6444,6 +6455,7 @@ function OrdersPanel({
         }),
       }), 35000, "Consulta de match demorou demais.");
       window.clearTimeout(abortId);
+      console.log(`[Batch] Response received, status=${res.status}`);
 
       const data = await res.json().catch(() => ({})) as {
         message?: string;
@@ -6462,6 +6474,7 @@ function OrdersPanel({
           reason?: string | null;
         };
       };
+      console.log(`[Batch] Response parsed, order=${data.order?.id || data?.match?.matchedOrderId || "none"}`);
 
       if (!res.ok) {
         throw new Error(data?.message || "Erro ao processar etiqueta de rastreio.");
@@ -6473,10 +6486,11 @@ function OrdersPanel({
 
       const matchedOrderId = (data as any)?.matchedOrderId || data?.order?.id;
       const orderForReview = data.order || availableCandidates.find((candidate) => candidate.id === matchedOrderId) || null;
+      console.log(`[Batch] Match result: orderForReview=${orderForReview?.id || "null"}, matchedOrderId=${matchedOrderId || "none"}`);
 
       if (!orderForReview) {
-        const reason = data?.match?.reason || "Não foi possível identificar o cliente na etiqueta.";
-        toast.warning(`Imagem ${index + 1}: ${reason} Escolha manualmente ou pule.`);
+        console.log(`[Batch] No order found, showing manual selection modal`);
+        toast.warning(`Imagem ${index + 1}: Não foi possível identificar o cliente na etiqueta. Escolha manualmente ou pule.`);
         const img = await withTimeout(createImageFromDataUrl(imageData), 8000, "Pré-visualização da etiqueta demorou demais.");
         let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
         if (!suggestedTracking && img) {
@@ -6498,9 +6512,11 @@ function OrdersPanel({
         });
         setTrackingBatchIndex(index);
         setTrackingBatchProcessing(false);
+        console.log(`[Batch] Manual selection modal set, waiting for user input`);
         return;
       }
 
+      console.log(`[Batch] Order matched, setting modal for review: ${orderForReview.id}`);
       let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
       if (!suggestedTracking) {
         const detectedByBarcode = await withTimeout(detectTrackingByBarcode(imageData), 15000, "Leitura de código de barras demorou demais.");
@@ -6521,17 +6537,22 @@ function OrdersPanel({
         ocrEnabled: !!data?.parsed?.ocrEnabled,
       });
       setTrackingBatchIndex(index);
+      console.log(`[Batch] Modal set, waiting for user confirmation`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao processar etiqueta de rastreio.";
+      console.error(`[Batch] Error processing file ${index + 1}:`, message);
       toast.error(`Imagem ${index + 1}: ${message}`);
       await advanceTrackingBatch(index + 1, files);
     } finally {
+      console.log(`[Batch] Finally block executing for file ${index + 1}`);
       setTrackingBatchProcessing(false);
     }
   };
 
   const advanceTrackingBatch = async (nextIndex: number, files: File[] = trackingBatchFiles) => {
+    console.log(`[Batch] Advancing to next file: index ${nextIndex}/${files.length}`);
     if (nextIndex >= files.length) {
+      console.log(`[Batch] All files processed, cleaning up`);
       setTrackingBatchFiles([]);
       setTrackingBatchIndex(0);
       setTrackingBatchProcessing(false);
@@ -6616,6 +6637,7 @@ function OrdersPanel({
 
   const confirmTrackingSave = async () => {
     if (!trackingReview) return;
+    console.log(`[Tracking] Confirming save for order: ${trackingReview.order.id}`);
     const normalized = trackingDraftCode.toUpperCase().replace(/\s+/g, "").trim();
     if (!normalized) {
       toast.error("Informe o código de rastreio antes de confirmar.");
@@ -6645,6 +6667,7 @@ function OrdersPanel({
       setTrackingDraftCode("");
       setTrackingSelectedOrderId(null);
       toast.success(`Rastreio salvo: ${normalized}`);
+      console.log(`[Batch] Tracking saved, advancing batch. Batch files length: ${trackingBatchFiles.length}`);
       if (trackingBatchFiles.length > 0) {
         await advanceTrackingBatch(trackingBatchIndex + 1, trackingBatchFiles);
       } else if (trackingBatchWatchdogRef.current != null) {
