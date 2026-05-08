@@ -6129,6 +6129,40 @@ function OrdersPanel({
     img.src = source;
   });
 
+  const detectTrackingByBarcode = async (imageData: string): Promise<string> => {
+    try {
+      const BarcodeDetectorCtor = (window as any)?.BarcodeDetector;
+      if (!BarcodeDetectorCtor) return "";
+
+      const detector = new BarcodeDetectorCtor({
+        formats: ["code_128", "code_39", "itf", "ean_13", "qr_code", "data_matrix"],
+      });
+
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const temp = new Image();
+        temp.onload = () => resolve(temp);
+        temp.onerror = () => reject(new Error("barcode_image_load_error"));
+        temp.src = imageData;
+      });
+
+      const detections = await detector.detect(img);
+      const values = detections
+        .map((item: any) => String(item?.rawValue || "").toUpperCase().replace(/\s+/g, "").trim())
+        .filter(Boolean);
+
+      if (values.length === 0) return "";
+
+      const best = values.find((value) => /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(value))
+        || values.find((value) => /^BR[0-9A-Z]{8,24}$/.test(value))
+        || values.find((value) => /^[A-Z0-9-]{8,30}$/.test(value) && /\d/.test(value))
+        || "";
+
+      return best;
+    } catch {
+      return "";
+    }
+  };
+
   const uploadTrackingLabel = async (orderId: string, file: File) => {
     if (!orderId) return;
     setTrackingUploading((prev) => ({ ...prev, [orderId]: true }));
@@ -6168,7 +6202,14 @@ function OrdersPanel({
         return;
       }
 
-      const suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
+      let suggestedTracking = String(data?.parsed?.suggestedTrackingCode || "").trim();
+      if (!suggestedTracking) {
+        const detectedByBarcode = await detectTrackingByBarcode(imageData);
+        if (detectedByBarcode) {
+          suggestedTracking = detectedByBarcode;
+          toast.success(`Rastreio detectado por código de barras: ${detectedByBarcode}`);
+        }
+      }
       setTrackingDraftCode(suggestedTracking || String((orderForReview as any)?.trackingCode || "").trim());
       setTrackingReview({
         order: orderForReview,
@@ -6744,7 +6785,7 @@ function OrdersPanel({
                       />
                       <p className="mt-2 text-xs text-muted-foreground">
                         Confira os dados ao lado. O sistema só salva no pedido quando você clicar em Confirmar.
-                        {!trackingReview.ocrEnabled && " OCR automático está desativado no servidor."}
+                        {!trackingReview.ocrEnabled && " OCR automático está desativado no servidor (tentamos leitura local por código de barras quando possível)."}
                       </p>
                     </div>
                   </div>
