@@ -6387,7 +6387,15 @@ function OrdersPanel({
       return;
     }
 
-    const availableCandidates = trackingCandidates.filter((order) => !order.enviado && order.status !== "cancelled");
+    const availableCandidates = trackingCandidates
+      .filter((order) => !order.enviado && order.status !== "cancelled")
+      .filter((order) => order.status === "paid" || order.status === "completed")
+      .sort((a, b) => {
+        const ta = new Date(a.createdAt || 0).getTime() || 0;
+        const tb = new Date(b.createdAt || 0).getTime() || 0;
+        return tb - ta;
+      })
+      .slice(0, 180);
     if (availableCandidates.length === 0) {
       toast.error("Nenhum pedido disponível para envio neste lote.");
       setTrackingBatchProcessing(false);
@@ -6411,13 +6419,9 @@ function OrdersPanel({
           candidateOrders: availableCandidates.map((order) => ({
             id: order.id,
             clientName: order.clientName,
-            clientPhone: order.clientPhone,
-            clientDocument: order.clientDocument,
             addressCep: order.addressCep,
             addressStreet: order.addressStreet,
             addressNumber: order.addressNumber,
-            addressComplement: order.addressComplement,
-            addressNeighborhood: order.addressNeighborhood,
             addressCity: order.addressCity,
             addressState: order.addressState,
             status: order.status,
