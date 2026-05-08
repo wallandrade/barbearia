@@ -6150,10 +6150,22 @@ function OrdersPanel({
       const normalizedLabel = normalizeStockName(item.label);
       const fallbackCatalogName = item.productId ? normalizeStockName(String(productNameById[item.productId] || "")) : "";
 
-      // Try ID first, then catalog name, then line-item name.
-      const availableQty = item.productId
-        ? (stockById.get(item.productId) ?? stockByName.get(fallbackCatalogName) ?? stockByName.get(normalizedLabel) ?? 0)
-        : (stockByName.get(normalizedLabel) ?? 0);
+      // Consider every possible match source and keep the highest stock found.
+      // This avoids false negatives when an old product ID has zero but the same product name has stock.
+      const candidates: number[] = [];
+      if (item.productId) {
+        const byId = stockById.get(item.productId);
+        if (typeof byId === "number" && Number.isFinite(byId)) candidates.push(byId);
+      }
+      if (fallbackCatalogName) {
+        const byCatalogName = stockByName.get(fallbackCatalogName);
+        if (typeof byCatalogName === "number" && Number.isFinite(byCatalogName)) candidates.push(byCatalogName);
+      }
+      if (normalizedLabel) {
+        const byLineName = stockByName.get(normalizedLabel);
+        if (typeof byLineName === "number" && Number.isFinite(byLineName)) candidates.push(byLineName);
+      }
+      const availableQty = candidates.length > 0 ? Math.max(...candidates) : 0;
 
       if (availableQty < item.qty) {
         missingItems.push(
