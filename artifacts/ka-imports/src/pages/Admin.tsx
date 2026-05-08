@@ -6441,17 +6441,6 @@ function OrdersPanel({
         signal: controller.signal,
         body: JSON.stringify({
           imageData,
-          candidateOrders: availableCandidates.map((order) => ({
-            id: order.id,
-            clientName: order.clientName,
-            addressCep: order.addressCep,
-            addressStreet: order.addressStreet,
-            addressNumber: order.addressNumber,
-            addressCity: order.addressCity,
-            addressState: order.addressState,
-            status: order.status,
-            enviado: order.enviado,
-          })),
         }),
       }), 35000, "Consulta de match demorou demais.");
       window.clearTimeout(abortId);

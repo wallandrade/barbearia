@@ -1855,17 +1855,61 @@ router.post("/admin/orders/tracking-label/match", requireAdminAuth, async (req, 
     const adminScope = ensureSellerScopeOnOrderQuery(req, res);
     if (!adminScope) return;
 
-    const { imageData, candidateOrders } = req.body as {
+    const { imageData } = req.body as {
       imageData?: string;
-      candidateOrders?: TrackingMatchCandidateInput[];
     };
 
-    const candidates = Array.isArray(candidateOrders)
-      ? candidateOrders
-          .filter((candidate) => candidate && typeof candidate.id === "string")
-          .filter((candidate) => candidate.enviado !== true)
-          .filter((candidate) => String(candidate.status || "").toLowerCase() !== "cancelled")
-      : [];
+    const openOrdersWhere = adminScope.hasGlobalAccess
+      ? and(
+          inArray(ordersTable.status, ["paid", "completed"]),
+          eq(ordersTable.enviado, false),
+        )
+      : and(
+          eq(ordersTable.sellerCode, adminScope.sellerCode!),
+          inArray(ordersTable.status, ["paid", "completed"]),
+          eq(ordersTable.enviado, false),
+        );
+
+    const dbCandidates = await db
+      .select({
+        id: ordersTable.id,
+        clientName: ordersTable.clientName,
+        clientPhone: ordersTable.clientPhone,
+        clientDocument: ordersTable.clientDocument,
+        addressCep: ordersTable.addressCep,
+        addressStreet: ordersTable.addressStreet,
+        addressNumber: ordersTable.addressNumber,
+        addressComplement: ordersTable.addressComplement,
+        addressNeighborhood: ordersTable.addressNeighborhood,
+        addressCity: ordersTable.addressCity,
+        addressState: ordersTable.addressState,
+        status: ordersTable.status,
+        enviado: ordersTable.enviado,
+      })
+      .from(ordersTable)
+      .where(openOrdersWhere)
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(500);
+
+    const candidates: TrackingMatchCandidateInput[] = dbCandidates
+      .map((row) => ({
+        id: row.id,
+        clientName: row.clientName,
+        clientPhone: row.clientPhone,
+        clientDocument: row.clientDocument,
+        addressCep: row.addressCep,
+        addressStreet: row.addressStreet,
+        addressNumber: row.addressNumber,
+        addressComplement: row.addressComplement,
+        addressNeighborhood: row.addressNeighborhood,
+        addressCity: row.addressCity,
+        addressState: row.addressState,
+        status: row.status,
+        enviado: !!row.enviado,
+      }))
+      .filter((candidate) => candidate && typeof candidate.id === "string")
+      .filter((candidate) => candidate.enviado !== true)
+      .filter((candidate) => String(candidate.status || "").toLowerCase() !== "cancelled");
 
     if (!imageData?.startsWith("data:image/")) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Envie uma imagem válida em JPG, PNG, WebP ou GIF." });
@@ -1874,7 +1918,7 @@ router.post("/admin/orders/tracking-label/match", requireAdminAuth, async (req, 
     if (candidates.length === 0) {
       res.status(400).json({
         error: "NO_CANDIDATES_AVAILABLE",
-        message: "Nenhum pedido disponível para envio. Todos os pedidos já foram enviados ou cancelados.",
+        message: "Nenhum pedido pago/concluído pendente de envio encontrado para o escopo deste admin.",
         matchedOrderId: null,
       });
       return;
