@@ -6117,16 +6117,21 @@ function OrdersPanel({
       .trim();
 
     // Build stock maps from inventory balances
-    const stockById = new Map(
-      inventoryBalances.map(
-        (row) => [String(row.productId || "").trim(), Number(row.quantity || 0)] as const
-      )
-    );
+    const stockById = new Map<string, number>();
+    for (const row of inventoryBalances) {
+      const key = String(row.productId || "").trim();
+      if (!key) continue;
+      const quantity = Number(row.quantity || 0);
+      const current = stockById.get(key);
+      stockById.set(key, typeof current === "number" ? Math.max(current, quantity) : quantity);
+    }
     const stockByName = new Map<string, number>();
     for (const row of inventoryBalances) {
       const normalized = normalizeStockName(String(row.productName || ""));
       if (!normalized) continue;
-      stockByName.set(normalized, Number(row.quantity || 0));
+      const quantity = Number(row.quantity || 0);
+      const current = stockByName.get(normalized);
+      stockByName.set(normalized, typeof current === "number" ? Math.max(current, quantity) : quantity);
     }
 
     // Group order items by product identity, preventing duplicate-line mismatch.
@@ -7396,8 +7401,11 @@ function OrdersPanel({
                         onChange={(event) => setTrackingSelectedOrderId(event.target.value || null)}
                         className="w-full h-10 px-3 rounded-lg border border-border bg-white focus:border-primary outline-none text-sm"
                       >
-                        {orders
-                          .concat(ordersLookup.filter((item) => !orders.some((o) => o.id === item.id)))
+                        {[
+                          trackingReview.order,
+                          ...(ordersLookup.filter((item) => item.id !== trackingReview.order.id)),
+                        ]
+                          .filter((order, index, list) => list.findIndex((item) => item.id === order.id) === index)
                           .filter((order) => !order.enviado && order.status !== "cancelled")
                           .sort((a, b) => (a.id === trackingReview.order.id ? -1 : b.id === trackingReview.order.id ? 1 : 0))
                           .map((order) => (
