@@ -6010,6 +6010,8 @@ function OrdersPanel({
   const [trackingBatchIndex, setTrackingBatchIndex] = useState(0);
   const [trackingBatchProcessing, setTrackingBatchProcessing] = useState(false);
   const [trackingSelectedOrderId, setTrackingSelectedOrderId] = useState<string | null>(null);
+  const [trackingInventoryBalances, setTrackingInventoryBalances] = useState<InventoryBalanceRecord[] | null>(null);
+  const [trackingInventoryLoading, setTrackingInventoryLoading] = useState(false);
   const trackingBatchInputRef = useRef<HTMLInputElement | null>(null);
   const trackingBatchWatchdogRef = useRef<number | null>(null);
 
@@ -6062,6 +6064,35 @@ function OrdersPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [imagePreview]);
 
+  useEffect(() => {
+    if (!trackingReview) {
+      setTrackingInventoryBalances(null);
+      setTrackingInventoryLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTrackingInventory = async () => {
+      setTrackingInventoryLoading(true);
+      try {
+        const res = await fetch(`${BASE}/api/admin/inventory/overview`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({})) as { balances?: InventoryBalanceRecord[] };
+        if (cancelled) return;
+        setTrackingInventoryBalances(Array.isArray(data?.balances) ? data.balances : []);
+      } catch {
+        if (!cancelled) setTrackingInventoryBalances([]);
+      } finally {
+        if (!cancelled) setTrackingInventoryLoading(false);
+      }
+    };
+
+    void loadTrackingInventory();
+    return () => {
+      cancelled = true;
+    };
+  }, [trackingReview]);
+
   // Funções SEM hooks
   const copyOrder = async (order: AdminOrder) => {
     try {
@@ -6092,7 +6123,7 @@ function OrdersPanel({
   };
 
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
-  const verifyOrderStock = (orderId: string): { hasStock: boolean; message: string; missingItems: string[] } => {
+  const verifyOrderStock = (orderId: string, balancesSnapshot: InventoryBalanceRecord[] = inventoryBalances): { hasStock: boolean; message: string; missingItems: string[] } => {
     // Only check stock when marking as enviado (novoValor = true)
     const order = ordersLookup.find(o => o.id === orderId);
     if (!order) {
@@ -6105,7 +6136,7 @@ function OrdersPanel({
     }
 
     // Avoid false negatives while inventory snapshot is still loading.
-    if (inventoryBalances.length === 0) {
+    if (balancesSnapshot.length === 0) {
       return { hasStock: true, message: "", missingItems: [] };
     }
 
@@ -6119,7 +6150,7 @@ function OrdersPanel({
 
     // Build stock maps from inventory balances
     const stockById = new Map<string, number>();
-    for (const row of inventoryBalances) {
+    for (const row of balancesSnapshot) {
       const key = String(row.productId || "").trim();
       if (!key) continue;
       const quantity = Number(row.quantity || 0);
@@ -6127,7 +6158,7 @@ function OrdersPanel({
       stockById.set(key, typeof current === "number" ? current + quantity : quantity);
     }
     const stockByName = new Map<string, number>();
-    for (const row of inventoryBalances) {
+    for (const row of balancesSnapshot) {
       const normalized = normalizeStockName(String(row.productName || ""));
       if (!normalized) continue;
       const quantity = Number(row.quantity || 0);
@@ -6205,7 +6236,7 @@ function OrdersPanel({
     const novoValor = !enviados[orderId];
     if (novoValor) {
       // Only check stock when marking as enviado (not when unmarking)
-      const stockCheck = verifyOrderStock(orderId);
+      const stockCheck = verifyOrderStock(orderId, trackingInventoryBalances ?? inventoryBalances);
       if (!stockCheck.hasStock) {
         toast.error(stockCheck.message);
         return;
@@ -6759,12 +6790,14 @@ function OrdersPanel({
   const trackingTargetOrder = trackingReview
     ? (ordersLookup.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
     : null;
-  const hasInventorySnapshot = inventoryBalances.length > 0;
+  const trackingInventoryReady = trackingInventoryBalances !== null;
+  const globalInventorySnapshotReady = inventoryBalances.length > 0;
+  const modalInventoryBalances = trackingInventoryBalances ?? [];
   const trackingReviewStock = trackingReview
-    ? (hasInventorySnapshot ? verifyOrderStock(trackingReview.order.id) : { hasStock: true, message: "", missingItems: [] as string[] })
+    ? (trackingInventoryReady ? verifyOrderStock(trackingReview.order.id, modalInventoryBalances) : { hasStock: true, message: "", missingItems: [] as string[] })
     : { hasStock: true, message: "", missingItems: [] as string[] };
   const trackingTargetStock = trackingTargetOrderId
-    ? verifyOrderStock(trackingTargetOrderId)
+    ? verifyOrderStock(trackingTargetOrderId, modalInventoryBalances)
     : { hasStock: true, message: "", missingItems: [] as string[] };
 
   if (orders.length === 0) return (
@@ -6814,7 +6847,7 @@ function OrdersPanel({
         .map((order) => {
           const isCard     = order.paymentMethod === "card_simulation";
           const isExpanded = expandedOrder === order.id;
-          const orderStockCheck = enviados[order.id] || !hasInventorySnapshot
+          const orderStockCheck = enviados[order.id] || !globalInventorySnapshotReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
             : verifyOrderStock(order.id);
           const orderProducts = getOrderProducts(order.products);
@@ -6858,18 +6891,18 @@ function OrdersPanel({
                         )}
                         {!enviados[order.id] && (
                           <span
-                            title={!hasInventorySnapshot
+                            title={!globalInventorySnapshotReady
                               ? "Carregando saldo de estoque"
                               : orderStockCheck.hasStock
                                 ? "Estoque suficiente para envio"
                                 : orderStockCheck.missingItems.join("\n")}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!hasInventorySnapshot
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!globalInventorySnapshotReady
                               ? "bg-slate-100 text-slate-700 border-slate-200"
                               : orderStockCheck.hasStock
                               ? "bg-green-100 text-green-800 border-green-200"
                               : "bg-red-100 text-red-800 border-red-200"}`}
                           >
-                            {!hasInventorySnapshot ? "Estoque carregando" : (orderStockCheck.hasStock ? "Estoque OK" : "Faltando estoque")}
+                            {!globalInventorySnapshotReady ? "Estoque carregando" : (orderStockCheck.hasStock ? "Estoque OK" : "Faltando estoque")}
                           </span>
                         )}
                         {isReshipment && (
@@ -7316,7 +7349,7 @@ function OrdersPanel({
                       Cancelar
                     </Button>
                   )}
-                  <Button type="button" className="gap-2" disabled={trackingSaving || (hasInventorySnapshot && !trackingTargetStock.hasStock)} onClick={confirmTrackingSave}>
+                  <Button type="button" className="gap-2" disabled={trackingSaving || (trackingInventoryReady && !trackingTargetStock.hasStock)} onClick={confirmTrackingSave}>
                     {trackingSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                     Confirmar Rastreio
                   </Button>
@@ -7359,11 +7392,11 @@ function OrdersPanel({
                       </div>
                     </div>
 
-                    <div className={`rounded-xl border p-3 ${!hasInventorySnapshot ? "border-amber-200 bg-amber-50/60" : trackingReviewStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
-                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${!hasInventorySnapshot ? "text-amber-700" : trackingReviewStock.hasStock ? "text-green-700" : "text-red-700"}`}>
+                    <div className={`rounded-xl border p-3 ${!trackingInventoryReady ? "border-amber-200 bg-amber-50/60" : trackingReviewStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${!trackingInventoryReady ? "text-amber-700" : trackingReviewStock.hasStock ? "text-green-700" : "text-red-700"}`}>
                         Estoque do pedido revisado
                       </p>
-                      {!hasInventorySnapshot ? (
+                      {!trackingInventoryReady ? (
                         <p className="text-sm text-amber-800 font-medium">Carregando saldo de estoque.</p>
                       ) : trackingReviewStock.hasStock ? (
                         <p className="text-sm text-green-800 font-medium">Estoque OK para o pedido da etiqueta carregada.</p>
@@ -7420,11 +7453,11 @@ function OrdersPanel({
                       </p>
                     </div>
 
-                    <div className={`rounded-xl border p-3 ${!hasInventorySnapshot ? "border-amber-200 bg-amber-50/60" : trackingTargetStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
-                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${!hasInventorySnapshot ? "text-amber-700" : trackingTargetStock.hasStock ? "text-green-700" : "text-red-700"}`}>
+                    <div className={`rounded-xl border p-3 ${!trackingInventoryReady ? "border-amber-200 bg-amber-50/60" : trackingTargetStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${!trackingInventoryReady ? "text-amber-700" : trackingTargetStock.hasStock ? "text-green-700" : "text-red-700"}`}>
                         Verificação de estoque para envio
                       </p>
-                      {!hasInventorySnapshot ? (
+                      {!trackingInventoryReady ? (
                         <p className="text-sm text-amber-800 font-medium">Carregando saldo de estoque. Tente novamente em alguns segundos.</p>
                       ) : trackingTargetStock.hasStock ? (
                         <p className="text-sm text-green-800 font-medium">Estoque OK para confirmar rastreio e marcar pedido como enviado.</p>
