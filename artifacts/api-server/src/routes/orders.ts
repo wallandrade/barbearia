@@ -207,43 +207,48 @@ function buildCandidateAddress(candidate: TrackingMatchCandidateInput): string {
   ].filter(Boolean).join(", ");
 }
 
-function rankTrackingCandidates(parsed: TrackingVisionResult, candidates: TrackingMatchCandidateInput[]): TrackingMatchCandidateInput[] {
+function scoreTrackingCandidateMatch(parsed: TrackingVisionResult, candidate: TrackingMatchCandidateInput): number {
+  let score = 0;
   const parsedName = normalizeForMatching(parsed.detectedName);
   const parsedAddress = normalizeForMatching(parsed.detectedAddress);
   const parsedCep = normalizeTrackingCode(parsed.detectedCep || "").replace(/\D/g, "");
 
+  const candidateName = normalizeForMatching(candidate.clientName);
+  const candidateAddress = normalizeForMatching(buildCandidateAddress(candidate));
+  const candidateCep = normalizeTrackingCode(candidate.addressCep || "").replace(/\D/g, "");
+
+  if (parsedCep && candidateCep) {
+    if (parsedCep === candidateCep) score += 200;
+    else if (parsedCep.slice(0, 5) === candidateCep.slice(0, 5)) score += 80;
+    else if (parsedCep.slice(0, 3) === candidateCep.slice(0, 3)) score += 30;
+  }
+
+  if (parsedName && candidateName) {
+    const parsedTokens = parsedName.split(" ").filter(Boolean);
+    if (parsedTokens.length > 0) {
+      const exactMatch = parsedTokens.some((token) => token.length >= 3 && candidateName.includes(token));
+      if (exactMatch) score += 120;
+
+      const partialTokens = parsedTokens.filter((token) => token.length >= 2 && candidateName.includes(token));
+      score += Math.min(60, partialTokens.length * 15);
+    }
+  }
+
+  if (parsedAddress && candidateAddress) {
+    const parsedTokens = parsedAddress.split(" ").filter(Boolean);
+    const hitCount = parsedTokens.filter((token) => token.length >= 3 && candidateAddress.includes(token)).length;
+    score += Math.min(45, hitCount * 9);
+  }
+
+  if (candidate.enviado) score -= 200;
+  if (String(candidate.status || "").toLowerCase() === "cancelled") score -= 300;
+
+  return score;
+}
+
+function rankTrackingCandidates(parsed: TrackingVisionResult, candidates: TrackingMatchCandidateInput[]): TrackingMatchCandidateInput[] {
   const scored = candidates.map((candidate) => {
-    let score = 0;
-    const candidateName = normalizeForMatching(candidate.clientName);
-    const candidateAddress = normalizeForMatching(buildCandidateAddress(candidate));
-    const candidateCep = normalizeTrackingCode(candidate.addressCep || "").replace(/\D/g, "");
-
-    if (parsedCep && candidateCep) {
-      if (parsedCep === candidateCep) score += 200;
-      else if (parsedCep.slice(0, 5) === candidateCep.slice(0, 5)) score += 80;
-      else if (parsedCep.slice(0, 3) === candidateCep.slice(0, 3)) score += 30;
-    }
-
-    if (parsedName && candidateName) {
-      const parsedTokens = parsedName.split(" ").filter(Boolean);
-      if (parsedTokens.length > 0) {
-        const exactMatch = parsedTokens.some((token) => token.length >= 3 && candidateName.includes(token));
-        if (exactMatch) score += 120;
-
-        const partialTokens = parsedTokens.filter((token) => token.length >= 2 && candidateName.includes(token));
-        score += Math.min(60, partialTokens.length * 15);
-      }
-    }
-
-    if (parsedAddress && candidateAddress) {
-      const parsedTokens = parsedAddress.split(" ").filter(Boolean);
-      const hitCount = parsedTokens.filter((token) => token.length >= 3 && candidateAddress.includes(token)).length;
-      score += Math.min(45, hitCount * 9);
-    }
-
-    if (candidate.enviado) score -= 200;
-    if (String(candidate.status || "").toLowerCase() === "cancelled") score -= 300;
-
+    const score = scoreTrackingCandidateMatch(parsed, candidate);
     return { candidate, score };
   });
 
@@ -644,7 +649,7 @@ async function fetchOpenTrackingCandidates(scope: { hasGlobalAccess: boolean; se
     .from(ordersTable)
     .where(buildOpenTrackingCandidatesWhere(scope))
     .orderBy(desc(ordersTable.createdAt))
-    .limit(500);
+    .limit(2000);
 
   return dbCandidates
     .map((row) => ({
@@ -665,6 +670,48 @@ async function fetchOpenTrackingCandidates(scope: { hasGlobalAccess: boolean; se
     .filter((candidate) => candidate && typeof candidate.id === "string")
     .filter((candidate) => candidate.enviado !== true)
     .filter((candidate) => String(candidate.status || "").toLowerCase() !== "cancelled");
+}
+
+function pickDeterministicTrackingMatch(
+  parsed: TrackingVisionResult,
+  candidates: TrackingMatchCandidateInput[],
+): { matchedOrderId: string | null; confidence: number | null; reason: string | null } | null {
+  if (!candidates.length) return null;
+
+  const ranked = rankTrackingCandidates(parsed, candidates).slice(0, 2);
+  const best = ranked[0];
+  if (!best) return null;
+
+  const bestScore = scoreTrackingCandidateMatch(parsed, best);
+  const secondBestScore = ranked[1] ? scoreTrackingCandidateMatch(parsed, ranked[1]) : null;
+
+  const parsedName = normalizeForMatching(parsed.detectedName);
+  const parsedAddress = normalizeForMatching(parsed.detectedAddress);
+  const parsedCep = normalizeTrackingCode(parsed.detectedCep || "").replace(/\D/g, "");
+  const bestName = normalizeForMatching(best.clientName);
+  const bestAddress = normalizeForMatching(buildCandidateAddress(best));
+  const bestCep = normalizeTrackingCode(best.addressCep || "").replace(/\D/g, "");
+
+  const exactCepMatch = parsedCep && bestCep && parsedCep === bestCep;
+  const strongNameMatch = parsedName && bestName && parsedName.split(" ").some((token) => token.length >= 3 && bestName.includes(token));
+  const strongAddressMatch = parsedAddress && bestAddress && parsedAddress.split(" ").some((token) => token.length >= 4 && bestAddress.includes(token));
+  const clearGap = secondBestScore == null || bestScore >= secondBestScore + 50;
+
+  if (bestScore >= 200 && clearGap) {
+    return {
+      matchedOrderId: best.id,
+      confidence: Math.min(0.99, bestScore / 250),
+      reason: exactCepMatch
+        ? "Match determinístico por CEP"
+        : strongNameMatch
+          ? "Match determinístico por nome do destinatário"
+          : strongAddressMatch
+            ? "Match determinístico por endereço"
+            : "Match determinístico por heurística",
+    };
+  }
+
+  return null;
 }
 
 function parseOrderItemsForInventory(raw: unknown): Array<{ productId: string | null; productName: string; quantity: number }> {
@@ -1953,7 +2000,8 @@ router.post("/admin/orders/tracking-label/match", requireAdminAuth, async (req, 
       }
     }
 
-    const aiMatch = await runOpenAIMatchTrackingOrderOnImageDataUrl({ imageData, parsed, candidates });
+    const deterministicMatch = pickDeterministicTrackingMatch(parsed, candidates);
+    const aiMatch = deterministicMatch || await runOpenAIMatchTrackingOrderOnImageDataUrl({ imageData, parsed, candidates });
     let matchedOrderId: string | null = aiMatch?.matchedOrderId || null;
     let matchedOrder: ReturnType<typeof mapOrder> | null = null;
 
@@ -2054,7 +2102,8 @@ router.post("/admin/orders/tracking-label/parse", requireAdminAuth, async (req, 
         }
       }
 
-      const aiMatch = await runOpenAIMatchTrackingOrderOnImageDataUrl({ imageData, parsed, candidates });
+      const deterministicMatch = pickDeterministicTrackingMatch(parsed, candidates);
+      const aiMatch = deterministicMatch || await runOpenAIMatchTrackingOrderOnImageDataUrl({ imageData, parsed, candidates });
       let matchedOrderId: string | null = aiMatch?.matchedOrderId || null;
       let matchedOrder: ReturnType<typeof mapOrder> | null = null;
 
