@@ -815,6 +815,7 @@ export default function Admin() {
     city: "",
     state: "",
   });
+  const [editDiscount, setEditDiscount] = useState(0);
   const [editProductSearch, setEditProductSearch] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editCatalog, setEditCatalog] = useState<AdminProduct[]>([]);
@@ -2004,6 +2005,7 @@ export default function Admin() {
   const openEditOrder = async (order: AdminOrder) => {
     setEditOrderModal(order);
     setEditItems(getOrderProducts(order.products).map((p) => ({ id: p.id, name: p.name, quantity: p.quantity, price: p.price })));
+    setEditDiscount(order.discountAmount || 0);
     setEditAddress({
       cep: String(order.addressCep || ""),
       street: String(order.addressStreet || ""),
@@ -2198,7 +2200,7 @@ export default function Admin() {
       const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
       const shippingCost = editOrderModal.shippingCost;
       const insuranceAmount = editOrderModal.includeInsurance ? Math.max(0, subtotal) * 0.1 : 0;
-      const discountAmount = editOrderModal.discountAmount || 0;
+      const discountAmount = editDiscount || 0;
       const total = Math.max(0, subtotal + shippingCost + insuranceAmount - discountAmount);
       const nextOrderSnapshot = {
         ...editOrderModal,
@@ -2211,6 +2213,7 @@ export default function Admin() {
         method: "PATCH", headers: authHeaders(),
         body: JSON.stringify({
           products: editItems,
+          discountAmount: discountAmount,
           address: {
             cep: editAddress.cep,
             street: editAddress.street,
@@ -5076,11 +5079,35 @@ export default function Admin() {
                     </div>
                   </div>
 
+                  {/* Coupon/Discount */}
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Cupom / Desconto</label>
+                    <input
+                      type="number"
+                      value={editDiscount}
+                      onChange={(e) => setEditDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                      placeholder="Valor do desconto"
+                      className="w-full h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  {/* Coupon/Discount */}
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Cupom / Desconto</label>
+                    <input
+                      type="number"
+                      value={editDiscount}
+                      onChange={(e) => setEditDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                      placeholder="Valor do desconto"
+                      className="w-full h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary"
+                    />
+                  </div>
+
                   {/* Totals preview */}
                   {editItems.length > 0 && (() => {
                     const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
                     const insuranceAmount = editOrderModal.includeInsurance ? Math.max(0, subtotal) * 0.1 : 0;
-                    const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editOrderModal.discountAmount || 0));
+                    const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editDiscount || 0));
                     const hasPaidAmount = (editOrderModal.paidAmount ?? 0) > 0;
                     const refValue = hasPaidAmount ? (editOrderModal.paidAmount ?? 0) : editOrderModal.total;
                     const diff = total - refValue;
