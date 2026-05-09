@@ -6790,9 +6790,11 @@ function OrdersPanel({
   const trackingTargetOrder = trackingReview
     ? (ordersLookup.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
     : null;
-  const trackingInventoryReady = trackingInventoryBalances !== null;
+  const modalInventoryBalances = (trackingInventoryBalances && trackingInventoryBalances.length > 0)
+    ? trackingInventoryBalances
+    : inventoryBalances;
+  const trackingInventoryReady = modalInventoryBalances.length > 0;
   const globalInventorySnapshotReady = inventoryBalances.length > 0;
-  const modalInventoryBalances = trackingInventoryBalances ?? [];
   const trackingReviewStock = trackingReview
     ? (trackingInventoryReady ? verifyOrderStock(trackingReview.order.id, modalInventoryBalances) : { hasStock: true, message: "", missingItems: [] as string[] })
     : { hasStock: true, message: "", missingItems: [] as string[] };
