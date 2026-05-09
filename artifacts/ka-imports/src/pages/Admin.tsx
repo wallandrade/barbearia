@@ -5091,18 +5091,6 @@ export default function Admin() {
                     />
                   </div>
 
-                  {/* Coupon/Discount */}
-                  <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Cupom / Desconto</label>
-                    <input
-                      type="number"
-                      value={editDiscount}
-                      onChange={(e) => setEditDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                      placeholder="Valor do desconto"
-                      className="w-full h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary"
-                    />
-                  </div>
-
                   {/* Totals preview */}
                   {editItems.length > 0 && (() => {
                     const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
