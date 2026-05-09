@@ -6148,6 +6148,31 @@ function OrdersPanel({
       .replace(/\s+/g, " ")
       .trim();
 
+    const compactStockName = (value: string) => normalizeStockName(value).replace(/\s+/g, "");
+
+    const stockNameMatches = (left: string, right: string) => {
+      const normalizedLeft = normalizeStockName(left);
+      const normalizedRight = normalizeStockName(right);
+      if (!normalizedLeft || !normalizedRight) return false;
+      if (normalizedLeft === normalizedRight) return true;
+
+      const compactLeft = compactStockName(left);
+      const compactRight = compactStockName(right);
+      if (compactLeft && compactRight && (compactLeft.includes(compactRight) || compactRight.includes(compactLeft))) return true;
+
+      const leftTokens = new Set(normalizedLeft.split(" ").filter(Boolean));
+      const rightTokens = new Set(normalizedRight.split(" ").filter(Boolean));
+      if (leftTokens.size === 0 || rightTokens.size === 0) return false;
+
+      let overlap = 0;
+      for (const token of leftTokens) {
+        if (rightTokens.has(token)) overlap += 1;
+      }
+
+      const smallestSetSize = Math.min(leftTokens.size, rightTokens.size);
+      return overlap >= 2 && overlap >= Math.ceil(smallestSetSize * 0.6);
+    };
+
     // Build stock maps from inventory balances
     const stockById = new Map<string, number>();
     for (const row of balancesSnapshot) {
@@ -6205,6 +6230,11 @@ function OrdersPanel({
       if (normalizedLabel) {
         const byLineName = stockByName.get(normalizedLabel);
         if (typeof byLineName === "number" && Number.isFinite(byLineName)) candidates.push(byLineName);
+      }
+      for (const [stockName, stockQty] of stockByName.entries()) {
+        if (stockNameMatches(normalizedLabel, stockName) || (fallbackCatalogName && stockNameMatches(fallbackCatalogName, stockName))) {
+          candidates.push(stockQty);
+        }
       }
       const availableQty = candidates.length > 0 ? Math.max(...candidates) : 0;
 
