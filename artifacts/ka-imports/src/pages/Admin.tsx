@@ -6113,6 +6113,7 @@ function OrdersPanel({
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
@@ -6123,7 +6124,7 @@ function OrdersPanel({
       if (!key) continue;
       const quantity = Number(row.quantity || 0);
       const current = stockById.get(key);
-      stockById.set(key, typeof current === "number" ? Math.max(current, quantity) : quantity);
+      stockById.set(key, typeof current === "number" ? current + quantity : quantity);
     }
     const stockByName = new Map<string, number>();
     for (const row of inventoryBalances) {
@@ -6131,7 +6132,7 @@ function OrdersPanel({
       if (!normalized) continue;
       const quantity = Number(row.quantity || 0);
       const current = stockByName.get(normalized);
-      stockByName.set(normalized, typeof current === "number" ? Math.max(current, quantity) : quantity);
+      stockByName.set(normalized, typeof current === "number" ? current + quantity : quantity);
     }
 
     // Group order items by product identity, preventing duplicate-line mismatch.
