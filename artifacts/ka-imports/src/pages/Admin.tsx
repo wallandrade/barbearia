@@ -6754,6 +6754,9 @@ function OrdersPanel({
     ? (ordersLookup.find((order) => order.id === trackingTargetOrderId) || trackingReview.order)
     : null;
   const hasInventorySnapshot = inventoryBalances.length > 0;
+  const trackingReviewStock = trackingReview
+    ? (hasInventorySnapshot ? verifyOrderStock(trackingReview.order.id) : { hasStock: true, message: "", missingItems: [] as string[] })
+    : { hasStock: true, message: "", missingItems: [] as string[] };
   const trackingTargetStock = trackingTargetOrderId
     ? verifyOrderStock(trackingTargetOrderId)
     : { hasStock: true, message: "", missingItems: [] as string[] };
@@ -7348,6 +7351,24 @@ function OrdersPanel({
                         <p><span className="font-semibold">Endereço:</span> {orderAddressText(trackingTargetOrder || trackingReview.order)}</p>
                         <p><span className="font-semibold">Rastreio atual:</span> {String((trackingTargetOrder as any)?.trackingCode || "").trim() || "-"}</p>
                       </div>
+                    </div>
+
+                    <div className={`rounded-xl border p-3 ${!hasInventorySnapshot ? "border-amber-200 bg-amber-50/60" : trackingReviewStock.hasStock ? "border-green-200 bg-green-50/60" : "border-red-200 bg-red-50/60"}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${!hasInventorySnapshot ? "text-amber-700" : trackingReviewStock.hasStock ? "text-green-700" : "text-red-700"}`}>
+                        Estoque do pedido revisado
+                      </p>
+                      {!hasInventorySnapshot ? (
+                        <p className="text-sm text-amber-800 font-medium">Carregando saldo de estoque.</p>
+                      ) : trackingReviewStock.hasStock ? (
+                        <p className="text-sm text-green-800 font-medium">Estoque OK para o pedido da etiqueta carregada.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="text-sm text-red-800 font-medium">Faltando estoque para o pedido da etiqueta carregada.</p>
+                          {trackingReviewStock.missingItems.map((item) => (
+                            <p key={item} className="text-xs text-red-700">• {item}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="rounded-xl border border-border p-3">
