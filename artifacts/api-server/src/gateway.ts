@@ -9,6 +9,7 @@ import crypto from "crypto";
 export const GATEWAY_PIX_URL = "https://painel.appcnpay.com/api/v1/gateway/pix/receive";
 export const DENTPEG_BASE_URL = "https://api.dentpeg.com/api/v1";
 export const PIX_DURATION_MS = 15 * 60 * 1000; // 15 min
+const DENTPEG_DEFAULT_MAX_AMOUNT_CENTS = 300000; // R$ 3.000,00
 
 export type PixGatewayProvider = "appcnpay" | "dentpeg";
 
@@ -106,6 +107,16 @@ async function createDentpegPixCharge(payload: {
     throw new Error("Valor inválido para cobrança PIX.");
   }
 
+  const configuredMax = Number(process.env["DENTPEG_MAX_AMOUNT_CENTS"] || DENTPEG_DEFAULT_MAX_AMOUNT_CENTS);
+  const maxAmountInCents = Number.isFinite(configuredMax) && configuredMax > 0
+    ? Math.floor(configuredMax)
+    : DENTPEG_DEFAULT_MAX_AMOUNT_CENTS;
+  if (amountInCents > maxAmountInCents) {
+    const maxFormatted = (maxAmountInCents / 100).toFixed(2).replace(".", ",");
+    const currentFormatted = (amountInCents / 100).toFixed(2).replace(".", ",");
+    throw new Error(`DentPeg aceita no máximo R$ ${maxFormatted} por PIX. Valor atual: R$ ${currentFormatted}.`);
+  }
+
   const url = `${DENTPEG_BASE_URL}/deposits`;
   const body = { amountInCents };
 
@@ -127,7 +138,14 @@ async function createDentpegPixCharge(payload: {
   }
 
   if (!res.ok || !data.deposit) {
-    throw new Error(data.message || data.error || `Erro ${res.status} da DentPeg.`);
+    const msg = String(data.message || data.error || `Erro ${res.status} da DentPeg.`);
+    if (msg.includes("amountInCents") && msg.includes("too_big")) {
+      const maxMatch = msg.match(/"maximum"\s*:\s*(\d+)/i);
+      const maxFromApi = maxMatch?.[1] ? Number(maxMatch[1]) : maxAmountInCents;
+      const maxFormatted = (maxFromApi / 100).toFixed(2).replace(".", ",");
+      throw new Error(`DentPeg rejeitou o valor: máximo permitido é R$ ${maxFormatted} por PIX.`);
+    }
+    throw new Error(msg);
   }
 
   if (!data.deposit.id) {
