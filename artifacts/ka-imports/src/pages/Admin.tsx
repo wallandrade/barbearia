@@ -9611,15 +9611,21 @@ function ProductsPanel({
 // ===========================================================================
 // ConfiguracoesPanel — logo, banner desktop, banner mobile
 // ===========================================================================
+type ImageResizeMode = "auto" | "contain" | "cover";
+
 function ImageUploadCard({
   title, description, settingKey, currentSrc, loading,
+  targetWidth, targetHeight, showResizeModeSelector = false,
   onSave, onDelete,
 }: {
   title: string; description: string; settingKey: string;
   currentSrc?: string; loading: boolean;
+  targetWidth?: number; targetHeight?: number; showResizeModeSelector?: boolean;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
 }) {
+  const [resizeMode, setResizeMode] = useState<ImageResizeMode>("cover");
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -9630,14 +9636,33 @@ function ImageUploadCard({
       if (!src) return;
       const img = new Image();
       img.onload = () => {
-        const MAX = settingKey === "logo" ? 400 : settingKey.includes("mobile") ? 800 : 1920;
-        const scale = img.width > MAX ? MAX / img.width : 1;
+        const fallbackMaxWidth = settingKey === "logo" ? 400 : settingKey.includes("mobile") ? 800 : 1920;
+        const effectiveMode = showResizeModeSelector ? resizeMode : (targetWidth && targetHeight ? "cover" : "auto");
         const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext("2d");
         if (!ctx) { onSave(settingKey, src); return; }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        if (targetWidth && targetHeight && effectiveMode !== "auto") {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          const scale = effectiveMode === "cover"
+            ? Math.max(targetWidth / img.width, targetHeight / img.height)
+            : Math.min(targetWidth / img.width, targetHeight / img.height);
+          const drawWidth = Math.round(img.width * scale);
+          const drawHeight = Math.round(img.height * scale);
+          const offsetX = Math.round((targetWidth - drawWidth) / 2);
+          const offsetY = Math.round((targetHeight - drawHeight) / 2);
+          ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        } else {
+          const scale = img.width > fallbackMaxWidth ? fallbackMaxWidth / img.width : 1;
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+
         const compressed = canvas.toDataURL("image/jpeg", 0.82);
         onSave(settingKey, compressed);
       };
@@ -9650,6 +9675,26 @@ function ImageUploadCard({
     <div className="bg-white border border-border/60 rounded-2xl p-6 shadow-sm">
       <h3 className="text-base font-bold mb-0.5">{title}</h3>
       <p className="text-muted-foreground text-sm mb-4">{description}</p>
+
+      {showResizeModeSelector && targetWidth && targetHeight && (
+        <div className="mb-4 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Dimensão da imagem</p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="text-sm text-foreground font-medium">
+              {targetWidth}×{targetHeight}px
+            </div>
+            <select
+              value={resizeMode}
+              onChange={(e) => setResizeMode(e.target.value as ImageResizeMode)}
+              className="h-10 w-full sm:w-auto px-3 rounded-xl border border-input bg-white text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary cursor-pointer"
+            >
+              <option value="cover">Preencher e cortar</option>
+              <option value="contain">Ajustar sem cortar</option>
+              <option value="auto">Ajuste automático</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Preview */}
       {currentSrc ? (
@@ -9740,6 +9785,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             settingKey="banner_desktop"
             currentSrc={settings["banner_desktop"]}
             loading={!!loading["banner_desktop"]}
+            targetWidth={1920}
+            targetHeight={480}
+            showResizeModeSelector
             onSave={onSave}
             onDelete={onDelete}
           />
@@ -9749,6 +9797,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             settingKey="banner_mobile"
             currentSrc={settings["banner_mobile"]}
             loading={!!loading["banner_mobile"]}
+            targetWidth={800}
+            targetHeight={400}
+            showResizeModeSelector
             onSave={onSave}
             onDelete={onDelete}
           />
@@ -9766,6 +9817,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               settingKey="catalog_banner_desktop"
               currentSrc={settings["catalog_banner_desktop"]}
               loading={!!loading["catalog_banner_desktop"]}
+              targetWidth={1920}
+              targetHeight={420}
+              showResizeModeSelector
               onSave={onSave}
               onDelete={onDelete}
             />
@@ -9775,6 +9829,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               settingKey="catalog_banner_mobile"
               currentSrc={settings["catalog_banner_mobile"]}
               loading={!!loading["catalog_banner_mobile"]}
+              targetWidth={800}
+              targetHeight={420}
+              showResizeModeSelector
               onSave={onSave}
               onDelete={onDelete}
             />
