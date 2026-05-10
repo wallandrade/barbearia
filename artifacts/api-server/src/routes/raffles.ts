@@ -339,7 +339,7 @@ router.post("/raffles/:id/reserve", async (req, res) => {
 
   res.json({
     reservationId,
-    gatewayProvider,
+    gatewayProvider: gatewayData.gatewayProvider || gatewayProvider,
     transactionId: gatewayData.transactionId,
     pixCode: gatewayData.pix?.code,
     pixBase64: gatewayData.pix?.base64,
@@ -544,7 +544,7 @@ router.post("/raffles/reservations/:reservationId/refresh-pix", async (req, res)
 
   res.json({
     reservationId: reservation.id,
-    gatewayProvider,
+    gatewayProvider: gatewayData.gatewayProvider || gatewayProvider,
     transactionId: gatewayData.transactionId,
     pixCode: gatewayData.pix?.code,
     pixBase64: gatewayData.pix?.base64,

@@ -46,6 +46,7 @@ export function genIdentifier(): string {
 export interface GatewayPixResponse {
   transactionId: string;
   status: string;              // OK | FAILED | PENDING | REJECTED | CANCELED
+  gatewayProvider?: PixGatewayProvider;
   fee?: number;
   order?: {
     id?: string;
@@ -92,6 +93,13 @@ type DentpegDeposit = {
   qrImageUrl?: string;
 };
 
+function getDentpegMaxAmountCents(): number {
+  const configuredMax = Number(process.env["DENTPEG_MAX_AMOUNT_CENTS"] || DENTPEG_DEFAULT_MAX_AMOUNT_CENTS);
+  return Number.isFinite(configuredMax) && configuredMax > 0
+    ? Math.floor(configuredMax)
+    : DENTPEG_DEFAULT_MAX_AMOUNT_CENTS;
+}
+
 async function createDentpegPixCharge(payload: {
   amount: number;
 }): Promise<GatewayPixResponse> {
@@ -107,10 +115,7 @@ async function createDentpegPixCharge(payload: {
     throw new Error("Valor inválido para cobrança PIX.");
   }
 
-  const configuredMax = Number(process.env["DENTPEG_MAX_AMOUNT_CENTS"] || DENTPEG_DEFAULT_MAX_AMOUNT_CENTS);
-  const maxAmountInCents = Number.isFinite(configuredMax) && configuredMax > 0
-    ? Math.floor(configuredMax)
-    : DENTPEG_DEFAULT_MAX_AMOUNT_CENTS;
+  const maxAmountInCents = getDentpegMaxAmountCents();
   if (amountInCents > maxAmountInCents) {
     const maxFormatted = (maxAmountInCents / 100).toFixed(2).replace(".", ",");
     const currentFormatted = (amountInCents / 100).toFixed(2).replace(".", ",");
@@ -159,6 +164,7 @@ async function createDentpegPixCharge(payload: {
   return {
     transactionId: data.deposit.id,
     status: data.deposit.status || "pending",
+    gatewayProvider: "dentpeg",
     fee: typeof data.deposit.feeCents === "number" ? data.deposit.feeCents / 100 : undefined,
     pix: {
       code: data.deposit.qrCode,
@@ -236,7 +242,10 @@ export async function createPixCharge(payload: {
     throw new Error("Gateway não retornou o código PIX. Tente novamente.");
   }
 
-  return data as GatewayPixResponse;
+  return {
+    ...(data as GatewayPixResponse),
+    gatewayProvider: "appcnpay",
+  };
 }
 
 export async function createPixChargeWithProvider(payload: {
@@ -250,7 +259,33 @@ export async function createPixChargeWithProvider(payload: {
   provider: PixGatewayProvider;
 }): Promise<GatewayPixResponse> {
   if (payload.provider === "dentpeg") {
-    return createDentpegPixCharge({ amount: payload.amount });
+    const amountInCents = Math.round(Number(payload.amount || 0) * 100);
+    const maxDentpegAmount = getDentpegMaxAmountCents();
+
+    if (amountInCents > maxDentpegAmount) {
+      console.warn(`[GATEWAY] DentPeg limit exceeded (${amountInCents} > ${maxDentpegAmount}). Falling back to APPCNPay.`);
+      const fallback = await createPixCharge(payload);
+      return {
+        ...fallback,
+        gatewayProvider: "appcnpay",
+      };
+    }
+
+    try {
+      return await createDentpegPixCharge({ amount: payload.amount });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isTooBig = message.includes("amountInCents") && message.includes("too_big");
+      if (isTooBig) {
+        console.warn("[GATEWAY] DentPeg returned too_big. Falling back to APPCNPay.");
+        const fallback = await createPixCharge(payload);
+        return {
+          ...fallback,
+          gatewayProvider: "appcnpay",
+        };
+      }
+      throw err;
+    }
   }
 
   return createPixCharge(payload);

@@ -195,7 +195,7 @@ router.post("/custom-charges", async (req, res) => {
     res.status(201).json({
       id,
       transactionId: gatewayData.transactionId,
-      gatewayProvider,
+      gatewayProvider: gatewayData.gatewayProvider || gatewayProvider,
       pixCode:   gatewayData.pix?.code   || "",
       pixBase64: gatewayData.pix?.base64 || "",
       pixImage:  gatewayData.pix?.image  || "",

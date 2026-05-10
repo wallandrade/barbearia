@@ -529,7 +529,7 @@ router.post("/checkout/pix", async (req, res) => {
       affiliateCode: affiliateUserId ? normalizedAffiliateCode : null,
       guestAccessToken,
       isGuestOrder: !customerSession,
-      gatewayProvider,
+      gatewayProvider: gatewayData.gatewayProvider || gatewayProvider,
       transactionId: gatewayData.transactionId,
       status:        gatewayData.status,
       affiliateCreditUsed,

@@ -105,7 +105,7 @@ router.post("/pix/generate", async (req, res) => {
     res.json({
       transactionId: gatewayData.transactionId,
       status:        gatewayData.status,
-      gatewayProvider,
+      gatewayProvider: gatewayData.gatewayProvider || gatewayProvider,
       pixCode:       gatewayData.pix?.code   || "",
       pixBase64:     gatewayData.pix?.base64 || "",
       pixImage:      gatewayData.pix?.image  || "",

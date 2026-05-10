@@ -1603,7 +1603,7 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
     res.json({
       id: chargeId,
       transactionId: gatewayData.transactionId,
-      gatewayProvider,
+      gatewayProvider: gatewayData.gatewayProvider || gatewayProvider,
       pixCode: gatewayData.pix?.code || "",
       pixBase64: gatewayData.pix?.base64 || "",
       pixImage: gatewayData.pix?.image || "",
