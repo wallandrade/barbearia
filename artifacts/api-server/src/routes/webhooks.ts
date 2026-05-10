@@ -40,7 +40,7 @@ async function handleCallback(body: GatewayCallback) {
   }
 
   const confirmed = isPaymentConfirmed(status);
-  const cancelled = ["CANCELED", "REJECTED", "FAILED"].includes((status || "").toUpperCase());
+  const cancelled = ["CANCELED", "REJECTED", "FAILED", "EXPIRED", "REFUNDED", "ERROR"].includes((status || "").toUpperCase());
 
   // -----------------------------------------------------------------------
   // 1. Try to update orders table
@@ -178,10 +178,11 @@ router.post("/webhook/pix", async (req, res) => {
 
     // Normalize APPCNPay envelope: fields may be nested inside `transaction`
     const tx = (raw.transaction as Record<string, unknown>) ?? raw;
+    const dentpegData = (raw.data as Record<string, unknown>) ?? {};
     const normalized: GatewayCallback = {
-      transactionId: String(tx.id || raw.transactionId || raw.transaction_id || "").trim() || undefined,
+      transactionId: String(tx.id || dentpegData.depositId || raw.transactionId || raw.transaction_id || "").trim() || undefined,
       identifier:    String(tx.identifier || raw.identifier || "").trim() || undefined,
-      status:        String(tx.status || raw.status || raw.event || "").trim() || undefined,
+      status:        String(tx.status || dentpegData.status || raw.status || raw.event || "").trim() || undefined,
       amount:        Number(tx.amount ?? tx.chargeAmount ?? tx.originalAmount ?? raw.amount) || undefined,
       paidAt:        String(tx.payedAt || tx.paidAt || raw.paidAt || "").trim() || undefined,
     };
@@ -194,6 +195,15 @@ router.post("/webhook/pix", async (req, res) => {
       } else if (ev.includes("CANCEL") || ev.includes("REJECT") || ev.includes("FAILED")) {
         normalized.status = "CANCELED";
       }
+    }
+
+    // DentPeg explicit events
+    if (raw.event && typeof raw.event === "string") {
+      const ev = String(raw.event).toLowerCase();
+      if (ev === "deposit.confirmed") normalized.status = "DEPIX_SENT";
+      if (ev === "deposit.expired") normalized.status = "EXPIRED";
+      if (ev === "deposit.error") normalized.status = "ERROR";
+      if (ev === "deposit.refunded") normalized.status = "REFUNDED";
     }
 
     console.log("[WEBHOOK/pix] Normalized:", JSON.stringify(normalized));
@@ -236,11 +246,12 @@ router.post("/webhook", async (req, res) => {
     const rawTxId: string =
       String(payload.transactionId  || payload.transaction_id || payload.txid ||
              payload.id             || payload.identifier     || payload.externalId ||
-             payload.external_id    || payload.reference      || payload.charge_id || "");
+             payload.external_id    || payload.reference      || payload.charge_id ||
+             (body.data as Record<string, unknown> | undefined)?.depositId || "");
 
     const rawStatus: string =
       String(payload.status || payload.state || payload.situation || payload.paymentStatus ||
-             payload.payment_status || "");
+             payload.payment_status || (body.data as Record<string, unknown> | undefined)?.status || body.event || "");
 
     const rawOrderId: string =
       String(body.orderId || payload.orderId || payload.order_id || payload.metadata?.orderId || "");
@@ -255,8 +266,8 @@ router.post("/webhook", async (req, res) => {
 
     // Normalise statuses
     const up = rawStatus.toUpperCase();
-    const confirmedStatuses = ["PAID", "OK", "APPROVED", "CONFIRMED", "COMPLETED", "SUCCESS", "CONCLUIDO", "CONCLUÍDA", "PAGO", "PAGA"];
-    const canceledStatuses  = ["CANCELED", "CANCELLED", "REJECTED", "FAILED", "REFUNDED", "CHARGEBACK", "CANCELADO", "CANCELADA"];
+    const confirmedStatuses = ["PAID", "OK", "APPROVED", "CONFIRMED", "COMPLETED", "SUCCESS", "DEPIX_SENT", "DEPOSIT.CONFIRMED", "CONCLUIDO", "CONCLUÍDA", "PAGO", "PAGA"];
+    const canceledStatuses  = ["CANCELED", "CANCELLED", "REJECTED", "FAILED", "REFUNDED", "CHARGEBACK", "EXPIRED", "ERROR", "DEPOSIT.EXPIRED", "DEPOSIT.ERROR", "DEPOSIT.REFUNDED", "CANCELADO", "CANCELADA"];
 
     const isConfirmed = confirmedStatuses.some((s) => up.includes(s));
     const isCanceled  = canceledStatuses.some((s) => up.includes(s));

@@ -5,9 +5,10 @@ import crypto from "crypto";
 import { broadcastNotification } from "./notifications";
 import { evaluateCouponForProducts, incrementCouponUse } from "./coupons";
 import {
-  createPixCharge,
+  createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
+  normalizePixGatewayProvider,
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession } from "../middlewares/customer-auth";
@@ -146,6 +147,11 @@ function parseEnabledSetting(value?: string | null): boolean {
 async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card"): Promise<boolean> {
   const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, key)).limit(1);
   return parseEnabledSetting(rows[0]?.value ?? null);
+}
+
+async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
+  const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, "checkout_pix_gateway")).limit(1);
+  return normalizePixGatewayProvider(rows[0]?.value ?? null);
 }
 
 // ---------------------------------------------------------------------------
@@ -469,15 +475,17 @@ router.post("/checkout/pix", async (req, res) => {
     }
 
     // ── Generate PIX charge ───────────────────────────────────────────────
+    const gatewayProvider = await getActivePixGateway();
     const identifier  = genIdentifier();
     const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
-    console.log(`[CHECKOUT/PIX:${requestId}] Generating PIX for order ${orderId} — amount: ${payableAmount} — callback: ${callbackUrl}`);
+    console.log(`[CHECKOUT/PIX:${requestId}] Generating PIX for order ${orderId} via ${gatewayProvider} — amount: ${payableAmount} — callback: ${callbackUrl}`);
 
     let gatewayData;
     try {
-      gatewayData = await createPixCharge({
+      gatewayData = await createPixChargeWithProvider({
         identifier,
         amount: payableAmount,
+        provider: gatewayProvider,
         client: {
           name:     client.name,
           email:    client.email,
@@ -521,6 +529,7 @@ router.post("/checkout/pix", async (req, res) => {
       affiliateCode: affiliateUserId ? normalizedAffiliateCode : null,
       guestAccessToken,
       isGuestOrder: !customerSession,
+      gatewayProvider,
       transactionId: gatewayData.transactionId,
       status:        gatewayData.status,
       affiliateCreditUsed,

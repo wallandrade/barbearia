@@ -1,16 +1,27 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable } from "@workspace/db";
+import { db, ordersTable, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { broadcastNotification } from "./notifications";
 import {
-  createPixCharge,
+  createPixChargeWithProvider,
   buildCallbackUrl,
+  fetchDentpegDepositStatus,
   genIdentifier,
+  normalizePixGatewayProvider,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
 
 const router: IRouter = Router();
+
+async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
+  const row = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
+    .limit(1);
+  return normalizePixGatewayProvider(row[0]?.value);
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/pix/generate
@@ -41,17 +52,19 @@ router.post("/pix/generate", async (req, res) => {
       return;
     }
 
+    const gatewayProvider = await getActivePixGateway();
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.
     // The generic handler matches transactions by transactionId in the body.
     const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
-    console.log(`[PIX] Creating charge for order ${orderId || identifier} — callback: ${callbackUrl}`);
+    console.log(`[PIX] Creating charge for order ${orderId || identifier} via ${gatewayProvider} — callback: ${callbackUrl}`);
 
     let gatewayData;
     try {
-      gatewayData = await createPixCharge({
+      gatewayData = await createPixChargeWithProvider({
         identifier,
         amount: Number(amount),
+        provider: gatewayProvider,
         client: {
           name:     client.name,
           email:    client.email,
@@ -92,6 +105,7 @@ router.post("/pix/generate", async (req, res) => {
     res.json({
       transactionId: gatewayData.transactionId,
       status:        gatewayData.status,
+      gatewayProvider,
       pixCode:       gatewayData.pix?.code   || "",
       pixBase64:     gatewayData.pix?.base64 || "",
       pixImage:      gatewayData.pix?.image  || "",
@@ -127,6 +141,28 @@ router.get("/pix/status/:transactionId", async (req, res) => {
       .limit(1);
 
     const row = rows[0];
+
+    // DentPeg supports status lookup; for IDs like dep_* we can refresh status live.
+    if (transactionId.startsWith("dep_")) {
+      const live = await fetchDentpegDepositStatus(transactionId);
+      if (live?.status && row) {
+        const normalized = String(live.status).toLowerCase();
+        const isPaid = normalized === "depix_sent";
+        const isCancelled = ["expired", "canceled", "refunded", "error"].includes(normalized);
+        const nextOrderStatus = isPaid ? "paid" : isCancelled ? "cancelled" : row.status;
+
+        if (nextOrderStatus !== row.status) {
+          await db
+            .update(ordersTable)
+            .set({ status: nextOrderStatus, updatedAt: new Date() })
+            .where(eq(ordersTable.id, row.id));
+        }
+
+        const status = isPaid ? "OK" : isCancelled ? "CANCELED" : "PENDING";
+        res.json({ transactionId, status, paidAt: null });
+        return;
+      }
+    }
 
     const dbStatusMap: Record<string, string> = {
       paid:             "OK",

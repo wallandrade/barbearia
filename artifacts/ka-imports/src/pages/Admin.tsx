@@ -9613,6 +9613,7 @@ function ConfiguracoesPanel({ settings, loading, onSave, onDelete }: {
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
+  const pixGateway = String(settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
 
   const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card", enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
@@ -9738,6 +9739,51 @@ function ConfiguracoesPanel({ settings, loading, onSave, onDelete }: {
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-800 mt-4">
           <p>Essas taxas serão usadas para calcular o valor líquido real no dashboard, descontando custos do gateway de pagamento.</p>
+        </div>
+      </div>
+
+      {/* ── Provedor PIX Ativo ───────────────────────────────────────────── */}
+      <div className="max-w-2xl">
+        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+          <QrCode className="w-5 h-5 text-primary" />
+          Provedor PIX Ativo
+        </h2>
+        <p className="text-muted-foreground text-sm mb-5">
+          Selecione qual gateway PIX será usado no checkout. APPCNPay continua como padrão.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${pixGateway === "appcnpay" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">APPCNPay</p>
+                <p className="text-xs text-muted-foreground">Fluxo atual do sistema (sem alterações).</p>
+              </div>
+              <input
+                type="radio"
+                name="pixGateway"
+                checked={pixGateway === "appcnpay"}
+                onChange={() => onSave("checkout_pix_gateway", "appcnpay")}
+                disabled={!!loading["checkout_pix_gateway"]}
+              />
+            </div>
+          </label>
+
+          <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${pixGateway === "dentpeg" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">DentPeg</p>
+                <p className="text-xs text-muted-foreground">Alternativa de gateway PIX usando API key DentPeg.</p>
+              </div>
+              <input
+                type="radio"
+                name="pixGateway"
+                checked={pixGateway === "dentpeg"}
+                onChange={() => onSave("checkout_pix_gateway", "dentpeg")}
+                disabled={!!loading["checkout_pix_gateway"]}
+              />
+            </div>
+          </label>
         </div>
       </div>
 

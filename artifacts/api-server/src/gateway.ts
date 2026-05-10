@@ -7,7 +7,15 @@
 import crypto from "crypto";
 
 export const GATEWAY_PIX_URL = "https://painel.appcnpay.com/api/v1/gateway/pix/receive";
+export const DENTPEG_BASE_URL = "https://api.dentpeg.com/api/v1";
 export const PIX_DURATION_MS = 15 * 60 * 1000; // 15 min
+
+export type PixGatewayProvider = "appcnpay" | "dentpeg";
+
+export function normalizePixGatewayProvider(raw: string | null | undefined): PixGatewayProvider {
+  const normalized = String(raw || "").trim().toLowerCase();
+  return normalized === "dentpeg" ? "dentpeg" : "appcnpay";
+}
 
 export function getGatewayHeaders(): Record<string, string> {
   const publicKey  = process.env["GATEWAY_IDENTIFIER"] || "";
@@ -60,6 +68,84 @@ export interface GatewayErrorResponse {
     field?: string;
     value?: unknown;
     issue?: string;
+  };
+}
+
+function getDentpegHeaders(): Record<string, string> {
+  const apiKey = process.env["DENTPEG_API_KEY"] || "";
+  if (!apiKey) {
+    throw new Error("DENTPEG_API_KEY must be set.");
+  }
+  return {
+    "Content-Type": "application/json",
+    "X-API-Key": apiKey,
+  };
+}
+
+type DentpegDeposit = {
+  id: string;
+  status: string;
+  amountInCents: number;
+  feeCents?: number;
+  qrCode?: string;
+  qrImageUrl?: string;
+};
+
+async function createDentpegPixCharge(payload: {
+  amount: number;
+}): Promise<GatewayPixResponse> {
+  let headers: Record<string, string>;
+  try {
+    headers = getDentpegHeaders();
+  } catch {
+    throw new Error("DentPeg credentials not configured.");
+  }
+
+  const amountInCents = Math.round(Number(payload.amount || 0) * 100);
+  if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
+    throw new Error("Valor inválido para cobrança PIX.");
+  }
+
+  const url = `${DENTPEG_BASE_URL}/deposits`;
+  const body = { amountInCents };
+
+  console.log("[DENTPEG] POST", url, JSON.stringify(body));
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  const rawText = await res.text();
+  console.log(`[DENTPEG] Response ${res.status}:`, rawText.slice(0, 600));
+
+  let data: { ok?: boolean; deposit?: DentpegDeposit; message?: string; error?: string };
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error("Resposta inválida do gateway DentPeg.");
+  }
+
+  if (!res.ok || !data.deposit) {
+    throw new Error(data.message || data.error || `Erro ${res.status} da DentPeg.`);
+  }
+
+  if (!data.deposit.id) {
+    throw new Error("DentPeg não retornou ID do depósito.");
+  }
+
+  if (!data.deposit.qrCode) {
+    throw new Error("DentPeg não retornou o código PIX.");
+  }
+
+  return {
+    transactionId: data.deposit.id,
+    status: data.deposit.status || "pending",
+    fee: typeof data.deposit.feeCents === "number" ? data.deposit.feeCents / 100 : undefined,
+    pix: {
+      code: data.deposit.qrCode,
+      image: data.deposit.qrImageUrl,
+    },
   };
 }
 
@@ -135,6 +221,23 @@ export async function createPixCharge(payload: {
   return data as GatewayPixResponse;
 }
 
+export async function createPixChargeWithProvider(payload: {
+  identifier: string;
+  amount: number;
+  client: { name: string; email: string; phone: string; document: string };
+  products?: Array<{ id: string; name: string; quantity?: number; price: number; physical?: boolean }>;
+  dueDate?: string;
+  metadata?: Record<string, string>;
+  callbackUrl?: string;
+  provider: PixGatewayProvider;
+}): Promise<GatewayPixResponse> {
+  if (payload.provider === "dentpeg") {
+    return createDentpegPixCharge({ amount: payload.amount });
+  }
+
+  return createPixCharge(payload);
+}
+
 /**
  * Build the callback URL for the current request.
  * Priority:
@@ -167,6 +270,7 @@ export function isPaymentConfirmed(status: string): boolean {
   const s = (status || "").toUpperCase();
   const confirmed = [
     "OK", "PAID", "APPROVED", "CONFIRMED", "COMPLETED", "SUCCESS",
+    "DEPIX_SENT",
     // Portuguese variants from APPCNPay
     "PAGO", "PAGA", "CONCLUIDO", "CONCLUÍDA", "CONCLUIDA",
     "APROVADO", "APROVADA",
@@ -214,6 +318,36 @@ export async function fetchTransactionStatus(
     return { status: data.status, payedAt: data.payedAt ?? null };
   } catch (err) {
     console.error("[GATEWAY] fetchTransactionStatus error:", err);
+    return null;
+  }
+}
+
+export async function fetchDentpegDepositStatus(
+  depositId: string,
+): Promise<{ status: string } | null> {
+  let headers: Record<string, string>;
+  try {
+    headers = getDentpegHeaders();
+  } catch {
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${DENTPEG_BASE_URL}/deposits/${encodeURIComponent(depositId)}`, {
+      method: "GET",
+      headers,
+    });
+    const raw = await res.text();
+    if (!res.ok) {
+      console.warn(`[DENTPEG] fetchDepositStatus ${res.status} for ${depositId} — body: ${raw.slice(0, 300)}`);
+      return null;
+    }
+
+    const data = JSON.parse(raw) as { deposit?: { status?: string } };
+    if (!data.deposit?.status) return null;
+    return { status: data.deposit.status };
+  } catch (err) {
+    console.error("[DENTPEG] fetchDepositStatus error:", err);
     return null;
   }
 }

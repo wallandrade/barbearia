@@ -6,9 +6,10 @@ import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { evaluateCouponForProducts, incrementCouponUse } from "./coupons";
 import {
-  createPixCharge,
+  createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
+  normalizePixGatewayProvider,
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
@@ -23,6 +24,15 @@ import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 
 const router: IRouter = Router();
+
+async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
+  const row = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
+    .limit(1);
+  return normalizePixGatewayProvider(row[0]?.value);
+}
 
 type BulkDiscountTierInput = {
   minQty: number;
@@ -1554,13 +1564,15 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
     const order = orders[0];
 
     const chargeId = crypto.randomBytes(8).toString("hex");
+    const gatewayProvider = await getActivePixGateway();
     const identifier = genIdentifier();
     const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
     const desc = description || `Diferença pedido #${id}`;
 
-    const gatewayData = await createPixCharge({
+    const gatewayData = await createPixChargeWithProvider({
       identifier,
       amount,
+      provider: gatewayProvider,
       client: { name: order.clientName, email: order.clientEmail, phone: order.clientPhone, document: order.clientDocument },
       metadata: { chargeId, description: desc },
       callbackUrl,
@@ -1591,6 +1603,7 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
     res.json({
       id: chargeId,
       transactionId: gatewayData.transactionId,
+      gatewayProvider,
       pixCode: gatewayData.pix?.code || "",
       pixBase64: gatewayData.pix?.base64 || "",
       pixImage: gatewayData.pix?.image || "",

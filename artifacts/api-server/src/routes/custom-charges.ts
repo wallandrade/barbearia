@@ -1,18 +1,28 @@
 import { Router, type IRouter } from "express";
-import { db, customChargesTable, ordersTable } from "@workspace/db";
+import { db, customChargesTable, ordersTable, siteSettingsTable } from "@workspace/db";
 import { desc, and, gte, lte, eq } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import {
-  createPixCharge,
+  createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
+  normalizePixGatewayProvider,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
 
 const router: IRouter = Router();
+
+async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
+  const row = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
+    .limit(1);
+  return normalizePixGatewayProvider(row[0]?.value);
+}
 
 function normalizeSellerCode(value: unknown): string | null {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -121,6 +131,7 @@ router.post("/custom-charges", async (req, res) => {
     console.log(`[CustomCharge:${requestId}] Validation OK — client=${client.name} amount=${amount} seller=${sellerCode || "none"}`);
 
     const id = crypto.randomBytes(8).toString("hex");
+    const gatewayProvider = await getActivePixGateway();
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.
     // The generic handler matches transactions by transactionId in the body.
@@ -130,9 +141,10 @@ router.post("/custom-charges", async (req, res) => {
 
     let gatewayData;
     try {
-      gatewayData = await createPixCharge({
+      gatewayData = await createPixChargeWithProvider({
         identifier,
         amount: Number(amount),
+        provider: gatewayProvider,
         client: {
           name:     client.name,
           email:    client.email,
@@ -183,6 +195,7 @@ router.post("/custom-charges", async (req, res) => {
     res.status(201).json({
       id,
       transactionId: gatewayData.transactionId,
+      gatewayProvider,
       pixCode:   gatewayData.pix?.code   || "",
       pixBase64: gatewayData.pix?.base64 || "",
       pixImage:  gatewayData.pix?.image  || "",
