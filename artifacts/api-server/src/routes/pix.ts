@@ -11,6 +11,7 @@ import {
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
+import { sendOutboundWebhook } from "../lib/outbound-webhook";
 
 const router: IRouter = Router();
 
@@ -201,6 +202,11 @@ router.post("/pix/callback/:token", async (req, res) => {
       broadcastNotification({
         type: "order_paid",
         data: { transactionId: body.transactionId, status: "paid" },
+      });
+      void sendOutboundWebhook("order_paid", {
+        transactionId: body.transactionId,
+        status: "paid",
+        source: "legacy_pix_callback",
       });
     }
 

@@ -1373,6 +1373,27 @@ export default function Admin() {
     finally { setSettingsLoading((p) => ({ ...p, [key]: false })); }
   }, []);
 
+  const testOutboundWebhook = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/outbound-webhook/test`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        if ((data as { error?: string }).error === "webhook_url_not_configured") {
+          toast.error("Configure a URL do webhook de saída antes de testar.");
+          return;
+        }
+        toast.error("Falha ao enviar webhook de teste.");
+        return;
+      }
+      toast.success("Webhook de teste enviado com sucesso.");
+    } catch {
+      toast.error("Falha ao enviar webhook de teste.");
+    }
+  }, []);
+
   const fetchSellers = useCallback(async () => {
     setSellersLoading(true);
     try {
@@ -4827,6 +4848,7 @@ export default function Admin() {
             clientErrors={clientErrors}
             clientErrorsLoading={clientErrorsLoading}
             onRefreshClientErrors={fetchClientErrors}
+            onTestOutboundWebhook={testOutboundWebhook}
             onSave={saveSetting}
             onDelete={deleteSetting}
           />
@@ -9658,22 +9680,34 @@ function ImageUploadCard({
   );
 }
 
-function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onSave, onDelete }: {
+function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
   clientErrors: ClientErrorEvent[];
   clientErrorsLoading: boolean;
   onRefreshClientErrors: () => void;
+  onTestOutboundWebhook: () => void;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
 }) {
   const [sitePw, setSitePw] = useState(settings["site_password"] ?? "");
   const [paymentPw, setPaymentPw] = useState(settings["payment_password"] ?? "");
+  const [outboundUrl, setOutboundUrl] = useState(settings["outbound_webhook_url"] ?? "");
+  const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
+  const [showOutboundSecret, setShowOutboundSecret] = useState(false);
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
   const pixGateway = String(settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
+  const outboundEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_enabled"] ?? "0").toLowerCase());
+  const outboundEventNewOrder = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_new_order"] ?? "1").toLowerCase());
+  const outboundEventOrderPaid = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_order_paid"] ?? "1").toLowerCase());
+
+  useEffect(() => {
+    setOutboundUrl(settings["outbound_webhook_url"] ?? "");
+    setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
+  }, [settings]);
 
   const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card", enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
@@ -9958,6 +9992,117 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1"><CheckCircle className="w-3 h-3" />Proteção ativa</p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* ── Webhook de Saída (Pushcut/Automations) ───────────────────────── */}
+      <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+        <div>
+          <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+            <Webhook className="w-5 h-5 text-primary" />
+            Webhook de Saída (Pushcut)
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Envia eventos do sistema para uma URL externa (ex: Pushcut) quando pedido é criado ou pagamento é aprovado.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">URL de destino</label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={outboundUrl}
+                onChange={(e) => setOutboundUrl(e.target.value)}
+                placeholder="https://api.pushcut.io/..."
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  const value = outboundUrl.trim();
+                  if (!value) { onDelete("outbound_webhook_url"); return; }
+                  onSave("outbound_webhook_url", value);
+                }}
+                disabled={!!loading["outbound_webhook_url"]}
+              >
+                {loading["outbound_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1">Segredo de assinatura (opcional)</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showOutboundSecret ? "text" : "password"}
+                  value={outboundSecret}
+                  onChange={(e) => setOutboundSecret(e.target.value)}
+                  placeholder="Defina um segredo para validar assinatura"
+                  className="w-full h-10 px-3 pr-10 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOutboundSecret((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  {showOutboundSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const value = outboundSecret.trim();
+                  if (!value) { onDelete("outbound_webhook_secret"); return; }
+                  onSave("outbound_webhook_secret", value);
+                }}
+                disabled={!!loading["outbound_webhook_secret"]}
+              >
+                {loading["outbound_webhook_secret"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
+            <span className="text-sm font-medium">Ativar envio</span>
+            <input
+              type="checkbox"
+              checked={outboundEnabled}
+              onChange={(e) => onSave("outbound_webhook_enabled", e.target.checked ? "1" : "0")}
+              disabled={!!loading["outbound_webhook_enabled"]}
+            />
+          </label>
+
+          <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
+            <span className="text-sm font-medium">Evento: pedido criado</span>
+            <input
+              type="checkbox"
+              checked={outboundEventNewOrder}
+              onChange={(e) => onSave("outbound_webhook_event_new_order", e.target.checked ? "1" : "0")}
+              disabled={!!loading["outbound_webhook_event_new_order"]}
+            />
+          </label>
+
+          <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
+            <span className="text-sm font-medium">Evento: pagamento aprovado</span>
+            <input
+              type="checkbox"
+              checked={outboundEventOrderPaid}
+              onChange={(e) => onSave("outbound_webhook_event_order_paid", e.target.checked ? "1" : "0")}
+              disabled={!!loading["outbound_webhook_event_order_paid"]}
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            Use o botão de teste para validar recebimento no Pushcut antes de ativar em produção.
+          </p>
+          <Button variant="outline" onClick={onTestOutboundWebhook}>Enviar teste</Button>
         </div>
       </div>
 

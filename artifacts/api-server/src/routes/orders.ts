@@ -22,6 +22,7 @@ import {
 import { getReshipmentByOrderIds, registerInventoryEntry } from "../lib/reshipments";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
+import { sendOutboundWebhook } from "../lib/outbound-webhook";
 
 const router: IRouter = Router();
 
@@ -1025,6 +1026,14 @@ router.post("/orders", async (req, res) => {
         sellerCode: sellerCode || null,
         createdAt: new Date().toISOString(),
       },
+    });
+    void sendOutboundWebhook("new_order", {
+      id,
+      clientName: client.name,
+      total: computedTotal,
+      paymentMethod: method,
+      sellerCode: sellerCode || null,
+      createdAt: new Date().toISOString(),
     });
 
     res.status(201).json({

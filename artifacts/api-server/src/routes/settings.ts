@@ -17,7 +17,13 @@ const ALLOWED_KEYS = [
   "gateway_fee_fixed",
   "gateway_fee_min",
   "gateway_withdraw_percent",
-  "gateway_withdraw_fixed"
+  "gateway_withdraw_fixed",
+  // Webhook de saída (Pushcut/automations)
+  "outbound_webhook_url",
+  "outbound_webhook_secret",
+  "outbound_webhook_enabled",
+  "outbound_webhook_event_new_order",
+  "outbound_webhook_event_order_paid"
 ];
 
 /** GET /api/settings — public, returns only safe display keys */

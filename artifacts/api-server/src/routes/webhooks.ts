@@ -17,6 +17,8 @@ import { broadcastNotification } from "./notifications";
 import { isPaymentConfirmed } from "../gateway";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
+import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { requirePrimaryAdmin } from "./admin-auth";
 
 const router: IRouter = Router();
 
@@ -78,6 +80,13 @@ async function handleCallback(body: GatewayCallback) {
             type: confirmed ? "order_paid" : "order_status_updated",
             data: { id: row.id, transactionId, status: newStatus },
           });
+          if (confirmed && newStatus === "paid") {
+            void sendOutboundWebhook("order_paid", {
+              id: row.id,
+              transactionId,
+              status: newStatus,
+            });
+          }
 
           console.log(`[WEBHOOK] Order ${row.id} updated to ${newStatus}`);
         }
@@ -152,6 +161,13 @@ async function handleCallback(body: GatewayCallback) {
                 type: "order_paid",
                 data: { id: row.orderId, status: newOrderStatus },
               });
+              if (newOrderStatus === "paid") {
+                void sendOutboundWebhook("order_paid", {
+                  id: row.orderId,
+                  status: newOrderStatus,
+                  source: "difference_charge",
+                });
+              }
 
               if (newOrderStatus === "paid") {
                 await ensureOrderCommission(row.orderId);
@@ -294,6 +310,13 @@ router.post("/webhook", async (req, res) => {
         if (isConfirmed && rows[0]!.couponCode) await incrementCouponUse(rows[0]!.couponCode);
         if (isConfirmed && newStatus === "paid") await ensureOrderCommission(rawOrderId);
         broadcastNotification({ type: isConfirmed ? "order_paid" : "order_status_updated", data: { id: rawOrderId, status: newStatus } });
+        if (isConfirmed && newStatus === "paid") {
+          void sendOutboundWebhook("order_paid", {
+            id: rawOrderId,
+            status: newStatus,
+            source: "universal_webhook",
+          });
+        }
         console.log(`[WEBHOOK/universal] Order ${rawOrderId} → ${newStatus}`);
         res.json({ ok: true, matched: true, updated: "order", id: rawOrderId, status: newStatus });
         return;
@@ -334,6 +357,11 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
         await ensureOrderCommission(orderId);
 
         broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
+        void sendOutboundWebhook("order_paid", {
+          id: orderId,
+          status: "paid",
+          source: "direct_order_webhook",
+        });
         console.log(`[WEBHOOK] Order ${orderId} paid via direct URL`);
       }
     }
@@ -388,6 +416,13 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
               .where(eq(ordersTable.id, rows[0]!.orderId));
 
             broadcastNotification({ type: "order_paid", data: { id: rows[0]!.orderId, status: newOrderStatus } });
+            if (newOrderStatus === "paid") {
+              void sendOutboundWebhook("order_paid", {
+                id: rows[0]!.orderId,
+                status: newOrderStatus,
+                source: "direct_charge_webhook",
+              });
+            }
             console.log(`[WEBHOOK] Order ${rows[0]!.orderId} auto-updated to ${newOrderStatus} after diff charge (direct URL)`);
 
             if (newOrderStatus === "paid") {
@@ -402,6 +437,25 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
   } catch (err) {
     console.error("[WEBHOOK] Charge webhook error:", err);
     res.json({ ok: false });
+  }
+});
+
+router.post("/admin/outbound-webhook/test", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const result = await sendOutboundWebhook("test", {
+      message: "Teste manual disparado pelo painel administrativo.",
+      triggeredAt: new Date().toISOString(),
+    }, { force: true });
+
+    if (!result.sent) {
+      res.status(400).json({ ok: false, error: result.error || "send_failed" });
+      return;
+    }
+
+    res.json({ ok: true, status: result.status || 200 });
+  } catch (err) {
+    console.error("[OUTBOUND_WEBHOOK_TEST] Error:", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
