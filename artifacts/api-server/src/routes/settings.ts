@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
+import { getR2MissingConfig, isR2Configured, uploadSiteSettingImageToR2 } from "../lib/r2";
 
 const router: IRouter = Router();
 
@@ -25,6 +26,14 @@ const ALLOWED_KEYS = [
   "outbound_webhook_event_new_order",
   "outbound_webhook_event_order_paid"
 ];
+
+const IMAGE_SETTING_KEYS = new Set([
+  "logo",
+  "banner_desktop",
+  "banner_mobile",
+  "catalog_banner_desktop",
+  "catalog_banner_mobile",
+]);
 
 /** GET /api/settings — public, returns only safe display keys */
 router.get("/settings", async (_req, res) => {
@@ -66,11 +75,23 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
     if (!value) {
       await db.delete(siteSettingsTable).where(eq(siteSettingsTable.key, key));
     } else {
+      let storedValue = value;
+      if (IMAGE_SETTING_KEYS.has(key) && value.startsWith("data:image/")) {
+        if (!isR2Configured()) {
+          res.status(503).json({
+            error: "R2_NOT_CONFIGURED",
+            message: "Cloudflare R2 não está configurado no servidor.",
+            missing: getR2MissingConfig(),
+          });
+          return;
+        }
+        storedValue = await uploadSiteSettingImageToR2({ dataUrl: value, settingKey: key });
+      }
       await db
         .insert(siteSettingsTable)
-        .values({ key, value, updatedAt: new Date() })
+        .values({ key, value: storedValue, updatedAt: new Date() })
         .onDuplicateKeyUpdate({
-          set: { value, updatedAt: new Date() },
+          set: { value: storedValue, updatedAt: new Date() },
         });
     }
     res.json({ ok: true });

@@ -107,3 +107,21 @@ export async function uploadOrderTrackingLabelToR2(input: { dataUrl: string; ord
 
   return `${R2_PUBLIC_BASE_URL}/${objectKey}`;
 }
+
+export async function uploadSiteSettingImageToR2(input: { dataUrl: string; settingKey: string }): Promise<string> {
+  const client = getR2Client();
+  const { buffer, mimeType } = parseImageDataUrl(input.dataUrl);
+  const extension = getExtensionFromMimeType(mimeType);
+  const safeSettingKey = String(input.settingKey || "unassigned").trim() || "unassigned";
+  const objectKey = `site-settings/${safeSettingKey}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${extension}`;
+
+  await client.send(new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: objectKey,
+    Body: buffer,
+    ContentType: mimeType,
+    CacheControl: "public, max-age=31536000, immutable",
+  }));
+
+  return `${R2_PUBLIC_BASE_URL}/${objectKey}`;
+}
