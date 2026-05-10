@@ -8,6 +8,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { SitePasswordGate } from "@/components/SitePasswordGate";
 import SocialProofWidget from "@/components/SocialProofWidget";
 import { captureReferralFromCurrentUrl } from "@/lib/affiliate";
+import { reportClientError } from "@/lib/client-error-reporting";
 
 // ---------------------------------------------------------------------------
 // React Error Boundary — prevents blank white page on uncaught render errors
@@ -26,6 +27,17 @@ class AppErrorBoundary extends Component<
   componentDidCatch(error: Error, info: { componentStack: string }) {
     const message = error?.message ?? "";
     const isChunkLoadError = /ChunkLoadError|Loading chunk [\d]+ failed|Failed to fetch dynamically imported module|Importing a module script failed/i.test(message);
+
+    reportClientError({
+      type: "error_boundary",
+      message: message || "error_boundary_unknown",
+      stack: error?.stack,
+      source: "AppErrorBoundary.componentDidCatch",
+      componentStack: info?.componentStack,
+      metadata: {
+        chunkLoadError: isChunkLoadError,
+      },
+    });
 
     if (isChunkLoadError) {
       try {

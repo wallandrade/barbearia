@@ -717,6 +717,21 @@ interface SocialProofFakeEntry {
   productName: string;
 }
 
+interface ClientErrorEvent {
+  id: string;
+  receivedAt: string;
+  type: string;
+  message?: string;
+  stack?: string;
+  source?: string;
+  pageUrl?: string;
+  userAgent?: string;
+  buildId?: string;
+  isChunkLoadError?: boolean;
+  componentStack?: string;
+  ts: string;
+}
+
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
@@ -947,6 +962,8 @@ export default function Admin() {
   // Site settings (logo, banners)
   const [settings, setSettings]         = useState<Record<string, string>>({});
   const [settingsLoading, setSettingsLoading] = useState<Record<string, boolean>>({});
+  const [clientErrors, setClientErrors] = useState<ClientErrorEvent[]>([]);
+  const [clientErrorsLoading, setClientErrorsLoading] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
   const swRef  = useRef<ServiceWorkerRegistration | null>(null);
   // Live Visitors Tracking
@@ -1318,6 +1335,21 @@ export default function Admin() {
     } catch { /* ignore */ }
   }, [handleUnauthorized]);
 
+  const fetchClientErrors = useCallback(async () => {
+    setClientErrorsLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/client-errors?limit=60`, { headers: authHeaders() });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      if (!res.ok) return;
+      const data = await res.json() as { events?: ClientErrorEvent[] };
+      setClientErrors(data.events || []);
+    } catch {
+      // silent
+    } finally {
+      setClientErrorsLoading(false);
+    }
+  }, [handleUnauthorized]);
+
   const saveSetting = useCallback(async (key: string, value: string) => {
     setSettingsLoading((p) => ({ ...p, [key]: true }));
     try {
@@ -1620,7 +1652,7 @@ export default function Admin() {
     else if (tab === "inventory")  { fetchInventoryOverview(); fetchProducts(); }
     else if (tab === "coupons")    { fetchCoupons(); fetchProducts(); }
     else if (tab === "products")   fetchProducts();
-    else if (tab === "configuracoes") fetchSettings();
+    else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); }
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "fretes")     fetchShippingOptions();
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
@@ -1628,7 +1660,7 @@ export default function Admin() {
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
     else setLoading(false);
-  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchSellers, fetchSellerData, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
+  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
   // -------------------------------------------------------------------------
   // SSE
@@ -4792,6 +4824,9 @@ export default function Admin() {
           <ConfiguracoesPanel
             settings={settings}
             loading={settingsLoading}
+            clientErrors={clientErrors}
+            clientErrorsLoading={clientErrorsLoading}
+            onRefreshClientErrors={fetchClientErrors}
             onSave={saveSetting}
             onDelete={deleteSetting}
           />
@@ -5668,6 +5703,7 @@ function InventoryPanel({
 }) {
   const [entryProductQuery, setEntryProductQuery] = useState("");
   const [manualProductQuery, setManualProductQuery] = useState("");
+  const [balanceSearch, setBalanceSearch] = useState("");
 
   useEffect(() => {
     if (!entryForm.productId) {
@@ -5700,6 +5736,14 @@ function InventoryPanel({
     const selected = products.find((p) => p.name.trim().toLowerCase() === value.toLowerCase());
     setManualForm((prev) => ({ ...prev, productId: selected?.id || "" }));
   };
+
+  const normalizedBalanceSearch = balanceSearch.trim().toLowerCase();
+  const filteredBalances = normalizedBalanceSearch
+    ? balances.filter((row) => {
+        const productName = String(row.productName || "").toLowerCase();
+        return productName.includes(normalizedBalanceSearch);
+      })
+    : balances;
 
   return (
     <div className="space-y-4">
@@ -5842,14 +5886,27 @@ function InventoryPanel({
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm font-semibold mb-3">Saldo atual por produto</p>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="text-sm font-semibold">Saldo atual por produto</p>
+            <span className="text-xs text-muted-foreground">
+              {filteredBalances.length}/{balances.length}
+            </span>
+          </div>
+          <input
+            className="h-10 w-full rounded-lg border border-border px-3 text-sm mb-3"
+            placeholder="Pesquisar produto por nome"
+            value={balanceSearch}
+            onChange={(e) => setBalanceSearch(e.target.value)}
+          />
           {loading ? (
             <p className="text-sm text-muted-foreground">Carregando estoque...</p>
           ) : balances.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum saldo registrado ainda.</p>
+          ) : filteredBalances.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum produto encontrado para essa busca.</p>
           ) : (
             <div className="space-y-2 max-h-72 overflow-auto pr-1">
-              {balances.map((row) => {
+              {filteredBalances.map((row) => {
                 const prod = products.find((p) => p.id === row.productId);
                 return (
                   <div key={row.productId} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 gap-2">
@@ -9601,9 +9658,12 @@ function ImageUploadCard({
   );
 }
 
-function ConfiguracoesPanel({ settings, loading, onSave, onDelete }: {
+function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onSave, onDelete }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
+  clientErrors: ClientErrorEvent[];
+  clientErrorsLoading: boolean;
+  onRefreshClientErrors: () => void;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
 }) {
@@ -9902,6 +9962,58 @@ function ConfiguracoesPanel({ settings, loading, onSave, onDelete }: {
       </div>
 
       {/* ── Info ──────────────────────────────────────────────────────────── */}
+      <div className="max-w-5xl bg-white border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-primary" />
+              Diagnóstico de Erros do Navegador
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              Exibe os últimos erros capturados no frontend para confirmar falhas de chunk/import em produção.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onRefreshClientErrors} disabled={clientErrorsLoading}>
+            {clientErrorsLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+            Atualizar
+          </Button>
+        </div>
+
+        {clientErrorsLoading ? (
+          <div className="py-6 flex items-center justify-center text-muted-foreground text-sm gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Carregando erros...
+          </div>
+        ) : clientErrors.length === 0 ? (
+          <div className="py-6 text-sm text-muted-foreground text-center border border-dashed rounded-xl">
+            Nenhum erro de navegador registrado recentemente.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {clientErrors.map((err) => (
+              <div key={err.id} className="border border-border/60 rounded-xl p-3 bg-muted/20 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${err.isChunkLoadError ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
+                      {err.isChunkLoadError ? "Chunk Error" : "Runtime Error"}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{err.type}</span>
+                    {err.buildId && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-800">build: {err.buildId}</span>}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDateBR(err.receivedAt)} {formatTimeBR(err.receivedAt)}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-foreground break-all">{err.message || "Erro sem mensagem"}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <p><strong>Origem:</strong> {err.source || "-"}</p>
+                  <p><strong>Página:</strong> {err.pageUrl || "-"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-sm text-blue-800 max-w-2xl">
         <p className="font-semibold mb-1">Como funciona?</p>
         <ul className="list-disc list-inside space-y-1 text-blue-700">

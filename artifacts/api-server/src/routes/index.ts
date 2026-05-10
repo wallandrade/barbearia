@@ -22,6 +22,7 @@ import rafflesRouter from "./raffles";
 import financialSummaryRouter from "./financial-summary";
 import supportRouter from "./support";
 import reshipmentsRouter from "./reshipments";
+import clientErrorsRouter from "./client-errors";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(affiliateRouter);
 router.use(rafflesRouter);
 router.use(supportRouter);
 router.use(reshipmentsRouter);
+router.use(clientErrorsRouter);
 
 export default router;
