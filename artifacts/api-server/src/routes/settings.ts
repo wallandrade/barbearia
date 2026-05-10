@@ -6,7 +6,7 @@ import { requirePrimaryAdmin } from "./admin-auth";
 const router: IRouter = Router();
 
 const PUBLIC_KEYS  = [
-  "logo", "banner_desktop", "banner_mobile", "site_name", "site_protected", "payment_protected",
+  "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile", "site_name", "site_protected", "payment_protected",
   "checkout_enable_pix", "checkout_enable_card", "checkout_pix_gateway"
 ];
 const ALLOWED_KEYS = [

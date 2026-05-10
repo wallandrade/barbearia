@@ -9630,7 +9630,7 @@ function ImageUploadCard({
       if (!src) return;
       const img = new Image();
       img.onload = () => {
-        const MAX = settingKey === "logo" ? 400 : 1920;
+        const MAX = settingKey === "logo" ? 400 : settingKey.includes("mobile") ? 800 : 1920;
         const scale = img.width > MAX ? MAX / img.width : 1;
         const canvas = document.createElement("canvas");
         canvas.width = Math.round(img.width * scale);
@@ -9752,6 +9752,33 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             onSave={onSave}
             onDelete={onDelete}
           />
+        </div>
+
+        <div className="mt-5">
+          <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
+            <ShoppingBag className="w-4 h-4 text-primary" />
+            Banner do topo do catálogo
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <ImageUploadCard
+              title="Banner Catálogo Desktop"
+              description="Imagem exibida no topo do catálogo em telas maiores. Recomendado: 1920×420px."
+              settingKey="catalog_banner_desktop"
+              currentSrc={settings["catalog_banner_desktop"]}
+              loading={!!loading["catalog_banner_desktop"]}
+              onSave={onSave}
+              onDelete={onDelete}
+            />
+            <ImageUploadCard
+              title="Banner Catálogo Mobile"
+              description="Imagem exibida no topo do catálogo em celulares. Recomendado: 800×420px."
+              settingKey="catalog_banner_mobile"
+              currentSrc={settings["catalog_banner_mobile"]}
+              loading={!!loading["catalog_banner_mobile"]}
+              onSave={onSave}
+              onDelete={onDelete}
+            />
+          </div>
         </div>
       </div>
 

@@ -220,6 +220,7 @@ export default function Home() {
     setActiveBrand,
   };
   const hasHeroBanner = Boolean(banners["banner_desktop"] || banners["banner_mobile"]);
+  const hasCatalogBanner = Boolean(banners["catalog_banner_desktop"] || banners["catalog_banner_mobile"]);
   const shouldRenderHero = hasHeroBanner || !bannersLoaded;
 
   return (
@@ -250,6 +251,33 @@ export default function Home() {
           ) : (
             <div className="w-full h-[180px] sm:h-[260px] md:h-[380px] bg-muted/30 animate-pulse" aria-hidden="true" />
           )}
+        </section>
+      )}
+
+      {hasCatalogBanner && (
+        <section className="w-full bg-background border-b border-border/40">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
+            <picture>
+              {banners["catalog_banner_mobile"] ? (
+                <source media="(max-width: 639px)" srcSet={banners["catalog_banner_mobile"]} />
+              ) : null}
+              {banners["catalog_banner_desktop"] ? (
+                <img
+                  src={banners["catalog_banner_desktop"]}
+                  alt="Banner do catálogo"
+                  fetchPriority="high"
+                  className="block w-full h-[160px] sm:h-[220px] md:h-[300px] rounded-3xl object-cover object-center shadow-sm border border-border/40"
+                />
+              ) : banners["catalog_banner_mobile"] ? (
+                <img
+                  src={banners["catalog_banner_mobile"]}
+                  alt="Banner do catálogo"
+                  fetchPriority="high"
+                  className="block w-full h-[160px] sm:h-[220px] md:h-[300px] rounded-3xl object-cover object-center shadow-sm border border-border/40"
+                />
+              ) : null}
+            </picture>
+          </div>
         </section>
       )}
 
