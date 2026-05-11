@@ -175,7 +175,7 @@ export default function SocialProofWidget() {
   const badge = feed.badgeColor    ?? "#22c55e";
 
   return (
-    <div className="fixed bottom-5 left-5 z-[9999]" style={{ width: 260 }}>
+    <div className="fixed bottom-5 left-5 z-[9999]" style={{ width: 220 }}>
       <AnimatePresence mode="wait">
         {visible && (
           <motion.div
@@ -184,7 +184,7 @@ export default function SocialProofWidget() {
             animate={{ opacity: 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, x: -16, scale: 0.95 }}
             transition={{ type: "spring", stiffness: 340, damping: 30 }}
-            className="rounded-2xl select-none overflow-hidden relative"
+            className="rounded-xl select-none overflow-hidden relative"
             role="status"
             aria-live="polite"
             aria-atomic="true"
@@ -193,33 +193,33 @@ export default function SocialProofWidget() {
               boxShadow: "0 8px 32px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.08)",
             }}
           >
-            <div className="h-1 w-full" style={{ backgroundColor: badge }} />
+            <div className="h-0.5 w-full" style={{ backgroundColor: badge }} />
 
-            <div className="px-3.5 pt-3 pb-3">
-              <div className="flex items-start gap-2.5">
+            <div className="px-2.5 pt-2 pb-2">
+              <div className="flex items-start gap-2">
                 <div
-                  className="mt-0.5 w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                  className="mt-0.5 w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: badge + "1a" }}
                 >
-                  <ShoppingBag className="w-4 h-4" style={{ color: badge }} />
+                  <ShoppingBag className="w-3 h-3" style={{ color: badge }} />
                 </div>
 
-                <div className="flex-1 min-w-0 pr-4">
-                  <p className="text-[13px] font-semibold leading-tight" style={{ color: text }}>
+                <div className="flex-1 min-w-0 pr-3">
+                  <p className="text-[11px] font-semibold leading-tight" style={{ color: text }}>
                     <span style={{ color: badge }}>{maskName(current.firstName)}</span>
                     {" "}
-                    <span style={{ opacity: 0.65 }}>acabou de comprar</span>
+                    <span style={{ opacity: 0.65 }}>comprou</span>
                   </p>
                   <p
-                    className="text-[12px] font-bold mt-1 leading-snug truncate"
+                    className="text-[10px] font-bold mt-0.5 leading-snug truncate"
                     style={{ color: text }}
                     title={current.productName}
                   >
                     {current.productName}
                   </p>
-                  <div className="flex items-center gap-1 mt-1.5">
-                    <MapPin className="w-3 h-3 flex-shrink-0" style={{ color: badge, opacity: 0.8 }} />
-                    <p className="text-[11px] font-medium truncate" style={{ color: text, opacity: 0.5 }}>
+                  <div className="flex items-center gap-0.5 mt-1">
+                    <MapPin className="w-2.5 h-2.5 flex-shrink-0" style={{ color: badge, opacity: 0.8 }} />
+                    <p className="text-[9px] font-medium truncate" style={{ color: text, opacity: 0.5 }}>
                       {current.city}
                     </p>
                   </div>
@@ -227,7 +227,7 @@ export default function SocialProofWidget() {
               </div>
 
               {/* Progress bar — resets on each new card via key */}
-              <div className="mt-3 h-[3px] rounded-full overflow-hidden" style={{ backgroundColor: text + "12" }}>
+              <div className="mt-2 h-0.5 rounded-full overflow-hidden" style={{ backgroundColor: text + "12" }}>
                 <motion.div
                   key={cardKey}
                   className="h-full rounded-full"
@@ -241,11 +241,11 @@ export default function SocialProofWidget() {
 
             <button
               onClick={() => { dismissedRef.current = true; setDismissed(true); setVisible(false); }}
-              className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-full transition-opacity hover:opacity-80"
+              className="absolute top-1.5 right-1.5 w-4 h-4 flex items-center justify-center rounded-full transition-opacity hover:opacity-80"
               style={{ color: text, opacity: 0.3 }}
               aria-label="Fechar"
             >
-              <X className="w-3 h-3" />
+              <X className="w-2.5 h-2.5" />
             </button>
           </motion.div>
         )}
