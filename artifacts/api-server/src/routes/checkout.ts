@@ -67,8 +67,6 @@ function isProductUnavailable(product: {
   stock: number | null;
 }): boolean {
   if (product.isActive === false) return true;
-  if (product.isSoldOut === true) return true;
-  if (typeof product.stock === "number" && product.stock <= 0) return true;
   return false;
 }
 
