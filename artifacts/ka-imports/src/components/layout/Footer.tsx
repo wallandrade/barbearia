@@ -1,4 +1,4 @@
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getActiveWhatsApp } from "@/lib/utils";
 
@@ -87,15 +87,26 @@ export function Footer() {
             <p className="text-muted-foreground text-sm mb-4">
               Precisa de ajuda? Fale com nosso suporte diretamente pelo WhatsApp.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-green-500 text-green-600 hover:bg-green-50 hover:border-green-600"
-              onClick={() => openWhatsApp("Olá, gostaria de tirar uma dúvida.")}
-            >
-              <MessageCircle className="w-5 h-5 mr-2" />
-              Suporte via WhatsApp
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 border-green-500 text-green-600 hover:bg-green-50 hover:border-green-600"
+                onClick={() => openWhatsApp("Olá, gostaria de tirar uma dúvida.")}
+              >
+                <MessageCircle className="w-5 h-5 mr-2" />
+                WhatsApp
+              </Button>
+              <a
+                href="https://t.me/+G73302k1jYo0Yjgx"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center w-11 h-11 border border-sky-500 rounded hover:bg-sky-50 transition-colors"
+                title="Telegram"
+              >
+                <Send className="w-5 h-5 text-sky-600" />
+              </a>
+            </div>
           </div>
         </div>
 
