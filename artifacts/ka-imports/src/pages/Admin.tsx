@@ -5910,9 +5910,30 @@ function InventoryPanel({
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
-            <span className="text-xs text-muted-foreground">
-              {filteredBalances.length}/{balances.length}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {filteredBalances.length}/{balances.length}
+              </span>
+              <button
+                type="button"
+                title="Copiar estoque"
+                onClick={() => {
+                  const lines = balances
+                    .filter((r) => r.quantity > 0)
+                    .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"))
+                    .map((r) => `${r.productName}: ${r.quantity} un`);
+                  const text = `📦 Estoque disponível (${new Date().toLocaleDateString("pt-BR")}):\n\n${lines.join("\n")}`;
+                  navigator.clipboard.writeText(text).then(() => {
+                    const btn = document.getElementById("copy-stock-btn");
+                    if (btn) { btn.textContent = "✓ Copiado!"; setTimeout(() => { btn.textContent = "📋 Copiar estoque"; }, 2000); }
+                  });
+                }}
+                id="copy-stock-btn"
+                className="text-xs px-2 py-1 rounded-md border border-border bg-muted hover:bg-accent transition-colors font-medium"
+              >
+                📋 Copiar estoque
+              </button>
+            </div>
           </div>
           <input
             className="h-10 w-full rounded-lg border border-border px-3 text-sm mb-3"
