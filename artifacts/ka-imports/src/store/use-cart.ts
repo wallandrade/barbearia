@@ -25,6 +25,7 @@ type CartItemExtended = CartItem & {
   image?: string;
   baseUnitPrice: number;
   regularPrice: number;
+  bulkDiscountEnabled?: boolean;
   bulkDiscountTiers?: BulkDiscountTier[];
   isBump?: boolean;
   bumpForProductId?: string;
@@ -137,7 +138,10 @@ export const useCart = create<CartState>()(
           }
 
           const addQuantity = Math.max(1, Number(options?.quantity ?? 1) || 1);
-          const bulkDiscountTiers = parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers);
+          const bulkDiscountEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
+          const bulkDiscountTiers = bulkDiscountEnabled
+            ? parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers)
+            : [];
           const baseUnitPrice = getBaseUnitPrice(product);
 
           const existingItem = state.items.find((item) => item.id === product.id);
@@ -145,7 +149,8 @@ export const useCart = create<CartState>()(
 
           if (existingItem) {
             const nextQuantity = existingItem.quantity + addQuantity;
-            const nextPrice = options?.unitPrice ?? getTierUnitPrice(baseUnitPrice, nextQuantity, existingItem.bulkDiscountTiers ?? bulkDiscountTiers);
+            const tiersForPrice = bulkDiscountEnabled ? (existingItem.bulkDiscountTiers ?? bulkDiscountTiers) : [];
+            const nextPrice = options?.unitPrice ?? getTierUnitPrice(baseUnitPrice, nextQuantity, tiersForPrice);
             return {
               items: state.items.map((item) =>
                 item.id === product.id
@@ -154,7 +159,8 @@ export const useCart = create<CartState>()(
                     quantity: nextQuantity,
                     price: nextPrice,
                     baseUnitPrice,
-                    bulkDiscountTiers: existingItem.bulkDiscountTiers ?? bulkDiscountTiers,
+                    bulkDiscountEnabled,
+                    bulkDiscountTiers: tiersForPrice,
                   }
                   : item
               ),
@@ -175,6 +181,7 @@ export const useCart = create<CartState>()(
                 regularPrice,
                 quantity: addQuantity,
                 image: product.image,
+                bulkDiscountEnabled,
                 bulkDiscountTiers,
               } as CartItemExtended,
             ],
@@ -200,7 +207,9 @@ export const useCart = create<CartState>()(
               ? {
                 ...item,
                 quantity: Math.max(1, quantity),
-                price: getTierUnitPrice(Number(item.baseUnitPrice ?? item.price), Math.max(1, quantity), item.bulkDiscountTiers ?? []),
+                price: (item.bulkDiscountEnabled === true)
+                  ? getTierUnitPrice(Number(item.baseUnitPrice ?? item.price), Math.max(1, quantity), item.bulkDiscountTiers ?? [])
+                  : Number(item.baseUnitPrice ?? item.price),
               }
               : item
           ),
