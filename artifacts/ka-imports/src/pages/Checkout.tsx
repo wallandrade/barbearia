@@ -22,6 +22,8 @@ import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
 import { useCreateOrder } from "@workspace/api-client-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const LANDER_GOLD_CATEGORY = "lander gold";
+const LANDER_GOLD_MIN_QTY = 5;
 
 interface ShippingOption {
   id: string; name: string; description: string | null; price: number;
@@ -121,6 +123,36 @@ export default function Checkout() {
   const [affiliateCreditLoading, setAffiliateCreditLoading] = useState(false);
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true });
+  const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setProductCategoryById(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`${BASE}/api/products`)
+      .then((res) => {
+        if (!res.ok) throw new Error("PRODUCTS_FETCH_FAILED");
+        return res.json() as Promise<{ products?: Array<{ id: string; category?: string }> }>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const nextMap = new Map<string, string>();
+        for (const product of data.products ?? []) {
+          nextMap.set(product.id, String(product.category ?? ""));
+        }
+        setProductCategoryById(nextMap);
+      })
+      .catch(() => {
+        if (!cancelled) setProductCategoryById(new Map());
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   const validateCartAvailability = useCallback(async () => {
     const nonBumpItems = items.filter((item) => !(item as { isBump?: boolean }).isBump);
@@ -408,6 +440,34 @@ export default function Checkout() {
   }, []);
 
   const subtotal = getSubtotal();
+  const nonBumpItems = useMemo(
+    () => items.filter((item) => !(item as { isBump?: boolean }).isBump),
+    [items]
+  );
+  const hasMissingCategoryInfo = nonBumpItems.some((item) => !productCategoryById.has(item.id));
+  const isLanderGoldOnlyCart = nonBumpItems.length > 0 && nonBumpItems.every((item) => {
+    const category = (productCategoryById.get(item.id) ?? "").trim().toLowerCase();
+    return category === LANDER_GOLD_CATEGORY;
+  });
+  const landerGoldOnlyQty = nonBumpItems.reduce((acc, item) => {
+    const category = (productCategoryById.get(item.id) ?? "").trim().toLowerCase();
+    return category === LANDER_GOLD_CATEGORY ? acc + item.quantity : acc;
+  }, 0);
+  const shouldBlockLanderGoldOnlyCheckout = !hasMissingCategoryInfo
+    && isLanderGoldOnlyCart
+    && landerGoldOnlyQty < LANDER_GOLD_MIN_QTY;
+  const missingLanderGoldQty = Math.max(0, LANDER_GOLD_MIN_QTY - landerGoldOnlyQty);
+
+  const validateLanderGoldRule = useCallback(() => {
+    if (!shouldBlockLanderGoldOnlyCheckout) return true;
+    const pieceLabel = missingLanderGoldQty === 1 ? "peça" : "peças";
+    toast.error(
+      `Pedido mínimo para Lander Gold sozinho: ${LANDER_GOLD_MIN_QTY} peças. `
+      + `Adicione mais ${missingLanderGoldQty} ${pieceLabel} ou inclua outro produto no carrinho.`
+    );
+    return false;
+  }, [missingLanderGoldQty, shouldBlockLanderGoldOnlyCheckout]);
+
   const couponProductsPayload = useMemo(
     () => items.map((item) => ({
       id: (item as { bumpForProductId?: string }).bumpForProductId ?? item.id,
@@ -624,6 +684,8 @@ export default function Checkout() {
       return;
     }
 
+    if (!validateLanderGoldRule()) return;
+
     const cartAvailable = await validateCartAvailability();
     if (!cartAvailable) return;
 
@@ -808,6 +870,8 @@ export default function Checkout() {
     }
 
     handleSubmit(async () => {
+      if (!validateLanderGoldRule()) return;
+
       const cartAvailable = await validateCartAvailability();
       if (!cartAvailable) return;
 
@@ -841,6 +905,8 @@ export default function Checkout() {
   };
 
   const finalizeCardPayment = () => {
+    if (!validateLanderGoldRule()) return;
+
     const data = getValues();
     const cardFee = installments <= 3 ? 100 : 0;
     // Card uses regular (non-promo) prices
@@ -1577,6 +1643,22 @@ export default function Checkout() {
                 );
               })()}
 
+              {shouldBlockLanderGoldOnlyCheckout && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-rose-50 p-3.5">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4.5 h-4.5 text-red-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-red-800">Pedido mínimo para Lander Gold</p>
+                      <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                        Para comprar produtos da categoria Lander Gold sozinhos, o mínimo é de {LANDER_GOLD_MIN_QTY} peças.
+                        Faltam {missingLanderGoldQty} {missingLanderGoldQty === 1 ? "peça" : "peças"}.
+                        Você também pode adicionar qualquer outro produto ao carrinho para liberar o checkout.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3">
                 {paymentMethods.pix && (
                   <Button
@@ -1584,7 +1666,7 @@ export default function Checkout() {
                     form="checkout-form"
                     size="lg"
                     className="w-full text-lg bg-green-600 hover:bg-green-700 border-none shadow-lg shadow-green-500/20"
-                    disabled={isLoading}
+                    disabled={isLoading || shouldBlockLanderGoldOnlyCheckout}
                   >
                     {isLoading ? (
                       <span className="flex items-center gap-2">
@@ -1607,6 +1689,7 @@ export default function Checkout() {
                     size="lg"
                     className="w-full text-lg border-2 hover:bg-gray-50"
                     onClick={handleCardPayment}
+                    disabled={shouldBlockLanderGoldOnlyCheckout}
                   >
                     <CreditCard className="w-5 h-5 mr-2" />
                     Pagar com Cartão
