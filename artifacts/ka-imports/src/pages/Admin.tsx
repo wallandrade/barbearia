@@ -140,8 +140,9 @@ export function orderToFullText(order: any): string {
     ? products
         .map((p) => {
           const qty = Number(p?.quantity) || 0;
-          const price = p?.price ? ` @ ${formatCurrency(Number(p.price))}` : "";
-          return `- ${qty}x ${p?.name || "Produto"}${price}`;
+          const unitPrice = Number(p?.price) || 0;
+          const lineTotal = qty * unitPrice;
+          return `- ${qty}x ${p?.name || "Produto"} (${formatCurrency(lineTotal)})`;
         })
         .join("\n")
     : "- Sem itens";
@@ -157,20 +158,62 @@ export function orderToFullText(order: any): string {
     .filter(Boolean)
     .join(", ");
 
+  const subtotalFromItems = products.reduce((sum, p) => {
+    const qty = Number(p?.quantity) || 0;
+    const unitPrice = Number(p?.price) || 0;
+    return sum + (qty * unitPrice);
+  }, 0);
+
+  const total = Number(order?.cardTotalActual ?? order?.total) || 0;
+
+  const freteCandidates = [
+    Number(order?.shippingCost),
+    Number(order?.shippingPrice),
+    Number(order?.frete),
+    Number(order?.freight),
+    Number(order?.deliveryFee),
+    Number(order?.shippingFee),
+  ].filter((value) => Number.isFinite(value) && value >= 0);
+
+  const frete = freteCandidates.length > 0
+    ? freteCandidates[0]
+    : Math.max(0, total - subtotalFromItems);
+
+  const subtotalCandidates = [
+    Number(order?.subtotal),
+    Number(order?.subTotal),
+    Number(order?.itemsTotal),
+  ].filter((value) => Number.isFinite(value) && value >= 0);
+
+  const subtotal = subtotalCandidates.length > 0
+    ? subtotalCandidates[0]
+    : Math.max(0, total - frete);
+
+  const paymentMethodRaw = String(order?.paymentMethod || "").toLowerCase();
+  const paymentLabel = paymentMethodRaw === "card_simulation"
+    ? "Cartão"
+    : (paymentMethodRaw || "-").toUpperCase();
+
+  const transactionId = String(order?.transactionId || order?.txid || order?.gatewayTransactionId || "").trim();
+
+  const contato = `${order?.clientPhone || "-"}${order?.clientEmail ? ` · ${order.clientEmail}` : ""}`;
+
   return [
-    `Pedido numero: ${order?.id || "-"}`,
-    `Status: ${order?.status || "-"}`,
+    `Pedido #${order?.id || "-"}`,
     `Data: ${formatDateBR(order?.createdAt) || "-"}`,
-    order?.clientName ? `Nome: ${order.clientName}` : "",
-    order?.clientEmail ? `Email: ${order.clientEmail}` : "",
-    order?.clientPhone ? `Telefone: ${order.clientPhone}` : "",
+    `Cliente: ${order?.clientName || "-"}`,
+    `Contato: ${contato}`,
     order?.clientDocument ? `CPF: ${order.clientDocument}` : "",
-    address ? `Endereço: ${address}` : "",
-    order?.sellerCode ? `Código vendedor: ${order.sellerCode}` : "",
-    `Total: ${formatCurrency(Number(order?.cardTotalActual ?? order?.total) || 0)}`,
-    "",
     "Produtos:",
     productsText,
+    `Subtotal: ${formatCurrency(subtotal)}`,
+    `Frete: ${formatCurrency(frete)}`,
+    `Total: ${formatCurrency(total)}`,
+    `Status: ${order?.status || "-"}`,
+    `Pagamento: ${paymentLabel}`,
+    transactionId ? `Transação: ${transactionId}` : "",
+    order?.sellerCode ? `Vendedor: ${order.sellerCode}` : "",
+    address ? `Endereço: ${address}` : "",
     order?.observation ? "" : "",
     order?.observation ? `Observação: ${order.observation}` : "",
     order?.trackingCode ? `Rastreio: ${order.trackingCode}` : "",
