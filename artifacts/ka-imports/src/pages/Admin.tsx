@@ -6371,33 +6371,7 @@ function OrdersPanel({
       const quantity = Number(row.quantity || 0);
       const current = stockByName.get(normalized);
 
-      // Função detalhada fora de qualquer função
-      export function orderToFullText(order: any): string {
-        const products = getOrderProducts(order?.products);
-        const productsText = products.length
-          ? products
-              .map((p) => {
-                const qty = Number(p?.quantity) || 0;
-                const price = p?.price ? ` @ ${formatCurrency(Number(p.price))}` : "";
-                const cost = p?.costPrice ? ` (Custo: ${formatCurrency(Number(p.costPrice))})` : "";
-                return `- ${qty}x ${p?.name || "Produto"}${price}${cost}`;
-              })
-              .join("\n")
-          : "- Sem itens";
-
-        const address = [
-          order?.addressStreet,
-          order?.addressNumber,
-          order?.addressComplement,
-          order?.addressNeighborhood,
-          `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
-          order?.addressCep ? `CEP ${order.addressCep}` : "",
-        ]
-          .filter(Boolean)
-          .join(", ");
-
-        const reshipmentStatus = order?.reshipment?.status;
-        const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
+      // ...existing code...
           : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
           : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
           : "";
