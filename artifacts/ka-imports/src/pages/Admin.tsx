@@ -7059,6 +7059,7 @@ function OrdersPanel({
           const commissionAmount = grossAmount * (commissionRate / 100);
           const gatewayFeeRaw = grossAmount * (gatewayFeePercent / 100) + gatewayFeeFixed;
           const gatewayFee = grossAmount > 0 ? Math.max(gatewayFeeRaw, gatewayFeeMin) : 0;
+          const estimatedProfit = grossAmount - orderProductsCost - commissionAmount - gatewayFee;
           const reshipmentTrackingCode = String(order?.reshipment?.ticketTrackingCode || "").trim();
           const previewProducts = orderProducts.slice(0, 5);
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
