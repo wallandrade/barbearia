@@ -142,9 +142,9 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
     order?.observation ? "" : "",
     order?.observation ? `Observacao: ${order.observation}` : "",
   ]
+
     .filter(Boolean)
     .join("\n");
-}
 
 export function chargeToText(charge: any): string {
   const address = [
