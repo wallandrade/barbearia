@@ -452,18 +452,16 @@ export default function Checkout() {
     () => items.filter((item) => !(item as { isBump?: boolean }).isBump),
     [items]
   );
-  const hasMissingCategoryInfo = nonBumpItems.some((item) => !productCategoryById.has(item.id));
-  const isLanderGoldOnlyCart = nonBumpItems.length > 0 && nonBumpItems.every((item) => {
+  const isLanderGoldItem = useCallback((item: (typeof items)[number]) => {
     const category = (productCategoryById.get(item.id) ?? "").trim().toLowerCase();
-    return isLanderGoldCategory(category);
-  });
-  const landerGoldOnlyQty = nonBumpItems.reduce((acc, item) => {
-    const category = (productCategoryById.get(item.id) ?? "").trim().toLowerCase();
-    return isLanderGoldCategory(category) ? acc + item.quantity : acc;
-  }, 0);
-  const shouldBlockLanderGoldOnlyCheckout = !hasMissingCategoryInfo
-    && isLanderGoldOnlyCart
-    && landerGoldOnlyQty < LANDER_GOLD_MIN_QTY;
+    if (isLanderGoldCategory(category)) return true;
+    return isLanderGoldCategory(String(item.name ?? ""));
+  }, [productCategoryById]);
+  const isLanderGoldOnlyCart = nonBumpItems.length > 0 && nonBumpItems.every((item) => isLanderGoldItem(item));
+  const landerGoldOnlyQty = nonBumpItems.reduce((acc, item) => (
+    isLanderGoldItem(item) ? acc + item.quantity : acc
+  ), 0);
+  const shouldBlockLanderGoldOnlyCheckout = isLanderGoldOnlyCart && landerGoldOnlyQty < LANDER_GOLD_MIN_QTY;
   const missingLanderGoldQty = Math.max(0, LANDER_GOLD_MIN_QTY - landerGoldOnlyQty);
 
   const validateLanderGoldRule = useCallback(() => {
