@@ -2597,7 +2597,7 @@ export default function Admin() {
       return;
     }
 
-    const totals = new Map<string, { label: string; qty: number; productId: string | null }>();
+    const totals = new Map<string, { label: string; qty: number; productId: string | null; forceBuy: boolean }>();
     for (const order of ordersParaEnviar) {
       const isReshipment = Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
         && (order as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
@@ -2606,11 +2606,13 @@ export default function Admin() {
         const productId = String((p as { id?: string })?.id || "").trim() || null;
         const key = productId ? `id:${productId}` : `name:${name.toLowerCase()}`;
         const prev = totals.get(key);
+        // Corrigir: forceBuy só é true se TODOS os itens somados forem reenvio
+        const thisForceBuy = isReshipment;
         totals.set(key, {
           label: prev?.label || name,
           qty: (prev?.qty || 0) + (Number(p.quantity) || 0),
           productId,
-          forceBuy: Boolean(prev?.forceBuy) || isReshipment,
+          forceBuy: (prev?.forceBuy ?? true) && thisForceBuy,
         });
       }
     }
