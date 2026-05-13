@@ -2597,22 +2597,21 @@ export default function Admin() {
       return;
     }
 
-    const totals = new Map<string, { label: string; qty: number; productId: string | null; forceBuy: boolean }>();
+    const totals = new Map<string, { label: string; productId: string | null; qtyNormal: number; qtyReshipment: number }>();
     for (const order of ordersParaEnviar) {
       const isReshipment = Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
         && (order as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
       for (const p of getOrderProducts(order.products)) {
         const name = (p.name || "Produto").trim();
         const productId = String((p as { id?: string })?.id || "").trim() || null;
+        const qty = Number(p.quantity) || 0;
         const key = productId ? `id:${productId}` : `name:${name.toLowerCase()}`;
         const prev = totals.get(key);
-        // Corrigir: forceBuy só é true se TODOS os itens somados forem reenvio
-        const thisForceBuy = isReshipment;
         totals.set(key, {
           label: prev?.label || name,
-          qty: (prev?.qty || 0) + (Number(p.quantity) || 0),
           productId,
-          forceBuy: (prev?.forceBuy ?? true) && thisForceBuy,
+          qtyNormal: (prev?.qtyNormal || 0) + (isReshipment ? 0 : qty),
+          qtyReshipment: (prev?.qtyReshipment || 0) + (isReshipment ? qty : 0),
         });
       }
     }
@@ -2649,14 +2648,14 @@ export default function Admin() {
       .map((item) => {
         const normalizedName = item.label.trim().toLowerCase();
         const fallbackName = item.productId ? (productNameById.get(item.productId)?.trim().toLowerCase() || "") : "";
-        const available = item.forceBuy
-          ? 0
-          : item.productId
+        const available = item.productId
           ? (stockById.get(item.productId) ?? stockByName.get(fallbackName) ?? stockByName.get(normalizedName) ?? 0)
           : (stockByName.get(normalizedName) ?? 0);
-        const fromStock = Math.min(Math.max(available, 0), item.qty);
-        const toBuy = Math.max(0, item.qty - fromStock);
-        return { ...item, fromStock, toBuy };
+        const fromStock = Math.min(Math.max(available, 0), item.qtyNormal);
+        const toBuyNormal = Math.max(0, item.qtyNormal - fromStock);
+        const toBuyReshipment = Math.max(0, item.qtyReshipment);
+        const toBuy = toBuyNormal + toBuyReshipment;
+        return { ...item, fromStock, toBuy, toBuyReshipment };
       });
 
     const buyLines = breakdown
@@ -2668,8 +2667,8 @@ export default function Admin() {
       .map((item) => `- ${item.fromStock}x ${item.label}`);
 
     const reshipmentLines = breakdown
-      .filter((item) => item.forceBuy && item.toBuy > 0)
-      .map((item) => `- ${item.toBuy}x ${item.label}`);
+      .filter((item) => item.toBuyReshipment > 0)
+      .map((item) => `- ${item.toBuyReshipment}x ${item.label}`);
 
     const estimatedTotalCost = breakdown.reduce((sum, item) => {
       const unitCost = item.productId ? costById.get(item.productId) : undefined;
