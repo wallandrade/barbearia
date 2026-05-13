@@ -551,6 +551,7 @@ export async function getReshipmentByOrderIds(orderIds: string[]): Promise<Map<s
   supportTicketId: string;
   sentAt: string | null;
   ticketDescription?: string | null;
+  ticketTrackingCode?: string | null;
   originalOrderCreatedAt?: string | null;
 }>> {
   if (orderIds.length === 0) return new Map();
@@ -562,6 +563,7 @@ export async function getReshipmentByOrderIds(orderIds: string[]): Promise<Map<s
       supportTicketId: reshipmentsTable.supportTicketId,
       sentAt: reshipmentsTable.sentAt,
       ticketDescription: supportTicketsTable.description,
+      ticketTrackingCode: supportTicketsTable.trackingCode,
       originalOrderCreatedAt: supportTicketsTable.orderCreatedAt,
     })
     .from(reshipmentsTable)
@@ -576,6 +578,7 @@ export async function getReshipmentByOrderIds(orderIds: string[]): Promise<Map<s
       supportTicketId: row.supportTicketId,
       sentAt: row.sentAt?.toISOString() || null,
       ticketDescription: row.ticketDescription || null,
+      ticketTrackingCode: row.ticketTrackingCode || null,
       originalOrderCreatedAt: row.originalOrderCreatedAt?.toISOString() || null,
     },
   ]));

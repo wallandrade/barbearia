@@ -98,11 +98,13 @@ export function orderToText(order: any): string {
 
   const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
   const dataPrimeiroPedido = order?.reshipment?.originalOrderCreatedAt || order?.createdAt || null;
+  const trackingCodeInformado = String(order?.reshipment?.ticketTrackingCode || "").trim();
 
   if (reshipmentLabel) {
     return [
       `🚨 REENVIO - ${reshipmentLabel}`,
       `Data do pedido original: ${formatDateBR(dataPrimeiroPedido) || "-"}`,
+      trackingCodeInformado ? `Numero rastreio informado: ${trackingCodeInformado}` : "",
       order?.reshipment?.ticketDescription ? `Motivo do reenvio: ${order.reshipment.ticketDescription}` : "",
       "",
       `Pedido numero: ${order?.id || "-"}`,
@@ -670,6 +672,7 @@ interface SupportTicketRecord {
   orderId: string;
   clientDocument: string;
   clientName: string;
+  trackingCode?: string | null;
   description: string;
   imageUrl: string | null;
   addressChange?: {
@@ -7056,12 +7059,13 @@ function OrdersPanel({
           const commissionAmount = grossAmount * (commissionRate / 100);
           const gatewayFeeRaw = grossAmount * (gatewayFeePercent / 100) + gatewayFeeFixed;
           const gatewayFee = grossAmount > 0 ? Math.max(gatewayFeeRaw, gatewayFeeMin) : 0;
-          const estimatedProfit = grossAmount - orderProductsCost - commissionAmount - gatewayFee;
+          const reshipmentTrackingCode = String(order?.reshipment?.ticketTrackingCode || "").trim();
           const previewProducts = orderProducts.slice(0, 5);
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
+            isReshipment && reshipmentTrackingCode ? `Numero rastreio informado: ${reshipmentTrackingCode}` : "",
             const productId = String(product?.id || "").trim();
             return productId ? String(productImageById[productId] || "").trim() : "";
           };

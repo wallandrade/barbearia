@@ -61,6 +61,7 @@ export default function Support() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [orders, setOrders] = useState<SupportOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+  const [trackingCode, setTrackingCode] = useState("");
   const [description, setDescription] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
   const [wantsAddressChange, setWantsAddressChange] = useState(false);
@@ -152,6 +153,10 @@ export default function Support() {
       toast.error("Descreva o problema com pelo menos 10 caracteres.");
       return;
     }
+    if (trackingCode.trim().length < 6) {
+      toast.error("Informe o numero de rastreio (minimo 6 caracteres).");
+      return;
+    }
 
     let addressChange: AddressChangePayload | null = null;
     if (wantsAddressChange) {
@@ -188,6 +193,7 @@ export default function Support() {
         body: JSON.stringify({
           cpf: cpfDigits,
           orderId: selectedOrderId,
+          trackingCode: trackingCode.trim(),
           description: description.trim(),
           imageData,
           addressChange,
@@ -210,6 +216,7 @@ export default function Support() {
   const restart = () => {
     setOrders([]);
     setSelectedOrderId("");
+    setTrackingCode("");
     setDescription("");
     setImageData(null);
     setWantsAddressChange(false);
@@ -311,6 +318,13 @@ export default function Support() {
                 {selectedOrder && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">3. Descreva o problema</p>
+                    <input
+                      value={trackingCode}
+                      onChange={(e) => setTrackingCode(e.target.value)}
+                      placeholder="Numero de rastreio do pedido"
+                      className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
+                    />
+                    <p className="text-xs text-slate-500">Informe o codigo de rastreio para agilizar o atendimento.</p>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}

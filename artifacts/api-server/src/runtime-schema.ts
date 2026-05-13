@@ -352,6 +352,7 @@ async function ensureSupportTicketsTable(databaseName: string): Promise<void> {
         order_id VARCHAR(255) NOT NULL,
         client_document VARCHAR(32) NOT NULL,
         client_name VARCHAR(255) NOT NULL,
+        tracking_code VARCHAR(255) NULL,
         description TEXT NOT NULL,
         image_url MEDIUMTEXT NULL,
         address_change_json MEDIUMTEXT NULL,
@@ -372,6 +373,7 @@ async function ensureSupportTicketsTable(databaseName: string): Promise<void> {
   }
 
   const definitions = [
+    { name: "tracking_code", sql: "ALTER TABLE support_tickets ADD COLUMN tracking_code VARCHAR(255) NULL" },
     { name: "order_total", sql: "ALTER TABLE support_tickets ADD COLUMN order_total DECIMAL(10,2) NULL" },
     { name: "order_created_at", sql: "ALTER TABLE support_tickets ADD COLUMN order_created_at TIMESTAMP NULL" },
     { name: "resolved_at", sql: "ALTER TABLE support_tickets ADD COLUMN resolved_at TIMESTAMP NULL" },

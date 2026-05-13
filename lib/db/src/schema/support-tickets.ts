@@ -7,6 +7,7 @@ export const supportTicketsTable = mysqlTable("support_tickets", {
   orderId: varchar("order_id", { length: 255 }).notNull(),
   clientDocument: varchar("client_document", { length: 32 }).notNull(),
   clientName: varchar("client_name", { length: 255 }).notNull(),
+  trackingCode: varchar("tracking_code", { length: 255 }),
   description: text("description").notNull(),
   imageUrl: mediumtext("image_url"),
   addressChangeJson: mediumtext("address_change_json"),

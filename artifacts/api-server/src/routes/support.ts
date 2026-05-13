@@ -170,6 +170,7 @@ router.post("/support/tickets", async (req, res) => {
     const cpf = onlyDigits(req.body?.cpf);
     const orderId = String(req.body?.orderId ?? "").trim();
     const description = String(req.body?.description ?? "").trim();
+    const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const imageData = req.body?.imageData == null ? null : String(req.body.imageData);
     let addressChange: AddressChangePayload | null = null;
 
@@ -180,6 +181,11 @@ router.post("/support/tickets", async (req, res) => {
 
     if (description.length > 3000) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Descricao muito longa." });
+      return;
+    }
+
+    if (!trackingCode || trackingCode.length < 6) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe o numero de rastreio (minimo 6 caracteres)." });
       return;
     }
 
@@ -224,6 +230,7 @@ router.post("/support/tickets", async (req, res) => {
       orderId: order.id,
       clientDocument: cpf,
       clientName: order.clientName,
+      trackingCode,
       description,
       imageUrl: imageData,
       addressChangeJson: addressChange ? JSON.stringify(addressChange) : null,
@@ -291,6 +298,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
           orderId: row.orderId,
           clientDocument: row.clientDocument,
           clientName: row.clientName,
+          trackingCode: row.trackingCode,
           description: row.description,
           imageUrl: row.imageUrl,
           addressChange,
@@ -330,6 +338,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         orderId: row.orderId,
         clientDocument: row.clientDocument,
         clientName: row.clientName,
+        trackingCode: row.trackingCode,
         description: row.description,
         imageUrl: row.imageUrl,
         addressChange,
