@@ -69,6 +69,89 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
 }
 
 export function orderToText(order: any): string {
+  // Gera texto detalhado completo do pedido para cópia administrativa
+  export function orderToFullText(order: any): string {
+    const products = getOrderProducts(order?.products);
+    const productsText = products.length
+      ? products
+          .map((p) => {
+            const qty = Number(p?.quantity) || 0;
+            const price = p?.price ? ` @ ${formatCurrency(Number(p.price))}` : "";
+            const cost = p?.costPrice ? ` (Custo: ${formatCurrency(Number(p.costPrice))})` : "";
+            return `- ${qty}x ${p?.name || "Produto"}${price}${cost}`;
+          })
+          .join("\n")
+      : "- Sem itens";
+
+    const address = [
+      order?.addressStreet,
+      order?.addressNumber,
+      order?.addressComplement,
+      order?.addressNeighborhood,
+      `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
+      order?.addressCep ? `CEP ${order.addressCep}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    const reshipmentStatus = order?.reshipment?.status;
+    const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
+      : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
+      : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
+      : "";
+
+    const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+    const dataPrimeiroPedido = order?.reshipment?.originalOrderCreatedAt || order?.createdAt || null;
+    const trackingCodeInformado = String(order?.reshipment?.ticketTrackingCode || "").trim();
+
+    const paymentMethod = order?.paymentMethod === "card_simulation" ? "Cartão (simulação)" : "PIX";
+    const commissionRate = order?.sellerCommissionRateSnapshot ?? order?.commissionRate;
+    const grossAmount = Number(order?.cardTotalActual ?? order?.total) || 0;
+    const commissionAmount = commissionRate ? grossAmount * (commissionRate / 100) : undefined;
+    const gatewayFee = order?.gatewayFee ?? undefined;
+    const estimatedProfit = order?.estimatedProfit ?? undefined;
+
+    const lines = [
+      reshipmentLabel ? `🚨 REENVIO - ${reshipmentLabel}` : undefined,
+      reshipmentLabel ? `Data do pedido original: ${formatDateBR(dataPrimeiroPedido) || "-"}` : undefined,
+      trackingCodeInformado ? `Numero rastreio informado: ${trackingCodeInformado}` : undefined,
+      order?.reshipment?.ticketDescription ? `Motivo do reenvio: ${order.reshipment.ticketDescription}` : undefined,
+      "",
+      `Pedido numero: ${order?.id || "-"}`,
+      `Status: ${order?.status || "-"}`,
+      `Data: ${formatDateBR(order?.createdAt) || "-"}`,
+      `Método de pagamento: ${paymentMethod}`,
+      order?.sellerCode ? `Código vendedor: ${order.sellerCode}` : undefined,
+      order?.clientName ? `Nome: ${order.clientName}` : undefined,
+      order?.clientEmail ? `Email: ${order.clientEmail}` : undefined,
+      order?.clientPhone ? `Telefone: ${order.clientPhone}` : undefined,
+      order?.clientDocument ? `CPF: ${order.clientDocument}` : undefined,
+      `Rua: ${rua}`,
+      `Bairro: ${order?.addressNeighborhood || "-"}`,
+      `Complemento: ${order?.addressComplement || "-"}`,
+      `Cidade: ${order?.addressCity || "-"}`,
+      `Estado: ${order?.addressState || "-"}`,
+      `Cep: ${order?.addressCep || "-"}`,
+      address ? `Endereço completo: ${address}` : undefined,
+      order?.observation ? `Observação: ${order.observation}` : undefined,
+      "",
+      `Valor total: ${formatCurrency(grossAmount)}`,
+      commissionAmount !== undefined ? `Comissão: ${formatCurrency(commissionAmount)}` : undefined,
+      gatewayFee !== undefined ? `Taxa gateway: ${formatCurrency(gatewayFee)}` : undefined,
+      estimatedProfit !== undefined ? `Lucro estimado: ${formatCurrency(estimatedProfit)}` : undefined,
+      "",
+      "Produtos:",
+      productsText,
+      "",
+      order?.trackingCode ? `Código de rastreio: ${order.trackingCode}` : undefined,
+      order?.trackingDetectedName ? `Nome detectado na etiqueta: ${order.trackingDetectedName}` : undefined,
+      order?.trackingDetectedAddress ? `Endereço detectado na etiqueta: ${order.trackingDetectedAddress}` : undefined,
+      order?.proofUrls && order.proofUrls.length > 0 ? `Comprovantes: ${order.proofUrls.join(", ")}` : undefined,
+      order?.proofUrl ? `Comprovante: ${order.proofUrl}` : undefined,
+    ];
+
+    return lines.filter(Boolean).join("\n");
+  }
   const products = getOrderProducts(order?.products);
   const productsText = products.length
     ? products
@@ -6259,18 +6342,35 @@ function OrdersPanel({
   }, [trackingReview]);
 
   // Funções SEM hooks
+
   const copyOrder = async (order: AdminOrder) => {
     try {
       const mode = await copyText(orderToText(order));
       setCopiedOrderId(order.id);
       if (mode === "auto") {
-        toast.success("Dados copiados!");
+        toast.success("Resumo copiado!");
       } else {
         toast.info("Abra o prompt e copie manualmente.");
       }
       setTimeout(() => setCopiedOrderId(null), 2500);
     } catch {
       toast.error("Não foi possível copiar.");
+    }
+  };
+
+  // Nova função: copiar resumo completo
+  const copyOrderFull = async (order: AdminOrder) => {
+    try {
+      const mode = await copyText(orderToFullText(order));
+      setCopiedOrderId(order.id + "-full");
+      if (mode === "auto") {
+        toast.success("Resumo completo copiado!");
+      } else {
+        toast.info("Abra o prompt e copie manualmente.");
+      }
+      setTimeout(() => setCopiedOrderId(null), 2500);
+    } catch {
+      toast.error("Não foi possível copiar o resumo completo.");
     }
   };
 
@@ -7334,7 +7434,12 @@ function OrdersPanel({
                 <Button size="sm" variant="outline" className="gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50"
                   onClick={() => copyOrder(order)}>
                   {copiedOrderId === order.id ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedOrderId === order.id ? "Copiado!" : "Copiar Dados"}
+                  {copiedOrderId === order.id ? "Resumo copiado!" : "Copiar Resumo"}
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5 text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                  onClick={() => copyOrderFull(order)}>
+                  {copiedOrderId === order.id + "-full" ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedOrderId === order.id + "-full" ? "Completo copiado!" : "Copiar Completo"}
                 </Button>
                 {isPrimary && (
                   <Button size="sm" variant="outline" className="gap-1.5 text-violet-600 border-violet-200 hover:bg-violet-50"
