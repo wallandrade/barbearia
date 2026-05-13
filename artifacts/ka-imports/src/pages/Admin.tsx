@@ -6372,32 +6372,6 @@ function OrdersPanel({
       const current = stockByName.get(normalized);
 
       // ...existing code...
-          : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
-          : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
-          : "";
-
-        const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-        const dataPrimeiroPedido = order?.reshipment?.originalOrderCreatedAt || order?.createdAt || null;
-        const trackingCodeInformado = String(order?.reshipment?.ticketTrackingCode || "").trim();
-
-        const paymentMethod = order?.paymentMethod === "card_simulation" ? "Cartão (simulação)" : "PIX";
-        const commissionRate = order?.sellerCommissionRateSnapshot ?? order?.commissionRate;
-        const grossAmount = Number(order?.cardTotalActual ?? order?.total) || 0;
-        const commissionAmount = commissionRate ? grossAmount * (commissionRate / 100) : undefined;
-        const gatewayFee = order?.gatewayFee ?? undefined;
-        const estimatedProfit = order?.estimatedProfit ?? undefined;
-
-        const lines = [
-          reshipmentLabel ? `🚨 REENVIO - ${reshipmentLabel}` : undefined,
-          reshipmentLabel ? `Data do pedido original: ${formatDateBR(dataPrimeiroPedido) || "-"}` : undefined,
-          trackingCodeInformado ? `Numero rastreio informado: ${trackingCodeInformado}` : undefined,
-          order?.reshipment?.ticketDescription ? `Motivo do reenvio: ${order.reshipment.ticketDescription}` : undefined,
-          "",
-          `Pedido numero: ${order?.id || "-"}`,
-          `Status: ${order?.status || "-"}`,
-          `Data: ${formatDateBR(order?.createdAt) || "-"}`,
-          `Método de pagamento: ${paymentMethod}`,
-          order?.sellerCode ? `Código vendedor: ${order.sellerCode}` : undefined,
           order?.clientName ? `Nome: ${order.clientName}` : undefined,
           order?.clientEmail ? `Email: ${order.clientEmail}` : undefined,
           order?.clientPhone ? `Telefone: ${order.clientPhone}` : undefined,
