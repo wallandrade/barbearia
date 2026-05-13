@@ -186,8 +186,15 @@ function supplierOrderBlock(order: any, sequence: number): string {
     : "- Sem itens";
 
   const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+  const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
+  const firstOrderDate = formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-";
+  const reshipmentReason = String(order?.reshipment?.ticketDescription || "").trim();
 
   return [
+    isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
+    isReshipment ? `Data do pedido original: ${firstOrderDate}` : "",
+    isReshipment && reshipmentReason ? `Motivo do reenvio: ${reshipmentReason}` : "",
+    isReshipment ? "" : "",
     `Pedido numero: ${sequence}`,
     "",
     `Nome: ${order?.clientName || "-"}`,
@@ -2589,6 +2596,8 @@ export default function Admin() {
 
     const totals = new Map<string, { label: string; qty: number; productId: string | null }>();
     for (const order of ordersParaEnviar) {
+      const isReshipment = Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
+        && (order as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
       for (const p of getOrderProducts(order.products)) {
         const name = (p.name || "Produto").trim();
         const productId = String((p as { id?: string })?.id || "").trim() || null;
@@ -2598,6 +2607,7 @@ export default function Admin() {
           label: prev?.label || name,
           qty: (prev?.qty || 0) + (Number(p.quantity) || 0),
           productId,
+          forceBuy: Boolean(prev?.forceBuy) || isReshipment,
         });
       }
     }
@@ -2634,7 +2644,9 @@ export default function Admin() {
       .map((item) => {
         const normalizedName = item.label.trim().toLowerCase();
         const fallbackName = item.productId ? (productNameById.get(item.productId)?.trim().toLowerCase() || "") : "";
-        const available = item.productId
+        const available = item.forceBuy
+          ? 0
+          : item.productId
           ? (stockById.get(item.productId) ?? stockByName.get(fallbackName) ?? stockByName.get(normalizedName) ?? 0)
           : (stockByName.get(normalizedName) ?? 0);
         const fromStock = Math.min(Math.max(available, 0), item.qty);
@@ -2649,6 +2661,10 @@ export default function Admin() {
     const stockLines = breakdown
       .filter((item) => item.fromStock > 0)
       .map((item) => `- ${item.fromStock}x ${item.label}`);
+
+    const reshipmentLines = breakdown
+      .filter((item) => item.forceBuy && item.toBuy > 0)
+      .map((item) => `- ${item.toBuy}x ${item.label}`);
 
     const estimatedTotalCost = breakdown.reduce((sum, item) => {
       const unitCost = item.productId ? costById.get(item.productId) : undefined;
@@ -2666,6 +2682,9 @@ export default function Admin() {
       "",
       "Comprar agora:",
       buyLines.length ? buyLines.join("\n") : "- Nada para comprar",
+      "",
+      "🚨 Reenvios (abater no pagamento):",
+      reshipmentLines.length ? reshipmentLines.join("\n") : "- Nenhum reenvio na lista",
       "",
       stockSectionLabel,
       stockLines.length ? stockLines.join("\n") : "- Nenhum item coberto",
