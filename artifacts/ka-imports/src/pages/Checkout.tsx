@@ -22,8 +22,16 @@ import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
 import { useCreateOrder } from "@workspace/api-client-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const LANDER_GOLD_CATEGORY = "lander gold";
 const LANDER_GOLD_MIN_QTY = 5;
+
+function isLanderGoldCategory(value: string): boolean {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  return normalized.includes("lander gold") || normalized.includes("landerlan gold");
+}
 
 interface ShippingOption {
   id: string; name: string; description: string | null; price: number;
@@ -447,11 +455,11 @@ export default function Checkout() {
   const hasMissingCategoryInfo = nonBumpItems.some((item) => !productCategoryById.has(item.id));
   const isLanderGoldOnlyCart = nonBumpItems.length > 0 && nonBumpItems.every((item) => {
     const category = (productCategoryById.get(item.id) ?? "").trim().toLowerCase();
-    return category === LANDER_GOLD_CATEGORY;
+    return isLanderGoldCategory(category);
   });
   const landerGoldOnlyQty = nonBumpItems.reduce((acc, item) => {
     const category = (productCategoryById.get(item.id) ?? "").trim().toLowerCase();
-    return category === LANDER_GOLD_CATEGORY ? acc + item.quantity : acc;
+    return isLanderGoldCategory(category) ? acc + item.quantity : acc;
   }, 0);
   const shouldBlockLanderGoldOnlyCheckout = !hasMissingCategoryInfo
     && isLanderGoldOnlyCart
@@ -1514,6 +1522,31 @@ export default function Checkout() {
                 })}
               </div>
 
+              {shouldBlockLanderGoldOnlyCheckout && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-rose-50 p-3.5">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-red-800">Pedido Lander Gold: minimo de 5 pecas</p>
+                      <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                        Para comprar somente Lander Gold, o minimo e de {LANDER_GOLD_MIN_QTY} pecas.
+                        Faltam {missingLanderGoldQty} {missingLanderGoldQty === 1 ? "peca" : "pecas"}.
+                        Se preferir, adicione qualquer produto de outra marca e o checkout sera liberado.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 border-red-300 text-red-700 hover:bg-red-100"
+                        onClick={() => setLocation("/")}
+                      >
+                        Voltar ao catalogo
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3 py-4 border-t border-border mb-4">
                 <div className="flex justify-between text-muted-foreground">
                   <span>Subtotal</span>
@@ -1642,22 +1675,6 @@ export default function Checkout() {
                   </div>
                 );
               })()}
-
-              {shouldBlockLanderGoldOnlyCheckout && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-rose-50 p-3.5">
-                  <div className="flex items-start gap-2.5">
-                    <AlertTriangle className="w-4.5 h-4.5 text-red-600 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-sm font-semibold text-red-800">Pedido mínimo para Lander Gold</p>
-                      <p className="text-xs text-red-700 mt-1 leading-relaxed">
-                        Para comprar produtos da categoria Lander Gold sozinhos, o mínimo é de {LANDER_GOLD_MIN_QTY} peças.
-                        Faltam {missingLanderGoldQty} {missingLanderGoldQty === 1 ? "peça" : "peças"}.
-                        Você também pode adicionar qualquer outro produto ao carrinho para liberar o checkout.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-3">
                 {paymentMethods.pix && (
