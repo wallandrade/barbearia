@@ -8,6 +8,7 @@ import {
   ordersTable,
   productsTable,
   reshipmentsTable,
+  supportTicketsTable,
 } from "@workspace/db";
 
 export type ReshipmentStatus =
@@ -549,6 +550,7 @@ export async function getReshipmentByOrderIds(orderIds: string[]): Promise<Map<s
   status: string;
   supportTicketId: string;
   sentAt: string | null;
+  ticketDescription?: string | null;
 }>> {
   if (orderIds.length === 0) return new Map();
   const rows = await db
@@ -558,8 +560,10 @@ export async function getReshipmentByOrderIds(orderIds: string[]): Promise<Map<s
       status: reshipmentsTable.status,
       supportTicketId: reshipmentsTable.supportTicketId,
       sentAt: reshipmentsTable.sentAt,
+      ticketDescription: supportTicketsTable.description,
     })
     .from(reshipmentsTable)
+    .leftJoin(supportTicketsTable, eq(reshipmentsTable.supportTicketId, supportTicketsTable.id))
     .where(inArray(reshipmentsTable.orderId, orderIds));
 
   return new Map(rows.map((row) => [
@@ -569,6 +573,7 @@ export async function getReshipmentByOrderIds(orderIds: string[]): Promise<Map<s
       status: row.status,
       supportTicketId: row.supportTicketId,
       sentAt: row.sentAt?.toISOString() || null,
+      ticketDescription: row.ticketDescription || null,
     },
   ]));
 }

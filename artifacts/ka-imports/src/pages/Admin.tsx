@@ -91,7 +91,27 @@ export function orderToText(order: any): string {
     .filter(Boolean)
     .join(", ");
 
+  const reshipmentStatus = order?.reshipment?.status;
+  const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
+    : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
+    : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
+    : "";
+
+  const headerLines = [];
+  if (reshipmentLabel) {
+    headerLines.push(`╔════════════════════════════════════════╗`);
+    headerLines.push(`║ 🚨 REENVIO - ${reshipmentLabel.padEnd(24)} ║`);
+    headerLines.push(`║ Pedido Original: #${(order?.id || "-").padEnd(20)} ║`);
+    if (order?.reshipment?.ticketDescription) {
+      const motivo = order.reshipment.ticketDescription.substring(0, 32);
+      headerLines.push(`║ Motivo: ${motivo.padEnd(32)} ║`);
+    }
+    headerLines.push(`╚════════════════════════════════════════╝`);
+  }
+
   return [
+    ...headerLines,
+    "",
     `Pedido #${order?.id || "-"}`,
     `Data: ${formatDateBR(order?.createdAt) || "-"}`,
     `Cliente: ${order?.clientName || "-"}`,
