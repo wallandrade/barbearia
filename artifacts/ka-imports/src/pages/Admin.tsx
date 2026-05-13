@@ -67,8 +67,7 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
   }
   return [];
 }
-
-  // ...existing code...
+export function orderToText(order: any): string {
   const products = getOrderProducts(order?.products);
   const productsText = products.length
     ? products
@@ -78,17 +77,6 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
         })
         .join("\n")
     : "- Sem itens";
-
-  const address = [
-    order?.addressStreet,
-    order?.addressNumber,
-    order?.addressComplement,
-    order?.addressNeighborhood,
-    `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
-    order?.addressCep ? `CEP ${order.addressCep}` : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
 
   const reshipmentStatus = order?.reshipment?.status;
   const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
@@ -142,9 +130,56 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
     order?.observation ? "" : "",
     order?.observation ? `Observacao: ${order.observation}` : "",
   ]
-
     .filter(Boolean)
     .join("\n");
+}
+
+export function orderToFullText(order: any): string {
+  const products = getOrderProducts(order?.products);
+  const productsText = products.length
+    ? products
+        .map((p) => {
+          const qty = Number(p?.quantity) || 0;
+          const price = p?.price ? ` @ ${formatCurrency(Number(p.price))}` : "";
+          return `- ${qty}x ${p?.name || "Produto"}${price}`;
+        })
+        .join("\n")
+    : "- Sem itens";
+
+  const address = [
+    order?.addressStreet,
+    order?.addressNumber,
+    order?.addressComplement,
+    order?.addressNeighborhood,
+    `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
+    order?.addressCep ? `CEP ${order.addressCep}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return [
+    `Pedido numero: ${order?.id || "-"}`,
+    `Status: ${order?.status || "-"}`,
+    `Data: ${formatDateBR(order?.createdAt) || "-"}`,
+    order?.clientName ? `Nome: ${order.clientName}` : "",
+    order?.clientEmail ? `Email: ${order.clientEmail}` : "",
+    order?.clientPhone ? `Telefone: ${order.clientPhone}` : "",
+    order?.clientDocument ? `CPF: ${order.clientDocument}` : "",
+    address ? `Endereço: ${address}` : "",
+    order?.sellerCode ? `Código vendedor: ${order.sellerCode}` : "",
+    `Total: ${formatCurrency(Number(order?.cardTotalActual ?? order?.total) || 0)}`,
+    "",
+    "Produtos:",
+    productsText,
+    order?.observation ? "" : "",
+    order?.observation ? `Observação: ${order.observation}` : "",
+    order?.trackingCode ? `Rastreio: ${order.trackingCode}` : "",
+    order?.proofUrls && order.proofUrls.length > 0 ? `Comprovantes: ${order.proofUrls.join(", ")}` : "",
+    order?.proofUrl ? `Comprovante: ${order.proofUrl}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 export function chargeToText(charge: any): string {
   const address = [
@@ -6303,17 +6338,17 @@ function OrdersPanel({
       toast.error("Não foi possível baixar o pedido.");
     }
   };
+
+  const [enviando, setEnviando] = useState<Record<string, boolean>>({});
+  const verifyOrderStock = (orderId: string, balancesSnapshot: InventoryBalanceRecord[] = inventoryBalances): { hasStock: boolean; message: string; missingItems: string[] } => {
+    // Only check stock when marking as enviado (novoValor = true)
+    const order = ordersLookup.find(o => o.id === orderId);
+    if (!order) {
+      return { hasStock: false, message: "Pedido não encontrado", missingItems: [] };
+    }
+
+    // If currently marked as enviado and trying to unmark (revert to pendente), skip stock check
     if (enviados[orderId]) {
-        const address = [
-          order?.addressStreet,
-          order?.addressNumber,
-          order?.addressComplement,
-          order?.addressNeighborhood,
-          `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
-          order?.addressCep ? `CEP ${order.addressCep}` : "",
-        ]
-          .filter(Boolean)
-          .join(", ");
       return { hasStock: true, message: "", missingItems: [] };
     }
 
@@ -6370,38 +6405,6 @@ function OrdersPanel({
       if (!normalized) continue;
       const quantity = Number(row.quantity || 0);
       const current = stockByName.get(normalized);
-
-      // ...existing code...
-          order?.clientName ? `Nome: ${order.clientName}` : undefined,
-          order?.clientEmail ? `Email: ${order.clientEmail}` : undefined,
-          order?.clientPhone ? `Telefone: ${order.clientPhone}` : undefined,
-          order?.clientDocument ? `CPF: ${order.clientDocument}` : undefined,
-          `Rua: ${rua}`,
-          `Bairro: ${order?.addressNeighborhood || "-"}`,
-          `Complemento: ${order?.addressComplement || "-"}`,
-          `Cidade: ${order?.addressCity || "-"}`,
-          `Estado: ${order?.addressState || "-"}`,
-          `Cep: ${order?.addressCep || "-"}`,
-          address ? `Endereço completo: ${address}` : undefined,
-          order?.observation ? `Observação: ${order.observation}` : undefined,
-          "",
-          `Valor total: ${formatCurrency(grossAmount)}`,
-          commissionAmount !== undefined ? `Comissão: ${formatCurrency(commissionAmount)}` : undefined,
-          gatewayFee !== undefined ? `Taxa gateway: ${formatCurrency(gatewayFee)}` : undefined,
-          estimatedProfit !== undefined ? `Lucro estimado: ${formatCurrency(estimatedProfit)}` : undefined,
-          "",
-          "Produtos:",
-          productsText,
-          "",
-          order?.trackingCode ? `Código de rastreio: ${order.trackingCode}` : undefined,
-          order?.trackingDetectedName ? `Nome detectado na etiqueta: ${order.trackingDetectedName}` : undefined,
-          order?.trackingDetectedAddress ? `Endereço detectado na etiqueta: ${order.trackingDetectedAddress}` : undefined,
-          order?.proofUrls && order.proofUrls.length > 0 ? `Comprovantes: ${order.proofUrls.join(", ")}` : undefined,
-          order?.proofUrl ? `Comprovante: ${order.proofUrl}` : undefined,
-        ];
-
-        return lines.filter(Boolean).join("\n");
-      }
       stockByName.set(normalized, typeof current === "number" ? current + quantity : quantity);
     }
 
