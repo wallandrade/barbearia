@@ -6386,17 +6386,17 @@ function OrdersPanel({
       toast.error("Não foi possível baixar o pedido.");
     }
   };
-
-  const [enviando, setEnviando] = useState<Record<string, boolean>>({});
-  const verifyOrderStock = (orderId: string, balancesSnapshot: InventoryBalanceRecord[] = inventoryBalances): { hasStock: boolean; message: string; missingItems: string[] } => {
-    // Only check stock when marking as enviado (novoValor = true)
-    const order = ordersLookup.find(o => o.id === orderId);
-    if (!order) {
-      return { hasStock: false, message: "Pedido não encontrado", missingItems: [] };
-    }
-
-    // If currently marked as enviado and trying to unmark (revert to pendente), skip stock check
     if (enviados[orderId]) {
+        const address = [
+          order?.addressStreet,
+          order?.addressNumber,
+          order?.addressComplement,
+          order?.addressNeighborhood,
+          `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
+          order?.addressCep ? `CEP ${order.addressCep}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
       return { hasStock: true, message: "", missingItems: [] };
     }
 
@@ -6453,6 +6453,90 @@ function OrdersPanel({
       if (!normalized) continue;
       const quantity = Number(row.quantity || 0);
       const current = stockByName.get(normalized);
+
+      // Função detalhada fora de qualquer função
+      export function orderToFullText(order: any): string {
+        const products = getOrderProducts(order?.products);
+        const productsText = products.length
+          ? products
+              .map((p) => {
+                const qty = Number(p?.quantity) || 0;
+                const price = p?.price ? ` @ ${formatCurrency(Number(p.price))}` : "";
+                const cost = p?.costPrice ? ` (Custo: ${formatCurrency(Number(p.costPrice))})` : "";
+                return `- ${qty}x ${p?.name || "Produto"}${price}${cost}`;
+              })
+              .join("\n")
+          : "- Sem itens";
+
+        const address = [
+          order?.addressStreet,
+          order?.addressNumber,
+          order?.addressComplement,
+          order?.addressNeighborhood,
+          `${order?.addressCity || ""}${order?.addressState ? `/${order.addressState}` : ""}`,
+          order?.addressCep ? `CEP ${order.addressCep}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+        const reshipmentStatus = order?.reshipment?.status;
+        const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
+          : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
+          : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
+          : "";
+
+        const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+        const dataPrimeiroPedido = order?.reshipment?.originalOrderCreatedAt || order?.createdAt || null;
+        const trackingCodeInformado = String(order?.reshipment?.ticketTrackingCode || "").trim();
+
+        const paymentMethod = order?.paymentMethod === "card_simulation" ? "Cartão (simulação)" : "PIX";
+        const commissionRate = order?.sellerCommissionRateSnapshot ?? order?.commissionRate;
+        const grossAmount = Number(order?.cardTotalActual ?? order?.total) || 0;
+        const commissionAmount = commissionRate ? grossAmount * (commissionRate / 100) : undefined;
+        const gatewayFee = order?.gatewayFee ?? undefined;
+        const estimatedProfit = order?.estimatedProfit ?? undefined;
+
+        const lines = [
+          reshipmentLabel ? `🚨 REENVIO - ${reshipmentLabel}` : undefined,
+          reshipmentLabel ? `Data do pedido original: ${formatDateBR(dataPrimeiroPedido) || "-"}` : undefined,
+          trackingCodeInformado ? `Numero rastreio informado: ${trackingCodeInformado}` : undefined,
+          order?.reshipment?.ticketDescription ? `Motivo do reenvio: ${order.reshipment.ticketDescription}` : undefined,
+          "",
+          `Pedido numero: ${order?.id || "-"}`,
+          `Status: ${order?.status || "-"}`,
+          `Data: ${formatDateBR(order?.createdAt) || "-"}`,
+          `Método de pagamento: ${paymentMethod}`,
+          order?.sellerCode ? `Código vendedor: ${order.sellerCode}` : undefined,
+          order?.clientName ? `Nome: ${order.clientName}` : undefined,
+          order?.clientEmail ? `Email: ${order.clientEmail}` : undefined,
+          order?.clientPhone ? `Telefone: ${order.clientPhone}` : undefined,
+          order?.clientDocument ? `CPF: ${order.clientDocument}` : undefined,
+          `Rua: ${rua}`,
+          `Bairro: ${order?.addressNeighborhood || "-"}`,
+          `Complemento: ${order?.addressComplement || "-"}`,
+          `Cidade: ${order?.addressCity || "-"}`,
+          `Estado: ${order?.addressState || "-"}`,
+          `Cep: ${order?.addressCep || "-"}`,
+          address ? `Endereço completo: ${address}` : undefined,
+          order?.observation ? `Observação: ${order.observation}` : undefined,
+          "",
+          `Valor total: ${formatCurrency(grossAmount)}`,
+          commissionAmount !== undefined ? `Comissão: ${formatCurrency(commissionAmount)}` : undefined,
+          gatewayFee !== undefined ? `Taxa gateway: ${formatCurrency(gatewayFee)}` : undefined,
+          estimatedProfit !== undefined ? `Lucro estimado: ${formatCurrency(estimatedProfit)}` : undefined,
+          "",
+          "Produtos:",
+          productsText,
+          "",
+          order?.trackingCode ? `Código de rastreio: ${order.trackingCode}` : undefined,
+          order?.trackingDetectedName ? `Nome detectado na etiqueta: ${order.trackingDetectedName}` : undefined,
+          order?.trackingDetectedAddress ? `Endereço detectado na etiqueta: ${order.trackingDetectedAddress}` : undefined,
+          order?.proofUrls && order.proofUrls.length > 0 ? `Comprovantes: ${order.proofUrls.join(", ")}` : undefined,
+          order?.proofUrl ? `Comprovante: ${order.proofUrl}` : undefined,
+        ];
+
+        return lines.filter(Boolean).join("\n");
+      }
       stockByName.set(normalized, typeof current === "number" ? current + quantity : quantity);
     }
 
