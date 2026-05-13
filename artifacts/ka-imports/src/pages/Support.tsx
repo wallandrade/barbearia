@@ -325,7 +325,7 @@ export default function Support() {
                       rows={5}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-500"
                     />
-                    <p className="text-sm font-semibold text-slate-800 mt-4">3. Numero de rastreio</p>
+                    <p className="text-sm font-semibold text-slate-800 mt-4">4. Numero de rastreio</p>
                     <input
                       value={trackingCode}
                       onChange={(e) => setTrackingCode(e.target.value)}
