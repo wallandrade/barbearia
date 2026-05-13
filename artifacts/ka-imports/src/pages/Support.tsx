@@ -318,13 +318,6 @@ export default function Support() {
                 {selectedOrder && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">3. Descreva o problema</p>
-                    <input
-                      value={trackingCode}
-                      onChange={(e) => setTrackingCode(e.target.value)}
-                      placeholder="Numero de rastreio do pedido"
-                      className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
-                    />
-                    <p className="text-xs text-slate-500">Informe o codigo de rastreio para agilizar o atendimento.</p>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
@@ -332,6 +325,14 @@ export default function Support() {
                       rows={5}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-500"
                     />
+                    <p className="text-sm font-semibold text-slate-800 mt-4">3. Numero de rastreio</p>
+                    <input
+                      value={trackingCode}
+                      onChange={(e) => setTrackingCode(e.target.value)}
+                      placeholder="Numero de rastreio do pedido"
+                      className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
+                    />
+                    <p className="text-xs text-slate-500">Informe o codigo de rastreio para agilizar o atendimento.</p>
 
                     <label className="block">
                       <span className="mb-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700">
