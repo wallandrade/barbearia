@@ -7062,6 +7062,8 @@ function OrdersPanel({
           const reshipmentTrackingCode = String(order?.reshipment?.ticketTrackingCode || "").trim();
           const previewProducts = orderProducts.slice(0, 5);
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
+          // Definir isReshipment no escopo correto
+          const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
