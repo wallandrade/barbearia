@@ -74,11 +74,10 @@ export function orderToText(order: any): string {
     ? products
         .map((p) => {
           const qty = Number(p?.quantity) || 0;
-          const price = Number(p?.price) || 0;
-          return `- ${qty}x ${p?.name || "Produto"} (${formatCurrency(price * qty)})`;
+          return `- ${qty}x ${p?.name || "Produto"}`;
         })
         .join("\n")
-    : "- (Sem produtos no pedido)";
+    : "- Sem itens";
 
   const address = [
     order?.addressStreet,
@@ -97,41 +96,49 @@ export function orderToText(order: any): string {
     : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
     : "";
 
-  const headerLines = [];
+  const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+  const dataPrimeiroPedido = order?.reshipment?.originalOrderCreatedAt || order?.createdAt || null;
+
   if (reshipmentLabel) {
-    headerLines.push(`╔════════════════════════════════════════╗`);
-    headerLines.push(`║ 🚨 REENVIO - ${reshipmentLabel.padEnd(24)} ║`);
-    headerLines.push(`║ Pedido Original: #${(order?.id || "-").padEnd(20)} ║`);
-    if (order?.reshipment?.ticketDescription) {
-      const motivo = order.reshipment.ticketDescription.substring(0, 32);
-      headerLines.push(`║ Motivo: ${motivo.padEnd(32)} ║`);
-    }
-    headerLines.push(`╚════════════════════════════════════════╝`);
+    return [
+      `🚨 REENVIO - ${reshipmentLabel}`,
+      `Data do pedido original: ${formatDateBR(dataPrimeiroPedido) || "-"}`,
+      order?.reshipment?.ticketDescription ? `Motivo do reenvio: ${order.reshipment.ticketDescription}` : "",
+      "",
+      `Pedido numero: ${order?.id || "-"}`,
+      "",
+      `Nome: ${order?.clientName || "-"}`,
+      `Rua: ${rua}`,
+      `Bairro: ${order?.addressNeighborhood || "-"}`,
+      `Complemento: ${order?.addressComplement || "-"}`,
+      `Cidade: ${order?.addressCity || "-"}`,
+      `Estado: ${order?.addressState || "-"}`,
+      `Cep: ${order?.addressCep || "-"}`,
+      "",
+      "Resumo pedido:",
+      productsText,
+      order?.observation ? "" : "",
+      order?.observation ? `Observacao: ${order.observation}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   return [
-    ...headerLines,
+    `Pedido numero: ${order?.id || "-"}`,
     "",
-    `Pedido #${order?.id || "-"}`,
-    `Data: ${formatDateBR(order?.createdAt) || "-"}`,
-    `Cliente: ${order?.clientName || "-"}`,
-    `Contato: ${order?.clientPhone || "-"}${order?.clientEmail ? ` · ${order.clientEmail}` : ""}`,
-    order?.clientDocument ? `CPF: ${order.clientDocument}` : "",
+    `Nome: ${order?.clientName || "-"}`,
+    `Rua: ${rua}`,
+    `Bairro: ${order?.addressNeighborhood || "-"}`,
+    `Complemento: ${order?.addressComplement || "-"}`,
+    `Cidade: ${order?.addressCity || "-"}`,
+    `Estado: ${order?.addressState || "-"}`,
+    `Cep: ${order?.addressCep || "-"}`,
     "",
-    "Produtos:",
+    "Resumo pedido:",
     productsText,
-    "",
-    `Subtotal: ${formatCurrency(Number(order?.subtotal) || 0)}`,
-    `Frete: ${formatCurrency(Number(order?.shippingCost) || 0)}`,
-    Number(order?.insuranceAmount) > 0 ? `Seguro: ${formatCurrency(Number(order.insuranceAmount))}` : "",
-    `Total: ${formatCurrency(Number(order?.total) || 0)}`,
-    "",
-    `Status: ${order?.status || "-"}`,
-    `Pagamento: ${order?.paymentMethod === "card_simulation" ? "Cartão" : "PIX"}`,
-    order?.transactionId ? `Transação: ${order.transactionId}` : "",
-    order?.sellerCode ? `Vendedor: ${order.sellerCode}` : "",
-    address ? `Endereço: ${address}` : "",
-    order?.observation ? `Observação: ${order.observation}` : "",
+    order?.observation ? "" : "",
+    order?.observation ? `Observacao: ${order.observation}` : "",
   ]
     .filter(Boolean)
     .join("\n");
