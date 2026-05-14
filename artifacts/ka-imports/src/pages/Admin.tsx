@@ -6353,9 +6353,17 @@ function OrdersPanel({
 
   // Funções SEM hooks
 
+  const resolveOrderPriority = (order: AdminOrder): boolean => {
+    const id = String(order.id || "").trim();
+    if (!id) return !!(order as any).isPrioridade;
+    return Object.prototype.hasOwnProperty.call(orderPriorities, id)
+      ? !!orderPriorities[id]
+      : !!(order as any).isPrioridade;
+  };
+
   const copyOrder = async (order: AdminOrder) => {
     try {
-      const mode = await copyText(orderToText({ ...order, isPrioridade: !!orderPriorities[order.id] }));
+      const mode = await copyText(orderToText({ ...order, isPrioridade: resolveOrderPriority(order) }));
       setCopiedOrderId(order.id);
       if (mode === "auto") {
         toast.success("Resumo copiado!");
@@ -6371,7 +6379,7 @@ function OrdersPanel({
   // Nova função: copiar resumo completo
   const copyOrderFull = async (order: AdminOrder) => {
     try {
-      const mode = await copyText(orderToFullText({ ...order, isPrioridade: !!orderPriorities[order.id] }));
+      const mode = await copyText(orderToFullText({ ...order, isPrioridade: resolveOrderPriority(order) }));
       setCopiedOrderId(order.id + "-full");
       if (mode === "auto") {
         toast.success("Resumo completo copiado!");
@@ -6388,7 +6396,7 @@ function OrdersPanel({
     const id = String(order.id || "").trim();
     if (!id) return;
 
-    const current = !!orderPriorities[id];
+    const current = resolveOrderPriority(order);
     const next = !current;
 
     setOrderPriorityUpdating((prev) => ({ ...prev, [id]: true }));
@@ -7196,9 +7204,7 @@ function OrdersPanel({
       {orders
         .filter(order => typeof order.id === "string" && order.id.length > 0)
         .map((order) => {
-          const isPrioridade = Object.prototype.hasOwnProperty.call(orderPriorities, order.id)
-            ? !!orderPriorities[order.id]
-            : !!(order as any).isPrioridade;
+          const isPrioridade = resolveOrderPriority(order);
           const isCard     = order.paymentMethod === "card_simulation";
           const isExpanded = expandedOrder === order.id;
           const orderStockCheck = enviados[order.id] || !globalInventorySnapshotReady
