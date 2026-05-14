@@ -1786,6 +1786,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipRegion:               o.ipRegion ?? null,
     ipIsp:                  o.ipIsp ?? null,
     ipIsProxy:              o.ipIsProxy ?? null,
+    isPrioridade:           !!o.isPrioridade,
     enviado:                !!o.enviado,
     trackingCode:           o.trackingCode ?? null,
     trackingLabelUrl:       o.trackingLabelUrl ?? null,
@@ -1794,6 +1795,47 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     trackingDetectedAddress:o.trackingDetectedAddress ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/prioridade  (protected)
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const { isPrioridade } = req.body as { isPrioridade: boolean };
+    if (typeof isPrioridade !== "boolean") {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'isPrioridade' obrigatório e deve ser boolean." });
+      return;
+    }
+
+    const updateResult = await db
+      .update(ordersTable)
+      .set({ isPrioridade, updatedAt: new Date() })
+      .where(buildAdminOrderWhere(id, adminScope));
+
+    if ((updateResult as any).rowsAffected === 0) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const updated = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+
+    broadcastNotification({ type: "order_priority_updated", data: { id, isPrioridade } });
+    res.json({ ok: true, id, isPrioridade, order: updated[0] ? mapOrder(updated[0]) : null });
+  } catch (err) {
+    console.error("Update order priority error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar prioridade do pedido." });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/enviado  (protected)

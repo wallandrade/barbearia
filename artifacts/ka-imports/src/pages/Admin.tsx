@@ -69,6 +69,7 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
 }
 export function orderToText(order: any): string {
   const products = getOrderProducts(order?.products);
+  const prioridadeLine = order?.isPrioridade ? "PRIORIDADE URGENTE" : "";
   const productsText = products.length
     ? products
         .map((p) => {
@@ -90,6 +91,7 @@ export function orderToText(order: any): string {
 
   if (reshipmentLabel) {
     return [
+      prioridadeLine,
       `🚨 REENVIO - ${reshipmentLabel}`,
       `Data do pedido original: ${formatDateBR(dataPrimeiroPedido) || "-"}`,
       trackingCodeInformado ? `Numero rastreio informado: ${trackingCodeInformado}` : "",
@@ -115,6 +117,7 @@ export function orderToText(order: any): string {
   }
 
   return [
+    prioridadeLine,
     `Pedido numero: ${order?.id || "-"}`,
     "",
     `Nome: ${order?.clientName || "-"}`,
@@ -136,6 +139,7 @@ export function orderToText(order: any): string {
 
 export function orderToFullText(order: any): string {
   const products = getOrderProducts(order?.products);
+  const prioridadeLine = order?.isPrioridade ? "PRIORIDADE URGENTE" : "";
   const productsText = products.length
     ? products
         .map((p) => {
@@ -199,6 +203,7 @@ export function orderToFullText(order: any): string {
   const contato = `${order?.clientPhone || "-"}${order?.clientEmail ? ` · ${order.clientEmail}` : ""}`;
 
   return [
+    prioridadeLine,
     `Pedido #${order?.id || "-"}`,
     `Data: ${formatDateBR(order?.createdAt) || "-"}`,
     `Cliente: ${order?.clientName || "-"}`,
@@ -308,7 +313,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -6234,6 +6239,8 @@ function OrdersPanel({
 
   // Todos os hooks no topo
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+  const [orderPriorities, setOrderPriorities] = useState<Record<string, boolean>>({});
+  const [orderPriorityUpdating, setOrderPriorityUpdating] = useState<Record<string, boolean>>({});
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
@@ -6299,6 +6306,14 @@ function OrdersPanel({
   }, [ordersLookup]);
 
   useEffect(() => {
+    const map: Record<string, boolean> = {};
+    for (const order of ordersLookup) {
+      map[order.id] = !!(order as any).isPrioridade;
+    }
+    setOrderPriorities(map);
+  }, [ordersLookup]);
+
+  useEffect(() => {
     if (!imagePreview) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setImagePreview(null);
@@ -6340,7 +6355,7 @@ function OrdersPanel({
 
   const copyOrder = async (order: AdminOrder) => {
     try {
-      const mode = await copyText(orderToText(order));
+      const mode = await copyText(orderToText({ ...order, isPrioridade: !!orderPriorities[order.id] }));
       setCopiedOrderId(order.id);
       if (mode === "auto") {
         toast.success("Resumo copiado!");
@@ -6356,7 +6371,7 @@ function OrdersPanel({
   // Nova função: copiar resumo completo
   const copyOrderFull = async (order: AdminOrder) => {
     try {
-      const mode = await copyText(orderToFullText(order));
+      const mode = await copyText(orderToFullText({ ...order, isPrioridade: !!orderPriorities[order.id] }));
       setCopiedOrderId(order.id + "-full");
       if (mode === "auto") {
         toast.success("Resumo completo copiado!");
@@ -6366,6 +6381,45 @@ function OrdersPanel({
       setTimeout(() => setCopiedOrderId(null), 2500);
     } catch {
       toast.error("Não foi possível copiar o resumo completo.");
+    }
+  };
+
+  const toggleOrderPriority = async (order: AdminOrder) => {
+    const id = String(order.id || "").trim();
+    if (!id) return;
+
+    const current = !!orderPriorities[id];
+    const next = !current;
+
+    setOrderPriorityUpdating((prev) => ({ ...prev, [id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${id}/prioridade`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ isPrioridade: next }),
+      });
+
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        order?: AdminOrder;
+      };
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao atualizar prioridade.");
+      }
+
+      setOrderPriorities((prev) => ({
+        ...prev,
+        [id]: !!(data.order as any)?.isPrioridade,
+      }));
+
+      if (data.order) onSetOrderPatched(data.order);
+      toast.success(next ? "Pedido marcado como prioridade." : "Prioridade removida do pedido.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao atualizar prioridade.";
+      toast.error(message);
+    } finally {
+      setOrderPriorityUpdating((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -7137,6 +7191,9 @@ function OrdersPanel({
       {orders
         .filter(order => typeof order.id === "string" && order.id.length > 0)
         .map((order) => {
+          const isPrioridade = Object.prototype.hasOwnProperty.call(orderPriorities, order.id)
+            ? !!orderPriorities[order.id]
+            : !!(order as any).isPrioridade;
           const isCard     = order.paymentMethod === "card_simulation";
           const isExpanded = expandedOrder === order.id;
           const orderStockCheck = enviados[order.id] || !globalInventorySnapshotReady
@@ -7171,7 +7228,7 @@ function OrdersPanel({
             return productId ? String(productImageById[productId] || "").trim() : "";
           };
           return (
-            <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"}`}>
+            <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${isPrioridade ? "ring-2 ring-red-400" : ""}`}>
             <div className="p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -7180,6 +7237,12 @@ function OrdersPanel({
                     const isReshipment = !!rs;
                     return (
                       <div className="flex flex-wrap items-center gap-2 mb-2">
+                        {isPrioridade && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600 text-white text-xs font-bold border border-red-700 animate-pulse">
+                            <Star className="w-3 h-3 fill-yellow-300 text-yellow-300" />
+                            PRIORIDADE URGENTE
+                          </span>
+                        )}
                         <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">#{order.id}</span>
                         {/* Badge de status de envio */}
                         {enviados[order.id] ? (
@@ -7397,7 +7460,19 @@ function OrdersPanel({
 
               {/* Actions */}
               <div className="flex gap-2 mt-4 flex-wrap">
-                {/* Botão só aparece se ainda não foi enviado */}
+                <Button
+                  size="sm"
+                  variant={isPrioridade ? "danger" : "outline"}
+                  className={`gap-1.5 ${isPrioridade ? "bg-red-600 text-white border-red-700 hover:bg-red-700" : "text-red-600 border-red-200 hover:bg-red-50"}`}
+                  title={isPrioridade ? "Remover prioridade" : "Marcar como prioridade"}
+                  disabled={!!orderPriorityUpdating[order.id]}
+                  onClick={() => { void toggleOrderPriority(order); }}
+                >
+                  {orderPriorityUpdating[order.id]
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
+                  {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
+                </Button>
                 <Button
                   size="sm"
                   className={`gap-1.5 rounded-full px-5 py-2 font-semibold transition shadow-sm border ${enviados[order.id]

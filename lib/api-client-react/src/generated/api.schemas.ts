@@ -130,6 +130,7 @@ export interface AdminOrder {
   proofUrls?: string[];
   transactionId?: string | null;
   observation?: string | null;
+  isPrioridade?: boolean;
   enviado?: boolean;
   trackingCode?: string | null;
   trackingLabelUrl?: string | null;
