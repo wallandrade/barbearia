@@ -6405,6 +6405,11 @@ function OrdersPanel({
       };
 
       if (!res.ok) {
+        if (res.status === 404 || res.status === 503) {
+          setOrderPriorities((prev) => ({ ...prev, [id]: next }));
+          toast.warning("Prioridade salva apenas localmente (migração pendente no servidor).");
+          return;
+        }
         throw new Error(data?.message || "Erro ao atualizar prioridade.");
       }
 

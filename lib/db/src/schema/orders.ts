@@ -49,7 +49,6 @@ export const ordersTable = mysqlTable("orders", {
   paidAmount: decimal("paid_amount", { precision: 10, scale: 2 }),
   pixCode: mediumtext("pix_code"),
   pixBase64: mediumtext("pix_base64"),
-  isPrioridade: boolean("is_prioridade").notNull().default(false),
   enviado: boolean("enviado").notNull().default(false),
   trackingCode: varchar("tracking_code", { length: 255 }),
   trackingLabelUrl: mediumtext("tracking_label_url"),
