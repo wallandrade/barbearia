@@ -6056,7 +6056,7 @@ function InventoryPanel({
                   const lines = balances
                     .filter((r) => r.quantity > 0)
                     .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"))
-                    .map((r) => `${r.productName}: ${r.quantity} un`);
+                    .map((r) => `${r.quantity} un - ${r.productName}`);
                   const text = `📦 Estoque disponível (${new Date().toLocaleDateString("pt-BR")}):\n\n${lines.join("\n")}`;
                   navigator.clipboard.writeText(text).then(() => {
                     const btn = document.getElementById("copy-stock-btn");
