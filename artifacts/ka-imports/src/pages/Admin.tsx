@@ -261,6 +261,7 @@ export function chargeToText(charge: any): string {
 
 function supplierOrderBlock(order: any, sequence: number): string {
   const products = getOrderProducts(order?.products);
+  const prioridadeLine = order?.isPrioridade ? "🚨 PRIORIDADE URGENTE" : "";
   const resumoPedido = products.length
     ? products
         .map((p) => {
@@ -276,6 +277,7 @@ function supplierOrderBlock(order: any, sequence: number): string {
   const reshipmentReason = String(order?.reshipment?.ticketDescription || "").trim();
 
   return [
+    prioridadeLine,
     isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
     isReshipment ? `Data do pedido original: ${firstOrderDate}` : "",
     isReshipment && reshipmentReason ? `Motivo do reenvio: ${reshipmentReason}` : "",
