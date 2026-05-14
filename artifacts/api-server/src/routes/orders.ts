@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable } from "@workspace/db";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
@@ -25,6 +25,67 @@ import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 
 const router: IRouter = Router();
+
+let priorityColumnCache: { checkedAt: number; available: boolean } = { checkedAt: 0, available: false };
+
+async function isOrderPriorityColumnAvailable(force = false): Promise<boolean> {
+  const now = Date.now();
+  if (!force && now - priorityColumnCache.checkedAt < 60_000) {
+    return priorityColumnCache.available;
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT 1
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'orders'
+          AND COLUMN_NAME = 'is_prioridade'
+        LIMIT 1
+      `,
+    );
+    const available = Array.isArray(rows) && rows.length > 0;
+    priorityColumnCache = { checkedAt: now, available };
+    return available;
+  } catch {
+    priorityColumnCache = { checkedAt: now, available: false };
+    return false;
+  }
+}
+
+async function loadOrderPriorityMap(orderIds: string[]): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>();
+  if (orderIds.length === 0) return map;
+
+  const available = await isOrderPriorityColumnAvailable();
+  if (!available) return map;
+
+  try {
+    const placeholders = orderIds.map(() => "?").join(",");
+    const [rows] = await pool.query(
+      `SELECT id, is_prioridade FROM orders WHERE id IN (${placeholders})`,
+      orderIds,
+    );
+
+    if (Array.isArray(rows)) {
+      for (const row of rows as Array<{ id?: string; is_prioridade?: number | boolean | null }>) {
+        const id = String(row?.id || "").trim();
+        if (!id) continue;
+        map.set(id, !!row?.is_prioridade);
+      }
+    }
+  } catch (err) {
+    const message = String((err as { message?: string })?.message || "").toLowerCase();
+    if (message.includes("unknown column") || message.includes("is_prioridade")) {
+      priorityColumnCache = { checkedAt: Date.now(), available: false };
+      return map;
+    }
+    throw err;
+  }
+
+  return map;
+}
 
 async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
   const row = await db
@@ -1222,6 +1283,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     }
 
     const reshipmentByOrder = await getReshipmentByOrderIds(orders.map((o) => o.id));
+    const priorityByOrder = await loadOrderPriorityMap(orders.map((o) => o.id));
 
     const enriched = orders.map((order) => {
       const ipCity   = String((order as any).ipCity   || "").trim().toLowerCase();
@@ -1258,6 +1320,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
 
       return {
         ...mapOrder(order),
+        isPrioridade: priorityByOrder.get(order.id) ?? false,
         purchaseRisk,
         purchaseRiskReason,
         reshipment: reshipmentByOrder.get(order.id) || null,
@@ -1813,11 +1876,50 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
       return;
     }
 
-    // Compatibilidade: se o banco ainda não recebeu a migração da coluna,
-    // evitamos quebrar o painel inteiro e retornamos erro controlado.
-    res.status(503).json({
-      error: "PRIORITY_COLUMN_PENDING_MIGRATION",
-      message: "Prioridade temporariamente indisponível até aplicar a migração no banco.",
+    const available = await isOrderPriorityColumnAvailable();
+    if (!available) {
+      res.status(503).json({
+        error: "PRIORITY_COLUMN_PENDING_MIGRATION",
+        message: "Prioridade temporariamente indisponível até aplicar a migração no banco.",
+      });
+      return;
+    }
+
+    const existing = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    if (adminScope.hasGlobalAccess) {
+      await pool.query(
+        "UPDATE orders SET is_prioridade = ?, updated_at = NOW() WHERE id = ?",
+        [isPrioridade ? 1 : 0, id],
+      );
+    } else {
+      await pool.query(
+        "UPDATE orders SET is_prioridade = ?, updated_at = NOW() WHERE id = ? AND seller_code = ?",
+        [isPrioridade ? 1 : 0, id, adminScope.sellerCode],
+      );
+    }
+
+    const updated = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+
+    broadcastNotification({ type: "order_priority_updated", data: { id, isPrioridade } });
+    res.json({
+      ok: true,
+      id,
+      isPrioridade,
+      order: updated[0] ? { ...mapOrder(updated[0]), isPrioridade } : null,
     });
   } catch (err) {
     console.error("Update order priority error:", err);
