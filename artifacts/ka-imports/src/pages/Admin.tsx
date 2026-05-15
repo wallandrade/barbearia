@@ -317,7 +317,6 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
-import * as Select from "@radix-ui/react-select";
 
 import { toast } from "sonner";
 
@@ -475,77 +474,78 @@ interface OrderBumpsPanelProps {
   onDelete: (id: string) => void;
 }
 
-// ProductSelect with image thumbnails and search
+// ProductSelect with image thumbnails and search - Custom implementation
 function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   
   const filteredProducts = products.filter((p) => 
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const selectedProduct = products.find((p) => p.id === value);
+
+  const handleSelect = (productId: string) => {
+    onChange(productId);
+    setIsOpen(false);
+    setSearch("");
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
+
   return (
-    <Select.Root value={value} onValueChange={(v) => {
-      onChange(v);
-      setIsOpen(false);
-      setSearch("");
-    }} open={isOpen} onOpenChange={setIsOpen}>
-      <Select.Trigger className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white flex items-center justify-between">
-        <Select.Value placeholder={placeholder} />
-        <Select.Icon>
-          <ChevronDown className="w-4 h-4" />
-        </Select.Icon>
-      </Select.Trigger>
-      <Select.Portal>
-        <Select.Content 
-          ref={contentRef}
-          className="bg-white border border-border rounded-lg shadow-lg z-50"
-          side="top"
-          align="start"
-          sideOffset={8}
-          collision="shift"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            setTimeout(() => searchInputRef.current?.focus(), 0);
+    <div ref={containerRef} className="relative w-full">
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder={selectedProduct ? selectedProduct.name : placeholder}
+          value={isOpen ? search : ""}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
           }}
-          onInteractOutside={(e) => {
-            const target = e.target as HTMLElement;
-            if (contentRef.current?.contains(target) || searchInputRef.current?.contains(target)) {
-              e.preventDefault();
-            }
-          }}
-          onEscapeKeyDown={(e) => e.preventDefault()}
-        >
-          <div className="p-2 border-b border-border">
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Buscar produto..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-border rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-          <Select.ScrollUpButton />
-          <Select.Viewport className="max-h-64 overflow-y-auto">
-            {filteredProducts.length > 0 ? (
-              filteredProducts.map((p) => (
-                <Select.Item key={p.id} value={p.id} className="px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2">
-                  {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
-                  <Select.ItemText>{p.name}</Select.ItemText>
-                </Select.Item>
-              ))
-            ) : (
-              <div className="px-3 py-2 text-sm text-gray-500">Nenhum produto encontrado</div>
-            )}
-          </Select.Viewport>
-          <Select.ScrollDownButton />
-        </Select.Content>
-      </Select.Portal>
-    </Select.Root>
+          onFocus={() => setIsOpen(true)}
+          className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          autoComplete="off"
+        />
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+      </div>
+
+      {isOpen && filteredProducts.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-40 max-h-64 overflow-y-auto">
+          {filteredProducts.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => handleSelect(p.id)}
+              className="w-full px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2 text-left border-b border-border last:border-b-0 transition-colors"
+            >
+              {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
+              <span>{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isOpen && filteredProducts.length === 0 && search && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-40 px-3 py-2 text-sm text-gray-500">
+          Nenhum produto encontrado
+        </div>
+      )}
+    </div>
   );
 }
 
