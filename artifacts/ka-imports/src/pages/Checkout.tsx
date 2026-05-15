@@ -1221,7 +1221,8 @@ export default function Checkout() {
                     const cartCost = cartItem.price * cartQty;
                     const regularPrice = offerProduct.price;
                     const originalPrice = regularPrice;
-                    const bumpProduct = { id: offerProduct.id, name: offerProduct.name, price: originalPrice, image: bump.image ?? offerProduct.image ?? undefined };
+                    const bumpImage = bump.image ?? offerProduct.image ?? undefined;
+                    const bumpProduct = { id: offerProduct.id, name: offerProduct.name, price: originalPrice, image: bumpImage };
 
                     function getBumpBadge(): string {
                       if (bump.discountType === "percent")       return `-${bump.discountValue ?? 0}%`;
@@ -1264,8 +1265,8 @@ export default function Checkout() {
                         {/* Title row — only for non-tier bumps */}
                         {bump.discountType !== "quantity_tiers" && (
                           <div className="flex gap-3 mb-3">
-                            {bump.image ? (
-                              <img src={bump.image} alt={bump.title} className="w-14 h-14 rounded-xl object-cover border border-amber-100 flex-shrink-0" />
+                            {bumpImage ? (
+                              <img src={bumpImage} alt={offerProduct.name} className="w-14 h-14 rounded-xl object-cover border border-amber-100 flex-shrink-0" />
                             ) : (
                               <div className="w-14 h-14 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center flex-shrink-0">
                                 <Zap className="w-6 h-6 text-amber-400" />
@@ -1507,61 +1508,75 @@ export default function Checkout() {
                     (i) => !!(i as { isBump?: boolean }).isBump &&
                       (i as { bumpForProductId?: string }).bumpForProductId === item.id
                   ) as ({ quantity: number; price: number; id: string } | undefined);
-                  const totalQty = bumpItem ? item.quantity + bumpItem.quantity : item.quantity;
-                  const fullPrice = item.price * totalQty;
-                  const actualPrice = bumpItem
-                    ? item.price * item.quantity + bumpItem.price * bumpItem.quantity
-                    : item.price * item.quantity;
-                  const saving = fullPrice - actualPrice;
+                  const mainTotal = item.price * item.quantity;
+                  const bumpTotal = bumpItem ? bumpItem.price * bumpItem.quantity : 0;
                   return (
-                    <div key={item.id} className="flex gap-3 items-start rounded-xl p-2">
-                      <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0 border border-border">
-                        <img src={(item as typeof item & { image?: string }).image} alt={item.name} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold line-clamp-1 leading-tight">{item.name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleQtyDecrease(item)}
-                            className="w-5 h-5 flex items-center justify-center rounded border border-border bg-white hover:bg-muted transition-colors text-foreground"
-                          >
-                            <Minus className="w-2.5 h-2.5" />
-                          </button>
-                          <span className="text-xs font-semibold w-4 text-center">{totalQty}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleQtyIncrease(item)}
-                            className="w-5 h-5 flex items-center justify-center rounded border border-border bg-white hover:bg-muted transition-colors text-foreground"
-                          >
-                            <Plus className="w-2.5 h-2.5" />
-                          </button>
+                    <div key={item.id} className="space-y-2 rounded-xl p-2">
+                      <div className="flex gap-3 items-start">
+                        <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0 border border-border">
+                          <img src={(item as typeof item & { image?: string }).image} alt={item.name} className="w-full h-full object-cover" />
                         </div>
-                        {bumpItem && saving > 0 && (
-                          <div className="flex items-center gap-1 mt-1">
-                            <span className="text-[11px] text-green-600 font-semibold">
-                              Desconto ({totalQty}ª cx): -{formatCurrency(saving)}
-                            </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold line-clamp-1 leading-tight">{item.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleQtyDecrease(item)}
+                              className="w-5 h-5 flex items-center justify-center rounded border border-border bg-white hover:bg-muted transition-colors text-foreground"
+                            >
+                              <Minus className="w-2.5 h-2.5" />
+                            </button>
+                            <span className="text-xs font-semibold w-4 text-center">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleQtyIncrease(item)}
+                              className="w-5 h-5 flex items-center justify-center rounded border border-border bg-white hover:bg-muted transition-colors text-foreground"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <p className="font-semibold text-sm">{formatCurrency(mainTotal)}</p>
+                        </div>
+                      </div>
+
+                      {bumpItem && (
+                        <div className="ml-12 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5">
+                          <div className="flex gap-2.5 items-start">
+                            <div className="w-10 h-10 rounded-lg bg-white overflow-hidden shrink-0 border border-emerald-100">
+                              <img
+                                src={(bumpItem as typeof bumpItem & { image?: string }).image ?? (item as typeof item & { image?: string }).image}
+                                alt={bumpItem.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                                  Oferta adicionada
+                                </span>
+                                <span className="text-[10px] font-medium text-emerald-700">
+                                  Order bump
+                                </span>
+                              </div>
+                              <p className="text-xs font-semibold line-clamp-1 leading-tight text-emerald-950">
+                                {bumpItem.name}
+                              </p>
+                              <p className="text-[11px] text-emerald-700 mt-0.5">
+                                {bumpItem.quantity}x {formatCurrency(bumpItem.price)} = {formatCurrency(bumpTotal)}
+                              </p>
+                            </div>
                             <button
                               type="button"
                               onClick={() => removeItem(bumpItem.id)}
-                              className="text-[10px] text-muted-foreground underline hover:text-destructive ml-1 transition-colors"
+                              className="text-[10px] text-muted-foreground underline hover:text-destructive ml-1 transition-colors shrink-0"
                             >
                               remover
                             </button>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-0.5 shrink-0">
-                        {bumpItem && saving > 0 ? (
-                          <>
-                            <p className="text-xs text-muted-foreground line-through">{formatCurrency(fullPrice)}</p>
-                            <p className="font-semibold text-sm">{formatCurrency(actualPrice)}</p>
-                          </>
-                        ) : (
-                          <p className="font-semibold text-sm">{formatCurrency(actualPrice)}</p>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
