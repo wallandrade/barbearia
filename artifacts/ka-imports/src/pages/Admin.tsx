@@ -475,9 +475,15 @@ interface OrderBumpsPanelProps {
   onDelete: (id: string) => void;
 }
 
-// ProductSelect with image thumbnails
+// ProductSelect with image thumbnails and search
 function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
+  const [search, setSearch] = useState("");
   const viewportRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  const filteredProducts = products.filter((p) => 
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
   
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -503,19 +509,38 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
           collision="shift"
           sticky="always"
           style={{ position: "fixed" } as React.CSSProperties}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            setTimeout(() => searchInputRef.current?.focus(), 0);
+          }}
         >
+          <div className="p-2 border-b border-border">
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Buscar produto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-border rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
           <Select.ScrollUpButton />
           <Select.Viewport 
             ref={viewportRef}
             className="max-h-64 overflow-y-auto"
             onWheel={handleWheel}
           >
-            {products.map((p) => (
-              <Select.Item key={p.id} value={p.id} className="px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2">
-                {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
-                <Select.ItemText>{p.name}</Select.ItemText>
-              </Select.Item>
-            ))}
+            {filteredProducts.length > 0 ? (
+              filteredProducts.map((p) => (
+                <Select.Item key={p.id} value={p.id} className="px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2">
+                  {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
+                  <Select.ItemText>{p.name}</Select.ItemText>
+                </Select.Item>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-sm text-gray-500">Nenhum produto encontrado</div>
+            )}
           </Select.Viewport>
           <Select.ScrollDownButton />
         </Select.Content>
