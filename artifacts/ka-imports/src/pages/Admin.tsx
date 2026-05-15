@@ -317,6 +317,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
+import * as Select from "@radix-ui/react-select";
 
 import { toast } from "sonner";
 
@@ -474,6 +475,38 @@ interface OrderBumpsPanelProps {
   onDelete: (id: string) => void;
 }
 
+// ProductSelect with image thumbnails
+function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
+  const selectedProduct = products.find((p) => p.id === value);
+  return (
+    <Select.Root value={value} onValueChange={onChange}>
+      <Select.Trigger className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white flex items-center justify-between">
+        <Select.Value placeholder={placeholder} />
+        <Select.Icon>
+          <ChevronDown className="w-4 h-4" />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content className="bg-white border border-border rounded-lg shadow-lg z-50">
+          <Select.ScrollUpButton />
+          <Select.Viewport className="max-h-80">
+            <Select.Item value="" className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer">
+              <Select.ItemText>{placeholder}</Select.ItemText>
+            </Select.Item>
+            {products.map((p) => (
+              <Select.Item key={p.id} value={p.id} className="px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2">
+                {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
+                <Select.ItemText>{p.name}</Select.ItemText>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
+          <Select.ScrollDownButton />
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
 function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, deleting, editingId, updating, onCreate, onUpdate, onEdit, onCancelEdit, onToggle, onDelete }: OrderBumpsPanelProps) {
   const productName = (id: string) => products.find((p) => p.id === id)?.name || id;
   const isEditing = editingId !== null;
@@ -489,45 +522,21 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
           {/* Product */}
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto gatilho *</label>
-            <div className="relative">
-              <select
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white appearance-none pr-8"
-                value={form.productId}
-                onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))}
-              >
-                <option value="">Selecione um produto…</option>
-                {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              {form.productId && (() => {
-                const selected = (Array.isArray(products) ? products : []).find((p) => p.id === form.productId);
-                return selected?.image ? (
-                  <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <img src={selected.image} alt="" className="w-6 h-6 rounded object-cover" />
-                  </div>
-                ) : null;
-              })()}
-            </div>
+            <ProductSelect
+              products={Array.isArray(products) ? products : []}
+              value={form.productId}
+              onChange={(v) => setForm((f) => ({ ...f, productId: v }))}
+              placeholder="Selecione um produto…"
+            />
           </div>
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto da promoção *</label>
-            <div className="relative">
-              <select
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white appearance-none pr-8"
-                value={form.offerProductId}
-                onChange={(e) => setForm((f) => ({ ...f, offerProductId: e.target.value }))}
-              >
-                <option value="">Selecione o produto promocional…</option>
-                {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              {form.offerProductId && (() => {
-                const selected = (Array.isArray(products) ? products : []).find((p) => p.id === form.offerProductId);
-                return selected?.image ? (
-                  <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <img src={selected.image} alt="" className="w-6 h-6 rounded object-cover" />
-                  </div>
-                ) : null;
-              })()}
-            </div>
+            <ProductSelect
+              products={Array.isArray(products) ? products : []}
+              value={form.offerProductId}
+              onChange={(v) => setForm((f) => ({ ...f, offerProductId: v }))}
+              placeholder="Selecione o produto promocional…"
+            />
           </div>
           {/* Title */}
           <div>
