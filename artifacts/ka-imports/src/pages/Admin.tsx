@@ -484,13 +484,6 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
   const filteredProducts = products.filter((p) => 
     p.name.toLowerCase().includes(search.toLowerCase())
   );
-  
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (viewportRef.current) {
-      viewportRef.current.scrollTop += e.deltaY;
-    }
-  };
 
   return (
     <Select.Root value={value} onValueChange={onChange}>
@@ -529,7 +522,6 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
           <Select.Viewport 
             ref={viewportRef}
             className="max-h-64 overflow-y-auto"
-            onWheel={handleWheel}
           >
             {filteredProducts.length > 0 ? (
               filteredProducts.map((p) => (
