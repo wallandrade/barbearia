@@ -210,9 +210,11 @@ export const useCart = create<CartState>()(
               ? {
                 ...item,
                 quantity: Math.max(1, quantity),
-                price: (item.bulkDiscountEnabled === true)
-                  ? getTierUnitPrice(Number(item.baseUnitPrice ?? item.price), Math.max(1, quantity), item.bulkDiscountTiers ?? [])
-                  : Number(item.baseUnitPrice ?? item.price),
+                price: item.isBump === true
+                  ? Number(item.price)
+                  : (item.bulkDiscountEnabled === true)
+                    ? getTierUnitPrice(Number(item.baseUnitPrice ?? item.price), Math.max(1, quantity), item.bulkDiscountTiers ?? [])
+                    : Number(item.baseUnitPrice ?? item.price),
               }
               : item
           ),

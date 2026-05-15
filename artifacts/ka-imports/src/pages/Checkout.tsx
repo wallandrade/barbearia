@@ -1590,9 +1590,34 @@ export default function Checkout() {
                               <p className="text-xs font-semibold line-clamp-1 leading-tight text-emerald-950">
                                 {bumpItem.name}
                               </p>
-                              <p className="text-[11px] text-emerald-700 mt-0.5">
-                                {bumpItem.quantity}x {formatCurrency(bumpItem.price)} = {formatCurrency(bumpTotal)}
-                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (bumpItem.quantity <= 1) {
+                                      removeItem(bumpItem.id);
+                                      return;
+                                    }
+                                    updateQuantity(bumpItem.id, bumpItem.quantity - 1);
+                                  }}
+                                  className="w-5 h-5 flex items-center justify-center rounded border border-emerald-200 bg-white hover:bg-emerald-100 transition-colors text-emerald-700"
+                                >
+                                  <Minus className="w-2.5 h-2.5" />
+                                </button>
+                                <span className="text-xs font-semibold w-4 text-center text-emerald-900">
+                                  {bumpItem.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateQuantity(bumpItem.id, bumpItem.quantity + 1)}
+                                  className="w-5 h-5 flex items-center justify-center rounded border border-emerald-200 bg-white hover:bg-emerald-100 transition-colors text-emerald-700"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                </button>
+                                <p className="text-[11px] text-emerald-700 ml-1">
+                                  {formatCurrency(bumpItem.price)} cada
+                                </p>
+                              </div>
                             </div>
                             <button
                               type="button"
