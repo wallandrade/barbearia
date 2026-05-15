@@ -1691,7 +1691,8 @@ export default function Checkout() {
                 )}
               </div>
 
-              {/* Coupon field */}
+              {/* Coupon field — hidden if bump is applied */}
+              {!items.some((i) => (i as { isBump?: boolean }).isBump === true) && (
               <div className="mb-4 pb-4 border-b border-border">
                 {appliedCoupon ? (
                   <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3">
@@ -1740,6 +1741,7 @@ export default function Checkout() {
                   </div>
                 )}
               </div>
+              )}
 
               {getCustomerToken() && (
                 <div className="mb-4 pb-4 border-b border-border">
