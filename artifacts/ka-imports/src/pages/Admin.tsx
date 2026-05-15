@@ -477,7 +477,6 @@ interface OrderBumpsPanelProps {
 
 // ProductSelect with image thumbnails
 function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
-  const selectedProduct = products.find((p) => p.id === value);
   return (
     <Select.Root value={value} onValueChange={onChange}>
       <Select.Trigger className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white flex items-center justify-between">
@@ -490,9 +489,6 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
         <Select.Content className="bg-white border border-border rounded-lg shadow-lg z-50">
           <Select.ScrollUpButton />
           <Select.Viewport className="max-h-80">
-            <Select.Item value="" className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer">
-              <Select.ItemText>{placeholder}</Select.ItemText>
-            </Select.Item>
             {products.map((p) => (
               <Select.Item key={p.id} value={p.id} className="px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2">
                 {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
