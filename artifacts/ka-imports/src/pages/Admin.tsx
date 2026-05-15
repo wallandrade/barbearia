@@ -478,6 +478,7 @@ interface OrderBumpsPanelProps {
 // ProductSelect with image thumbnails and search
 function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
   const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   const filteredProducts = products.filter((p) => 
@@ -485,7 +486,10 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
   );
 
   return (
-    <Select.Root value={value} onValueChange={onChange}>
+    <Select.Root value={value} onValueChange={(v) => {
+      onChange(v);
+      setIsOpen(false);
+    }} open={isOpen} onOpenChange={setIsOpen}>
       <Select.Trigger className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white flex items-center justify-between">
         <Select.Value placeholder={placeholder} />
         <Select.Icon>
@@ -504,6 +508,18 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             setTimeout(() => searchInputRef.current?.focus(), 0);
+          }}
+          onInteractOutside={(e) => {
+            if (searchInputRef.current?.contains(e.target as Node)) {
+              e.preventDefault();
+            }
+          }}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => {
+            const searchInput = searchInputRef.current;
+            if (searchInput && searchInput.contains(e.target as Node)) {
+              e.preventDefault();
+            }
           }}
         >
           <div className="p-2 border-b border-border">
