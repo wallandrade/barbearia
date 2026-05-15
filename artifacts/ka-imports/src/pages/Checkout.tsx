@@ -1222,6 +1222,20 @@ export default function Checkout() {
                     const regularPrice = offerProduct.price;
                     const originalPrice = regularPrice;
                     const bumpImage = bump.image ?? offerProduct.image ?? undefined;
+                    const discountedUnitPrice = (() => {
+                      if (bump.discountType === "percent") {
+                        return Math.max(0, effectivePrice * (1 - (bump.discountValue ?? 0) / 100));
+                      }
+                      if (bump.discountType === "fixed") {
+                        return Math.max(0, effectivePrice - (bump.discountValue ?? 0));
+                      }
+                      if (bump.discountType === "buy_x_get_y") {
+                        const bQ = bump.buyQuantity ?? 1;
+                        const gQ = bump.getQuantity ?? 2;
+                        return Math.max(0, (effectivePrice * bQ) / gQ);
+                      }
+                      return effectivePrice;
+                    })();
                     const bumpProduct = { id: offerProduct.id, name: offerProduct.name, price: originalPrice, image: bumpImage };
 
                     function getBumpBadge(): string {
@@ -1275,6 +1289,19 @@ export default function Checkout() {
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-sm text-gray-900 leading-tight">{bump.cardTitle || bump.title}</p>
                               <p className="text-xs text-emerald-700 mt-0.5 font-medium">{offerProduct.name}</p>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className="text-xs text-gray-400 line-through">
+                                  {formatCurrency(regularPrice)}
+                                </span>
+                                <span className="text-sm font-bold text-emerald-700">
+                                  {formatCurrency(discountedUnitPrice)}
+                                </span>
+                                {bump.discountType === "buy_x_get_y" && (
+                                  <span className="text-[11px] font-medium text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                                    {bump.buyQuantity ?? 1} por {bump.getQuantity ?? 2}
+                                  </span>
+                                )}
+                              </div>
                               {bump.description && <p className="text-xs mt-0.5 line-clamp-2 text-gray-500">{bump.description}</p>}
                               {getBumpBadge() && (
                                 <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] bg-rose-500 text-white px-2.5 py-0.5 rounded-full font-bold">
