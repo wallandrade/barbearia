@@ -1339,7 +1339,7 @@ export default function Checkout() {
                                   discountBadge = `-${formatCurrency(savings)}`;
                                 }
 
-                                const tierImage = tier.image || bump.image;
+                                const tierImage = tier.image || bump.image || offerProduct.image;
                                 const isThisTierApplied = alreadyApplied && (() => {
                                   const applied = items.find((i) => i.id === bumpCartId);
                                   if (!applied) return false;
