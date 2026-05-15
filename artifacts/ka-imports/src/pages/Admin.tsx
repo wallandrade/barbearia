@@ -3094,8 +3094,6 @@ export default function Admin() {
             className="mt-3 rounded-xl border p-4 bg-amber-50 border-amber-300 cursor-pointer hover:bg-amber-100 transition"
             onClick={() => setTab("orders")}
             title="Ver pedidos para enviar"
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Gatilho: {productName(b.productId)}</span>
-                  <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">Oferta: {productName(b.offerProductId || b.productId)}</span>
           >
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
