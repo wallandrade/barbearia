@@ -168,6 +168,18 @@ async function ensureCouponsColumns(databaseName: string): Promise<void> {
   }
 }
 
+async function ensureOrderBumpsColumns(databaseName: string): Promise<void> {
+  const definitions = [
+    { name: "offer_product_id", sql: "ALTER TABLE order_bumps ADD COLUMN offer_product_id VARCHAR(255) NULL" },
+  ];
+
+  for (const definition of definitions) {
+    if (!(await columnExists("order_bumps", definition.name, databaseName))) {
+      await pool.query(definition.sql);
+    }
+  }
+}
+
 async function ensureCustomerUsersTable(databaseName: string): Promise<void> {
   if (await tableExists("customer_users", databaseName)) {
     return;
@@ -597,6 +609,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureProductsColumns(databaseName);
     await ensureSellersColumns(databaseName);
     await ensureCouponsColumns(databaseName);
+    await ensureOrderBumpsColumns(databaseName);
     await ensureCustomerUsersTable(databaseName);
     await ensureAffiliatesTables(databaseName);
     await ensureRaffleTables(databaseName);
