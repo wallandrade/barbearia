@@ -502,9 +502,9 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
         <Select.Content 
           ref={contentRef}
           className="bg-white border border-border rounded-lg shadow-lg z-50"
-          side="bottom"
+          side="top"
           align="start"
-          sideOffset={4}
+          sideOffset={8}
           collision="shift"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
