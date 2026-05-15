@@ -531,16 +531,11 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
               onChange={(e) => setSearch(e.target.value)}
               className="w-full px-2 py-1 text-sm border border-border rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               onClick={(e) => e.stopPropagation()}
-              onWheel={(e) => e.stopPropagation()}
             />
           </div>
           <Select.ScrollUpButton />
           <Select.Viewport 
             className="max-h-64 overflow-y-auto"
-            onWheel={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerMove={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
           >
             {filteredProducts.length > 0 ? (
               filteredProducts.map((p) => (
