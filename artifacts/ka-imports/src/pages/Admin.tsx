@@ -478,7 +478,6 @@ interface OrderBumpsPanelProps {
 // ProductSelect with image thumbnails and search
 function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
   const [search, setSearch] = useState("");
-  const viewportRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   const filteredProducts = products.filter((p) => 
@@ -516,12 +515,16 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
               onChange={(e) => setSearch(e.target.value)}
               className="w-full px-2 py-1 text-sm border border-border rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               onClick={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
             />
           </div>
           <Select.ScrollUpButton />
           <Select.Viewport 
-            ref={viewportRef}
             className="max-h-64 overflow-y-auto"
+            onWheel={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
           >
             {filteredProducts.length > 0 ? (
               filteredProducts.map((p) => (
