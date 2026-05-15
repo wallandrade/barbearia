@@ -495,11 +495,17 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
         </Select.Icon>
       </Select.Trigger>
       <Select.Portal>
-        <Select.Content className="bg-white border border-border rounded-lg shadow-lg z-50">
+        <Select.Content 
+          className="bg-white border border-border rounded-lg shadow-lg z-50"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          collision="shift"
+        >
           <Select.ScrollUpButton />
           <Select.Viewport 
             ref={viewportRef}
-            className="max-h-80 overflow-y-auto"
+            className="max-h-64 overflow-y-auto"
             onWheel={handleWheel}
           >
             {products.map((p) => (
