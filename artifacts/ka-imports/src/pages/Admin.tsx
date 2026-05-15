@@ -506,8 +506,6 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
           align="start"
           sideOffset={4}
           collision="shift"
-          sticky="always"
-          style={{ position: "fixed" } as React.CSSProperties}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             setTimeout(() => searchInputRef.current?.focus(), 0);
