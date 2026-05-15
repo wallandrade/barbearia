@@ -30,6 +30,7 @@ type CartItemExtended = CartItem & {
   isBump?: boolean;
   bumpForProductId?: string;
   bumpOfferId?: string;
+  bumpProductId?: string;
 };
 
 function getBaseUnitPrice(product: Product): number {
@@ -79,6 +80,7 @@ interface CartState {
   addItem: (product: Product, options?: { quantity?: number; unitPrice?: number }) => void;
   addBumpItem: (
     bumpOfferId: string,
+    anchorProductId: string,
     product: { id: string; name: string; price: number; image?: string },
     bumpedPrice: number,
     bumpedQty: number
@@ -98,7 +100,7 @@ export const useCart = create<CartState>()(
 
       setIsOpen: (isOpen) => set({ isOpen }),
 
-      addBumpItem: (bumpOfferId, product, bumpedPrice, bumpedQty) => {
+      addBumpItem: (bumpOfferId, anchorProductId, product, bumpedPrice, bumpedQty) => {
         const cartId = `bump_${bumpOfferId}`;
         set((state) => {
           const exists = state.items.some((i) => i.id === cartId);
@@ -106,7 +108,7 @@ export const useCart = create<CartState>()(
             return {
               items: state.items.map((i) =>
                 i.id === cartId
-                  ? { ...i, price: bumpedPrice, regularPrice: product.price, quantity: bumpedQty }
+                  ? { ...i, price: bumpedPrice, regularPrice: product.price, quantity: bumpedQty, bumpForProductId: anchorProductId, bumpProductId: product.id, image: product.image, name: product.name }
                   : i
               ),
             };
@@ -123,8 +125,9 @@ export const useCart = create<CartState>()(
                 quantity: bumpedQty,
                 image: product.image,
                 isBump: true,
-                bumpForProductId: product.id,
+                bumpForProductId: anchorProductId,
                 bumpOfferId,
+                bumpProductId: product.id,
               } as CartItemExtended,
             ],
           };

@@ -390,6 +390,7 @@ async function copyText(text: string): Promise<"auto" | "manual"> {
 interface OrderBump {
   id: string;
   productId: string;
+  offerProductId?: string | null;
   title: string;
   cardTitle?: string | null;
   description?: string | null;
@@ -430,6 +431,7 @@ function bumpSummary(b: OrderBump): string {
 
 type BumpFormType = {
   productId: string;
+  offerProductId: string;
   title: string;
   cardTitle: string;
   description: string;
@@ -448,7 +450,7 @@ type BumpFormType = {
 const BUMP_UNITS = ["unidade", "caixa", "frasco", "ampola", "caneta", "par", "kit"];
 
 const EMPTY_BUMP_FORM: BumpFormType = {
-  productId: "", title: "", cardTitle: "", description: "", image: "",
+  productId: "", offerProductId: "", title: "", cardTitle: "", description: "", image: "",
   discountType: "percent", discountValue: "", buyQuantity: "1", getQuantity: "2",
   tiers: [{ qty: "2", price: "", image: "" }, { qty: "3", price: "", image: "" }],
   unit: "unidade", discountTagType: "none", isActive: true, sortOrder: "0",
@@ -486,13 +488,24 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           {/* Product */}
           <div>
-            <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto *</label>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto gatilho *</label>
             <select
               className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white"
               value={form.productId}
               onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))}
             >
               <option value="">Selecione um produto…</option>
+              {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto da promoção *</label>
+            <select
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white"
+              value={form.offerProductId}
+              onChange={(e) => setForm((f) => ({ ...f, offerProductId: e.target.value }))}
+            >
+              <option value="">Selecione o produto promocional…</option>
               {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
@@ -3081,6 +3094,8 @@ export default function Admin() {
             className="mt-3 rounded-xl border p-4 bg-amber-50 border-amber-300 cursor-pointer hover:bg-amber-100 transition"
             onClick={() => setTab("orders")}
             title="Ver pedidos para enviar"
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Gatilho: {productName(b.productId)}</span>
+                  <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">Oferta: {productName(b.offerProductId || b.productId)}</span>
           >
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
@@ -3676,6 +3691,7 @@ export default function Admin() {
               setBumpEditingId(b.id);
               setBumpForm({
                 productId:    b.productId,
+                offerProductId: b.offerProductId || b.productId,
                 title:        b.title,
                 cardTitle:    b.cardTitle ?? "",
                 description:  b.description ?? "",
@@ -3695,11 +3711,14 @@ export default function Admin() {
             onCancelEdit={() => { setBumpEditingId(null); setBumpForm(EMPTY_BUMP_FORM); }}
             onUpdate={async () => {
               if (!bumpEditingId) return;
+              if (!bumpForm.productId) { toast.error("Selecione o produto gatilho."); return; }
+              if (!bumpForm.offerProductId) { toast.error("Selecione o produto promocional."); return; }
               if (!bumpForm.title.trim()) { toast.error("Título é obrigatório."); return; }
               setBumpUpdating(true);
               try {
                 const body: Record<string, unknown> = {
                   productId:    bumpForm.productId,
+                  offerProductId: bumpForm.offerProductId,
                   title:        bumpForm.title.trim(),
                   cardTitle:    bumpForm.cardTitle.trim() || null,
                   description:  bumpForm.description.trim() || null,
@@ -3729,12 +3748,14 @@ export default function Admin() {
               finally { setBumpUpdating(false); }
             }}
             onCreate={async () => {
-              if (!bumpForm.productId) { toast.error("Selecione um produto."); return; }
+              if (!bumpForm.productId) { toast.error("Selecione o produto gatilho."); return; }
+              if (!bumpForm.offerProductId) { toast.error("Selecione o produto promocional."); return; }
               if (!bumpForm.title.trim()) { toast.error("Título é obrigatório."); return; }
               setBumpCreating(true);
               try {
                 const body: Record<string, unknown> = {
                   productId: bumpForm.productId,
+                  offerProductId: bumpForm.offerProductId,
                   title: bumpForm.title.trim(),
                   cardTitle: bumpForm.cardTitle.trim() || null,
                   description: bumpForm.description.trim() || null,

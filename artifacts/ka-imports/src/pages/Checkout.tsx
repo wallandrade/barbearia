@@ -132,10 +132,12 @@ export default function Checkout() {
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true });
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
+  const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
 
   useEffect(() => {
     if (items.length === 0) {
       setProductCategoryById(new Map());
+      setProductCatalogById(new Map());
       return;
     }
 
@@ -148,13 +150,19 @@ export default function Checkout() {
       .then((data) => {
         if (cancelled) return;
         const nextMap = new Map<string, string>();
+        const nextCatalog = new Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>();
         for (const product of data.products ?? []) {
           nextMap.set(product.id, String(product.category ?? ""));
+          nextCatalog.set(product.id, product);
         }
         setProductCategoryById(nextMap);
+        setProductCatalogById(nextCatalog);
       })
       .catch(() => {
-        if (!cancelled) setProductCategoryById(new Map());
+        if (!cancelled) {
+          setProductCategoryById(new Map());
+          setProductCatalogById(new Map());
+        }
       });
 
     return () => {
@@ -245,7 +253,7 @@ export default function Checkout() {
 
   // Order bumps for checkout
   interface CheckoutBump {
-    id: string; productId: string; title: string; cardTitle?: string | null; description?: string | null;
+    id: string; productId: string; offerProductId?: string | null; title: string; cardTitle?: string | null; description?: string | null;
     image?: string | null; discountType: string; discountValue?: number | null;
     buyQuantity?: number | null; getQuantity?: number | null;
     tiers?: Array<{ qty: number; price: number; image?: string }> | null;
@@ -268,6 +276,25 @@ export default function Checkout() {
       .catch(() => {});
   }, [items.length]);
 
+  const checkoutOffers = useMemo(() => {
+    return checkoutBumps
+      .map((bump) => {
+        const triggerItem = items.find((item) => item.id === bump.productId);
+        if (!triggerItem) return null;
+
+        const offerProduct = productCatalogById.get(bump.offerProductId || bump.productId) ?? null;
+        const displayProduct = offerProduct ?? {
+          id: triggerItem.id,
+          name: triggerItem.name,
+          price: triggerItem.price,
+          image: (triggerItem as { image?: string }).image ?? null,
+        };
+
+        return { bump, triggerItem, offerProduct: displayProduct };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }, [checkoutBumps, items, productCatalogById]);
+
   // Auto-apply tier bump when user manually changes cart quantity to match a tier
   const nonBumpSnapshot = useMemo(
     () => items.filter((i) => !(i as { isBump?: boolean }).isBump).map((i) => `${i.id}:${i.quantity}`).join(","),
@@ -284,7 +311,13 @@ export default function Checkout() {
       const cartQty = cartItem.quantity;
 
       const regularPrice = (cartItem as { regularPrice?: number }).regularPrice ?? cartItem.price;
-      const bumpProduct = { id: cartItem.id, name: cartItem.name, price: regularPrice, image: bump.image ?? undefined };
+      const offerProduct = productCatalogById.get(bump.offerProductId || bump.productId) ?? {
+        id: cartItem.id,
+        name: cartItem.name,
+        price: regularPrice,
+        image: (cartItem as { image?: string }).image ?? undefined,
+      };
+      const bumpProduct = { id: offerProduct.id, name: offerProduct.name, price: offerProduct.price, image: bump.image ?? offerProduct.image ?? undefined };
 
       if (!bumpItem) {
         // Caso 1: nenhum bump aplicado — auto-aplicar se qty > 1
@@ -293,7 +326,7 @@ export default function Checkout() {
         if (!bestTier || bestTier.qty <= 1) continue;
         const baseExtra = bestTier.qty - 1;
         updateQuantity(cartItem.id, 1);
-        addBumpItem(bump.id, bumpProduct, bestTier.price / baseExtra, baseExtra);
+        addBumpItem(bump.id, cartItem.id, bumpProduct, bestTier.price / baseExtra, baseExtra);
         toast.success(`Desconto progressivo aplicado! (${bestTier.qty} ${bump.unit || "unidades"})`);
       } else if (cartQty > 1) {
         // Caso 2: bump já aplicado mas item principal qty > 1 (usuário aumentou fora do checkout)
@@ -304,7 +337,7 @@ export default function Checkout() {
         if (bestTier && bestTier.qty > 1) {
           updateQuantity(cartItem.id, 1);
           const baseExtra = bestTier.qty - 1;
-          addBumpItem(bump.id, bumpProduct, bestTier.price / baseExtra, baseExtra);
+          addBumpItem(bump.id, cartItem.id, bumpProduct, bestTier.price / baseExtra, baseExtra);
           toast.success(`Desconto atualizado! (${bestTier.qty} ${bump.unit || "unidades"})`);
         } else {
           // Abaixo do menor tier — mantém a nova qty sem bump
@@ -368,7 +401,14 @@ export default function Checkout() {
     if (bestTier && bestTier.qty > 1) {
       updateQuantity(item.id, 1);
       const baseExtra = bestTier.qty - 1;
-      addBumpItem(bump.id, { id: item.id, name: item.name, price: (item as { regularPrice?: number }).regularPrice ?? item.price }, bestTier.price / baseExtra, baseExtra);
+      const regularPrice = (item as { regularPrice?: number }).regularPrice ?? item.price;
+      const offerProduct = productCatalogById.get(bump.offerProductId || bump.productId) ?? {
+        id: item.id,
+        name: item.name,
+        price: regularPrice,
+        image: (item as { image?: string }).image ?? undefined,
+      };
+      addBumpItem(bump.id, item.id, { id: offerProduct.id, name: offerProduct.name, price: offerProduct.price, image: offerProduct.image ?? undefined }, bestTier.price / baseExtra, baseExtra);
       toast.success(`${bestTier.qty} ${bump.unit || "unidades"} — desconto aplicado!`);
     } else {
       updateQuantity(item.id, newTotal);
@@ -394,7 +434,14 @@ export default function Checkout() {
     if (bestTier && bestTier.qty > 1) {
       updateQuantity(item.id, 1);
       const baseExtra = bestTier.qty - 1;
-      addBumpItem(bump.id, { id: item.id, name: item.name, price: (item as { regularPrice?: number }).regularPrice ?? item.price }, bestTier.price / baseExtra, baseExtra);
+      const regularPrice = (item as { regularPrice?: number }).regularPrice ?? item.price;
+      const offerProduct = productCatalogById.get(bump.offerProductId || bump.productId) ?? {
+        id: item.id,
+        name: item.name,
+        price: regularPrice,
+        image: (item as { image?: string }).image ?? undefined,
+      };
+      addBumpItem(bump.id, item.id, { id: offerProduct.id, name: offerProduct.name, price: offerProduct.price, image: offerProduct.image ?? undefined }, bestTier.price / baseExtra, baseExtra);
       toast.success(`${bestTier.qty} ${bump.unit || "unidades"} — desconto aplicado!`);
     } else {
       updateQuantity(item.id, newTotal);
@@ -476,7 +523,7 @@ export default function Checkout() {
 
   const couponProductsPayload = useMemo(
     () => items.map((item) => ({
-      id: (item as { bumpForProductId?: string }).bumpForProductId ?? item.id,
+      id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
       quantity: item.quantity,
       price: item.price,
       regularPrice: (item as { regularPrice?: number }).regularPrice ?? item.price,
@@ -715,7 +762,7 @@ export default function Checkout() {
       };
 
       const productsPayload = items.map((item) => ({
-        id: (item as { bumpForProductId?: string }).bumpForProductId ?? item.id,
+        id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
         name: item.name,
         quantity: item.quantity,
         price: item.price,
@@ -918,7 +965,7 @@ export default function Checkout() {
     // Card uses regular (non-promo) prices
     const cardTotal = cardNetTotal + cardFee;
     const cardProductsPayload = items.map((i) => ({
-      id: (i as { bumpForProductId?: string }).bumpForProductId ?? i.id,
+      id: (i as { bumpProductId?: string }).bumpProductId ?? i.id,
       name: i.name,
       quantity: i.quantity,
       price: (i as { regularPrice?: number }).regularPrice ?? i.price,
@@ -1164,18 +1211,17 @@ export default function Checkout() {
                 </div>
 
                 <div className="bg-white divide-y divide-amber-100">
-                  {checkoutBumps.map((bump) => {
-                    const cartItem = items.find((i) => i.id === bump.productId);
-                    if (!cartItem) return null;
-                    const effectivePrice = cartItem.price;
+                  {checkoutOffers.map(({ bump, triggerItem, offerProduct }) => {
+                    const cartItem = triggerItem;
+                    const effectivePrice = offerProduct.price;
                     const unit = bump.unit || "unidade";
                     const bumpCartId = `bump_${bump.id}`;
                     const alreadyApplied = items.some((i) => i.id === bumpCartId);
                     const cartQty = cartItem.quantity ?? 1;
                     const cartCost = cartItem.price * cartQty;
-                    const regularPrice = (cartItem as { regularPrice?: number }).regularPrice ?? cartItem.price;
+                    const regularPrice = offerProduct.price;
                     const originalPrice = regularPrice;
-                    const bumpProduct = { id: cartItem.id, name: cartItem.name, price: originalPrice, image: bump.image ?? undefined };
+                    const bumpProduct = { id: offerProduct.id, name: offerProduct.name, price: originalPrice, image: bump.image ?? offerProduct.image ?? undefined };
 
                     function getBumpBadge(): string {
                       if (bump.discountType === "percent")       return `-${bump.discountValue ?? 0}%`;
@@ -1204,7 +1250,7 @@ export default function Checkout() {
                           qty = extraQty;
                         }
                       }
-                      addBumpItem(bump.id, bumpProduct, price, qty);
+                      addBumpItem(bump.id, cartItem.id, bumpProduct, price, qty);
                       toast.success("Oferta adicionada!");
                     }
 
@@ -1227,6 +1273,7 @@ export default function Checkout() {
                             )}
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-sm text-gray-900 leading-tight">{bump.cardTitle || bump.title}</p>
+                              <p className="text-xs text-emerald-700 mt-0.5 font-medium">{offerProduct.name}</p>
                               {bump.description && <p className="text-xs mt-0.5 line-clamp-2 text-gray-500">{bump.description}</p>}
                               {getBumpBadge() && (
                                 <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] bg-rose-500 text-white px-2.5 py-0.5 rounded-full font-bold">
@@ -1279,7 +1326,7 @@ export default function Checkout() {
                                       if (alreadyApplied) return;
                                       // Always restructure: set main item to qty 1, add bump for extras
                                       if (cartQty > 1) updateQuantity(cartItem.id, 1);
-                                      addBumpItem(bump.id, bumpProduct, pricePerExtraUnit, baseExtra);
+                                      addBumpItem(bump.id, cartItem.id, bumpProduct, pricePerExtraUnit, baseExtra);
                                       toast.success("Oferta adicionada!");
                                     }}
                                     className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${

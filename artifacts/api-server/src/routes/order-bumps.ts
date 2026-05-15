@@ -10,6 +10,7 @@ function mapBump(b: typeof orderBumpsTable.$inferSelect) {
   return {
     id:            b.id,
     productId:     b.productId,
+    offerProductId: b.offerProductId ?? b.productId,
     title:         b.title,
     cardTitle:     b.cardTitle ?? null,
     description:   b.description ?? null,
@@ -72,8 +73,9 @@ router.get("/admin/order-bumps", requirePrimaryAdmin, async (_req, res) => {
 // ---------------------------------------------------------------------------
 router.post("/admin/order-bumps", requirePrimaryAdmin, async (req, res) => {
   try {
-    const { productId, title, cardTitle, description, image, discountType, discountValue, buyQuantity, getQuantity, tiers, unit, isActive, sortOrder } = req.body as {
+    const { productId, offerProductId, title, cardTitle, description, image, discountType, discountValue, buyQuantity, getQuantity, tiers, unit, isActive, sortOrder } = req.body as {
       productId: string;
+      offerProductId?: string;
       title: string;
       cardTitle?: string;
       description?: string;
@@ -96,6 +98,7 @@ router.post("/admin/order-bumps", requirePrimaryAdmin, async (req, res) => {
     await db.insert(orderBumpsTable).values({
       id,
       productId:    productId.trim(),
+      offerProductId: offerProductId?.trim() || productId.trim(),
       title:        title.trim(),
       cardTitle:    cardTitle?.trim() || null,
       description:  description?.trim() || null,
@@ -129,6 +132,7 @@ router.patch("/admin/order-bumps/:id", requirePrimaryAdmin, async (req, res) => 
     if (Array.isArray(id)) id = id[0];
     const body = req.body as {
       productId?: string;
+      offerProductId?: string;
       title?: string;
       cardTitle?: string | null;
       description?: string | null;
@@ -145,6 +149,7 @@ router.patch("/admin/order-bumps/:id", requirePrimaryAdmin, async (req, res) => 
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (body.productId   !== undefined) updates.productId    = body.productId.trim();
+    if (body.offerProductId !== undefined) updates.offerProductId = body.offerProductId?.trim() || body.productId?.trim() || null;
     if (body.title       !== undefined) updates.title        = body.title.trim();
     if (body.cardTitle   !== undefined) updates.cardTitle    = body.cardTitle?.trim() || null;
     if (body.description !== undefined) updates.description  = body.description?.trim() || null;
