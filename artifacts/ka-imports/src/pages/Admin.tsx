@@ -480,6 +480,7 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   
   const filteredProducts = products.filter((p) => 
     p.name.toLowerCase().includes(search.toLowerCase())
@@ -489,6 +490,7 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
     <Select.Root value={value} onValueChange={(v) => {
       onChange(v);
       setIsOpen(false);
+      setSearch("");
     }} open={isOpen} onOpenChange={setIsOpen}>
       <Select.Trigger className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white flex items-center justify-between">
         <Select.Value placeholder={placeholder} />
@@ -498,7 +500,8 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
       </Select.Trigger>
       <Select.Portal>
         <Select.Content 
-          className="bg-white border border-border rounded-lg shadow-lg z-50 will-change-none"
+          ref={contentRef}
+          className="bg-white border border-border rounded-lg shadow-lg z-50"
           side="bottom"
           align="start"
           sideOffset={4}
@@ -510,17 +513,12 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
             setTimeout(() => searchInputRef.current?.focus(), 0);
           }}
           onInteractOutside={(e) => {
-            if (searchInputRef.current?.contains(e.target as Node)) {
+            const target = e.target as HTMLElement;
+            if (contentRef.current?.contains(target) || searchInputRef.current?.contains(target)) {
               e.preventDefault();
             }
           }}
           onEscapeKeyDown={(e) => e.preventDefault()}
-          onPointerDownOutside={(e) => {
-            const searchInput = searchInputRef.current;
-            if (searchInput && searchInput.contains(e.target as Node)) {
-              e.preventDefault();
-            }
-          }}
         >
           <div className="p-2 border-b border-border">
             <input
@@ -534,9 +532,7 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
             />
           </div>
           <Select.ScrollUpButton />
-          <Select.Viewport 
-            className="max-h-64 overflow-y-auto"
-          >
+          <Select.Viewport className="max-h-64 overflow-y-auto">
             {filteredProducts.length > 0 ? (
               filteredProducts.map((p) => (
                 <Select.Item key={p.id} value={p.id} className="px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2">
