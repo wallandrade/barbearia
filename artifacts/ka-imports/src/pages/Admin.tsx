@@ -406,7 +406,7 @@ interface OrderBump {
   sortOrder: number;
   createdAt: string;
 }
-interface BumpProduct { id: string; name: string; }
+interface BumpProduct { id: string; name: string; image?: string | null; }
 
 const DISCOUNT_TYPES = [
   { value: "percent",        label: "% de Desconto" },
@@ -489,25 +489,45 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
           {/* Product */}
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto gatilho *</label>
-            <select
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white"
-              value={form.productId}
-              onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))}
-            >
-              <option value="">Selecione um produto…</option>
-              {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="relative">
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white appearance-none pr-8"
+                value={form.productId}
+                onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))}
+              >
+                <option value="">Selecione um produto…</option>
+                {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {form.productId && (() => {
+                const selected = (Array.isArray(products) ? products : []).find((p) => p.id === form.productId);
+                return selected?.image ? (
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <img src={selected.image} alt="" className="w-6 h-6 rounded object-cover" />
+                  </div>
+                ) : null;
+              })()}
+            </div>
           </div>
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Produto da promoção *</label>
-            <select
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white"
-              value={form.offerProductId}
-              onChange={(e) => setForm((f) => ({ ...f, offerProductId: e.target.value }))}
-            >
-              <option value="">Selecione o produto promocional…</option>
-              {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="relative">
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white appearance-none pr-8"
+                value={form.offerProductId}
+                onChange={(e) => setForm((f) => ({ ...f, offerProductId: e.target.value }))}
+              >
+                <option value="">Selecione o produto promocional…</option>
+                {(Array.isArray(products) ? products : []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {form.offerProductId && (() => {
+                const selected = (Array.isArray(products) ? products : []).find((p) => p.id === form.offerProductId);
+                return selected?.image ? (
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <img src={selected.image} alt="" className="w-6 h-6 rounded object-cover" />
+                  </div>
+                ) : null;
+              })()}
+            </div>
           </div>
           {/* Title */}
           <div>
@@ -3677,7 +3697,7 @@ export default function Admin() {
         ) : tab === "orderBumps" ? (
           <OrderBumpsPanel
             bumps={orderBumps}
-            products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name }))}
+            products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name, image: p.image }))}
             form={bumpForm}
             setForm={setBumpForm}
             creating={bumpCreating}
