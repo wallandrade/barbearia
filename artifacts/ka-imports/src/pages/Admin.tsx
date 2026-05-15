@@ -496,11 +496,13 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
       </Select.Trigger>
       <Select.Portal>
         <Select.Content 
-          className="bg-white border border-border rounded-lg shadow-lg z-50"
+          className="bg-white border border-border rounded-lg shadow-lg z-50 will-change-none"
           side="bottom"
           align="start"
           sideOffset={4}
           collision="shift"
+          sticky="always"
+          style={{ position: "fixed" } as React.CSSProperties}
         >
           <Select.ScrollUpButton />
           <Select.Viewport 
