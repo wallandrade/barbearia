@@ -37,10 +37,19 @@ function isPushcutApiUrl(value: string): boolean {
   }
 }
 
+function isPushcutLegacyTokenPath(pathname: string): boolean {
+  // Legacy Pushcut URLs look like: /<token>/notifications/<name>
+  return /^\/[A-Za-z0-9_-]+\/notifications\/.+/.test(pathname);
+}
+
 function normalizePushcutUrl(value: string): string {
   try {
     const parsed = new URL(value);
     if (parsed.hostname.toLowerCase() !== "api.pushcut.io") return value;
+    // Keep legacy token-based paths untouched.
+    if (isPushcutLegacyTokenPath(parsed.pathname)) {
+      return parsed.toString();
+    }
     if (!parsed.pathname.startsWith("/v1/")) {
       parsed.pathname = `/v1${parsed.pathname.startsWith("/") ? "" : "/"}${parsed.pathname}`;
     }
@@ -71,6 +80,15 @@ export async function sendOutboundWebhook(
       return { sent: false, error: "webhook_url_not_configured" };
     }
     const url = isPushcutApiUrl(rawUrl) ? normalizePushcutUrl(rawUrl) : rawUrl;
+    const pushcutV1Api = (() => {
+      if (!isPushcutApiUrl(url)) return false;
+      try {
+        const parsed = new URL(url);
+        return parsed.pathname.startsWith("/v1/");
+      } catch {
+        return false;
+      }
+    })();
 
     const enabled = isEnabledValue(await getSettingValue("outbound_webhook_enabled"));
     if (!options?.force && !enabled) {
@@ -104,10 +122,10 @@ export async function sendOutboundWebhook(
       "X-KA-Webhook-Event": eventType,
       "X-KA-Webhook-Timestamp": timestamp,
     };
-    if (secret && isPushcutApiUrl(url)) {
+    if (secret && pushcutV1Api) {
       headers["API-Key"] = secret;
     }
-    if (secret && !isPushcutApiUrl(url)) {
+    if (secret && !pushcutV1Api) {
       headers["X-KA-Webhook-Signature"] = signPayload(secret, timestamp, body);
     }
 
