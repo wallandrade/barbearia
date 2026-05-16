@@ -217,7 +217,7 @@ export async function ensureOrderCommission(orderId: string): Promise<boolean> {
     rate: COMMISSION_RATE.toFixed(4),
     baseAmount: baseAmount.toFixed(2),
     commissionAmount: commissionAmount.toFixed(2),
-    status: "pending",
+    status: "released",
     updatedAt: new Date(),
   });
 

@@ -11,6 +11,7 @@ import {
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
+import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 
 const router: IRouter = Router();
@@ -157,6 +158,10 @@ router.get("/pix/status/:transactionId", async (req, res) => {
             .update(ordersTable)
             .set({ status: nextOrderStatus, updatedAt: new Date() })
             .where(eq(ordersTable.id, row.id));
+
+          if (nextOrderStatus === "paid") {
+            await ensureOrderCommission(row.id);
+          }
         }
 
         const status = isPaid ? "OK" : isCancelled ? "CANCELED" : "PENDING";
@@ -194,10 +199,20 @@ router.post("/pix/callback/:token", async (req, res) => {
     console.log("[PIX] Legacy callback received:", JSON.stringify(body));
 
     if (body.transactionId && isPaymentConfirmed(body.status || "")) {
+      const existing = await db
+        .select({ id: ordersTable.id, status: ordersTable.status })
+        .from(ordersTable)
+        .where(eq(ordersTable.transactionId, body.transactionId))
+        .limit(1);
+
       await db
         .update(ordersTable)
         .set({ status: "paid", updatedAt: new Date() })
         .where(eq(ordersTable.transactionId, body.transactionId));
+
+      if (existing[0] && existing[0].status !== "paid" && existing[0].status !== "completed") {
+        await ensureOrderCommission(existing[0].id);
+      }
 
       broadcastNotification({
         type: "order_paid",

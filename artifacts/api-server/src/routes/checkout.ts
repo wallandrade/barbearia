@@ -12,7 +12,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession } from "../middlewares/customer-auth";
-import { applyAffiliateCreditToOrder, normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
+import { applyAffiliateCreditToOrder, ensureOrderCommission, normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { lookupIpGeo } from "../lib/ip-geo";
 
@@ -467,6 +467,7 @@ router.post("/checkout/pix", async (req, res) => {
 
     const payableAmount = Math.max(0, amount - affiliateCreditUsed);
     if (payableAmount <= 0) {
+      await ensureOrderCommission(orderId);
       broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
       void sendOutboundWebhook("order_paid", {
         id: orderId,
