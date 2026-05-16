@@ -315,7 +315,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -1170,6 +1170,9 @@ export default function Admin() {
   // Site settings (logo, banners)
   const [settings, setSettings]         = useState<Record<string, string>>({});
   const [settingsLoading, setSettingsLoading] = useState<Record<string, boolean>>({});
+  const [brevoApiKey, setBrevoApiKey] = useState("");
+  const [brevoConfigured, setBrevoConfigured] = useState(false);
+  const [brevoTesting, setBrevoTesting] = useState(false);
   const [clientErrors, setClientErrors] = useState<ClientErrorEvent[]>([]);
   const [clientErrorsLoading, setClientErrorsLoading] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
@@ -10670,6 +10673,51 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             Use o botão de teste para validar recebimento no Pushcut antes de ativar em produção.
           </p>
           <Button variant="outline" onClick={onTestOutboundWebhook}>Enviar teste</Button>
+        </div>
+      </div>
+
+      {/* ── Integração Brevo ─────────────────────────────────────────────── */}
+      <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+        <div>
+          <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+            <Mail className="w-5 h-5 text-primary" />
+            Integração Brevo
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Configure sua API key do Brevo para habilitar sincronização de clientes e campanhas.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-xs font-medium">API key do Brevo</label>
+          <input
+            type="password"
+            value={brevoApiKey}
+            onChange={(e) => setBrevoApiKey(e.target.value)}
+            placeholder="xkeysib-..."
+            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            A chave é validada ao salvar. Se estiver correta, fica armazenada no backend.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs">
+            {brevoConfigured ? (
+              <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                <CheckCircle className="w-3 h-3" /> API configurada
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                <AlertTriangle className="w-3 h-3" /> API não configurada
+              </span>
+            )}
+          </div>
+          <Button onClick={onTestBrevoConnection} disabled={brevoTesting || !brevoApiKey.trim()}>
+            {brevoTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+            Testar e salvar API
+          </Button>
         </div>
       </div>
 
