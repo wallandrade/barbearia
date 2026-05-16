@@ -108,6 +108,7 @@ const RaffleDetail        = lazy(() => import("@/pages/RaffleDetail"));
 const RafflePix           = lazy(() => import("@/pages/RafflePix"));
 const RaffleConsulta      = lazy(() => import("@/pages/RaffleConsulta"));
 const NotFound            = lazy(() => import("@/pages/not-found"));
+const WhatsAppGroup2      = lazy(() => import("@/pages/WhatsAppGroup2"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -186,6 +187,7 @@ function Router() {
         <Route path="/rifas/pix/:id"    component={RafflePix} />
         <Route path="/rifas/:id"        component={RaffleDetail} />
         <Route path="/rifas"            component={RaffleList} />
+          <Route path="/grupo2"           component={WhatsAppGroup2} />
         <Route path="/:seller/produto/:id" component={ProductDetail} />
         <Route path="/produto/:id"      component={ProductDetail} />
         <Route path="/:seller/checkout" component={SellerCheckoutPage} />
