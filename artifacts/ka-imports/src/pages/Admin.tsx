@@ -315,7 +315,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -997,6 +997,8 @@ export default function Admin() {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customerImpersonatingId, setCustomerImpersonatingId] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [exportingCustomersCSV, setExportingCustomersCSV] = useState(false);
+  const [syncingCustomersBrevo, setSyncingCustomersBrevo] = useState(false);
   const [loading, setLoading] = useState(true);
   // Once set to true, the spinner never appears again for orders/charges —
   // background refreshes and filter changes update data silently in-place.
@@ -1383,6 +1385,57 @@ export default function Admin() {
     }
   }, [isPrimary]);
 
+
+  const handleExportCustomersCSV = useCallback(async () => {
+    setExportingCustomersCSV(true);
+    try {
+      const csvRows = [
+        ['Nome', 'E-mail', 'Telefone', 'Pedidos', 'Código Afiliado', 'Data Cadastro'].map(f => "").join(';'),
+        ...customerUsers.map(c => [
+          c.name,
+          c.email,
+          c.phone || '',
+          c.orderCount,
+          c.affiliateCode || '',
+          new Date(c.createdAt).toLocaleDateString('pt-BR')
+        ].map(v => "").join(';'))
+      ];
+      const csv = csvRows.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = clientes_.csv;
+      link.click();
+      toast.success('Clientes exportados com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao exportar clientes.');
+    } finally {
+      setExportingCustomersCSV(false);
+    }
+  }, [customerUsers]);
+
+  const handleSyncCustomersBrevo = useCallback(async () => {
+    setSyncingCustomersBrevo(true);
+    try {
+      const res = await fetch(${BASE}/api/admin/brevo/sync-customers, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      const data = await res.json() as { ok?: boolean; synced?: number; failed?: number; error?: string; message?: string };
+      if (!res.ok || !data.ok) {
+        toast.error(data.message || data.error || 'Erro ao sincronizar com Brevo.');
+        return;
+      }
+      toast.success(Sincronizados  cliente com Brevo!);
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao sincronizar com Brevo.');
+    } finally {
+      setSyncingCustomersBrevo(false);
+    }
+  }, []);
   const fetchSupportTickets = useCallback(async () => {
     setSupportLoading(true);
     try {
