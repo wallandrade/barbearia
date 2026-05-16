@@ -834,6 +834,8 @@ interface AdminRaffleResult {
 interface CustomerUserRecord {
   id: string; name: string; email: string; createdAt: string;
   orderCount: number; affiliateCode: string | null;
+  phone?: string | null;
+  hasAccount?: boolean;
 }
 
 interface SupportTicketRecord {
@@ -1359,6 +1361,10 @@ export default function Admin() {
   const impersonateCustomerAccount = useCallback(async (customer: CustomerUserRecord) => {
     if (!isPrimary) {
       toast.error("Apenas administrador principal pode entrar na conta do cliente.");
+      return;
+    }
+    if (!customer.hasAccount) {
+      toast.error("Este comprador não possui conta cadastrada (compra como convidado).");
       return;
     }
 
@@ -8948,7 +8954,16 @@ function CustomersPanel({
             <tbody>
               {filtered.map((c, idx) => (
                 <tr key={c.id} className={`border-b border-border last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}>
-                  <td className="px-4 py-3 font-medium text-foreground">{c.name}</td>
+                  <td className="px-4 py-3 font-medium text-foreground">
+                    <div className="flex items-center gap-2">
+                      <span>{c.name}</span>
+                      {!c.hasAccount && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
+                          convidado
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{c.email}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${c.orderCount > 0 ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
@@ -8968,9 +8983,9 @@ function CustomersPanel({
                     <button
                       type="button"
                       onClick={() => onImpersonate(c)}
-                      disabled={!canImpersonate || impersonatingId === c.id}
+                      disabled={!canImpersonate || !c.hasAccount || impersonatingId === c.id}
                       className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border bg-white hover:bg-muted text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-                      title={!canImpersonate ? "Apenas administrador principal pode entrar na conta" : "Entrar na conta do cliente"}
+                      title={!canImpersonate ? "Apenas administrador principal pode entrar na conta" : !c.hasAccount ? "Comprador sem cadastro (convidado)" : "Entrar na conta do cliente"}
                     >
                       {impersonatingId === c.id ? (
                         <>

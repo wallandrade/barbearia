@@ -170,7 +170,7 @@ router.get("/auth/me", requireCustomerAuth, async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// GET /api/admin/customers  — list all registered customers (admin only)
+// GET /api/admin/customers  — list all buyers (registered + guest) (admin only)
 // --------------------------------------------------------------------------
 router.get("/admin/customers", requireAdminAuth, async (req, res) => {
   try {
@@ -184,23 +184,37 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
       return;
     }
 
-    // Count orders per customer
-    const orderCountsBase = await db
+    const emailOrders = await db
       .select({
-        userId: ordersTable.userId,
+        email: sql<string>`lower(${ordersTable.clientEmail})`.as("email"),
+        name: sql<string>`max(${ordersTable.clientName})`.as("name"),
+        phone: sql<string>`max(${ordersTable.clientPhone})`.as("phone"),
+        firstOrderAt: sql<Date>`min(${ordersTable.createdAt})`.as("first_order_at"),
         orderCount: sql<number>`count(*)`.as("order_count"),
       })
       .from(ordersTable)
-      .where(adminScope.hasGlobalAccess ? undefined : eq(ordersTable.sellerCode, adminScope.sellerCode!))
-      .groupBy(ordersTable.userId);
+      .where(
+        and(
+          adminScope.hasGlobalAccess ? undefined : eq(ordersTable.sellerCode, adminScope.sellerCode!),
+          sql`coalesce(${ordersTable.clientEmail}, '') <> ''`,
+        ),
+      )
+      .groupBy(sql`lower(${ordersTable.clientEmail})`);
 
-    const orderCounts = orderCountsBase.filter((row) => !!row.userId);
-    const scopedCustomerIds = Array.from(new Set(orderCounts.map((row) => String(row.userId)).filter(Boolean)));
-
-    if (!adminScope.hasGlobalAccess && scopedCustomerIds.length === 0) {
+    if (!adminScope.hasGlobalAccess && emailOrders.length === 0) {
       res.json({ customers: [] });
       return;
     }
+
+    const scopedEmails = new Set(emailOrders.map((row) => String(row.email || "")).filter(Boolean));
+    const emailStatsMap = new Map(
+      emailOrders.map((row) => [String(row.email || ""), {
+        name: String(row.name || ""),
+        phone: String(row.phone || ""),
+        firstOrderAt: row.firstOrderAt,
+        orderCount: Number(row.orderCount || 0),
+      }]),
+    );
 
     const customers = await db
       .select({
@@ -210,32 +224,59 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
         createdAt: customerUsersTable.createdAt,
       })
       .from(customerUsersTable)
-      .where(adminScope.hasGlobalAccess ? undefined : inArray(customerUsersTable.id, scopedCustomerIds))
       .orderBy(desc(customerUsersTable.createdAt));
 
-    const orderCountMap = new Map<string, number>();
-    for (const row of orderCounts) {
-      if (row.userId) orderCountMap.set(row.userId, Number(row.orderCount));
-    }
+    const scopedCustomers = adminScope.hasGlobalAccess
+      ? customers
+      : customers.filter((c) => scopedEmails.has(String(c.email || "").toLowerCase()));
 
     // Fetch affiliate codes
+    const scopedCustomerIds = scopedCustomers.map((c) => c.id);
     const affiliateRows = await db
       .select({ userId: affiliatesTable.userId, affiliateCode: affiliatesTable.affiliateCode })
       .from(affiliatesTable)
-      .where(adminScope.hasGlobalAccess ? undefined : inArray(affiliatesTable.userId, scopedCustomerIds));
+      .where(scopedCustomerIds.length > 0 ? inArray(affiliatesTable.userId, scopedCustomerIds) : undefined);
 
     const affiliateCodeMap = new Map<string, string>();
     for (const row of affiliateRows) {
       affiliateCodeMap.set(row.userId, row.affiliateCode);
     }
 
-    const enriched = customers.map((c) => ({
-      ...c,
-      orderCount: orderCountMap.get(c.id) ?? 0,
-      affiliateCode: affiliateCodeMap.get(c.id) ?? null,
-    }));
+    const registeredEmailSet = new Set<string>();
 
-    res.json({ customers: enriched });
+    const registeredCustomers = scopedCustomers.map((c) => {
+      const email = String(c.email || "").toLowerCase();
+      registeredEmailSet.add(email);
+      const stats = emailStatsMap.get(email);
+      return {
+        ...c,
+        phone: stats?.phone || null,
+        orderCount: stats?.orderCount ?? 0,
+        affiliateCode: affiliateCodeMap.get(c.id) ?? null,
+        hasAccount: true,
+      };
+    });
+
+    const guestCustomers = emailOrders
+      .filter((row) => !registeredEmailSet.has(String(row.email || "")))
+      .map((row) => ({
+        id: `guest:${String(row.email || "")}`,
+        name: String(row.name || "Cliente"),
+        email: String(row.email || ""),
+        phone: String(row.phone || "") || null,
+        createdAt: row.firstOrderAt,
+        orderCount: Number(row.orderCount || 0),
+        affiliateCode: null,
+        hasAccount: false,
+      }));
+
+    const allCustomers = [...registeredCustomers, ...guestCustomers].sort((a, b) => {
+      const ta = new Date(a.createdAt || 0).getTime();
+      const tb = new Date(b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+
+    res.json({ customers: allCustomers });
   } catch (err) {
     console.error("[Admin] list customers error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar clientes." });
