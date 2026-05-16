@@ -28,6 +28,28 @@ function signPayload(secret: string, timestamp: string, body: string): string {
   return createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
 }
 
+function isPushcutApiUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname.toLowerCase() === "api.pushcut.io";
+  } catch {
+    return false;
+  }
+}
+
+function normalizePushcutUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname.toLowerCase() !== "api.pushcut.io") return value;
+    if (!parsed.pathname.startsWith("/v1/")) {
+      parsed.pathname = `/v1${parsed.pathname.startsWith("/") ? "" : "/"}${parsed.pathname}`;
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
 async function postWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -44,10 +66,11 @@ export async function sendOutboundWebhook(
   options?: { force?: boolean },
 ): Promise<{ sent: boolean; status?: number; error?: string }> {
   try {
-    const url = await getSettingValue("outbound_webhook_url");
-    if (!url) {
+    const rawUrl = await getSettingValue("outbound_webhook_url");
+    if (!rawUrl) {
       return { sent: false, error: "webhook_url_not_configured" };
     }
+    const url = isPushcutApiUrl(rawUrl) ? normalizePushcutUrl(rawUrl) : rawUrl;
 
     const enabled = isEnabledValue(await getSettingValue("outbound_webhook_enabled"));
     if (!options?.force && !enabled) {
@@ -81,7 +104,10 @@ export async function sendOutboundWebhook(
       "X-KA-Webhook-Event": eventType,
       "X-KA-Webhook-Timestamp": timestamp,
     };
-    if (secret) {
+    if (secret && isPushcutApiUrl(url)) {
+      headers["API-Key"] = secret;
+    }
+    if (secret && !isPushcutApiUrl(url)) {
       headers["X-KA-Webhook-Signature"] = signPayload(secret, timestamp, body);
     }
 
