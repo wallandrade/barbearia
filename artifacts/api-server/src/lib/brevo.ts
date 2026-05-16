@@ -1,5 +1,5 @@
 import { db, customerUsersTable, ordersTable } from "@workspace/db";
-import { eq, inArray, isNotNull } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 
 interface BrevoContact {
   email: string;
@@ -57,40 +57,43 @@ export async function syncCustomersToBrevo(listId?: number): Promise<BrevoSyncRe
       ...(listId ? { listIds: [listId] } : {}),
     }));
 
-    // Sync in batches (Brevo allows max 300 contacts per request)
+    // Sync contacts as upserts. This handles both new and existing contacts.
     let synced = 0;
     let failed = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < contacts.length; i += 300) {
-      const batch = contacts.slice(i, i + 300);
+    for (const contact of contacts) {
+      const payload = {
+        email: contact.email,
+        attributes: contact.attributes,
+        listIds: contact.listIds,
+        updateEnabled: true,
+      };
 
       try {
-        const response = await fetch("https://api.brevo.com/v3/contacts/batch", {
+        const response = await fetch("https://api.brevo.com/v3/contacts", {
           method: "POST",
           headers: {
             "api-key": apiKey,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            contacts: batch,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          const msg = `Batch sync failed: ${response.status} ${JSON.stringify(errorData)}`;
+          const msg = `Contact sync failed (${contact.email}): ${response.status} ${JSON.stringify(errorData)}`;
           errors.push(msg);
-          failed += batch.length;
+          failed += 1;
           console.error(`[BREVO] ${msg}`);
         } else {
-          synced += batch.length;
+          synced += 1;
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "unknown_error";
-        errors.push(msg);
-        failed += batch.length;
-        console.error(`[BREVO] Batch sync error:`, err);
+        errors.push(`Contact sync error (${contact.email}): ${msg}`);
+        failed += 1;
+        console.error(`[BREVO] Contact sync error:`, err);
       }
     }
 
