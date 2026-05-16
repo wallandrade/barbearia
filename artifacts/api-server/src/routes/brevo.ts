@@ -25,7 +25,7 @@ async function setSetting(key: string, value: string): Promise<void> {
 }
 
 // GET /api/admin/brevo/config — get current Brevo config
-router.get("/brevo/config", requireAdminAuth, async (req, res) => {
+router.get("/admin/brevo/config", requireAdminAuth, async (req, res) => {
   try {
     const scope = getAdminScope(req);
     if (!scope?.hasGlobalAccess) {
@@ -47,7 +47,7 @@ router.get("/brevo/config", requireAdminAuth, async (req, res) => {
 });
 
 // PUT /api/admin/brevo/config — update Brevo API key
-router.put("/brevo/config", requireAdminAuth, async (req, res) => {
+router.put("/admin/brevo/config", requireAdminAuth, async (req, res) => {
   try {
     const scope = getAdminScope(req);
     if (!scope?.hasGlobalAccess) {
@@ -82,7 +82,7 @@ router.put("/brevo/config", requireAdminAuth, async (req, res) => {
 });
 
 // POST /api/admin/brevo/sync-customers — sync customers to Brevo
-router.post("/brevo/sync-customers", requireAdminAuth, async (req, res) => {
+router.post("/admin/brevo/sync-customers", requireAdminAuth, async (req, res) => {
   try {
     const scope = getAdminScope(req);
     if (!scope?.hasGlobalAccess) {
