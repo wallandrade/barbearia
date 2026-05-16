@@ -24,6 +24,7 @@ import supportRouter from "./support";
 import reshipmentsRouter from "./reshipments";
 import clientErrorsRouter from "./client-errors";
 
+import brevoRouter from "./brevo";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -50,5 +51,6 @@ router.use(rafflesRouter);
 router.use(supportRouter);
 router.use(reshipmentsRouter);
 router.use(clientErrorsRouter);
+router.use(brevoRouter);
 
 export default router;
