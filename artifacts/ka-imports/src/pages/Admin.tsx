@@ -1600,6 +1600,40 @@ export default function Admin() {
     } catch { /* ignore */ }
   }, [handleUnauthorized]);
 
+  const fetchBrevoStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/brevo/config`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json() as { configured?: boolean };
+        setBrevoConfigured(!!data.configured);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const testBrevoConnection = useCallback(async () => {
+    setBrevoTesting(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/brevo/config`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ apiKey: brevoApiKey }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok) {
+        toast.error(data.message || data.error || "Erro ao testar API Brevo.");
+        return;
+      }
+      setBrevoConfigured(true);
+      setBrevoApiKey("");
+      toast.success("API Brevo configurada e testada com sucesso!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao configurar API Brevo.");
+    } finally {
+      setBrevoTesting(false);
+    }
+  }, [brevoApiKey]);
+
   const fetchClientErrors = useCallback(async () => {
     setClientErrorsLoading(true);
     try {
@@ -1938,7 +1972,7 @@ export default function Admin() {
     else if (tab === "inventory")  { fetchInventoryOverview(); fetchProducts(); }
     else if (tab === "coupons")    { fetchCoupons(); fetchProducts(); }
     else if (tab === "products")   fetchProducts();
-    else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); }
+    else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); fetchBrevoStatus(); }
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "fretes")     fetchShippingOptions();
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
@@ -2068,6 +2102,7 @@ export default function Admin() {
         fetchOrders();
         fetchCharges();
         fetchSettings();
+        fetchBrevoStatus();
         fetchSellers();
         connectSSE();
         requestNotifPermission();
@@ -5139,6 +5174,11 @@ export default function Admin() {
             onTestOutboundWebhook={testOutboundWebhook}
             onSave={saveSetting}
             onDelete={deleteSetting}
+            brevoApiKey={brevoApiKey}
+            setBrevoApiKey={setBrevoApiKey}
+            brevoConfigured={brevoConfigured}
+            brevoTesting={brevoTesting}
+            onTestBrevoConnection={testBrevoConnection}
           />
         ) : null}
 
@@ -10163,7 +10203,7 @@ function ImageUploadCard({
   );
 }
 
-function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete }: {
+function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
   clientErrors: ClientErrorEvent[];
@@ -10172,6 +10212,11 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   onTestOutboundWebhook: () => void;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
+  brevoApiKey: string;
+  setBrevoApiKey: (v: string) => void;
+  brevoConfigured: boolean;
+  brevoTesting: boolean;
+  onTestBrevoConnection: () => void;
 }) {
   const [sitePw, setSitePw] = useState(settings["site_password"] ?? "");
   const [paymentPw, setPaymentPw] = useState(settings["payment_password"] ?? "");
