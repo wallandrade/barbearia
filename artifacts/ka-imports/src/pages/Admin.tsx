@@ -1390,7 +1390,9 @@ export default function Admin() {
     setExportingCustomersCSV(true);
     try {
       const csvRows = [
-        ['Nome', 'E-mail', 'Telefone', 'Pedidos', 'Código Afiliado', 'Data Cadastro'].map(f => "").join(';'),
+        ["Nome", "E-mail", "Telefone", "Pedidos", "Código Afiliado", "Data Cadastro"]
+          .map((f) => `"${f}"`)
+          .join(";"),
         ...customerUsers.map(c => [
           c.name,
           c.email,
@@ -1398,14 +1400,17 @@ export default function Admin() {
           c.orderCount,
           c.affiliateCode || '',
           new Date(c.createdAt).toLocaleDateString('pt-BR')
-        ].map(v => "").join(';'))
+        ]
+          .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
+          .join(";"))
       ];
       const csv = csvRows.join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = clientes_.csv;
+      link.download = `clientes_${new Date().toISOString().slice(0, 10)}.csv`;
       link.click();
+      URL.revokeObjectURL(link.href);
       toast.success('Clientes exportados com sucesso!');
     } catch (err) {
       console.error(err);
@@ -1418,7 +1423,7 @@ export default function Admin() {
   const handleSyncCustomersBrevo = useCallback(async () => {
     setSyncingCustomersBrevo(true);
     try {
-      const res = await fetch(${BASE}/api/admin/brevo/sync-customers, {
+      const res = await fetch(`${BASE}/api/admin/brevo/sync-customers`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({}),
@@ -1428,7 +1433,8 @@ export default function Admin() {
         toast.error(data.message || data.error || 'Erro ao sincronizar com Brevo.');
         return;
       }
-      toast.success(Sincronizados  cliente com Brevo!);
+      const synced = Number(data.synced || 0);
+      toast.success(`Sincronizados ${synced} cliente${synced === 1 ? "" : "s"} com Brevo!`);
     } catch (err) {
       console.error(err);
       toast.error('Erro ao sincronizar com Brevo.');
@@ -3534,6 +3540,10 @@ export default function Admin() {
             onImpersonate={impersonateCustomerAccount}
             impersonatingId={customerImpersonatingId}
             canImpersonate={isPrimary}
+            onExportCSV={handleExportCustomersCSV}
+            onSyncBrevo={handleSyncCustomersBrevo}
+            exportingCSV={exportingCustomersCSV}
+            syncingBrevo={syncingCustomersBrevo}
           />
         ) : tab === "support" ? (
           <SupportTicketsPanel
@@ -8799,7 +8809,7 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 // CustomersPanel
 // ---------------------------------------------------------------------------
 function CustomersPanel({
-  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate,
+  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate, onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo,
 }: {
   customers: CustomerUserRecord[];
   loading: boolean;
@@ -8809,6 +8819,10 @@ function CustomersPanel({
   onImpersonate: (customer: CustomerUserRecord) => void;
   impersonatingId: string | null;
   canImpersonate: boolean;
+  onExportCSV: () => void;
+  onSyncBrevo: () => void;
+  exportingCSV: boolean;
+  syncingBrevo: boolean;
 }) {
   const filtered = customers.filter((c) => {
     if (!search.trim()) return true;
@@ -8843,6 +8857,22 @@ function CustomersPanel({
             className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5"
           >
             <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onExportCSV}
+            disabled={exportingCSV || customers.length === 0}
+            className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+            title={customers.length === 0 ? "Sem clientes para exportar" : "Exportar clientes CSV"}
+          >
+            {exportingCSV ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={onSyncBrevo}
+            disabled={syncingBrevo || customers.length === 0}
+            className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+            title={customers.length === 0 ? "Sem clientes para sincronizar" : "Sincronizar com Brevo"}
+          >
+            {syncingBrevo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>
       </div>
