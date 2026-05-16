@@ -1001,6 +1001,15 @@ export default function Admin() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [exportingCustomersCSV, setExportingCustomersCSV] = useState(false);
   const [syncingCustomersBrevo, setSyncingCustomersBrevo] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportColumns, setExportColumns] = useState({
+    name: true,
+    email: true,
+    phone: true,
+    orderCount: true,
+    affiliateCode: true,
+    createdAt: true,
+  });
   const [loading, setLoading] = useState(true);
   // Once set to true, the spinner never appears again for orders/charges —
   // background refreshes and filter changes update data silently in-place.
@@ -1394,22 +1403,32 @@ export default function Admin() {
     }
   }, [isPrimary]);
 
-
   const handleExportCustomersCSV = useCallback(async () => {
     setExportingCustomersCSV(true);
     try {
+      const headers = [
+        exportColumns.name && "Nome",
+        exportColumns.email && "E-mail",
+        exportColumns.phone && "Telefone",
+        exportColumns.orderCount && "Pedidos",
+        exportColumns.affiliateCode && "Código Afiliado",
+        exportColumns.createdAt && "Data Cadastro",
+      ]
+        .filter(Boolean)
+        .map((f) => `"${f}"`)
+        .join(";");
+      
       const csvRows = [
-        ["Nome", "E-mail", "Telefone", "Pedidos", "Código Afiliado", "Data Cadastro"]
-          .map((f) => `"${f}"`)
-          .join(";"),
+        headers,
         ...customerUsers.map(c => [
-          c.name,
-          c.email,
-          c.phone || '',
-          c.orderCount,
-          c.affiliateCode || '',
-          new Date(c.createdAt).toLocaleDateString('pt-BR')
+          exportColumns.name && c.name,
+          exportColumns.email && c.email,
+          exportColumns.phone && (c.phone || ''),
+          exportColumns.orderCount && c.orderCount,
+          exportColumns.affiliateCode && (c.affiliateCode || ''),
+          exportColumns.createdAt && new Date(c.createdAt).toLocaleDateString('pt-BR'),
         ]
+          .filter(v => v !== false)
           .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
           .join(";"))
       ];
@@ -1427,7 +1446,7 @@ export default function Admin() {
     } finally {
       setExportingCustomersCSV(false);
     }
-  }, [customerUsers]);
+  }, [customerUsers, exportColumns]);
 
   const handleSyncCustomersBrevo = useCallback(async () => {
     setSyncingCustomersBrevo(true);
@@ -3588,6 +3607,10 @@ export default function Admin() {
             onSyncBrevo={handleSyncCustomersBrevo}
             exportingCSV={exportingCustomersCSV}
             syncingBrevo={syncingCustomersBrevo}
+            exportModalOpen={exportModalOpen}
+            setExportModalOpen={setExportModalOpen}
+            exportColumns={exportColumns}
+            setExportColumns={setExportColumns}
           />
         ) : tab === "support" ? (
           <SupportTicketsPanel
@@ -8858,7 +8881,7 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 // CustomersPanel
 // ---------------------------------------------------------------------------
 function CustomersPanel({
-  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate, onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo,
+  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate, onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo, exportModalOpen, setExportModalOpen, exportColumns, setExportColumns,
 }: {
   customers: CustomerUserRecord[];
   loading: boolean;
@@ -8872,6 +8895,10 @@ function CustomersPanel({
   onSyncBrevo: () => void;
   exportingCSV: boolean;
   syncingBrevo: boolean;
+  exportModalOpen: boolean;
+  setExportModalOpen: (v: boolean) => void;
+  exportColumns: Record<string, boolean>;
+  setExportColumns: (v: Record<string, boolean>) => void;
 }) {
   const filtered = customers.filter((c) => {
     if (!search.trim()) return true;
@@ -8908,7 +8935,7 @@ function CustomersPanel({
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
-            onClick={onExportCSV}
+            onClick={() => setExportModalOpen(true)}
             disabled={exportingCSV || customers.length === 0}
             className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
             title={customers.length === 0 ? "Sem clientes para exportar" : "Exportar clientes CSV"}
@@ -9004,6 +9031,149 @@ function CustomersPanel({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {exportModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-lg max-w-md w-full mx-4 p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Personalizar Exportação</h3>
+              <p className="text-sm text-muted-foreground mt-1">Selecione as colunas que deseja exportar</p>
+            </div>
+
+            {/* Preset buttons */}
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setExportColumns({
+                  name: false,
+                  email: true,
+                  phone: false,
+                  orderCount: false,
+                  affiliateCode: false,
+                  createdAt: false,
+                })}
+                className="px-3 py-2 text-sm font-semibold rounded-lg border border-border hover:bg-muted bg-white transition-colors"
+              >
+                Apenas Email
+              </button>
+              <button
+                onClick={() => setExportColumns({
+                  name: false,
+                  email: false,
+                  phone: true,
+                  orderCount: false,
+                  affiliateCode: false,
+                  createdAt: false,
+                })}
+                className="px-3 py-2 text-sm font-semibold rounded-lg border border-border hover:bg-muted bg-white transition-colors"
+              >
+                Apenas Telefone
+              </button>
+              <button
+                onClick={() => setExportColumns({
+                  name: true,
+                  email: true,
+                  phone: true,
+                  orderCount: true,
+                  affiliateCode: true,
+                  createdAt: true,
+                })}
+                className="px-3 py-2 text-sm font-semibold rounded-lg border border-border hover:bg-muted bg-white transition-colors"
+              >
+                Todas as Colunas
+              </button>
+            </div>
+
+            {/* Column checkboxes */}
+            <div className="space-y-3 bg-muted/20 p-4 rounded-lg">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={exportColumns.name}
+                  onChange={() => setExportColumns({ ...exportColumns, name: !exportColumns.name })}
+                  className="w-4 h-4 rounded border-border cursor-pointer"
+                />
+                <span className="text-sm font-medium text-foreground">Nome</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={exportColumns.email}
+                  onChange={() => setExportColumns({ ...exportColumns, email: !exportColumns.email })}
+                  className="w-4 h-4 rounded border-border cursor-pointer"
+                />
+                <span className="text-sm font-medium text-foreground">E-mail</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={exportColumns.phone}
+                  onChange={() => setExportColumns({ ...exportColumns, phone: !exportColumns.phone })}
+                  className="w-4 h-4 rounded border-border cursor-pointer"
+                />
+                <span className="text-sm font-medium text-foreground">Telefone</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={exportColumns.orderCount}
+                  onChange={() => setExportColumns({ ...exportColumns, orderCount: !exportColumns.orderCount })}
+                  className="w-4 h-4 rounded border-border cursor-pointer"
+                />
+                <span className="text-sm font-medium text-foreground">Pedidos</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={exportColumns.affiliateCode}
+                  onChange={() => setExportColumns({ ...exportColumns, affiliateCode: !exportColumns.affiliateCode })}
+                  className="w-4 h-4 rounded border-border cursor-pointer"
+                />
+                <span className="text-sm font-medium text-foreground">Código Afiliado</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={exportColumns.createdAt}
+                  onChange={() => setExportColumns({ ...exportColumns, createdAt: !exportColumns.createdAt })}
+                  className="w-4 h-4 rounded border-border cursor-pointer"
+                />
+                <span className="text-sm font-medium text-foreground">Data Cadastro</span>
+              </label>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setExportModalOpen(false)}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-border bg-white hover:bg-muted text-sm font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  onExportCSV();
+                  setExportModalOpen(false);
+                }}
+                disabled={exportingCSV}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              >
+                {exportingCSV ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Exportando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Exportar CSV
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
