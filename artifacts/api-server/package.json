@@ -8,7 +8,8 @@
     "build": "tsx ./build.ts",
     "start": "cd ../../lib/db && drizzle-kit push --force --config ./drizzle.config.ts && cd ../../artifacts/api-server && node dist/index.cjs",
     "start-only": "cross-env TZ=America/Sao_Paulo node dist/index.cjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:free-shipping": "node --test --import tsx ./src/lib/free-shipping.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.916.0",

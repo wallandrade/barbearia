@@ -23,6 +23,7 @@ import { getReshipmentByOrderIds, registerInventoryEntry } from "../lib/reshipme
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 
 const router: IRouter = Router();
 
@@ -94,6 +95,16 @@ async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
     .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
     .limit(1);
   return normalizePixGatewayProvider(row[0]?.value);
+}
+
+async function getFreeShippingMinSubtotal(): Promise<number | null> {
+  const row = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "checkout_free_shipping_min_subtotal"))
+    .limit(1);
+
+  return parseFreeShippingMinSubtotalSetting(row[0]?.value ?? "");
 }
 
 type BulkDiscountTierInput = {
@@ -989,7 +1000,13 @@ router.post("/orders", async (req, res) => {
       const price = Number(p.price) || 0;
       return acc + qty * price;
     }, 0);
-    const computedShippingCost = Math.max(0, Number(shippingCost) || 0);
+    const shippingBaseCost = Math.max(0, Number(shippingCost) || 0);
+    const freeShippingMinSubtotal = await getFreeShippingMinSubtotal();
+    const computedShippingCost = resolveShippingCostWithFreeThreshold({
+      subtotal: computedSubtotal,
+      shippingBaseCost,
+      freeShippingMinSubtotal,
+    });
     const computedInsuranceAmount = Math.max(0, Number(insuranceAmount) || 0);
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 

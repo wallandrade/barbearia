@@ -131,6 +131,7 @@ export default function Checkout() {
   const [affiliateCreditLoading, setAffiliateCreditLoading] = useState(false);
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true });
+  const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState<number | null>(null);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
   const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
 
@@ -370,11 +371,17 @@ export default function Checkout() {
           const normalized = String(value).trim().toLowerCase();
           return !["0", "false", "off", "no", "disabled"].includes(normalized);
         };
+        const parseCurrency = (value?: string) => {
+          const parsed = Number(value ?? "");
+          if (!Number.isFinite(parsed) || parsed <= 0) return null;
+          return parsed;
+        };
         if (!cancelled) {
           setPaymentMethods({
             pix: parseEnabled(data["checkout_enable_pix"]),
             card: parseEnabled(data["checkout_enable_card"]),
           });
+          setFreeShippingMinSubtotal(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
         }
       } catch {
         // Keep defaults enabled on network errors.
@@ -551,7 +558,13 @@ export default function Checkout() {
     ), 0);
   }, [appliedCoupon, couponProductsPayload]);
   const selectedShipping = shippingOptions.find((o) => o.id === selectedShippingId) ?? null;
-  const shippingCost = selectedShipping ? Number(selectedShipping.price) : 0;
+  const shippingBaseCost = selectedShipping ? Number(selectedShipping.price) : 0;
+  const isFreeShippingEligible = freeShippingMinSubtotal != null && subtotal >= freeShippingMinSubtotal;
+  const shippingCost = isFreeShippingEligible ? 0 : shippingBaseCost;
+  const shippingSavings = isFreeShippingEligible ? shippingBaseCost : 0;
+  const missingForFreeShipping = isFreeShippingEligible || freeShippingMinSubtotal == null
+    ? 0
+    : Math.max(0, freeShippingMinSubtotal - subtotal);
   const baseTotal = subtotal + shippingCost + (includeInsurance ? subtotal * 0.1 : 0);
   const discountAmount = appliedCoupon
     ? appliedCoupon.discountType === "percent"
@@ -1022,7 +1035,7 @@ export default function Checkout() {
             `*Endereço de Entrega:*\n  ${addressFull}\n\n` +
             `*Produtos:*\n${itemsText}\n\n` +
             `*Subtotal:* ${formatCurrency(cardSubtotal)}\n` +
-            `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}\n` +
+            `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
             (includeInsurance ? `*Seguro de Envio:* Sim (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
             (cardDiscountAmount > 0
               ? `*Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(cardDiscountAmount)}\n`
@@ -1485,11 +1498,20 @@ export default function Checkout() {
                             <p className="text-sm text-muted-foreground mt-1">{opt.description}</p>
                           )}
                           <p className="font-semibold text-primary mt-2">
-                            {formatCurrency(Number(opt.price))}
+                            {isFreeShippingEligible
+                              ? "Gratis"
+                              : formatCurrency(Number(opt.price))}
                           </p>
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+                {freeShippingMinSubtotal != null && (
+                  <div className={`mt-3 rounded-xl border px-3 py-2 text-sm ${isFreeShippingEligible ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                    {isFreeShippingEligible
+                      ? `Frete gratis aplicado para pedidos acima de ${formatCurrency(freeShippingMinSubtotal)}.`
+                      : `Faltam ${formatCurrency(missingForFreeShipping)} para liberar frete gratis (a partir de ${formatCurrency(freeShippingMinSubtotal)}).`}
                   </div>
                 )}
               </div>
@@ -1668,6 +1690,12 @@ export default function Checkout() {
                   <span>Frete ({selectedShipping?.name ?? "—"})</span>
                   <span>{formatCurrency(shippingCost)}</span>
                 </div>
+                {shippingSavings > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>Economia no frete</span>
+                    <span>− {formatCurrency(shippingSavings)}</span>
+                  </div>
+                )}
                 {includeInsurance && (
                   <div className="flex justify-between text-primary font-medium">
                     <span>Seguro de Envio (+10%)</span>
@@ -1911,6 +1939,13 @@ export default function Checkout() {
                         </span>
                         <span className="font-medium">{formatCurrency(shippingCost)}</span>
                       </div>
+
+                      {shippingSavings > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-emerald-700">Economia no frete</span>
+                          <span className="font-medium text-emerald-700">-{formatCurrency(shippingSavings)}</span>
+                        </div>
+                      )}
 
                       {includeInsurance && (
                         <div className="flex justify-between text-sm">

@@ -8,7 +8,7 @@ const router: IRouter = Router();
 
 const PUBLIC_KEYS  = [
   "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile", "site_name", "site_protected", "payment_protected",
-  "checkout_enable_pix", "checkout_enable_card", "checkout_pix_gateway"
+  "checkout_enable_pix", "checkout_enable_card", "checkout_pix_gateway", "checkout_free_shipping_min_subtotal"
 ];
 const ALLOWED_KEYS = [
   ...PUBLIC_KEYS,

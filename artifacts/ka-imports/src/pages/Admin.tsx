@@ -10413,6 +10413,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const [showOutboundSecret, setShowOutboundSecret] = useState(false);
+  const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
   const pixGateway = String(settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
@@ -10423,6 +10424,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   useEffect(() => {
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
+    setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
   }, [settings]);
 
   const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card", enabled: boolean) => {
@@ -10685,6 +10687,58 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             Os dois métodos estão desativados. Nesse estado, o checkout ficará sem opção de pagamento.
           </div>
         )}
+      </div>
+
+      {/* ── Regra de Frete Grátis ────────────────────────────────────────── */}
+      <div className="max-w-2xl">
+        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+          <Truck className="w-5 h-5 text-primary" />
+          Frete Grátis por Valor Mínimo
+        </h2>
+        <p className="text-muted-foreground text-sm mb-5">
+          Defina o subtotal mínimo do carrinho para liberar frete grátis automático no checkout.
+        </p>
+
+        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-3">
+          <label className="block text-xs font-medium">Valor mínimo (R$)</label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={freeShippingMinSubtotal}
+              onChange={(e) => setFreeShippingMinSubtotal(e.target.value)}
+              placeholder="Ex: 2500"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              disabled={!!loading["checkout_free_shipping_min_subtotal"]}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const raw = freeShippingMinSubtotal.trim();
+                if (!raw) {
+                  onDelete("checkout_free_shipping_min_subtotal");
+                  return;
+                }
+
+                const value = Number(raw);
+                if (!Number.isFinite(value) || value < 0) {
+                  toast.error("Valor inválido para frete grátis.");
+                  return;
+                }
+
+                onSave("checkout_free_shipping_min_subtotal", String(value));
+              }}
+              disabled={!!loading["checkout_free_shipping_min_subtotal"]}
+            >
+              {loading["checkout_free_shipping_min_subtotal"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Deixe em branco para desativar a regra. Quando ativo, pedidos com subtotal igual ou maior que esse valor terão frete R$0.
+          </p>
+        </div>
       </div>
 
       {/* ── Controle de Acesso ────────────────────────────────────────────── */}

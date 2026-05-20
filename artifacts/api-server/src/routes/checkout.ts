@@ -15,6 +15,7 @@ import { getCustomerSession } from "../middlewares/customer-auth";
 import { applyAffiliateCreditToOrder, ensureOrderCommission, normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { lookupIpGeo } from "../lib/ip-geo";
+import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 
 const router: IRouter = Router();
 
@@ -151,6 +152,16 @@ async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_ena
 async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
   const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, "checkout_pix_gateway")).limit(1);
   return normalizePixGatewayProvider(rows[0]?.value ?? null);
+}
+
+async function getFreeShippingMinSubtotal(): Promise<number | null> {
+  const rows = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "checkout_free_shipping_min_subtotal"))
+    .limit(1);
+
+  return parseFreeShippingMinSubtotalSetting(rows[0]?.value ?? "");
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +328,13 @@ router.post("/checkout/pix", async (req, res) => {
     }
 
     const computedSubtotal = orderProducts.reduce((acc, p) => acc + (Number(p.quantity) || 0) * (Number(p.price) || 0), 0);
-    const computedShippingCost = Math.max(0, Number(shippingCost) || 0);
+    const shippingBaseCost = Math.max(0, Number(shippingCost) || 0);
+    const freeShippingMinSubtotal = await getFreeShippingMinSubtotal();
+    const computedShippingCost = resolveShippingCostWithFreeThreshold({
+      subtotal: computedSubtotal,
+      shippingBaseCost,
+      freeShippingMinSubtotal,
+    });
     const computedInsuranceAmount = Math.max(0, Number(insuranceAmount) || 0);
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 
