@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useSearch, useRoute } from "wouter";
+import { useSearch, useRoute, Link } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProductCard } from "@/components/product/ProductCard";
@@ -409,9 +409,11 @@ export default function Home() {
               >
                 {groupedFilteredProducts.map((group, groupIndex) => (
                   <section key={group.category}>
-                    <h3 className="text-lg sm:text-xl font-bold text-foreground mb-4 sm:mb-5">
-                      {group.category}
-                    </h3>
+                    <Link href={`${BASE}/categoria/${encodeURIComponent(group.category)}`} className="inline-block mb-4 sm:mb-5">
+                      <h3 className="text-lg sm:text-xl font-bold text-foreground hover:text-primary hover:underline transition-colors cursor-pointer">
+                        {group.category}
+                      </h3>
+                    </Link>
                     <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 items-stretch">
                       {group.products.map((product, productIndex) => {
                         const absoluteIndex = groupIndex * 12 + productIndex;

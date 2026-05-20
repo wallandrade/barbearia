@@ -98,6 +98,7 @@ class AppErrorBoundary extends Component<
 }
 
 const Home                = lazy(() => import("@/pages/Home"));
+const CategoryPage        = lazy(() => import("@/pages/CategoryPage"));
 const Checkout            = lazy(() => import("@/pages/Checkout"));
 const PixPayment          = lazy(() => import("@/pages/PixPayment"));
 const Success             = lazy(() => import("@/pages/Success"));
@@ -179,6 +180,7 @@ function Router() {
     <Suspense fallback={<PageLoader />}>
       <Switch>
         <Route path="/"                 component={Home} />
+        <Route path="/categoria/:categoryName" component={CategoryPage} />
         <Route path="/checkout"         component={Checkout} />
         <Route path="/pix/:id"          component={PixPayment} />
         <Route path="/success"          component={Success} />
@@ -200,6 +202,7 @@ function Router() {
         <Route path="/:seller/produto/:id" component={ProductDetail} />
         <Route path="/produto/:id"      component={ProductDetail} />
         <Route path="/:seller/checkout" component={SellerCheckoutPage} />
+        <Route path="/:seller/categoria/:categoryName" component={CategoryPage} />
         <Route path="/:seller"          component={SellerPage} />
         <Route component={NotFound} />
       </Switch>
