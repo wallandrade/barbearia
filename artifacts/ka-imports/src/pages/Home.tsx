@@ -3,7 +3,7 @@ import { useSearch, useRoute, Link } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProductCard } from "@/components/product/ProductCard";
-import { Loader2, X, SlidersHorizontal, Search } from "lucide-react";
+import { Loader2, X, SlidersHorizontal, Search, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
