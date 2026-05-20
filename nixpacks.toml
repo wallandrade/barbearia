@@ -1,8 +1,12 @@
 [phases.setup]
-pkgs = ["pnpm-9_x", "nodejs_22"]
+pkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["pnpm install --no-frozen-lockfile"]
+cmds = [
+	"corepack enable",
+	"corepack prepare pnpm@9.15.9 --activate",
+	"pnpm install --no-frozen-lockfile --filter @workspace/api-server..."
+]
 
 [phases.build]
 cmds = ["pnpm --filter @workspace/api-server build"]
