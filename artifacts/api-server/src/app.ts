@@ -12,7 +12,17 @@ import { sql } from "drizzle-orm";
     await db.execute(sql`ALTER TABLE products ADD COLUMN brand VARCHAR(255) NULL`);
     console.log("[STARTUP] Migration: brand column added to products table");
   } catch (e: any) {
-    if (e?.errno === 1060) {
+    const errno = e?.errno ?? e?.cause?.errno;
+    const code = e?.code ?? e?.cause?.code;
+    const message = String(e?.message ?? e?.cause?.message ?? "");
+    const isDuplicateColumn =
+      errno === 1060 ||
+      code === "ER_DUP_FIELDNAME" ||
+      message.toLowerCase().includes("duplicate column") ||
+      message.toLowerCase().includes("duplicate field name") ||
+      message.toLowerCase().includes("already exists");
+
+    if (isDuplicateColumn) {
       // ER_DUP_FIELDNAME — coluna já existe, tudo certo
       console.log("[STARTUP] Migration: brand column already exists, skipping");
     } else {
