@@ -219,11 +219,6 @@ function AppInner() {
 
   useEffect(() => {
     captureReferralFromCurrentUrl();
-    try {
-      sessionStorage.removeItem("ka_chunk_reload_once");
-    } catch {
-      // Ignore storage access errors.
-    }
   }, [location]);
 
   return (
