@@ -135,6 +135,9 @@ export default function Home() {
   const { data, isLoading, isError } = useGetProducts();
   const [, sellerParams] = useRoute("/:seller");
   const sellerSlug = sellerParams?.seller?.toLowerCase();
+  const offersHref = sellerSlug
+    ? `${BASE}/${encodeURIComponent(sellerSlug)}/ofertas`
+    : `${BASE}/ofertas`;
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [nameFilter, setNameFilter] = useState("");
   const [activeBrand, setActiveBrand] = useState("");
@@ -460,5 +463,3 @@ export default function Home() {
     </AppLayout>
   );
 }
-
-const offersHref = sellerSlug ? `${BASE}/${encodeURIComponent(sellerSlug)}/ofertas` : `${BASE}/ofertas`;
