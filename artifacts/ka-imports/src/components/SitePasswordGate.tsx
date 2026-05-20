@@ -143,15 +143,9 @@ export function SitePasswordGate({ children }: { children: ReactNode }) {
   // Already unlocked or exempt — render immediately without any flash
   if (unlocked || isExemptPath) return <>{children}</>;
 
-  // Still waiting for protection check — show minimal loader so we never flash
-  // the children before knowing if a password is required.
-  if (protected_ === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // Never block initial render on protection check; this prevents white-screen
+  // lockups when the API request hangs in some client environments.
+  if (protected_ === null) return <>{children}</>;
 
   // Site not protected
   if (!protected_) return <>{children}</>;
@@ -188,14 +182,9 @@ export function PaymentPasswordGate({ children }: { children: ReactNode }) {
   // Already unlocked — render immediately
   if (unlocked) return <>{children}</>;
 
-  // Still waiting for protection check — show minimal loader
-  if (protected_ === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // Never block initial render on protection check; this prevents white-screen
+  // lockups when the API request hangs in some client environments.
+  if (protected_ === null) return <>{children}</>;
 
   // Not protected
   if (!protected_) return <>{children}</>;
