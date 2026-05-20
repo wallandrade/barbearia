@@ -373,14 +373,20 @@ export default function Home() {
         {/* Offers Banner */}
         <Link
           href={offersHref}
-          className="inline-block px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="group relative block overflow-hidden rounded-2xl border border-slate-800/10 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-5 sm:px-6 py-4 sm:py-5 shadow-sm transition-all hover:shadow-lg hover:-translate-y-0.5"
         >
-          <div className="flex items-center justify-between">
+          <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-rose-500/20 blur-2xl" />
+          <div className="relative flex items-center justify-between gap-4">
             <div className="flex-1">
-              <h3 className="text-xl sm:text-2xl font-bold text-foreground mb-1 group-hover:text-red-600 transition-colors">🎉 Ofertas</h3>
-              <p className="text-sm sm:text-base text-muted-foreground">Confira os melhores descontos e ofertas com desconto progressivo</p>
+              <div className="mb-1 inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/85">
+                Destaques da semana
+              </div>
+              <h3 className="text-xl sm:text-2xl font-bold text-white mb-1">🎉 Ofertas</h3>
+              <p className="text-sm sm:text-base text-slate-200/90">Confira os melhores descontos e ofertas com desconto progressivo</p>
             </div>
-            <ArrowRight className="w-6 h-6 text-red-600 opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all ml-4" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500/15 text-rose-300 transition-all group-hover:bg-rose-500/25 group-hover:text-rose-200 group-hover:translate-x-1">
+              <ArrowRight className="w-5 h-5" />
+            </div>
           </div>
         </Link>
 
