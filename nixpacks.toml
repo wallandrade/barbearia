@@ -1,12 +1,11 @@
 [phases.setup]
 pkgs = ["nodejs_22"]
-buildpacks = []
 
 [phases.install]
 cmds = [
 	"corepack enable",
 	"corepack prepare pnpm@9.15.9 --activate",
-	"pnpm install --no-frozen-lockfile --filter @workspace/api-server... --prod",
+	"pnpm install --no-frozen-lockfile --filter @workspace/api-server...",
 	"rm -rf /tmp/* ~/.npm ~/.pnpm-store /var/cache/apt 2>/dev/null || true"
 ]
 
