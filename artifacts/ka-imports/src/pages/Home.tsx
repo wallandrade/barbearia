@@ -420,7 +420,12 @@ export default function Home() {
               >
                 {groupedFilteredProducts.map((group, groupIndex) => (
                   <section key={group.category}>
-                    <Link href={`${BASE}/categoria/${encodeURIComponent(group.category)}`} className="inline-block mb-4 sm:mb-5">
+                    <Link
+                      href={sellerSlug
+                        ? `${BASE}/${encodeURIComponent(sellerSlug)}/categoria/${encodeURIComponent(group.category)}`
+                        : `${BASE}/categoria/${encodeURIComponent(group.category)}`}
+                      className="inline-block mb-4 sm:mb-5"
+                    >
                       <h3 className="text-lg sm:text-xl font-bold text-foreground hover:text-primary hover:underline transition-colors cursor-pointer">
                         {group.category}
                       </h3>

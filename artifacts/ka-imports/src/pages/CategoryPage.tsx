@@ -9,13 +9,19 @@ import { useLiveTracking } from "@/hooks/useLiveTracking";
 
 export default function CategoryPage() {
   const [, setLocation] = useLocation();
-  const [match, params] = useRoute("/categoria/:categoryName");
-  
-  if (!match) {
+  const [sellerMatch, sellerParams] = useRoute("/:seller/categoria/:categoryName");
+  const [defaultMatch, defaultParams] = useRoute("/categoria/:categoryName");
+
+  if (!sellerMatch && !defaultMatch) {
     return null;
   }
 
-  const categoryName = params?.categoryName ? decodeURIComponent(params.categoryName) : "";
+  const sellerSlug = sellerMatch ? sellerParams?.seller?.toLowerCase() : undefined;
+  const categoryParam = sellerMatch
+    ? sellerParams?.categoryName
+    : defaultParams?.categoryName;
+  const categoryName = categoryParam ? decodeURIComponent(categoryParam) : "";
+  const catalogHref = sellerSlug ? `/${encodeURIComponent(sellerSlug)}` : "/";
   const { data, isLoading } = useGetProducts();
   
   useLiveTracking("catalog");
@@ -46,7 +52,7 @@ export default function CategoryPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setLocation("/")}
+            onClick={() => setLocation(catalogHref)}
             className="gap-2 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -68,14 +74,16 @@ export default function CategoryPage() {
         {filteredProducts.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-96 text-center">
             <p className="text-lg text-muted-foreground mb-4">Nenhum produto encontrado nesta categoria.</p>
-            <Button onClick={() => setLocation("/")} variant="outline">
+            <Button onClick={() => setLocation(catalogHref)} variant="outline">
               Explorar outros produtos
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 items-stretch">
             {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} priority={false} />
+              <div key={product.id} className="flex">
+                <ProductCard product={product} sellerSlug={sellerSlug} priority={false} />
+              </div>
             ))}
           </div>
         )}
