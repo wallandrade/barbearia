@@ -368,7 +368,10 @@ export default function Home() {
         </div>
 
         {/* Offers Banner */}
-        <Link href={`${BASE}/ofertas`} className="block mb-8 p-6 sm:p-8 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-2xl hover:border-red-400 hover:shadow-lg transition-all group">
+        <Link
+          href={offersHref}
+          className="inline-block px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+        >
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <h3 className="text-xl sm:text-2xl font-bold text-foreground mb-1 group-hover:text-red-600 transition-colors">🎉 Ofertas</h3>
@@ -457,3 +460,5 @@ export default function Home() {
     </AppLayout>
   );
 }
+
+const offersHref = sellerSlug ? `${BASE}/${encodeURIComponent(sellerSlug)}/ofertas` : `${BASE}/ofertas`;
