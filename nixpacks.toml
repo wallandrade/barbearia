@@ -5,7 +5,7 @@ pkgs = ["nodejs_22"]
 cmds = [
 	"corepack enable",
 	"corepack prepare pnpm@9.15.9 --activate",
-	"pnpm install --no-frozen-lockfile --filter @workspace/api-server... 2>&1 | tail -20 || true",
+	"pnpm install --no-frozen-lockfile --prod=false --filter @workspace/api-server... 2>&1 | tail -20 || true",
 	"find . -type d -name node_modules -not -path './artifacts/api-server/node_modules' -exec rm -rf {} + 2>/dev/null || true",
 	"rm -rf /tmp/* ~/.npm ~/.pnpm-store ~/.pnpm-lock ~/.npmrc 2>/dev/null || true",
 	"rm -rf ./.pnpm-store 2>/dev/null || true"
