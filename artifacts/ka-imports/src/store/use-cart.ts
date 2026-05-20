@@ -18,6 +18,7 @@ type ProductAvailability = Product & {
 export function isProductUnavailable(product: Product): boolean {
   const candidate = product as ProductAvailability;
   if (candidate.isActive === false) return true;
+  if (candidate.isSoldOut === true) return true;
   return false;
 }
 
