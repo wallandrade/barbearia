@@ -15,15 +15,24 @@ import { reportClientError } from "@/lib/client-error-reporting";
 // React Error Boundary — prevents blank white page on uncaught render errors
 // ---------------------------------------------------------------------------
 class AppErrorBoundary extends Component<
-  { children: ReactNode },
-  { hasError: boolean }
+  { children: ReactNode; locationKey?: string },
+  { hasError: boolean; locationKey?: string }
 > {
-  constructor(props: { children: ReactNode }) {
+  constructor(props: { children: ReactNode; locationKey?: string }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, locationKey: props.locationKey };
   }
   static getDerivedStateFromError() {
     return { hasError: true };
+  }
+  static getDerivedStateFromProps(
+    props: { children: ReactNode; locationKey?: string },
+    state: { hasError: boolean; locationKey?: string }
+  ) {
+    if (state.hasError && props.locationKey !== state.locationKey) {
+      return { hasError: false, locationKey: props.locationKey };
+    }
+    return { locationKey: props.locationKey };
   }
   componentDidCatch(error: Error, info: { componentStack: string }) {
     const message = error?.message ?? "";
@@ -212,28 +221,26 @@ function AppInner() {
   }, [location]);
 
   return (
-    <>
+    <AppErrorBoundary locationKey={location}>
       <SitePasswordGate>
         <Router />
       </SitePasswordGate>
       {!isAdmin && <SocialProofWidget />}
       <FloatingTelegramButton />
-    </>
+    </AppErrorBoundary>
   );
 }
 
 function App() {
   return (
-    <AppErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <AppInner />
-          </WouterRouter>
-          <Toaster position="top-center" richColors theme="light" />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </AppErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <AppInner />
+        </WouterRouter>
+        <Toaster position="top-center" richColors theme="light" />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 
