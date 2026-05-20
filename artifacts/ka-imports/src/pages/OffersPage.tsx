@@ -39,7 +39,15 @@ function hasOffer(product: any): boolean {
 }
 
 export default function OffersPage() {
-  const { data: products = [], isLoading } = useGetProducts();
+  const { data, isLoading } = useGetProducts();
+
+  const products = useMemo(() => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray((data as { products?: unknown[] } | undefined)?.products)) {
+      return (data as { products: unknown[] }).products as any[];
+    }
+    return [] as any[];
+  }, [data]);
 
   const offersProducts = useMemo(() => {
     return products.filter(hasOffer).sort((a, b) => {
