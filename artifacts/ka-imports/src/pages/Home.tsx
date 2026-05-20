@@ -172,6 +172,11 @@ export default function Home() {
     });
 
     return filtered.sort((a, b) => {
+      const aIsSoldOut = (a as typeof a & { isSoldOut?: boolean }).isSoldOut === true;
+      const bIsSoldOut = (b as typeof b & { isSoldOut?: boolean }).isSoldOut === true;
+      if (aIsSoldOut && !bIsSoldOut) return 1;
+      if (!aIsSoldOut && bIsSoldOut) return -1;
+
       const aSort = (a.sortOrder ?? 0) > 0 ? (a.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
       const bSort = (b.sortOrder ?? 0) > 0 ? (b.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
       const sortDiff = aSort - bSort;
