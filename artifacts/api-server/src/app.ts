@@ -3,33 +3,6 @@ import cors from "cors";
 import router from "./routes";
 import { exec } from "child_process";
 import crypto from "crypto";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
-
-// Run lightweight column migrations on startup (safe to run repeatedly)
-(async () => {
-  try {
-    await db.execute(sql`ALTER TABLE products ADD COLUMN brand VARCHAR(255) NULL`);
-    console.log("[STARTUP] Migration: brand column added to products table");
-  } catch (e: any) {
-    const errno = e?.errno ?? e?.cause?.errno;
-    const code = e?.code ?? e?.cause?.code;
-    const message = String(e?.message ?? e?.cause?.message ?? "");
-    const isDuplicateColumn =
-      errno === 1060 ||
-      code === "ER_DUP_FIELDNAME" ||
-      message.toLowerCase().includes("duplicate column") ||
-      message.toLowerCase().includes("duplicate field name") ||
-      message.toLowerCase().includes("already exists");
-
-    if (isDuplicateColumn) {
-      // ER_DUP_FIELDNAME — coluna já existe, tudo certo
-      console.log("[STARTUP] Migration: brand column already exists, skipping");
-    } else {
-      console.error("[STARTUP] Migration error:", e?.message ?? e);
-    }
-  }
-})();
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://ka-imports.com",
@@ -298,7 +271,7 @@ const app: Express = express();
 app.set("trust proxy", 1);
 
 if (!process.env.CORS_ALLOWED_ORIGINS) {
-  console.warn("[SECURITY] CORS_ALLOWED_ORIGINS não definido. Usando fallback interno.");
+  console.info("[SECURITY] CORS_ALLOWED_ORIGINS não definido. Usando fallback interno.");
 }
 if (!CHECKOUT_TOKEN_SECRET) {
   console.warn("[SECURITY] CHECKOUT_TOKEN_SECRET não definido. Defina no ambiente para proteção máxima.");

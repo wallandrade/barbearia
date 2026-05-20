@@ -102,6 +102,10 @@ async function ensureProductsColumns(databaseName: string): Promise<void> {
 
   const definitions = [
     {
+      name: "brand",
+      sql: "ALTER TABLE products ADD COLUMN brand VARCHAR(255) NULL",
+    },
+    {
       name: "cost_price",
       sql: "ALTER TABLE products ADD COLUMN cost_price DECIMAL(10,2) NOT NULL DEFAULT 0.00",
     },
