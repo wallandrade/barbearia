@@ -202,6 +202,26 @@ export function orderToFullText(order: any): string {
 
   const contato = `${order?.clientPhone || "-"}${order?.clientEmail ? ` · ${order.clientEmail}` : ""}`;
 
+  const normalizeProofs = (raw: unknown): string[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter(Boolean).map((v) => String(v));
+    return [String(raw)];
+  };
+
+  const allProofs = [
+    ...normalizeProofs(order?.proofUrls),
+    ...normalizeProofs(order?.proofUrl),
+  ].filter((v, i, arr) => arr.indexOf(v) === i);
+
+  const isInlineProof = (value: string) => /^data:(image|application)\//i.test(value.trim());
+  const inlineProofCount = allProofs.filter((value) => isInlineProof(value)).length;
+  const externalProofs = allProofs.filter((value) => !isInlineProof(value));
+
+  const proofLines = [
+    externalProofs.length > 0 ? `Comprovantes: ${externalProofs.join(", ")}` : "",
+    inlineProofCount > 0 ? `Comprovantes anexados: ${inlineProofCount} arquivo(s) (imagem/base64 ocultada no copiar)` : "",
+  ];
+
   return [
     prioridadeLine,
     `Pedido #${order?.id || "-"}`,
@@ -222,8 +242,7 @@ export function orderToFullText(order: any): string {
     order?.observation ? "" : "",
     order?.observation ? `Observação: ${order.observation}` : "",
     order?.trackingCode ? `Rastreio: ${order.trackingCode}` : "",
-    order?.proofUrls && order.proofUrls.length > 0 ? `Comprovantes: ${order.proofUrls.join(", ")}` : "",
-    order?.proofUrl ? `Comprovante: ${order.proofUrl}` : "",
+    ...proofLines,
   ]
     .filter(Boolean)
     .join("\n");
