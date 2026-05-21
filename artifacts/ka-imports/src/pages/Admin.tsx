@@ -8818,6 +8818,29 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
                       {copiedPaymentLink === slug ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
                       {copiedPaymentLink === slug ? "Copiado!" : "Pgto"}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1 h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                      disabled={sellerCommissionUpdatingSlug === slug}
+                      title="Editar WhatsApp do vendedor"
+                      onClick={async () => {
+                        const current = String(whatsapp || "").replace(/\D/g, "");
+                        const next = window.prompt("Novo WhatsApp do vendedor (somente números, com DDD)", current);
+                        if (next == null) return;
+
+                        const normalized = String(next).replace(/\D/g, "");
+                        if (!normalized) {
+                          toast.error("Informe um WhatsApp válido.");
+                          return;
+                        }
+
+                        await updateSellerCommission(slug, normalized, !!hasCommission, Number(commissionRate || 0));
+                      }}
+                    >
+                      <Pencil className="w-3 h-3" />
+                      WhatsApp
+                    </Button>
                     {isPrimary && (
                       <Button
                         size="sm"
