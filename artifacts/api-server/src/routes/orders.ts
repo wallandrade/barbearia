@@ -30,10 +30,86 @@ const router: IRouter = Router();
 let priorityColumnCache: { checkedAt: number; available: boolean } = { checkedAt: 0, available: false };
 const SLA_PRIORITY_BUSINESS_MS = 48 * 60 * 60 * 1000;
 const SAO_PAULO_UTC_OFFSET_MS = -3 * 60 * 60 * 1000;
+const holidayCacheByYear = new Map<number, Set<string>>();
+
+function toDateKey(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function getEasterSunday(year: number): { month: number; day: number } {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return { month, day };
+}
+
+function addDaysFrom(year: number, month: number, day: number, deltaDays: number): { year: number; month: number; day: number } {
+  const dt = new Date(Date.UTC(year, month - 1, day + deltaDays));
+  return {
+    year: dt.getUTCFullYear(),
+    month: dt.getUTCMonth() + 1,
+    day: dt.getUTCDate(),
+  };
+}
+
+function getBrazilHolidayKeys(year: number): Set<string> {
+  const cached = holidayCacheByYear.get(year);
+  if (cached) return cached;
+
+  const holidays = new Set<string>([
+    toDateKey(year, 1, 1),
+    toDateKey(year, 4, 21),
+    toDateKey(year, 5, 1),
+    toDateKey(year, 9, 7),
+    toDateKey(year, 10, 12),
+    toDateKey(year, 11, 2),
+    toDateKey(year, 11, 15),
+    toDateKey(year, 11, 20),
+    toDateKey(year, 12, 25),
+  ]);
+
+  const easter = getEasterSunday(year);
+  const carnivalMonday = addDaysFrom(year, easter.month, easter.day, -48);
+  const carnivalTuesday = addDaysFrom(year, easter.month, easter.day, -47);
+  const goodFriday = addDaysFrom(year, easter.month, easter.day, -2);
+  const corpusChristi = addDaysFrom(year, easter.month, easter.day, 60);
+
+  holidays.add(toDateKey(carnivalMonday.year, carnivalMonday.month, carnivalMonday.day));
+  holidays.add(toDateKey(carnivalTuesday.year, carnivalTuesday.month, carnivalTuesday.day));
+  holidays.add(toDateKey(goodFriday.year, goodFriday.month, goodFriday.day));
+  holidays.add(toDateKey(year, easter.month, easter.day));
+  holidays.add(toDateKey(corpusChristi.year, corpusChristi.month, corpusChristi.day));
+
+  holidayCacheByYear.set(year, holidays);
+  return holidays;
+}
+
+function getSaoPauloDateParts(utcMs: number): { year: number; month: number; day: number; weekDay: number } {
+  const shifted = new Date(utcMs + SAO_PAULO_UTC_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    weekDay: shifted.getUTCDay(),
+  };
+}
 
 function isBusinessWeekdayInSaoPaulo(utcMs: number): boolean {
-  const day = new Date(utcMs + SAO_PAULO_UTC_OFFSET_MS).getUTCDay();
-  return day >= 1 && day <= 5;
+  const parts = getSaoPauloDateParts(utcMs);
+  if (parts.weekDay < 1 || parts.weekDay > 5) return false;
+  const dateKey = toDateKey(parts.year, parts.month, parts.day);
+  return !getBrazilHolidayKeys(parts.year).has(dateKey);
 }
 
 function nextSaoPauloMidnightUtcMs(utcMs: number): number {
