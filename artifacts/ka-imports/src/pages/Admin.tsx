@@ -9790,7 +9790,21 @@ function ProductsPanel({
   const [costHistoryProductName, setCostHistoryProductName] = useState("");
   const [costHistory, setCostHistory] = useState<Array<{ id: number; costPrice: number; changedAt: string }>>([]);
   const [costHistoryLoading, setCostHistoryLoading] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const [newBrandInput, setNewBrandInput] = useState("");
   const siteOrigin = window.location.origin;
+
+  const categoryOptions = Array.from(new Set(
+    products
+      .map((p) => String(p.category || "").trim())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const brandOptions = Array.from(new Set(
+    products
+      .map((p) => String((p as any).brand || "").trim())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   const openCostHistory = async (productId: string, productName: string) => {
     setCostHistoryProductId(productId);
@@ -9871,11 +9885,15 @@ function ProductsPanel({
 
   const openCreate = () => {
     setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [] } as any);
+    setNewCategoryInput("");
+    setNewBrandInput("");
     setProductFormOpen(true);
   };
 
   const openEdit = (p: AdminProduct) => {
     setProductForm({ ...(p as any), bulkDiscountTiers: normalizeBulkDiscountTiers((p as any).bulkDiscountTiers), _editing: true } as any);
+    setNewCategoryInput("");
+    setNewBrandInput("");
     setProductFormOpen(true);
   };
 
@@ -9935,13 +9953,71 @@ function ProductsPanel({
                   {/* Category */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Categoria *</label>
-                    <input value={productForm.category || ""} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} placeholder="Ex: Canetas, Kits, Destaque..." className={inp2} />
+                    <select
+                      value={productForm.category || ""}
+                      onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
+                      className={`${inp2} cursor-pointer`}
+                    >
+                      <option value="">Selecionar categoria...</option>
+                      {categoryOptions.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={newCategoryInput}
+                        onChange={(e) => setNewCategoryInput(e.target.value)}
+                        placeholder="Cadastrar nova categoria"
+                        className={inp2}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const next = String(newCategoryInput || "").trim();
+                          if (!next) { toast.error("Digite uma categoria válida."); return; }
+                          setProductForm({ ...productForm, category: next });
+                          setNewCategoryInput("");
+                        }}
+                      >
+                        Cadastrar
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Brand */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Marca</label>
-                    <input value={(productForm as any).brand || ""} onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)} placeholder="Ex: Tirzec, Lipoless..." className={inp2} />
+                    <select
+                      value={(productForm as any).brand || ""}
+                      onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)}
+                      className={`${inp2} cursor-pointer`}
+                    >
+                      <option value="">Selecionar marca...</option>
+                      {brandOptions.map((brand) => (
+                        <option key={brand} value={brand}>{brand}</option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={newBrandInput}
+                        onChange={(e) => setNewBrandInput(e.target.value)}
+                        placeholder="Cadastrar nova marca"
+                        className={inp2}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const next = String(newBrandInput || "").trim();
+                          if (!next) { toast.error("Digite uma marca válida."); return; }
+                          setProductForm({ ...productForm, brand: next } as any);
+                          setNewBrandInput("");
+                        }}
+                      >
+                        Cadastrar
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Unit */}
