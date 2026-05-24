@@ -175,13 +175,15 @@ export default function Home() {
     });
 
     return filtered.sort((a, b) => {
+      const aAny = a as any;
+      const bAny = b as any;
       const aIsSoldOut = (a as typeof a & { isSoldOut?: boolean }).isSoldOut === true;
       const bIsSoldOut = (b as typeof b & { isSoldOut?: boolean }).isSoldOut === true;
       if (aIsSoldOut && !bIsSoldOut) return 1;
       if (!aIsSoldOut && bIsSoldOut) return -1;
 
-      const aSort = (a.sortOrder ?? 0) > 0 ? (a.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
-      const bSort = (b.sortOrder ?? 0) > 0 ? (b.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
+      const aSort = (aAny.sortOrder ?? 0) > 0 ? (aAny.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
+      const bSort = (bAny.sortOrder ?? 0) > 0 ? (bAny.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
       const sortDiff = aSort - bSort;
       if (sortDiff !== 0) return sortDiff;
 
@@ -190,7 +192,7 @@ export default function Home() {
       if (aIsLaunch && !bIsLaunch) return -1;
       if (!aIsLaunch && bIsLaunch) return 1;
 
-      return String(a.createdAt).localeCompare(String(b.createdAt));
+      return String(aAny.createdAt).localeCompare(String(bAny.createdAt));
     });
   }, [data, searchQuery, activeCategories, nameFilter, activeBrand]);
 
@@ -216,6 +218,21 @@ export default function Home() {
     }));
   }, [data?.categories, filteredProducts]);
 
+  const brandOptions = useMemo(() => {
+    const rawBrands = ((data as any)?.brands ?? []) as string[];
+    return Array.from(
+      rawBrands
+        .map((brand) => String(brand || "").trim())
+        .filter(Boolean)
+        .reduce((map, brand) => {
+          const key = brand.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim();
+          if (!map.has(key)) map.set(key, brand);
+          return map;
+        }, new Map<string, string>())
+        .values(),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+  }, [data]);
+
   const filterProps: FilterContentProps = {
     categories: data?.categories ?? [],
     activeCategories,
@@ -223,7 +240,7 @@ export default function Home() {
     nameFilter,
     setNameFilter,
     setActiveCategories,
-    brands: (data as any)?.brands ?? [],
+    brands: brandOptions,
     activeBrand,
     setActiveBrand,
   };
@@ -319,14 +336,14 @@ export default function Home() {
               )}
             </div>
 
-            {((data as any)?.brands ?? []).length > 0 && (
+            {brandOptions.length > 0 && (
               <select
                 value={activeBrand}
                 onChange={(e) => setActiveBrand(e.target.value)}
                 className="w-full h-11 px-4 rounded-2xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary cursor-pointer"
               >
                 <option value="">Todas as marcas</option>
-                {((data as any)?.brands ?? []).map((brand: string) => (
+                {brandOptions.map((brand: string) => (
                   <option key={`mobile-brand-${brand}`} value={brand}>{brand}</option>
                 ))}
               </select>
