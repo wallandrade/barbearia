@@ -113,6 +113,48 @@ function normalizeAddressChange(raw: unknown): AddressChangePayload | null {
   };
 }
 
+function parseAddressChangeJson(raw: string | null | undefined): AddressChangePayload | null {
+  if (!raw) return null;
+  try {
+    return normalizeAddressChange(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+async function isLatestTicketForOrder(orderId: string, ticketId: string): Promise<boolean> {
+  const latestRows = await db
+    .select({ id: supportTicketsTable.id })
+    .from(supportTicketsTable)
+    .where(eq(supportTicketsTable.orderId, orderId))
+    .orderBy(desc(supportTicketsTable.createdAt), desc(supportTicketsTable.id))
+    .limit(1);
+
+  return latestRows[0]?.id === ticketId;
+}
+
+async function applyAddressChangeToOrder(params: {
+  orderId: string;
+  addressChange: AddressChangePayload;
+  scope: { hasGlobalAccess: boolean; sellerCode: string | null };
+}): Promise<void> {
+  await db
+    .update(ordersTable)
+    .set({
+      addressCep: params.addressChange.cep,
+      addressStreet: params.addressChange.street,
+      addressNumber: params.addressChange.number,
+      addressComplement: params.addressChange.complement || null,
+      addressNeighborhood: params.addressChange.neighborhood,
+      addressCity: params.addressChange.city,
+      addressState: params.addressChange.state,
+      updatedAt: new Date(),
+    })
+    .where(params.scope.hasGlobalAccess
+      ? eq(ordersTable.id, params.orderId)
+      : and(eq(ordersTable.id, params.orderId), eq(ordersTable.sellerCode, params.scope.sellerCode!)));
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/support/orders-by-cpf
 // ---------------------------------------------------------------------------
@@ -389,6 +431,17 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       return;
     }
 
+    const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
+    const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
+
+    if (parsedAddress && canApplyAddress) {
+      await applyAddressChangeToOrder({
+        orderId: ticket.orderId,
+        addressChange: parsedAddress,
+        scope,
+      });
+    }
+
     const orderRows = await db
       .select({ id: ordersTable.id, products: ordersTable.products })
       .from(ordersTable)
@@ -434,6 +487,7 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       ok: true,
       ticketId: id,
       orderId: order.id,
+      addressApplied: Boolean(parsedAddress && canApplyAddress),
       reshipment,
     });
   } catch (err) {
@@ -480,31 +534,21 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
 
     let resolutionReason: string | null = status === "resolved" ? "resolvido_manual" : null;
     let reshipment: { id: string; status: string; missingProducts: string[] } | null = null;
+    let addressApplied = false;
 
     if (status === "resolved" && ticket.addressChangeJson) {
-      let parsedAddress: AddressChangePayload | null = null;
-      try {
-        parsedAddress = normalizeAddressChange(JSON.parse(ticket.addressChangeJson));
-      } catch {
-        parsedAddress = null;
-      }
+      const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
+      const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
 
       if (parsedAddress) {
-        await db
-          .update(ordersTable)
-          .set({
-            addressCep: parsedAddress.cep,
-            addressStreet: parsedAddress.street,
-            addressNumber: parsedAddress.number,
-            addressComplement: parsedAddress.complement || null,
-            addressNeighborhood: parsedAddress.neighborhood,
-            addressCity: parsedAddress.city,
-            addressState: parsedAddress.state,
-            updatedAt: new Date(),
-          })
-          .where(scope.hasGlobalAccess
-            ? eq(ordersTable.id, ticket.orderId)
-            : and(eq(ordersTable.id, ticket.orderId), eq(ordersTable.sellerCode, scope.sellerCode!)));
+        if (canApplyAddress) {
+          await applyAddressChangeToOrder({
+            orderId: ticket.orderId,
+            addressChange: parsedAddress,
+            scope,
+          });
+          addressApplied = true;
+        }
 
         const orderRows = await db
           .select({ id: ordersTable.id, products: ordersTable.products })
@@ -548,7 +592,7 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
       });
     }
 
-    res.json({ ok: true, id, status, resolutionReason, reshipment });
+    res.json({ ok: true, id, status, resolutionReason, reshipment, addressApplied });
   } catch (err) {
     console.error("Support ticket status update error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar chamado." });
