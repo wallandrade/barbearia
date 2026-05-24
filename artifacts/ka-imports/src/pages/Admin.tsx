@@ -7855,7 +7855,7 @@ function OrdersPanel({
                     {order.transactionId && <p className="font-mono text-xs">Tx: {order.transactionId}</p>}
                     {order.sellerCode && <p>Vendedor: <strong>{order.sellerCode}</strong></p>}
                     {[order.addressStreet, order.addressNumber, order.addressNeighborhood, order.addressCity, order.addressState, order.addressCep].some(Boolean) && (
-                      <p>Endereço: {[order.addressStreet, order.addressNumber, order.addressNeighborhood, `${order.addressCity||""}/${order.addressState||""}`, order.addressCep ? `CEP ${order.addressCep}` : ""].filter(Boolean).join(", ")}</p>
+                      <p>Endereço: {[order.addressStreet, order.addressNumber, order.addressComplement, order.addressNeighborhood, `${order.addressCity||""}/${order.addressState||""}`, order.addressCep ? `CEP ${order.addressCep}` : ""].filter(Boolean).join(", ")}</p>
                     )}
                   </div>
                   {/* Card actual payment details */}
