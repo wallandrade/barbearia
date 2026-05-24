@@ -3782,6 +3782,60 @@ export default function Admin() {
               }
             }}
             onCreateManualReshipment={createManualReshipment}
+            onResolvePendingReshipment={async (item, registerStockEntry) => {
+              const reshipmentId = String(item.id || "").trim();
+              if (!reshipmentId) {
+                toast.error("Reenvio inválido.");
+                return;
+              }
+
+              try {
+                if (registerStockEntry) {
+                  for (const product of item.products || []) {
+                    const productId = String(product?.id || "").trim();
+                    const quantity = Number(product?.quantity || 0);
+                    if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
+                      toast.error("Produto do reenvio inválido para entrada de estoque.");
+                      return;
+                    }
+
+                    const entryRes = await fetch(`${BASE}/api/admin/inventory/entries`, {
+                      method: "POST",
+                      headers: authHeaders(),
+                      body: JSON.stringify({
+                        productId,
+                        quantity,
+                        movementType: "entry",
+                        entrySource: "purchase",
+                        reason: `Entrada para liberar reenvio ${reshipmentId}`,
+                      }),
+                    });
+                    const entryData = await entryRes.json().catch(() => ({})) as { message?: string };
+                    if (!entryRes.ok) {
+                      toast.error(entryData?.message || "Erro ao registrar entrada para liberar reenvio.");
+                      return;
+                    }
+                  }
+                }
+
+                const statusRes = await fetch(`${BASE}/api/admin/reshipments/${reshipmentId}/status`, {
+                  method: "PATCH",
+                  headers: authHeaders(),
+                  body: JSON.stringify({ status: "reenvio_pronto_para_envio" }),
+                });
+                const statusData = await statusRes.json().catch(() => ({})) as { message?: string };
+                if (!statusRes.ok) {
+                  toast.error(statusData?.message || "Erro ao liberar reenvio.");
+                  return;
+                }
+
+                fetchInventoryOverview();
+                fetchOrders(true);
+                toast.success(registerStockEntry ? "Entrada registrada e reenvio liberado para envio." : "Reenvio liberado para envio sem entrada no estoque.");
+              } catch {
+                toast.error("Erro ao processar liberação do reenvio.");
+              }
+            }}
           />
         ) : tab === "users" && isPrimary ? (
           <UsersPanel
@@ -6102,10 +6156,12 @@ function InventoryPanel({
   onRefresh: () => void;
   onCreateEntry: () => void;
   onCreateManualReshipment: () => void;
+  onResolvePendingReshipment: (item: ReshipmentRecord, registerStockEntry: boolean) => Promise<void>;
 }) {
   const [entryProductQuery, setEntryProductQuery] = useState("");
   const [manualProductQuery, setManualProductQuery] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
+  const [reshipmentActionLoading, setReshipmentActionLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!entryForm.productId) {
@@ -6371,6 +6427,39 @@ function InventoryPanel({
                   <p className="text-xs text-red-700 mt-1">
                     {item.products.map((p) => `${p.quantity}x ${p.name}`).join(" · ")}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      disabled={!!reshipmentActionLoading[item.id]}
+                      onClick={async () => {
+                        setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: true }));
+                        try {
+                          await onResolvePendingReshipment(item, true);
+                        } finally {
+                          setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: false }));
+                        }
+                      }}
+                    >
+                      {reshipmentActionLoading[item.id] ? "Processando..." : "Produto chegou (dar entrada)"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      disabled={!!reshipmentActionLoading[item.id]}
+                      onClick={async () => {
+                        setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: true }));
+                        try {
+                          await onResolvePendingReshipment(item, false);
+                        } finally {
+                          setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: false }));
+                        }
+                      }}
+                    >
+                      {reshipmentActionLoading[item.id] ? "Processando..." : "Produto chegou (sem entrada)"}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
