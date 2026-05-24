@@ -28,6 +28,51 @@ import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThresho
 const router: IRouter = Router();
 
 let priorityColumnCache: { checkedAt: number; available: boolean } = { checkedAt: 0, available: false };
+const SLA_PRIORITY_BUSINESS_MS = 48 * 60 * 60 * 1000;
+const SAO_PAULO_UTC_OFFSET_MS = -3 * 60 * 60 * 1000;
+
+function isBusinessWeekdayInSaoPaulo(utcMs: number): boolean {
+  const day = new Date(utcMs + SAO_PAULO_UTC_OFFSET_MS).getUTCDay();
+  return day >= 1 && day <= 5;
+}
+
+function nextSaoPauloMidnightUtcMs(utcMs: number): number {
+  const shifted = new Date(utcMs + SAO_PAULO_UTC_OFFSET_MS);
+  const y = shifted.getUTCFullYear();
+  const m = shifted.getUTCMonth();
+  const d = shifted.getUTCDate();
+  const nextMidnightShiftedUtc = Date.UTC(y, m, d + 1, 0, 0, 0, 0);
+  return nextMidnightShiftedUtc - SAO_PAULO_UTC_OFFSET_MS;
+}
+
+function elapsedBusinessMsSince(createdAt: Date | null | undefined, now: Date = new Date()): number {
+  if (!createdAt) return 0;
+  const start = createdAt.getTime();
+  const end = now.getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+
+  let cursor = start;
+  let businessMs = 0;
+  while (cursor < end) {
+    const segmentEnd = Math.min(end, nextSaoPauloMidnightUtcMs(cursor));
+    if (isBusinessWeekdayInSaoPaulo(cursor)) {
+      businessMs += Math.max(0, segmentEnd - cursor);
+    }
+    cursor = segmentEnd;
+  }
+  return businessMs;
+}
+
+function shouldAutoPrioritizeOrder(order: { status?: string | null; enviado?: boolean | null; createdAt?: Date | null }): boolean {
+  if (!order.createdAt) return false;
+  if (order.enviado) return false;
+
+  const normalizedStatus = String(order.status || "").trim().toLowerCase();
+  if (!normalizedStatus || normalizedStatus === "cancelled") return false;
+  if (normalizedStatus !== "paid" && normalizedStatus !== "completed") return false;
+
+  return elapsedBusinessMsSince(order.createdAt) >= SLA_PRIORITY_BUSINESS_MS;
+}
 
 async function isOrderPriorityColumnAvailable(force = false): Promise<boolean> {
   const now = Date.now();
@@ -1303,6 +1348,12 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     const priorityByOrder = await loadOrderPriorityMap(orders.map((o) => o.id));
 
     const enriched = orders.map((order) => {
+      const manualPriority = priorityByOrder.get(order.id) ?? false;
+      const automaticPriority = shouldAutoPrioritizeOrder({
+        status: order.status,
+        enviado: !!order.enviado,
+        createdAt: order.createdAt,
+      });
       const ipCity   = String((order as any).ipCity   || "").trim().toLowerCase();
       const ipRegion = String((order as any).ipRegion || "").trim().toLowerCase();
       const addrCity = String(order.addressCity  || "").trim().toLowerCase();
@@ -1337,7 +1388,10 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
 
       return {
         ...mapOrder(order),
-        isPrioridade: priorityByOrder.get(order.id) ?? false,
+        isPrioridade: manualPriority || automaticPriority,
+        priorityManual: manualPriority,
+        priorityAutomatic: automaticPriority,
+        prioritySource: manualPriority ? "manual" : automaticPriority ? "automatic" : null,
         purchaseRisk,
         purchaseRiskReason,
         reshipment: reshipmentByOrder.get(order.id) || null,
