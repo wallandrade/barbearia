@@ -1349,6 +1349,11 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
       const aActive = a.reshipment?.status === "reenvio_aguardando_estoque" || a.reshipment?.status === "reenvio_pronto_para_envio";
       const bActive = b.reshipment?.status === "reenvio_aguardando_estoque" || b.reshipment?.status === "reenvio_pronto_para_envio";
       if (aActive !== bActive) return bActive ? 1 : -1;
+
+      const aPriority = !!a.isPrioridade;
+      const bPriority = !!b.isPrioridade;
+      if (aPriority !== bPriority) return bPriority ? 1 : -1;
+
       const aTime = Date.parse(a.createdAt || "");
       const bTime = Date.parse(b.createdAt || "");
       return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
