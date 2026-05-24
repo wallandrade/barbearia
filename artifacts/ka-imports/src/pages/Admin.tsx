@@ -3830,6 +3830,7 @@ export default function Admin() {
               } catch { toast.error("Erro ao salvar produto."); }
               finally { setProductSaving(false); }
             }}
+                onRefreshProducts={fetchProducts}
             onDelete={async (id: string) => {
               if (!confirm("Apagar este produto?")) return;
               setProductDeleting(id);
@@ -9710,6 +9711,7 @@ function PriceInput({
 function ProductsPanel({
   products, loading, productForm, setProductForm, productFormOpen, setProductFormOpen,
   productSaving, productDeleting, onSave, onDelete, onToggle, sellers,
+  onRefreshProducts,
 }: {
   products: AdminProduct[];
   loading: boolean;
@@ -9723,6 +9725,7 @@ function ProductsPanel({
   onDelete: (id: string) => void;
   onToggle: (id: string, isActive: boolean) => void;
   sellers: Array<{ slug: string; whatsapp: string }>;
+  onRefreshProducts: () => void;
 }) {
   type BulkDiscountTier = {
     minQty: number;
@@ -9792,6 +9795,7 @@ function ProductsPanel({
   const [costHistoryLoading, setCostHistoryLoading] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState("");
   const [newBrandInput, setNewBrandInput] = useState("");
+  const [removingCategory, setRemovingCategory] = useState(false);
   const siteOrigin = window.location.origin;
 
   const categoryOptions = Array.from(new Set(
@@ -9897,6 +9901,57 @@ function ProductsPanel({
     setProductFormOpen(true);
   };
 
+  const removeSelectedCategory = async () => {
+    const targetCategory = String(productForm.category || "").trim();
+    if (!targetCategory) {
+      toast.error("Selecione uma categoria para remover.");
+      return;
+    }
+
+    const affectedProducts = products.filter(
+      (p) => String(p.category || "").trim().toLowerCase() === targetCategory.toLowerCase(),
+    );
+
+    if (affectedProducts.length === 0) {
+      toast.info("Nenhum produto encontrado com essa categoria.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remover a categoria "${targetCategory}" de ${affectedProducts.length} produto(s)? Eles ficarão como "Sem categoria".`,
+    );
+    if (!confirmed) return;
+
+    setRemovingCategory(true);
+    let successCount = 0;
+
+    try {
+      for (const product of affectedProducts) {
+        const res = await fetch(`${BASE}/api/admin/products/${product.id}`, {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ category: "Sem categoria" }),
+        });
+        if (res.ok) {
+          successCount += 1;
+        }
+      }
+
+      if (successCount === 0) {
+        toast.error("Não foi possível remover a categoria.");
+        return;
+      }
+
+      setProductForm({ ...productForm, category: "" });
+      onRefreshProducts();
+      toast.success(`Categoria removida de ${successCount} produto(s).`);
+    } catch {
+      toast.error("Erro ao remover categoria.");
+    } finally {
+      setRemovingCategory(false);
+    }
+  };
+
   const UNITS = ["unidade", "caixa", "caneta", "frasco", "par", "kit"];
   const currentTiers = normalizeBulkDiscountTiers((productForm as any).bulkDiscountTiers);
 
@@ -9981,6 +10036,18 @@ function ProductsPanel({
                         }}
                       >
                         Cadastrar
+                      </Button>
+                    </div>
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                        disabled={removingCategory || !String(productForm.category || "").trim()}
+                        onClick={removeSelectedCategory}
+                      >
+                        {removingCategory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        <span className="ml-1">Remover categoria selecionada</span>
                       </Button>
                     </div>
                   </div>
