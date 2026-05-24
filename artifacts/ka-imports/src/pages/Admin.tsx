@@ -9805,11 +9805,17 @@ function ProductsPanel({
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
-  const brandOptions = Array.from(new Set(
+  const brandOptions = Array.from(
     products
       .map((p) => String((p as any).brand || "").trim())
-      .filter(Boolean),
-  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
+      .filter(Boolean)
+      .reduce((map, brand) => {
+        const key = brand.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim();
+        if (!map.has(key)) map.set(key, brand);
+        return map;
+      }, new Map<string, string>())
+      .values(),
+  ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
 
   const openCostHistory = async (productId: string, productName: string) => {
     setCostHistoryProductId(productId);
