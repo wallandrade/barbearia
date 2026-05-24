@@ -1976,6 +1976,17 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     const wasEnviado = !!order.enviado;
+    const shouldSkipReturnToStock = !enviado && wasEnviado
+      ? await db
+          .select({ id: reshipmentsTable.id })
+          .from(reshipmentsTable)
+          .where(and(
+            eq(reshipmentsTable.orderId, id),
+            inArray(reshipmentsTable.status, ["reenvio_aguardando_estoque", "reenvio_pronto_para_envio"]),
+          ))
+          .limit(1)
+          .then((rows) => !!rows[0])
+      : false;
 
     if (enviado !== wasEnviado) {
       const orderItems = parseOrderItemsForInventory(order.products);
@@ -2033,6 +2044,9 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         }
 
         for (const item of resolvedItems) {
+          if (shouldSkipReturnToStock && !enviado) {
+            continue;
+          }
           const qty = enviado ? -item.quantity : item.quantity;
           await registerInventoryEntry({
             productId: item.productId!,
