@@ -7478,9 +7478,6 @@ function OrdersPanel({
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
-            if (isReshipment && reshipmentTrackingCode) {
-              return `Numero rastreio informado: ${reshipmentTrackingCode}`;
-            }
             const productId = String(product?.id || "").trim();
             return productId ? String(productImageById[productId] || "").trim() : "";
           };
