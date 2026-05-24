@@ -9796,6 +9796,7 @@ function ProductsPanel({
   const [newCategoryInput, setNewCategoryInput] = useState("");
   const [newBrandInput, setNewBrandInput] = useState("");
   const [removingCategory, setRemovingCategory] = useState(false);
+  const [removingBrand, setRemovingBrand] = useState(false);
   const siteOrigin = window.location.origin;
 
   const categoryOptions = Array.from(new Set(
@@ -9952,6 +9953,57 @@ function ProductsPanel({
     }
   };
 
+  const removeSelectedBrand = async () => {
+    const targetBrand = String((productForm as any).brand || "").trim();
+    if (!targetBrand) {
+      toast.error("Selecione uma marca para remover.");
+      return;
+    }
+
+    const affectedProducts = products.filter(
+      (p) => String((p as any).brand || "").trim().toLowerCase() === targetBrand.toLowerCase(),
+    );
+
+    if (affectedProducts.length === 0) {
+      toast.info("Nenhum produto encontrado com essa marca.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remover a marca "${targetBrand}" de ${affectedProducts.length} produto(s)? Eles ficarão sem marca.`,
+    );
+    if (!confirmed) return;
+
+    setRemovingBrand(true);
+    let successCount = 0;
+
+    try {
+      for (const product of affectedProducts) {
+        const res = await fetch(`${BASE}/api/admin/products/${product.id}`, {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ brand: null }),
+        });
+        if (res.ok) {
+          successCount += 1;
+        }
+      }
+
+      if (successCount === 0) {
+        toast.error("Não foi possível remover a marca.");
+        return;
+      }
+
+      setProductForm({ ...productForm, brand: null } as any);
+      onRefreshProducts();
+      toast.success(`Marca removida de ${successCount} produto(s).`);
+    } catch {
+      toast.error("Erro ao remover marca.");
+    } finally {
+      setRemovingBrand(false);
+    }
+  };
+
   const UNITS = ["unidade", "caixa", "caneta", "frasco", "par", "kit"];
   const currentTiers = normalizeBulkDiscountTiers((productForm as any).bulkDiscountTiers);
 
@@ -10083,6 +10135,18 @@ function ProductsPanel({
                         }}
                       >
                         Cadastrar
+                      </Button>
+                    </div>
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                        disabled={removingBrand || !String((productForm as any).brand || "").trim()}
+                        onClick={removeSelectedBrand}
+                      >
+                        {removingBrand ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        <span className="ml-1">Remover marca selecionada</span>
                       </Button>
                     </div>
                   </div>
