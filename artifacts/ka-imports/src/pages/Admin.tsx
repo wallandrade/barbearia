@@ -3514,8 +3514,12 @@ export default function Admin() {
                   headers: authHeaders(),
                   body: JSON.stringify({ status }),
                 });
-                const data = await res.json() as { message?: string };
+                const data = await res.json() as { message?: string; error?: string; missingProducts?: string[] };
                 if (!res.ok) {
+                  if (data?.error === "INSUFFICIENT_STOCK" && Array.isArray(data?.missingProducts) && data.missingProducts.length > 0) {
+                    toast.error(`Estoque insuficiente para este reenvio: ${data.missingProducts.join(", ")}.`);
+                    return;
+                  }
                   toast.error(data?.message || "Erro ao atualizar reenvio.");
                   return;
                 }
@@ -7867,7 +7871,7 @@ function OrdersPanel({
                     <ShieldCheck className="w-3.5 h-3.5" />KYC
                   </Button>
                 )}
-                {(order as any)?.reshipment?.id && (order as any)?.reshipment?.status !== "reenvio_enviado" && (
+                {(order as any)?.reshipment?.id && (order as any)?.reshipment?.status === "reenvio_pronto_para_envio" && (
                   <Button
                     size="sm"
                     variant="outline"

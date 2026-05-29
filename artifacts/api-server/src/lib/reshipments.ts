@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   inventoryBalancesTable,
@@ -105,6 +105,72 @@ async function reserveForReshipment(reshipmentId: string, items: ReshipmentProdu
       createdAt: new Date(),
     });
   }
+}
+
+export async function ensureReshipmentReservation(params: {
+  id: string;
+  source: ReshipmentSource;
+}): Promise<{ ok: boolean; notFound?: boolean; invalidProducts?: boolean; missingProducts: string[] }> {
+  const rows = params.source === "support"
+    ? await db
+        .select({ productsSnapshot: reshipmentsTable.productsSnapshot })
+        .from(reshipmentsTable)
+        .where(eq(reshipmentsTable.id, params.id))
+        .limit(1)
+    : await db
+        .select({ productsSnapshot: manualReshipmentsTable.productsSnapshot })
+        .from(manualReshipmentsTable)
+        .where(eq(manualReshipmentsTable.id, params.id))
+        .limit(1);
+
+  if (!rows[0]) {
+    return { ok: false, notFound: true, missingProducts: [] };
+  }
+
+  const items = toProducts(rows[0].productsSnapshot);
+  if (items.length === 0) {
+    return { ok: false, invalidProducts: true, missingProducts: [] };
+  }
+
+  const reservationRows = await db
+    .select({ productId: inventoryMovementsTable.productId, quantity: inventoryMovementsTable.quantity })
+    .from(inventoryMovementsTable)
+    .where(and(
+      eq(inventoryMovementsTable.referenceId, params.id),
+      eq(inventoryMovementsTable.type, "reservation"),
+    ));
+
+  const reservedByProduct = new Map<string, number>();
+  for (const row of reservationRows) {
+    const productId = String(row.productId || "").trim();
+    if (!productId) continue;
+    const qty = Math.max(0, -Number(row.quantity || 0));
+    reservedByProduct.set(productId, (reservedByProduct.get(productId) || 0) + qty);
+  }
+
+  const remainingItems = items
+    .map((item) => ({
+      ...item,
+      quantity: Math.max(0, item.quantity - (reservedByProduct.get(item.id) || 0)),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  if (remainingItems.length === 0) {
+    return { ok: true, missingProducts: [] };
+  }
+
+  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
+  const stockByProduct = await getStockMap(productIds);
+  const missingProducts = remainingItems
+    .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
+    .map((item) => item.name);
+
+  if (missingProducts.length > 0) {
+    return { ok: false, missingProducts };
+  }
+
+  await reserveForReshipment(params.id, remainingItems);
+  return { ok: true, missingProducts: [] };
 }
 
 export async function createOrRefreshReshipment(params: {

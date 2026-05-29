@@ -4,6 +4,7 @@ import { db, inventoryBalancesTable, manualReshipmentsTable, ordersTable, reship
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import {
   createManualReshipment,
+  ensureReshipmentReservation,
   getInventoryOverview,
   listReshipments,
   registerInventoryEntry,
@@ -240,7 +241,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
     }
 
     const rows = await db
-      .select({ orderId: reshipmentsTable.orderId })
+      .select({ orderId: reshipmentsTable.orderId, currentStatus: reshipmentsTable.status })
       .from(reshipmentsTable)
       .where(eq(reshipmentsTable.id, id))
       .limit(1);
@@ -251,6 +252,34 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         return;
       }
 
+      if (rows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado") {
+        res.status(400).json({
+          error: "INVALID_TRANSITION",
+          message: "Reenvio aguardando estoque só pode ser enviado após liberação manual no card de reenvios.",
+        });
+        return;
+      }
+
+      if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
+        const reservation = await ensureReshipmentReservation({ id, source: "support" });
+        if (!reservation.ok) {
+          if (reservation.notFound) {
+            res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
+            return;
+          }
+          if (reservation.invalidProducts) {
+            res.status(400).json({ error: "INVALID_RESHIPMENT_PRODUCTS", message: "Reenvio sem produtos válidos para reservar estoque." });
+            return;
+          }
+          res.status(400).json({
+            error: "INSUFFICIENT_STOCK",
+            message: `Estoque insuficiente para o reenvio: ${(reservation.missingProducts || []).join(", ")}.`,
+            missingProducts: reservation.missingProducts || [],
+          });
+          return;
+        }
+      }
+
       const updated = await setReshipmentStatus(id, status);
       if (!updated) {
         res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
@@ -258,7 +287,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
     } else {
       const manualRows = await db
-        .select({ id: manualReshipmentsTable.id })
+        .select({ id: manualReshipmentsTable.id, currentStatus: manualReshipmentsTable.status })
         .from(manualReshipmentsTable)
         .where(eq(manualReshipmentsTable.id, id))
         .limit(1);
@@ -272,6 +301,34 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       if (!adminScope?.isPrimary) {
         res.status(403).json({ error: "FORBIDDEN", message: "Somente admin primário pode atualizar reenvio manual." });
         return;
+      }
+
+      if (manualRows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado") {
+        res.status(400).json({
+          error: "INVALID_TRANSITION",
+          message: "Reenvio aguardando estoque só pode ser enviado após liberação manual no card de reenvios.",
+        });
+        return;
+      }
+
+      if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
+        const reservation = await ensureReshipmentReservation({ id, source: "manual" });
+        if (!reservation.ok) {
+          if (reservation.notFound) {
+            res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
+            return;
+          }
+          if (reservation.invalidProducts) {
+            res.status(400).json({ error: "INVALID_RESHIPMENT_PRODUCTS", message: "Reenvio sem produtos válidos para reservar estoque." });
+            return;
+          }
+          res.status(400).json({
+            error: "INSUFFICIENT_STOCK",
+            message: `Estoque insuficiente para o reenvio: ${(reservation.missingProducts || []).join(", ")}.`,
+            missingProducts: reservation.missingProducts || [],
+          });
+          return;
+        }
       }
 
       const updatedManual = await setManualReshipmentStatus(id, status);
