@@ -94,7 +94,7 @@ async function changeBalance(productId: string, delta: number): Promise<void> {
 
 async function reserveForReshipment(reshipmentId: string, items: ReshipmentProduct[]): Promise<void> {
   for (const item of items) {
-    await changeBalance(item.id, -item.quantity);
+    // Reservation is now a planning marker only; stock is debited when sent.
     await db.insert(inventoryMovementsTable).values({
       id: crypto.randomBytes(8).toString("hex"),
       productId: item.id,
@@ -175,7 +175,7 @@ export async function ensureReshipmentReservation(params: {
     return { ok: false, missingProducts };
   }
 
-  await reserveForReshipment(params.id, remainingItems);
+  // Keep this flow as stock validation only for "pronto para envio".
   return { ok: true, missingProducts: [] };
 }
 
@@ -215,7 +215,7 @@ export async function ensureReshipmentSendDebit(params: {
     .from(inventoryMovementsTable)
     .where(and(
       eq(inventoryMovementsTable.referenceId, params.id),
-      inArray(inventoryMovementsTable.type, ["reservation", "exit"]),
+      eq(inventoryMovementsTable.type, "exit"),
     ));
 
   const alreadyDebitedByProduct = new Map<string, number>();
@@ -331,11 +331,6 @@ export async function createOrRefreshReshipment(params: {
     });
   }
 
-  const alreadyReserved = existingRows[0]?.status === "reenvio_pronto_para_envio";
-  if (nextStatus === "reenvio_pronto_para_envio" && !alreadyReserved) {
-    await reserveForReshipment(reshipmentId, validItems);
-  }
-
   const missingProducts = validItems
     .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
     .map((item) => item.name);
@@ -380,7 +375,6 @@ export async function releasePendingReshipments(): Promise<number> {
 
     if (!canRelease) continue;
 
-    await reserveForReshipment(row.id, items);
     await db
       .update(reshipmentsTable)
       .set({ status: "reenvio_pronto_para_envio", updatedAt: new Date() })
@@ -398,7 +392,6 @@ export async function releasePendingReshipments(): Promise<number> {
 
     if (!canRelease) continue;
 
-    await reserveForReshipment(row.id, items);
     await db
       .update(manualReshipmentsTable)
       .set({ status: "reenvio_pronto_para_envio", updatedAt: new Date() })
@@ -470,10 +463,6 @@ export async function createManualReshipment(params: {
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-
-  if (enoughNow) {
-    await reserveForReshipment(id, items);
-  }
 
   return {
     id,
