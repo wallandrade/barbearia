@@ -113,8 +113,12 @@ export async function ensureReshipmentReservation(params: {
 }): Promise<{ ok: boolean; notFound?: boolean; invalidProducts?: boolean; missingProducts: string[] }> {
   const rows = params.source === "support"
     ? await db
-        .select({ productsSnapshot: reshipmentsTable.productsSnapshot })
+        .select({
+          productsSnapshot: reshipmentsTable.productsSnapshot,
+          orderProducts: ordersTable.products,
+        })
         .from(reshipmentsTable)
+        .leftJoin(ordersTable, eq(ordersTable.id, reshipmentsTable.orderId))
         .where(eq(reshipmentsTable.id, params.id))
         .limit(1)
     : await db
@@ -127,7 +131,9 @@ export async function ensureReshipmentReservation(params: {
     return { ok: false, notFound: true, missingProducts: [] };
   }
 
-  const items = toProducts(rows[0].productsSnapshot);
+  const items = params.source === "support"
+    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
+    : toProducts(rows[0].productsSnapshot);
   if (items.length === 0) {
     return { ok: false, invalidProducts: true, missingProducts: [] };
   }
@@ -442,6 +448,7 @@ export async function listReshipments(status?: string): Promise<Array<{
       supportTicketId: reshipmentsTable.supportTicketId,
       status: reshipmentsTable.status,
       productsSnapshot: reshipmentsTable.productsSnapshot,
+      orderProducts: ordersTable.products,
       resolvedReason: reshipmentsTable.resolvedReason,
       authorizedAt: reshipmentsTable.authorizedAt,
       sentAt: reshipmentsTable.sentAt,
@@ -478,7 +485,7 @@ export async function listReshipments(status?: string): Promise<Array<{
     orderId: row.orderId,
     supportTicketId: row.supportTicketId,
     status: row.status,
-    products: toProducts(row.productsSnapshot),
+    products: toProducts(row.orderProducts ?? row.productsSnapshot),
     resolvedReason: row.resolvedReason || null,
     authorizedAt: row.authorizedAt?.toISOString() || null,
     sentAt: row.sentAt?.toISOString() || null,
