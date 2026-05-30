@@ -215,52 +215,9 @@ export async function ensureReshipmentSendDebit(params: {
   if (items.length === 0) {
     return { ok: false, invalidProducts: true, missingProducts: [], debitedProducts: [] };
   }
-
-  const movementRows = await db
-    .select({
-      productId: inventoryMovementsTable.productId,
-      quantity: inventoryMovementsTable.quantity,
-      type: inventoryMovementsTable.type,
-      reason: inventoryMovementsTable.reason,
-      referenceId: inventoryMovementsTable.referenceId,
-    })
-    .from(inventoryMovementsTable)
-    .where(and(
-      eq(inventoryMovementsTable.referenceId, params.id),
-      inArray(inventoryMovementsTable.type, ["exit", "entry"]),
-    ));
-
-  // Net debit = exits related to this reshipment - manual estorno entries related to this reshipment.
-  const netDebitedByProduct = new Map<string, number>();
-  for (const row of movementRows) {
-    const productId = String(row.productId || "").trim();
-    if (!productId) continue;
-    const qty = Number(row.quantity || 0);
-    if (row.type === "exit" && qty < 0) {
-      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) + Math.abs(qty));
-      continue;
-    }
-    const isEstornoEntry = row.type === "entry" && qty > 0
-      && likeMatchesEstornoReason(String(row.reason || ""));
-    if (isEstornoEntry) {
-      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) - qty);
-    }
-  }
-
-  const remainingItems = items
-    .map((item) => ({
-      ...item,
-      quantity: Math.max(0, item.quantity - Math.max(0, netDebitedByProduct.get(item.id) || 0)),
-    }))
-    .filter((item) => item.quantity > 0);
-
-  if (remainingItems.length === 0) {
-    return { ok: true, missingProducts: [], debitedProducts: [] };
-  }
-
-  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
+  const productIds = Array.from(new Set(items.map((item) => item.id)));
   const stockByProduct = await getStockMap(productIds);
-  const missingProducts = remainingItems
+  const missingProducts = items
     .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
     .map((item) => item.name);
 
@@ -269,7 +226,7 @@ export async function ensureReshipmentSendDebit(params: {
   }
 
   const debitedProducts: Array<{ productId: string; productName: string; quantity: number }> = [];
-  for (const item of remainingItems) {
+  for (const item of items) {
     await registerInventoryEntry({
       productId: item.id,
       quantity: -item.quantity,
@@ -280,11 +237,6 @@ export async function ensureReshipmentSendDebit(params: {
   }
 
   return { ok: true, missingProducts: [], debitedProducts };
-}
-
-function likeMatchesEstornoReason(reason: string): boolean {
-  const normalized = String(reason || "").trim().toLowerCase();
-  return normalized.startsWith("estorno de baixa do reenvio");
 }
 
 export async function createOrRefreshReshipment(params: {

@@ -257,9 +257,15 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       let debitSummary: Array<{ productId: string; productName: string; quantity: number }> = [];
+      let alreadySent = false;
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
+        if (status === "reenvio_enviado" && rows[0].currentStatus === "reenvio_enviado") {
+          alreadySent = true;
+        }
         const reservation = status === "reenvio_enviado"
-          ? await ensureReshipmentSendDebit({ id, source: "support" })
+          ? (alreadySent
+              ? { ok: true, missingProducts: [], debitedProducts: [] }
+              : await ensureReshipmentSendDebit({ id, source: "support" }))
           : await ensureReshipmentReservation({ id, source: "support" });
         if (!reservation.ok) {
           if (reservation.notFound) {
@@ -292,7 +298,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       broadcastNotification({ type: "reshipment_updated", data: { id, status: nextStatus } });
-      res.json({ ok: true, id, status: nextStatus, requestedStatus: status, debitedProducts: debitSummary });
+      res.json({ ok: true, id, status: nextStatus, requestedStatus: status, debitedProducts: debitSummary, alreadySent });
       return;
     } else {
       const manualRows = await db
@@ -313,9 +319,15 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       let debitSummary: Array<{ productId: string; productName: string; quantity: number }> = [];
+      let alreadySent = false;
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
+        if (status === "reenvio_enviado" && manualRows[0].currentStatus === "reenvio_enviado") {
+          alreadySent = true;
+        }
         const reservation = status === "reenvio_enviado"
-          ? await ensureReshipmentSendDebit({ id, source: "manual" })
+          ? (alreadySent
+              ? { ok: true, missingProducts: [], debitedProducts: [] }
+              : await ensureReshipmentSendDebit({ id, source: "manual" }) )
           : await ensureReshipmentReservation({ id, source: "manual" });
         if (!reservation.ok) {
           if (reservation.notFound) {
@@ -348,7 +360,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       broadcastNotification({ type: "reshipment_updated", data: { id, status: nextStatus } });
-      res.json({ ok: true, id, status: nextStatus, requestedStatus: status, debitedProducts: debitSummary });
+      res.json({ ok: true, id, status: nextStatus, requestedStatus: status, debitedProducts: debitSummary, alreadySent });
       return;
     }
   } catch (err) {
