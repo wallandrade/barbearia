@@ -272,19 +272,11 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         }
       }
 
-      const nextStatus = rows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
-        ? "reenvio_aguardando_estoque"
-        : status;
-
-      const updated = await setReshipmentStatus(id, nextStatus);
+      const updated = await setReshipmentStatus(id, status);
       if (!updated) {
         res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
         return;
       }
-
-      broadcastNotification({ type: "reshipment_updated", data: { id, status: nextStatus } });
-      res.json({ ok: true, id, status: nextStatus, requestedStatus: status });
-      return;
     } else {
       const manualRows = await db
         .select({ id: manualReshipmentsTable.id, currentStatus: manualReshipmentsTable.status })
@@ -323,20 +315,15 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         }
       }
 
-      const nextStatus = manualRows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
-        ? "reenvio_aguardando_estoque"
-        : status;
-
-      const updatedManual = await setManualReshipmentStatus(id, nextStatus);
+      const updatedManual = await setManualReshipmentStatus(id, status);
       if (!updatedManual) {
         res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
         return;
       }
-
-      broadcastNotification({ type: "reshipment_updated", data: { id, status: nextStatus } });
-      res.json({ ok: true, id, status: nextStatus, requestedStatus: status });
-      return;
     }
+
+    broadcastNotification({ type: "reshipment_updated", data: { id, status } });
+    res.json({ ok: true, id, status });
   } catch (err) {
     console.error("Update reshipment status error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar reenvio." });
