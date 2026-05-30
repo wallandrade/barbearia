@@ -179,6 +179,87 @@ export async function ensureReshipmentReservation(params: {
   return { ok: true, missingProducts: [] };
 }
 
+export async function ensureReshipmentSendDebit(params: {
+  id: string;
+  source: ReshipmentSource;
+}): Promise<{ ok: boolean; notFound?: boolean; invalidProducts?: boolean; missingProducts: string[] }> {
+  const rows = params.source === "support"
+    ? await db
+        .select({
+          productsSnapshot: reshipmentsTable.productsSnapshot,
+          orderProducts: ordersTable.products,
+        })
+        .from(reshipmentsTable)
+        .leftJoin(ordersTable, eq(ordersTable.id, reshipmentsTable.orderId))
+        .where(eq(reshipmentsTable.id, params.id))
+        .limit(1)
+    : await db
+        .select({ productsSnapshot: manualReshipmentsTable.productsSnapshot })
+        .from(manualReshipmentsTable)
+        .where(eq(manualReshipmentsTable.id, params.id))
+        .limit(1);
+
+  if (!rows[0]) {
+    return { ok: false, notFound: true, missingProducts: [] };
+  }
+
+  const items = params.source === "support"
+    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
+    : toProducts(rows[0].productsSnapshot);
+  if (items.length === 0) {
+    return { ok: false, invalidProducts: true, missingProducts: [] };
+  }
+
+  const movementRows = await db
+    .select({ productId: inventoryMovementsTable.productId, quantity: inventoryMovementsTable.quantity, type: inventoryMovementsTable.type })
+    .from(inventoryMovementsTable)
+    .where(and(
+      eq(inventoryMovementsTable.referenceId, params.id),
+      inArray(inventoryMovementsTable.type, ["reservation", "exit"]),
+    ));
+
+  const alreadyDebitedByProduct = new Map<string, number>();
+  for (const row of movementRows) {
+    const productId = String(row.productId || "").trim();
+    if (!productId) continue;
+    const debitQty = Math.max(0, -Number(row.quantity || 0));
+    if (debitQty <= 0) continue;
+    alreadyDebitedByProduct.set(productId, (alreadyDebitedByProduct.get(productId) || 0) + debitQty);
+  }
+
+  const remainingItems = items
+    .map((item) => ({
+      ...item,
+      quantity: Math.max(0, item.quantity - (alreadyDebitedByProduct.get(item.id) || 0)),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  if (remainingItems.length === 0) {
+    return { ok: true, missingProducts: [] };
+  }
+
+  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
+  const stockByProduct = await getStockMap(productIds);
+  const missingProducts = remainingItems
+    .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
+    .map((item) => item.name);
+
+  if (missingProducts.length > 0) {
+    return { ok: false, missingProducts };
+  }
+
+  for (const item of remainingItems) {
+    await registerInventoryEntry({
+      productId: item.id,
+      quantity: -item.quantity,
+      reason: `Saída por envio do reenvio ${params.id}`,
+      referenceId: params.id,
+    });
+  }
+
+  return { ok: true, missingProducts: [] };
+}
+
 export async function createOrRefreshReshipment(params: {
   orderId: string;
   supportTicketId: string;

@@ -5,6 +5,7 @@ import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-au
 import {
   createManualReshipment,
   ensureReshipmentReservation,
+  ensureReshipmentSendDebit,
   getInventoryOverview,
   listReshipments,
   registerInventoryEntry,
@@ -253,7 +254,9 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
-        const reservation = await ensureReshipmentReservation({ id, source: "support" });
+        const reservation = status === "reenvio_enviado"
+          ? await ensureReshipmentSendDebit({ id, source: "support" })
+          : await ensureReshipmentReservation({ id, source: "support" });
         if (!reservation.ok) {
           if (reservation.notFound) {
             res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
@@ -304,7 +307,9 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
-        const reservation = await ensureReshipmentReservation({ id, source: "manual" });
+        const reservation = status === "reenvio_enviado"
+          ? await ensureReshipmentSendDebit({ id, source: "manual" })
+          : await ensureReshipmentReservation({ id, source: "manual" });
         if (!reservation.ok) {
           if (reservation.notFound) {
             res.status(404).json({ error: "NOT_FOUND", message: "Reenvio não encontrado." });
