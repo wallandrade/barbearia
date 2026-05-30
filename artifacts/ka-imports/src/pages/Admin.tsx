@@ -3858,7 +3858,7 @@ export default function Admin() {
                 const statusRes = await fetch(`${BASE}/api/admin/reshipments/${reshipmentId}/status`, {
                   method: "PATCH",
                   headers: authHeaders(),
-                  body: JSON.stringify({ status: "reenvio_pronto_para_envio" }),
+                  body: JSON.stringify({ status: "reenvio_pronto_para_envio", skipStockValidation: !registerStockEntry }),
                 });
                 const statusData = await statusRes.json().catch(() => ({})) as { message?: string };
                 if (!statusRes.ok) {

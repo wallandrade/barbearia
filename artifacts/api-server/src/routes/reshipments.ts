@@ -299,6 +299,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
     if (!scope) return;
 
     const id = String(req.params.id ?? "").trim();
+    const skipStockValidation = Boolean(req.body?.skipStockValidation);
     const status = String(req.body?.status ?? "").trim() as
       | "reenvio_aguardando_estoque"
       | "reenvio_pronto_para_envio"
@@ -324,6 +325,9 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       let debitSummary: Array<{ productId: string; productName: string; quantity: number }> = [];
       let alreadySent = false;
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
+        if (status === "reenvio_pronto_para_envio" && skipStockValidation) {
+          // Manual return-flow action can clear pending card without forcing stock reconciliation.
+        } else {
         if (status === "reenvio_enviado" && rows[0].currentStatus === "reenvio_enviado") {
           alreadySent = true;
         }
@@ -351,6 +355,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         if (status === "reenvio_enviado" && "debitedProducts" in reservation) {
           debitSummary = reservation.debitedProducts || [];
           console.info("[ReshipmentSendDebit] support", { id, requestedStatus: status, debitedProducts: debitSummary });
+        }
         }
       }
 
@@ -386,6 +391,9 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       let debitSummary: Array<{ productId: string; productName: string; quantity: number }> = [];
       let alreadySent = false;
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
+        if (status === "reenvio_pronto_para_envio" && skipStockValidation) {
+          // Manual return-flow action can clear pending card without forcing stock reconciliation.
+        } else {
         if (status === "reenvio_enviado" && manualRows[0].currentStatus === "reenvio_enviado") {
           alreadySent = true;
         }
@@ -413,6 +421,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         if (status === "reenvio_enviado" && "debitedProducts" in reservation) {
           debitSummary = reservation.debitedProducts || [];
           console.info("[ReshipmentSendDebit] manual", { id, requestedStatus: status, debitedProducts: debitSummary });
+        }
         }
       }
 
