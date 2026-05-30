@@ -206,16 +206,19 @@ export async function createOrRefreshReshipment(params: {
     throw new Error("Itens do pedido não existem no catálogo de produtos.");
   }
 
-  const validProductIds = Array.from(new Set(validItems.map((item) => item.id)));
-  const stockByProduct = await getStockMap(validProductIds);
-  const enoughNow = hasEnoughStock(validItems, stockByProduct);
-  const nextStatus: ReshipmentStatus = enoughNow ? "reenvio_pronto_para_envio" : "reenvio_aguardando_estoque";
-
   const existingRows = await db
     .select({ id: reshipmentsTable.id, status: reshipmentsTable.status })
     .from(reshipmentsTable)
     .where(eq(reshipmentsTable.orderId, params.orderId))
     .limit(1);
+
+  const validProductIds = Array.from(new Set(validItems.map((item) => item.id)));
+  const stockByProduct = await getStockMap(validProductIds);
+  const enoughNow = hasEnoughStock(validItems, stockByProduct);
+  const keepAwaiting = existingRows[0]?.status === "reenvio_aguardando_estoque";
+  const nextStatus: ReshipmentStatus = keepAwaiting
+    ? "reenvio_aguardando_estoque"
+    : (enoughNow ? "reenvio_pronto_para_envio" : "reenvio_aguardando_estoque");
 
   const reshipmentId = existingRows[0]?.id || id;
 
@@ -248,7 +251,7 @@ export async function createOrRefreshReshipment(params: {
   }
 
   const alreadyReserved = existingRows[0]?.status === "reenvio_pronto_para_envio";
-  if (enoughNow && !alreadyReserved) {
+  if (nextStatus === "reenvio_pronto_para_envio" && !alreadyReserved) {
     await reserveForReshipment(reshipmentId, validItems);
   }
 
