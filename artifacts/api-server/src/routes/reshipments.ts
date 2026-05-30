@@ -252,14 +252,6 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         return;
       }
 
-      if (rows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado") {
-        res.status(400).json({
-          error: "INVALID_TRANSITION",
-          message: "Reenvio aguardando estoque só pode ser enviado após liberação manual no card de reenvios.",
-        });
-        return;
-      }
-
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
         const reservation = await ensureReshipmentReservation({ id, source: "support" });
         if (!reservation.ok) {
@@ -300,14 +292,6 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       const adminScope = getAdminScope(req as never);
       if (!adminScope?.isPrimary) {
         res.status(403).json({ error: "FORBIDDEN", message: "Somente admin primário pode atualizar reenvio manual." });
-        return;
-      }
-
-      if (manualRows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado") {
-        res.status(400).json({
-          error: "INVALID_TRANSITION",
-          message: "Reenvio aguardando estoque só pode ser enviado após liberação manual no card de reenvios.",
-        });
         return;
       }
 
