@@ -485,7 +485,7 @@ export async function listReshipments(status?: string): Promise<Array<{
     orderId: row.orderId,
     supportTicketId: row.supportTicketId,
     status: row.status,
-    products: toProducts(row.orderProducts ?? row.productsSnapshot),
+    products: toProducts(row.productsSnapshot),
     resolvedReason: row.resolvedReason || null,
     authorizedAt: row.authorizedAt?.toISOString() || null,
     sentAt: row.sentAt?.toISOString() || null,
