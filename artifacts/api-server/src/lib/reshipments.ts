@@ -499,6 +499,7 @@ export async function registerInventoryEntry(params: {
   referenceId?: string;
   entrySource?: "purchase" | "customer_return";
   clientName?: string | null;
+  clientPhone?: string | null;
   trackingCode?: string | null;
   affectBalance?: boolean;
 }): Promise<void> {
@@ -514,6 +515,7 @@ export async function registerInventoryEntry(params: {
     type: isExit ? "exit" : "entry",
     entrySource: params.entrySource || null,
     clientName: params.clientName || null,
+    clientPhone: params.clientPhone || null,
     trackingCode: params.trackingCode || null,
     quantity: params.quantity,
     reason: params.reason || (isExit ? "Saida manual de estoque" : "Entrada manual de estoque"),
@@ -668,6 +670,7 @@ export async function getInventoryOverview(): Promise<{
     type: string;
     entrySource: string | null;
     clientName: string | null;
+    clientPhone: string | null;
     trackingCode: string | null;
     quantity: number;
     reason: string | null;
@@ -707,6 +710,7 @@ export async function getInventoryOverview(): Promise<{
         type: row.type,
         entrySource: row.entrySource || null,
         clientName: row.clientName || null,
+        clientPhone: (row as { clientPhone?: string | null }).clientPhone || null,
         trackingCode: row.trackingCode || null,
         quantity: Number(row.quantity) || 0,
         reason: row.reason || null,

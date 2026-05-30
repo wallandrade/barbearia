@@ -98,6 +98,7 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
     const movementType = String(req.body?.movementType ?? "entry").trim().toLowerCase();
     const entrySource = String(req.body?.entrySource ?? "purchase").trim().toLowerCase();
     const clientName = String(req.body?.clientName ?? "").trim();
+    const clientPhone = String(req.body?.clientPhone ?? "").trim();
     const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const reason = String(req.body?.reason ?? "").trim();
     const estornoMatch = reason.match(/^estorno de baixa do reenvio\s+([a-zA-Z0-9_\-]+)/i);
@@ -173,8 +174,9 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
       if (movementType === "exit") return "Saida manual de estoque";
       if (entrySource === "customer_return") {
         const byClient = clientName ? ` · Cliente: ${clientName}` : "";
+        const withPhone = clientPhone ? ` · Telefone: ${clientPhone}` : "";
         const withTracking = trackingCode ? ` · Rastreio: ${trackingCode}` : "";
-        return `Entrada de produto retornado${byClient}${withTracking}`;
+        return `Entrada de produto retornado${byClient}${withPhone}${withTracking}`;
       }
       return "Entrada por compra de estoque";
     })();
@@ -186,6 +188,7 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
       referenceId: movementType === "entry" && estornoReferenceId ? estornoReferenceId : undefined,
       entrySource: movementType === "entry" ? (entrySource === "customer_return" ? "customer_return" : "purchase") : undefined,
       clientName: movementType === "entry" && entrySource === "customer_return" ? clientName || null : null,
+      clientPhone: movementType === "entry" && entrySource === "customer_return" ? clientPhone || null : null,
       trackingCode: movementType === "entry" && entrySource === "customer_return" ? trackingCode || null : null,
       affectBalance: !isEstornoEntry,
     });

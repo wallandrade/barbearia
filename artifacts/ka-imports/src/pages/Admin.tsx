@@ -915,6 +915,7 @@ interface InventoryMovementRecord {
   type: string;
   entrySource?: string | null;
   clientName?: string | null;
+  clientPhone?: string | null;
   trackingCode?: string | null;
   quantity: number;
   reason: string | null;
@@ -997,7 +998,7 @@ export default function Admin() {
     movementType: "entry" as "entry" | "exit",
     entrySource: "purchase" as "purchase" | "customer_return",
     clientName: "",
-    trackingCode: "",
+    clientPhone: "",
   });
   const [inventorySubmitting, setInventorySubmitting] = useState(false);
   const [manualReshipmentForm, setManualReshipmentForm] = useState({
@@ -3781,7 +3782,7 @@ export default function Admin() {
               const movementType = inventoryEntryForm.movementType === "exit" ? "exit" : "entry";
               const entrySource = inventoryEntryForm.entrySource === "customer_return" ? "customer_return" : "purchase";
               const clientName = String(inventoryEntryForm.clientName || "").trim();
-              const trackingCode = String(inventoryEntryForm.trackingCode || "").trim();
+              const clientPhone = String(inventoryEntryForm.clientPhone || "").trim();
               if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
                 toast.error("Selecione o produto e informe quantidade válida.");
                 return;
@@ -3791,14 +3792,14 @@ export default function Admin() {
                 const res = await fetch(`${BASE}/api/admin/inventory/entries`, {
                   method: "POST",
                   headers: authHeaders(),
-                  body: JSON.stringify({ productId, quantity, reason, movementType, entrySource, clientName, trackingCode }),
+                  body: JSON.stringify({ productId, quantity, reason, movementType, entrySource, clientName, clientPhone }),
                 });
                 const data = await res.json() as { releasedCount?: number; message?: string; balanceChanged?: boolean };
                 if (!res.ok) {
                   toast.error(data?.message || "Erro ao registrar entrada de estoque.");
                   return;
                 }
-                setInventoryEntryForm((prev) => ({ ...prev, productId: "", quantity: "", reason: "", clientName: "", trackingCode: "" }));
+                setInventoryEntryForm((prev) => ({ ...prev, productId: "", quantity: "", reason: "", clientName: "", clientPhone: "" }));
                 fetchInventoryOverview();
                 fetchOrders(true);
                 const released = Number(data?.releasedCount || 0);
@@ -6312,10 +6313,10 @@ function InventoryPanel({
                   onChange={(e) => setEntryForm((prev) => ({ ...prev, clientName: e.target.value }))}
                 />
                 <input
-                  className="h-10 rounded-lg border border-border px-3 text-sm"
-                  placeholder="Código de rastreio (opcional)"
-                  value={entryForm.trackingCode}
-                  onChange={(e) => setEntryForm((prev) => ({ ...prev, trackingCode: e.target.value }))}
+                  placeholder="Telefone do cliente (opcional)"
+                  value={entryForm.clientPhone}
+                  onChange={(e) => setEntryForm((prev) => ({ ...prev, clientPhone: e.target.value }))}
+                  onChange={(e) => setEntryForm((prev) => ({ ...prev, clientPhone: e.target.value }))}
                 />
               </>
             )}
@@ -6522,11 +6523,16 @@ function InventoryPanel({
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{mv.productName}</p>
                   <p className="text-xs text-muted-foreground">Motivo: {mv.reason || "Movimentação"} · {formatDateBR(mv.createdAt)}</p>
-                  {(mv.clientName || mv.trackingCode) && (
+                  {(mv.clientName || mv.clientPhone || mv.trackingCode) && (
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {mv.clientName && (
                         <span className="text-[11px] px-2 py-0.5 rounded-full border border-sky-200 bg-sky-50 text-sky-700">
                           Cliente: {mv.clientName}
+                        </span>
+                      )}
+                      {mv.clientPhone && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700">
+                          Telefone: {mv.clientPhone}
                         </span>
                       )}
                       {mv.trackingCode && (

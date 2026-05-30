@@ -14,6 +14,7 @@ export const inventoryMovementsTable = mysqlTable("inventory_movements", {
   type: varchar("type", { length: 32 }).notNull().default("entry"),
   entrySource: varchar("entry_source", { length: 32 }),
   clientName: varchar("client_name", { length: 255 }),
+  clientPhone: varchar("client_phone", { length: 255 }),
   trackingCode: varchar("tracking_code", { length: 255 }),
   quantity: int("quantity").notNull(),
   reason: varchar("reason", { length: 255 }),
