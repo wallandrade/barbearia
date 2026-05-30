@@ -3543,15 +3543,6 @@ export default function Admin() {
                   const debited = Array.isArray(data?.debitedProducts) ? data.debitedProducts : [];
                   if (data?.alreadySent) {
                     toast.success("Reenvio já estava marcado como enviado.");
-                  } else if (data?.status === "reenvio_aguardando_estoque") {
-                    if (debited.length > 0) {
-                      const summary = debited
-                        .map((item) => `${Number(item?.quantity || 0)}x ${String(item?.productName || item?.productId || "Produto")}`)
-                        .join(", ");
-                      toast.success(`Baixa de estoque aplicada (${summary}). Reenvio permanece no card aguardando produto.`);
-                    } else {
-                      toast.success("Reenvio já estava com baixa aplicada anteriormente. Reenvio permanece no card aguardando produto.");
-                    }
                   } else if (debited.length > 0) {
                     const summary = debited
                       .map((item) => `${Number(item?.quantity || 0)}x ${String(item?.productName || item?.productId || "Produto")}`)

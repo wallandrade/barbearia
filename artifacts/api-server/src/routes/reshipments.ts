@@ -70,10 +70,15 @@ async function isOrderInScope(orderId: string, scope: { hasGlobalAccess: boolean
 
 router.get("/admin/inventory/overview", requirePrimaryAdmin, async (_req, res) => {
   try {
-    const [inventory, pendingReshipments] = await Promise.all([
+    const [inventory, allReshipments] = await Promise.all([
       getInventoryOverview(),
-      listReshipments("reenvio_aguardando_estoque"),
+      listReshipments("all"),
     ]);
+
+    // Keep return-handling card visible even after send action.
+    const pendingReshipments = allReshipments.filter((item) =>
+      item.status === "reenvio_aguardando_estoque" || item.status === "reenvio_enviado"
+    );
 
     res.json({
       balances: inventory.balances,
@@ -349,9 +354,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         }
       }
 
-      const nextStatus = rows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
-        ? "reenvio_aguardando_estoque"
-        : status;
+      const nextStatus = status;
 
       const updated = await setReshipmentStatus(id, nextStatus);
       if (!updated) {
@@ -413,9 +416,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         }
       }
 
-      const nextStatus = manualRows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
-        ? "reenvio_aguardando_estoque"
-        : status;
+      const nextStatus = status;
 
       const updatedManual = await setManualReshipmentStatus(id, nextStatus);
       if (!updatedManual) {
