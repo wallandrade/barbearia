@@ -3538,15 +3538,15 @@ export default function Admin() {
                 }
                 fetchOrders(true);
                 if (tab === "inventory") fetchInventoryOverview();
-                if (status === "reenvio_enviado" && data?.status === "reenvio_aguardando_estoque") {
+                if (status === "reenvio_enviado") {
                   const debited = Array.isArray(data?.debitedProducts) ? data.debitedProducts : [];
                   if (debited.length > 0) {
                     const summary = debited
                       .map((item) => `${Number(item?.quantity || 0)}x ${String(item?.productName || item?.productId || "Produto")}`)
                       .join(", ");
-                    toast.success(`Baixa de estoque aplicada (${summary}). Reenvio permanece no card aguardando produto.`);
+                    toast.success(`Baixa de estoque aplicada (${summary}). Reenvio marcado como enviado.`);
                   } else {
-                    toast.success("Reenvio já estava com baixa aplicada anteriormente. Reenvio permanece no card aguardando produto.");
+                    toast.success("Reenvio já estava com baixa aplicada anteriormente. Reenvio marcado como enviado.");
                   }
                 } else {
                   toast.success(status === "reenvio_enviado" ? "Reenvio marcado como enviado." : "Status do reenvio atualizado.");
