@@ -499,8 +499,11 @@ export async function registerInventoryEntry(params: {
   entrySource?: "purchase" | "customer_return";
   clientName?: string | null;
   trackingCode?: string | null;
+  affectBalance?: boolean;
 }): Promise<void> {
-  await changeBalance(params.productId, params.quantity);
+  if (params.affectBalance !== false) {
+    await changeBalance(params.productId, params.quantity);
+  }
 
   const isExit = Number(params.quantity) < 0;
 

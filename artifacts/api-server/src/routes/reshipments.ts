@@ -97,6 +97,7 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
     const reason = String(req.body?.reason ?? "").trim();
     const estornoMatch = reason.match(/^estorno de baixa do reenvio\s+([a-zA-Z0-9_\-]+)/i);
     const estornoReferenceId = estornoMatch?.[1] ? String(estornoMatch[1]).trim() : null;
+    const isEstornoEntry = movementType === "entry" && Boolean(estornoReferenceId);
 
     if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Produto e quantidade devem ser válidos." });
@@ -181,15 +182,16 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
       entrySource: movementType === "entry" ? (entrySource === "customer_return" ? "customer_return" : "purchase") : undefined,
       clientName: movementType === "entry" && entrySource === "customer_return" ? clientName || null : null,
       trackingCode: movementType === "entry" && entrySource === "customer_return" ? trackingCode || null : null,
+      affectBalance: !isEstornoEntry,
     });
 
-    const releasedCount = movementType === "entry" ? await releasePendingReshipments() : 0;
+    const releasedCount = movementType === "entry" && !isEstornoEntry ? await releasePendingReshipments() : 0;
 
     if (releasedCount > 0) {
       broadcastNotification({ type: "reshipment_stock_released", data: { releasedCount } });
     }
 
-    res.status(201).json({ ok: true, releasedCount });
+    res.status(201).json({ ok: true, releasedCount, balanceChanged: !isEstornoEntry });
   } catch (err) {
     console.error("Inventory entry error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao registrar entrada de estoque." });

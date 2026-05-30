@@ -3801,7 +3801,7 @@ export default function Admin() {
                   headers: authHeaders(),
                   body: JSON.stringify({ productId, quantity, reason, movementType, entrySource, clientName, trackingCode }),
                 });
-                const data = await res.json() as { releasedCount?: number; message?: string };
+                const data = await res.json() as { releasedCount?: number; message?: string; balanceChanged?: boolean };
                 if (!res.ok) {
                   toast.error(data?.message || "Erro ao registrar entrada de estoque.");
                   return;
@@ -3811,8 +3811,13 @@ export default function Admin() {
                 fetchOrders(true);
                 const released = Number(data?.releasedCount || 0);
                 if (movementType === "entry") {
-                  if (released > 0) toast.success(`Entrada registrada. ${released} reenvio(s) liberado(s).`);
-                  else toast.success("Entrada de estoque registrada.");
+                  if (data?.balanceChanged === false) {
+                    toast.success("Estorno do reenvio registrado sem entrada no estoque.");
+                  } else if (released > 0) {
+                    toast.success(`Entrada registrada. ${released} reenvio(s) liberado(s).`);
+                  } else {
+                    toast.success("Entrada de estoque registrada.");
+                  }
                 } else {
                   toast.success("Saida de estoque registrada.");
                 }
