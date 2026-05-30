@@ -289,7 +289,9 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         }
       }
 
-      const nextStatus = status;
+      const nextStatus = rows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
+        ? "reenvio_aguardando_estoque"
+        : status;
 
       const updated = await setReshipmentStatus(id, nextStatus);
       if (!updated) {
@@ -351,7 +353,9 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         }
       }
 
-      const nextStatus = status;
+      const nextStatus = manualRows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
+        ? "reenvio_aguardando_estoque"
+        : status;
 
       const updatedManual = await setManualReshipmentStatus(id, nextStatus);
       if (!updatedManual) {

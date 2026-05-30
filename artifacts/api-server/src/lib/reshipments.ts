@@ -215,9 +215,50 @@ export async function ensureReshipmentSendDebit(params: {
   if (items.length === 0) {
     return { ok: false, invalidProducts: true, missingProducts: [], debitedProducts: [] };
   }
-  const productIds = Array.from(new Set(items.map((item) => item.id)));
+
+  const movementRows = await db
+    .select({
+      productId: inventoryMovementsTable.productId,
+      quantity: inventoryMovementsTable.quantity,
+      type: inventoryMovementsTable.type,
+      reason: inventoryMovementsTable.reason,
+    })
+    .from(inventoryMovementsTable)
+    .where(and(
+      eq(inventoryMovementsTable.referenceId, params.id),
+      inArray(inventoryMovementsTable.type, ["exit", "entry"]),
+    ));
+
+  const netDebitedByProduct = new Map<string, number>();
+  for (const row of movementRows) {
+    const productId = String(row.productId || "").trim();
+    if (!productId) continue;
+    const qty = Number(row.quantity || 0);
+    if (row.type === "exit" && qty < 0) {
+      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) + Math.abs(qty));
+      continue;
+    }
+    const normalizedReason = String(row.reason || "").trim().toLowerCase();
+    const isEstornoEntry = row.type === "entry" && qty > 0 && normalizedReason.startsWith("estorno de baixa do reenvio");
+    if (isEstornoEntry) {
+      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) - qty);
+    }
+  }
+
+  const remainingItems = items
+    .map((item) => ({
+      ...item,
+      quantity: Math.max(0, item.quantity - Math.max(0, netDebitedByProduct.get(item.id) || 0)),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  if (remainingItems.length === 0) {
+    return { ok: true, missingProducts: [], debitedProducts: [] };
+  }
+
+  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
   const stockByProduct = await getStockMap(productIds);
-  const missingProducts = items
+  const missingProducts = remainingItems
     .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
     .map((item) => item.name);
 
@@ -226,7 +267,7 @@ export async function ensureReshipmentSendDebit(params: {
   }
 
   const debitedProducts: Array<{ productId: string; productName: string; quantity: number }> = [];
-  for (const item of items) {
+  for (const item of remainingItems) {
     await registerInventoryEntry({
       productId: item.id,
       quantity: -item.quantity,
