@@ -6296,6 +6296,9 @@ function InventoryPanel({
         </div>
         {entryForm.movementType === "entry" && (
           <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="md:col-span-3 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Para entrada de produto voltando, escolha <span className="font-semibold text-foreground">Produto voltando (cliente)</span> e então informe nome e telefone.
+            </div>
             <select
               className="h-10 rounded-lg border border-border px-3 text-sm bg-white"
               value={entryForm.entrySource}
@@ -6315,7 +6318,6 @@ function InventoryPanel({
                 <input
                   placeholder="Telefone do cliente (opcional)"
                   value={entryForm.clientPhone}
-                  onChange={(e) => setEntryForm((prev) => ({ ...prev, clientPhone: e.target.value }))}
                   onChange={(e) => setEntryForm((prev) => ({ ...prev, clientPhone: e.target.value }))}
                 />
               </>
