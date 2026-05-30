@@ -7871,7 +7871,7 @@ function OrdersPanel({
                     <ShieldCheck className="w-3.5 h-3.5" />KYC
                   </Button>
                 )}
-                {(order as any)?.reshipment?.id && (order as any)?.reshipment?.status === "reenvio_pronto_para_envio" && (
+                {(order as any)?.reshipment?.id && (order as any)?.reshipment?.status !== "reenvio_enviado" && (
                   <Button
                     size="sm"
                     variant="outline"
