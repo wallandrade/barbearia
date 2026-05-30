@@ -17,6 +17,29 @@ import { broadcastNotification } from "./notifications";
 
 const router: IRouter = Router();
 
+function parseReshipmentProducts(raw: unknown): Array<{ id: string; name: string; quantity: number }> {
+  const parsed = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? (() => {
+          try {
+            const json = JSON.parse(raw);
+            return Array.isArray(json) ? json : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+  return parsed
+    .map((item) => ({
+      id: String((item as { id?: unknown })?.id || "").trim(),
+      name: String((item as { name?: unknown })?.name || "Produto").trim() || "Produto",
+      quantity: Number((item as { quantity?: unknown })?.quantity || 0),
+    }))
+    .filter((item) => item.id && item.quantity > 0);
+}
+
 function normalizeSellerCode(value: unknown): string | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized || null;
@@ -88,6 +111,41 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
     if (movementType === "entry" && entrySource !== "purchase" && entrySource !== "customer_return") {
       res.status(400).json({ error: "INVALID_INPUT", message: "Origem da entrada inválida." });
       return;
+    }
+
+    if (movementType === "entry" && estornoReferenceId) {
+      const [supportReshipment, manualReshipment] = await Promise.all([
+        db
+          .select({ productsSnapshot: reshipmentsTable.productsSnapshot })
+          .from(reshipmentsTable)
+          .where(eq(reshipmentsTable.id, estornoReferenceId))
+          .limit(1),
+        db
+          .select({ productsSnapshot: manualReshipmentsTable.productsSnapshot })
+          .from(manualReshipmentsTable)
+          .where(eq(manualReshipmentsTable.id, estornoReferenceId))
+          .limit(1),
+      ]);
+
+      const productsSnapshot = supportReshipment[0]?.productsSnapshot ?? manualReshipment[0]?.productsSnapshot;
+      if (!productsSnapshot) {
+        res.status(400).json({
+          error: "INVALID_RESHIPMENT_REFERENCE",
+          message: `Reenvio ${estornoReferenceId} não encontrado para estorno.`,
+        });
+        return;
+      }
+
+      const reshipmentProducts = parseReshipmentProducts(productsSnapshot);
+      const allowedProductIds = new Set(reshipmentProducts.map((item) => item.id));
+      if (!allowedProductIds.has(productId)) {
+        const expectedProducts = reshipmentProducts.map((item) => item.name).join(", ");
+        res.status(400).json({
+          error: "INVALID_RESHIPMENT_PRODUCT",
+          message: `Produto informado não pertence ao reenvio ${estornoReferenceId}. Produtos esperados: ${expectedProducts}.`,
+        });
+        return;
+      }
     }
 
     const signedQuantity = movementType === "exit" ? -quantity : quantity;
