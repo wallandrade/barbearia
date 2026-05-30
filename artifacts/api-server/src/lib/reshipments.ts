@@ -14,6 +14,7 @@ import {
 export type ReshipmentStatus =
   | "reenvio_aguardando_estoque"
   | "reenvio_pronto_para_envio"
+  | "reenvio_resolvido_sem_entrada"
   | "reenvio_enviado";
 
 type OrderProductInput = {

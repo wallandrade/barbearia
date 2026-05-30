@@ -77,7 +77,7 @@ router.get("/admin/inventory/overview", requirePrimaryAdmin, async (_req, res) =
 
     // Keep return-handling card visible even after send action.
     const pendingReshipments = allReshipments.filter((item) =>
-      item.status === "reenvio_aguardando_estoque" || item.status === "reenvio_enviado"
+      item.status === "reenvio_aguardando_estoque"
     );
 
     res.json({
@@ -303,9 +303,10 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
     const status = String(req.body?.status ?? "").trim() as
       | "reenvio_aguardando_estoque"
       | "reenvio_pronto_para_envio"
+      | "reenvio_resolvido_sem_entrada"
       | "reenvio_enviado";
 
-    if (!id || !["reenvio_aguardando_estoque", "reenvio_pronto_para_envio", "reenvio_enviado"].includes(status)) {
+    if (!id || !["reenvio_aguardando_estoque", "reenvio_pronto_para_envio", "reenvio_resolvido_sem_entrada", "reenvio_enviado"].includes(status)) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Status de reenvio inválido." });
       return;
     }

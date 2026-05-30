@@ -82,6 +82,7 @@ export function orderToText(order: any): string {
   const reshipmentStatus = order?.reshipment?.status;
   const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
     : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
+    : reshipmentStatus === "reenvio_resolvido_sem_entrada" ? "🟦 RESOLVIDO SEM ENTRADA"
     : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
     : "";
 
@@ -291,7 +292,7 @@ function supplierOrderBlock(order: any, sequence: number): string {
     : "- Sem itens";
 
   const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-  const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
+  const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
   const firstOrderDate = formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-";
   const reshipmentReason = String(order?.reshipment?.ticketDescription || "").trim();
   const reshipmentReasonText = reshipmentReason || "Nao informado no chamado";
@@ -889,7 +890,7 @@ interface ReshipmentRecord {
   source: "support" | "manual" | string;
   orderId: string | null;
   supportTicketId: string | null;
-  status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado" | string;
+  status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_resolvido_sem_entrada" | "reenvio_enviado" | string;
   clientName: string;
   clientPhone: string | null;
   clientDocument: string | null;
@@ -2899,7 +2900,7 @@ export default function Admin() {
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
   const ordersParaEnviar = orders.filter((o) => {
     const isActiveReshipment = Boolean((o as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
-      && (o as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
+      && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((o as { reshipment?: { status?: string } }).reshipment?.status || ""));
     const isPendingNormalShipment = (o.status === "paid" || o.status === "completed") && !o.enviado;
     return isPendingNormalShipment || isActiveReshipment;
   });
@@ -2916,7 +2917,7 @@ export default function Admin() {
     const totals = new Map<string, { label: string; productId: string | null; qtyNormal: number; qtyReshipment: number }>();
     for (const order of ordersParaEnviar) {
       const isReshipment = Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
-        && (order as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
+        && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
       for (const p of getOrderProducts(order.products)) {
         const name = (p.name || "Produto").trim();
         const productId = String((p as { id?: string })?.id || "").trim() || null;
@@ -3858,7 +3859,10 @@ export default function Admin() {
                 const statusRes = await fetch(`${BASE}/api/admin/reshipments/${reshipmentId}/status`, {
                   method: "PATCH",
                   headers: authHeaders(),
-                  body: JSON.stringify({ status: "reenvio_pronto_para_envio", skipStockValidation: !registerStockEntry }),
+                  body: JSON.stringify({
+                    status: registerStockEntry ? "reenvio_pronto_para_envio" : "reenvio_resolvido_sem_entrada",
+                    skipStockValidation: !registerStockEntry,
+                  }),
                 });
                 const statusData = await statusRes.json().catch(() => ({})) as { message?: string };
                 if (!statusRes.ok) {
@@ -6654,6 +6658,7 @@ function OrdersPanel({
   const reshipmentStatusLabel = (status?: string) => {
     if (status === "reenvio_aguardando_estoque") return "Reenvio · Aguardando estoque";
     if (status === "reenvio_pronto_para_envio") return "Reenvio · Pronto para envio";
+    if (status === "reenvio_resolvido_sem_entrada") return "Reenvio · Resolvido sem entrada";
     if (status === "reenvio_enviado") return "Reenvio · Enviado";
     return "Reenvio";
   };
@@ -7602,7 +7607,7 @@ function OrdersPanel({
           const previewProducts = orderProducts.slice(0, 5);
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
           // Definir isReshipment no escopo correto
-          const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
+          const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
@@ -7905,7 +7910,7 @@ function OrdersPanel({
                     <ShieldCheck className="w-3.5 h-3.5" />KYC
                   </Button>
                 )}
-                {(order as any)?.reshipment?.id && (order as any)?.reshipment?.status !== "reenvio_enviado" && (
+                {(order as any)?.reshipment?.id && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as any)?.reshipment?.status || "")) && (
                   <Button
                     size="sm"
                     variant="outline"
