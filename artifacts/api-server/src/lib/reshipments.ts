@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, like, or } from "drizzle-orm";
 import {
   db,
   inventoryBalancesTable,
@@ -217,26 +217,41 @@ export async function ensureReshipmentSendDebit(params: {
   }
 
   const movementRows = await db
-    .select({ productId: inventoryMovementsTable.productId, quantity: inventoryMovementsTable.quantity, type: inventoryMovementsTable.type })
+    .select({
+      productId: inventoryMovementsTable.productId,
+      quantity: inventoryMovementsTable.quantity,
+      type: inventoryMovementsTable.type,
+      reason: inventoryMovementsTable.reason,
+      referenceId: inventoryMovementsTable.referenceId,
+    })
     .from(inventoryMovementsTable)
     .where(and(
-      eq(inventoryMovementsTable.referenceId, params.id),
-      eq(inventoryMovementsTable.type, "exit"),
+      inArray(inventoryMovementsTable.type, ["exit", "entry"]),
+      or(
+        eq(inventoryMovementsTable.referenceId, params.id),
+        like(inventoryMovementsTable.reason, `%reenvio ${params.id}%`),
+      ),
     ));
 
-  const alreadyDebitedByProduct = new Map<string, number>();
+  // Net debit = exits related to this reshipment - manual estorno entries related to this reshipment.
+  const netDebitedByProduct = new Map<string, number>();
   for (const row of movementRows) {
     const productId = String(row.productId || "").trim();
     if (!productId) continue;
-    const debitQty = Math.max(0, -Number(row.quantity || 0));
-    if (debitQty <= 0) continue;
-    alreadyDebitedByProduct.set(productId, (alreadyDebitedByProduct.get(productId) || 0) + debitQty);
+    const qty = Number(row.quantity || 0);
+    if (row.type === "exit" && qty < 0) {
+      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) + Math.abs(qty));
+      continue;
+    }
+    if (row.type === "entry" && qty > 0) {
+      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) - qty);
+    }
   }
 
   const remainingItems = items
     .map((item) => ({
       ...item,
-      quantity: Math.max(0, item.quantity - (alreadyDebitedByProduct.get(item.id) || 0)),
+      quantity: Math.max(0, item.quantity - Math.max(0, netDebitedByProduct.get(item.id) || 0)),
     }))
     .filter((item) => item.quantity > 0);
 
