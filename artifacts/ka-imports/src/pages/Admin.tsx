@@ -3520,7 +3520,7 @@ export default function Admin() {
                   headers: authHeaders(),
                   body: JSON.stringify({ status }),
                 });
-                const data = await res.json() as { message?: string; error?: string; missingProducts?: string[] };
+                const data = await res.json() as { message?: string; error?: string; missingProducts?: string[]; status?: string; requestedStatus?: string };
                 if (!res.ok) {
                   if (data?.error === "INSUFFICIENT_STOCK" && Array.isArray(data?.missingProducts) && data.missingProducts.length > 0) {
                     toast.error(`Estoque insuficiente para este reenvio: ${data.missingProducts.join(", ")}.`);
@@ -3531,7 +3531,11 @@ export default function Admin() {
                 }
                 fetchOrders(true);
                 if (tab === "inventory") fetchInventoryOverview();
-                toast.success(status === "reenvio_enviado" ? "Reenvio marcado como enviado." : "Status do reenvio atualizado.");
+                if (status === "reenvio_enviado" && data?.status === "reenvio_aguardando_estoque") {
+                  toast.success("Estoque atual validado e reservado. Reenvio permanece no card aguardando produto.");
+                } else {
+                  toast.success(status === "reenvio_enviado" ? "Reenvio marcado como enviado." : "Status do reenvio atualizado.");
+                }
               } catch {
                 toast.error("Erro ao atualizar reenvio.");
               } finally {
