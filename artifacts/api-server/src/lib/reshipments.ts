@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, asc, eq, inArray, like, or } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   inventoryBalancesTable,
@@ -226,11 +226,8 @@ export async function ensureReshipmentSendDebit(params: {
     })
     .from(inventoryMovementsTable)
     .where(and(
+      eq(inventoryMovementsTable.referenceId, params.id),
       inArray(inventoryMovementsTable.type, ["exit", "entry"]),
-      or(
-        eq(inventoryMovementsTable.referenceId, params.id),
-        like(inventoryMovementsTable.reason, `%reenvio ${params.id}%`),
-      ),
     ));
 
   // Net debit = exits related to this reshipment - manual estorno entries related to this reshipment.
@@ -243,7 +240,9 @@ export async function ensureReshipmentSendDebit(params: {
       netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) + Math.abs(qty));
       continue;
     }
-    if (row.type === "entry" && qty > 0) {
+    const isEstornoEntry = row.type === "entry" && qty > 0
+      && likeMatchesEstornoReason(String(row.reason || ""));
+    if (isEstornoEntry) {
       netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) - qty);
     }
   }
@@ -281,6 +280,11 @@ export async function ensureReshipmentSendDebit(params: {
   }
 
   return { ok: true, missingProducts: [], debitedProducts };
+}
+
+function likeMatchesEstornoReason(reason: string): boolean {
+  const normalized = String(reason || "").trim().toLowerCase();
+  return normalized.startsWith("estorno de baixa do reenvio");
 }
 
 export async function createOrRefreshReshipment(params: {

@@ -72,6 +72,8 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
     const clientName = String(req.body?.clientName ?? "").trim();
     const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const reason = String(req.body?.reason ?? "").trim();
+    const estornoMatch = reason.match(/^estorno de baixa do reenvio\s+([a-zA-Z0-9_\-]+)/i);
+    const estornoReferenceId = estornoMatch?.[1] ? String(estornoMatch[1]).trim() : null;
 
     if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Produto e quantidade devem ser válidos." });
@@ -117,6 +119,7 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
       productId,
       quantity: signedQuantity,
       reason: resolvedReason,
+      referenceId: movementType === "entry" && estornoReferenceId ? estornoReferenceId : undefined,
       entrySource: movementType === "entry" ? (entrySource === "customer_return" ? "customer_return" : "purchase") : undefined,
       clientName: movementType === "entry" && entrySource === "customer_return" ? clientName || null : null,
       trackingCode: movementType === "entry" && entrySource === "customer_return" ? trackingCode || null : null,
