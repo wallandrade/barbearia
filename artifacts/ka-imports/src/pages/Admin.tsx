@@ -294,12 +294,13 @@ function supplierOrderBlock(order: any, sequence: number): string {
   const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
   const firstOrderDate = formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-";
   const reshipmentReason = String(order?.reshipment?.ticketDescription || "").trim();
+  const reshipmentReasonText = reshipmentReason || "Nao informado no chamado";
 
   return [
     prioridadeLine,
     isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
     isReshipment ? `Data do pedido original: ${firstOrderDate}` : "",
-    isReshipment && reshipmentReason ? `Motivo do reenvio: ${reshipmentReason}` : "",
+    isReshipment ? `Motivo do reenvio: ${reshipmentReasonText}` : "",
     isReshipment ? "" : "",
     `Pedido numero: ${sequence}`,
     "",
