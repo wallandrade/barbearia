@@ -6134,6 +6134,7 @@ function InventoryPanel({
   onRefresh,
   onCreateEntry,
   onCreateManualReshipment,
+  onResolvePendingReshipment,
 }: {
   loading: boolean;
   products: Array<{ id: string; name: string; image?: string | null }>;
