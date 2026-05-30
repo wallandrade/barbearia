@@ -2897,7 +2897,12 @@ export default function Admin() {
   const paidOrders      = orders.filter((o) => o.status === "paid" || o.status === "completed");
   const revenue         = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
-  const ordersParaEnviar = orders.filter((o) => (o.status === "paid" || o.status === "completed") && !o.enviado);
+  const ordersParaEnviar = orders.filter((o) => {
+    const isActiveReshipment = Boolean((o as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
+      && (o as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
+    const isPendingNormalShipment = (o.status === "paid" || o.status === "completed") && !o.enviado;
+    return isPendingNormalShipment || isActiveReshipment;
+  });
 
   const copyShoppingList = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     event?.preventDefault();
