@@ -182,7 +182,13 @@ export async function ensureReshipmentReservation(params: {
 export async function ensureReshipmentSendDebit(params: {
   id: string;
   source: ReshipmentSource;
-}): Promise<{ ok: boolean; notFound?: boolean; invalidProducts?: boolean; missingProducts: string[] }> {
+}): Promise<{
+  ok: boolean;
+  notFound?: boolean;
+  invalidProducts?: boolean;
+  missingProducts: string[];
+  debitedProducts: Array<{ productId: string; productName: string; quantity: number }>;
+}> {
   const rows = params.source === "support"
     ? await db
         .select({
@@ -200,14 +206,14 @@ export async function ensureReshipmentSendDebit(params: {
         .limit(1);
 
   if (!rows[0]) {
-    return { ok: false, notFound: true, missingProducts: [] };
+    return { ok: false, notFound: true, missingProducts: [], debitedProducts: [] };
   }
 
   const items = params.source === "support"
     ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
     : toProducts(rows[0].productsSnapshot);
   if (items.length === 0) {
-    return { ok: false, invalidProducts: true, missingProducts: [] };
+    return { ok: false, invalidProducts: true, missingProducts: [], debitedProducts: [] };
   }
 
   const movementRows = await db
@@ -235,7 +241,7 @@ export async function ensureReshipmentSendDebit(params: {
     .filter((item) => item.quantity > 0);
 
   if (remainingItems.length === 0) {
-    return { ok: true, missingProducts: [] };
+    return { ok: true, missingProducts: [], debitedProducts: [] };
   }
 
   const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
@@ -245,9 +251,10 @@ export async function ensureReshipmentSendDebit(params: {
     .map((item) => item.name);
 
   if (missingProducts.length > 0) {
-    return { ok: false, missingProducts };
+    return { ok: false, missingProducts, debitedProducts: [] };
   }
 
+  const debitedProducts: Array<{ productId: string; productName: string; quantity: number }> = [];
   for (const item of remainingItems) {
     await registerInventoryEntry({
       productId: item.id,
@@ -255,9 +262,10 @@ export async function ensureReshipmentSendDebit(params: {
       reason: `Saída por envio do reenvio ${params.id}`,
       referenceId: params.id,
     });
+    debitedProducts.push({ productId: item.id, productName: item.name, quantity: item.quantity });
   }
 
-  return { ok: true, missingProducts: [] };
+  return { ok: true, missingProducts: [], debitedProducts };
 }
 
 export async function createOrRefreshReshipment(params: {

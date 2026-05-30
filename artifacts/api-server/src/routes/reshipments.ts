@@ -253,6 +253,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         return;
       }
 
+      let debitSummary: Array<{ productId: string; productName: string; quantity: number }> = [];
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
         const reservation = status === "reenvio_enviado"
           ? await ensureReshipmentSendDebit({ id, source: "support" })
@@ -273,6 +274,10 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
           });
           return;
         }
+        if (status === "reenvio_enviado" && "debitedProducts" in reservation) {
+          debitSummary = reservation.debitedProducts || [];
+          console.info("[ReshipmentSendDebit] support", { id, requestedStatus: status, debitedProducts: debitSummary });
+        }
       }
 
       const nextStatus = rows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
@@ -286,7 +291,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       broadcastNotification({ type: "reshipment_updated", data: { id, status: nextStatus } });
-      res.json({ ok: true, id, status: nextStatus, requestedStatus: status });
+      res.json({ ok: true, id, status: nextStatus, requestedStatus: status, debitedProducts: debitSummary });
       return;
     } else {
       const manualRows = await db
@@ -306,6 +311,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
         return;
       }
 
+      let debitSummary: Array<{ productId: string; productName: string; quantity: number }> = [];
       if (status === "reenvio_pronto_para_envio" || status === "reenvio_enviado") {
         const reservation = status === "reenvio_enviado"
           ? await ensureReshipmentSendDebit({ id, source: "manual" })
@@ -326,6 +332,10 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
           });
           return;
         }
+        if (status === "reenvio_enviado" && "debitedProducts" in reservation) {
+          debitSummary = reservation.debitedProducts || [];
+          console.info("[ReshipmentSendDebit] manual", { id, requestedStatus: status, debitedProducts: debitSummary });
+        }
       }
 
       const nextStatus = manualRows[0].currentStatus === "reenvio_aguardando_estoque" && status === "reenvio_enviado"
@@ -339,7 +349,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
       }
 
       broadcastNotification({ type: "reshipment_updated", data: { id, status: nextStatus } });
-      res.json({ ok: true, id, status: nextStatus, requestedStatus: status });
+      res.json({ ok: true, id, status: nextStatus, requestedStatus: status, debitedProducts: debitSummary });
       return;
     }
   } catch (err) {
