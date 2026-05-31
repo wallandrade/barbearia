@@ -194,6 +194,9 @@ export function orderToFullText(order: any): string {
     ? subtotalCandidates[0]
     : Math.max(0, total - frete);
 
+  const insuranceAmount = Math.max(0, Number(order?.insuranceAmount) || 0);
+  const hasInsurance = Boolean(order?.includeInsurance) || insuranceAmount > 0;
+
   const paymentMethodRaw = String(order?.paymentMethod || "").toLowerCase();
   const paymentLabel = paymentMethodRaw === "card_simulation"
     ? "Cartão"
@@ -234,6 +237,7 @@ export function orderToFullText(order: any): string {
     productsText,
     `Subtotal: ${formatCurrency(subtotal)}`,
     `Frete: ${formatCurrency(frete)}`,
+    hasInsurance ? `Seguro: Sim (${formatCurrency(insuranceAmount)})` : "",
     `Total: ${formatCurrency(total)}`,
     `Status: ${order?.status || "-"}`,
     `Pagamento: ${paymentLabel}`,
