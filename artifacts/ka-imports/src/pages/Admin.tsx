@@ -2360,7 +2360,7 @@ export default function Admin() {
     const intro = isCard
       ? `Olá *${firstName}*, tudo bem? 😊\n\nEstou dando continuidade ao seu pedido no *cartão*. Seguem os detalhes para confirmarmos:\n\n`
       : "";
-    const msg = intro + orderToText(order);
+    const msg = intro + orderToFullText(order);
     const p = order.clientPhone.replace(/\D/g, "");
     window.open(`https://wa.me/${p.startsWith("55") ? p : "55" + p}?text=${encodeURIComponent(msg)}`, "_blank");
   };
