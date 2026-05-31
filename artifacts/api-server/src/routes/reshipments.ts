@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { db, inventoryBalancesTable, manualReshipmentsTable, ordersTable, reshipmentsTable } from "@workspace/db";
+import crypto from "crypto";
+import { and, desc, eq } from "drizzle-orm";
+import { db, inventoryBalancesTable, manualReshipmentsTable, manualReturnItemsTable, ordersTable, reshipmentsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import {
   createManualReshipment,
@@ -70,15 +71,31 @@ async function isOrderInScope(orderId: string, scope: { hasGlobalAccess: boolean
 
 router.get("/admin/inventory/overview", requirePrimaryAdmin, async (_req, res) => {
   try {
-    const [inventory, allReshipments] = await Promise.all([
+    const [inventory, manualReturnItems] = await Promise.all([
       getInventoryOverview(),
-      listReshipments("all"),
+      db
+        .select()
+        .from(manualReturnItemsTable)
+        .where(eq(manualReturnItemsTable.status, "pending"))
+        .orderBy(desc(manualReturnItemsTable.createdAt)),
     ]);
 
-    // Keep return-handling card visible even after send action.
-    const pendingReshipments = allReshipments.filter((item) =>
-      item.status === "reenvio_aguardando_estoque"
-    );
+    const pendingReshipments = manualReturnItems.map((item) => ({
+      id: item.id,
+      source: "manual_return",
+      orderId: null,
+      supportTicketId: null,
+      status: "manual_return_pending",
+      clientName: item.clientName,
+      clientPhone: null,
+      clientDocument: null,
+      products: [{ id: item.productId, name: item.productName, quantity: Number(item.quantity) || 1 }],
+      resolvedReason: item.returningOrder || null,
+      notes: item.returningOrder || null,
+      authorizedAt: item.createdAt?.toISOString() || null,
+      sentAt: null,
+      createdAt: item.createdAt?.toISOString() || null,
+    }));
 
     res.json({
       balances: inventory.balances,
@@ -88,6 +105,72 @@ router.get("/admin/inventory/overview", requirePrimaryAdmin, async (_req, res) =
   } catch (err) {
     console.error("Inventory overview error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao carregar estoque." });
+  }
+});
+
+router.post("/admin/manual-return-items", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const clientName = String(req.body?.clientName ?? "").trim();
+    const returningOrder = String(req.body?.returningOrder ?? "").trim();
+    const productId = String(req.body?.productId ?? "").trim();
+    const productName = String(req.body?.productName ?? "").trim();
+    const quantity = Number(req.body?.quantity || 0);
+
+    if (!clientName || !productId || !productName || !Number.isFinite(quantity) || quantity <= 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Preencha cliente, produto e quantidade válida." });
+      return;
+    }
+
+    const id = crypto.randomBytes(8).toString("hex");
+    await db.insert(manualReturnItemsTable).values({
+      id,
+      status: "pending",
+      clientName,
+      returningOrder: returningOrder || null,
+      productId,
+      productName,
+      quantity,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    res.status(201).json({ ok: true, id });
+  } catch (err) {
+    console.error("Create manual return item error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao criar item de retorno manual." });
+  }
+});
+
+router.patch("/admin/manual-return-items/:id/status", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id ?? "").trim();
+    const status = String(req.body?.status ?? "").trim().toLowerCase();
+
+    if (!id || !["pending", "done"].includes(status)) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Status inválido para retorno manual." });
+      return;
+    }
+
+    const existing = await db
+      .select({ id: manualReturnItemsTable.id })
+      .from(manualReturnItemsTable)
+      .where(eq(manualReturnItemsTable.id, id))
+      .limit(1);
+
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Item de retorno manual não encontrado." });
+      return;
+    }
+
+    await db
+      .update(manualReturnItemsTable)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(manualReturnItemsTable.id, id));
+
+    res.json({ ok: true, id, status });
+  } catch (err) {
+    console.error("Update manual return item status error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar retorno manual." });
   }
 });
 

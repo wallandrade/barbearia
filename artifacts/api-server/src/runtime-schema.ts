@@ -589,6 +589,59 @@ async function ensureManualReshipmentsTable(databaseName: string): Promise<void>
   }
 }
 
+async function ensureManualReturnItemsTable(databaseName: string): Promise<void> {
+  if (!(await tableExists("manual_return_items", databaseName))) {
+    await pool.query(`
+      CREATE TABLE manual_return_items (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        client_name VARCHAR(255) NOT NULL,
+        returning_order VARCHAR(255) NULL,
+        product_id VARCHAR(255) NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        quantity INT NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY manual_return_items_status_idx (status),
+        KEY manual_return_items_created_at_idx (created_at)
+      )
+    `);
+    return;
+  }
+
+  const definitions = [
+    { name: "status", sql: "ALTER TABLE manual_return_items ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'pending'" },
+    { name: "client_name", sql: "ALTER TABLE manual_return_items ADD COLUMN client_name VARCHAR(255) NOT NULL" },
+    { name: "returning_order", sql: "ALTER TABLE manual_return_items ADD COLUMN returning_order VARCHAR(255) NULL" },
+    { name: "product_id", sql: "ALTER TABLE manual_return_items ADD COLUMN product_id VARCHAR(255) NOT NULL" },
+    { name: "product_name", sql: "ALTER TABLE manual_return_items ADD COLUMN product_name VARCHAR(255) NOT NULL" },
+    { name: "quantity", sql: "ALTER TABLE manual_return_items ADD COLUMN quantity INT NOT NULL DEFAULT 1" },
+    { name: "created_at", sql: "ALTER TABLE manual_return_items ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+    { name: "updated_at", sql: "ALTER TABLE manual_return_items ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+  ];
+
+  for (const definition of definitions) {
+    if (!(await columnExists("manual_return_items", definition.name, databaseName))) {
+      await pool.query(definition.sql);
+    }
+  }
+
+  const indexes = [
+    { name: "manual_return_items_status_idx", sql: "ALTER TABLE manual_return_items ADD KEY manual_return_items_status_idx (status)" },
+    { name: "manual_return_items_created_at_idx", sql: "ALTER TABLE manual_return_items ADD KEY manual_return_items_created_at_idx (created_at)" },
+  ];
+
+  for (const index of indexes) {
+    if (!(await indexExists("manual_return_items", index.name, databaseName))) {
+      try {
+        await pool.query(index.sql);
+      } catch {
+        // Ignore index creation races in startup.
+      }
+    }
+  }
+}
+
 async function ensureProductCostHistoryTable(databaseName: string): Promise<void> {
   if (await tableExists("product_cost_history", databaseName)) return;
 
@@ -623,6 +676,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureReshipmentsTable(databaseName);
     await ensureInventoryTables(databaseName);
     await ensureManualReshipmentsTable(databaseName);
+    await ensureManualReturnItemsTable(databaseName);
     await ensureProductCostHistoryTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");

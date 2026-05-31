@@ -995,6 +995,7 @@ export default function Admin() {
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovementRecord[]>([]);
   const [pendingReshipments, setPendingReshipments] = useState<ReshipmentRecord[]>([]);
+  const [activeManualReturnItemId, setActiveManualReturnItemId] = useState<string | null>(null);
   const [inventoryEntryForm, setInventoryEntryForm] = useState({
     productId: "",
     quantity: "",
@@ -3803,6 +3804,16 @@ export default function Admin() {
                   toast.error(data?.message || "Erro ao registrar entrada de estoque.");
                   return;
                 }
+
+                if (movementType === "entry" && entrySource === "customer_return" && activeManualReturnItemId) {
+                  await fetch(`${BASE}/api/admin/manual-return-items/${activeManualReturnItemId}/status`, {
+                    method: "PATCH",
+                    headers: authHeaders(),
+                    body: JSON.stringify({ status: "done" }),
+                  });
+                  setActiveManualReturnItemId(null);
+                }
+
                 setInventoryEntryForm((prev) => ({ ...prev, productId: "", quantity: "", reason: "", clientName: "", clientPhone: "" }));
                 fetchInventoryOverview();
                 fetchOrders(true);
@@ -3826,60 +3837,43 @@ export default function Admin() {
             }}
             onCreateManualReshipment={createManualReshipment}
             onResolvePendingReshipment={async (item, registerStockEntry) => {
-              const reshipmentId = String(item.id || "").trim();
-              if (!reshipmentId) {
-                toast.error("Reenvio inválido.");
+              const manualReturnId = String(item.id || "").trim();
+              const firstProduct = item.products?.[0];
+              if (!manualReturnId || !firstProduct?.id) {
+                toast.error("Item de retorno manual inválido.");
                 return;
               }
 
               try {
                 if (registerStockEntry) {
-                  for (const product of item.products || []) {
-                    const productId = String(product?.id || "").trim();
-                    const quantity = Number(product?.quantity || 0);
-                    if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
-                      toast.error("Produto do reenvio inválido para entrada de estoque.");
-                      return;
-                    }
-
-                    const entryRes = await fetch(`${BASE}/api/admin/inventory/entries`, {
-                      method: "POST",
-                      headers: authHeaders(),
-                      body: JSON.stringify({
-                        productId,
-                        quantity,
-                        movementType: "entry",
-                        entrySource: "purchase",
-                        reason: `Entrada para liberar reenvio ${reshipmentId}`,
-                      }),
-                    });
-                    const entryData = await entryRes.json().catch(() => ({})) as { message?: string };
-                    if (!entryRes.ok) {
-                      toast.error(entryData?.message || "Erro ao registrar entrada para liberar reenvio.");
-                      return;
-                    }
+                  const reasonSuffix = String(item.notes || item.resolvedReason || "").trim();
+                  setInventoryEntryForm((prev) => ({
+                    ...prev,
+                    movementType: "entry",
+                    entrySource: "customer_return",
+                    productId: firstProduct.id,
+                    quantity: String(Number(firstProduct.quantity) || 1),
+                    clientName: String(item.clientName || ""),
+                    reason: reasonSuffix ? `Pedido voltando: ${reasonSuffix}` : prev.reason,
+                  }));
+                  setActiveManualReturnItemId(manualReturnId);
+                  toast.success("Dados preenchidos. Clique em Dar Entrada para confirmar.");
+                } else {
+                  const statusRes = await fetch(`${BASE}/api/admin/manual-return-items/${manualReturnId}/status`, {
+                    method: "PATCH",
+                    headers: authHeaders(),
+                    body: JSON.stringify({ status: "done" }),
+                  });
+                  const statusData = await statusRes.json().catch(() => ({})) as { message?: string };
+                  if (!statusRes.ok) {
+                    toast.error(statusData?.message || "Erro ao concluir retorno manual.");
+                    return;
                   }
+                  fetchInventoryOverview();
+                  toast.success("Retorno manual concluído sem entrada no estoque.");
                 }
-
-                const statusRes = await fetch(`${BASE}/api/admin/reshipments/${reshipmentId}/status`, {
-                  method: "PATCH",
-                  headers: authHeaders(),
-                  body: JSON.stringify({
-                    status: registerStockEntry ? "reenvio_pronto_para_envio" : "reenvio_resolvido_sem_entrada",
-                    skipStockValidation: !registerStockEntry,
-                  }),
-                });
-                const statusData = await statusRes.json().catch(() => ({})) as { message?: string };
-                if (!statusRes.ok) {
-                  toast.error(statusData?.message || "Erro ao liberar reenvio.");
-                  return;
-                }
-
-                fetchInventoryOverview();
-                fetchOrders(true);
-                toast.success(registerStockEntry ? "Entrada registrada e reenvio liberado para envio." : "Reenvio liberado para envio sem entrada no estoque.");
               } catch {
-                toast.error("Erro ao processar liberação do reenvio.");
+                toast.error("Erro ao processar item de retorno manual.");
               }
             }}
           />
@@ -6287,6 +6281,49 @@ function InventoryPanel({
     toast.success("Entrada manual preenchida. Clique em Dar Entrada para confirmar.");
   };
 
+  const onAddManualReturnToQueue = async () => {
+    const clientName = String(manualReturnDraft.clientName || "").trim();
+    const returningOrder = String(manualReturnDraft.returningOrder || "").trim();
+    const productName = String(manualReturnDraft.productName || "").trim();
+    const quantity = Number(manualReturnDraft.quantity || 0);
+
+    if (!clientName || !productName || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error("Preencha nome do cliente, produto e quantidade válida para adicionar na fila.");
+      return;
+    }
+
+    const selected = products.find((p) => p.name.trim().toLowerCase() === productName.toLowerCase());
+    if (!selected) {
+      toast.error("Produto voltando inválido. Selecione um produto da lista.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BASE}/api/admin/manual-return-items`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          clientName,
+          returningOrder,
+          productId: selected.id,
+          productName: selected.name,
+          quantity,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string };
+      if (!res.ok) {
+        toast.error(data?.message || "Erro ao adicionar retorno manual na fila.");
+        return;
+      }
+
+      setManualReturnDraft((prev) => ({ ...prev, clientName: "", returningOrder: "", productName: "", quantity: "1" }));
+      onRefresh();
+      toast.success("Retorno manual adicionado na fila.");
+    } catch {
+      toast.error("Erro ao adicionar retorno manual na fila.");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4">
@@ -6534,27 +6571,33 @@ function InventoryPanel({
                 ))}
               </datalist>
             </div>
-            <div className="mt-2 flex justify-end">
+            <div className="mt-2 flex justify-end gap-2">
+              <Button size="sm" variant="outline" className="h-8" onClick={onAddManualReturnToQueue}>
+                Adicionar na fila
+              </Button>
               <Button size="sm" className="h-8" onClick={onFillManualReturnEntry}>
                 Preencher entrada manual
               </Button>
             </div>
           </div>
 
-          <p className="text-sm font-semibold mb-3">Reenvios aguardando produto</p>
+          <p className="text-sm font-semibold mb-3">Produtos voltando (fila manual)</p>
           {loading ? (
-            <p className="text-sm text-muted-foreground">Carregando reenvios...</p>
+            <p className="text-sm text-muted-foreground">Carregando fila manual...</p>
           ) : pendingReshipments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum reenvio aguardando estoque.</p>
+            <p className="text-sm text-muted-foreground">Nenhum produto voltando na fila manual.</p>
           ) : (
             <div className="space-y-2 max-h-72 overflow-auto pr-1">
               {pendingReshipments.map((item) => (
                 <div key={item.id} className="rounded-lg border border-red-200 bg-red-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-red-800 truncate">
-                      {item.clientName} · {item.source === "manual" ? "Manual" : `Pedido ${item.orderId || "-"}`}
+                      {item.clientName}
                     </p>
                   </div>
+                  {item.notes && (
+                    <p className="text-xs text-red-700 mt-1">Pedido voltando: {item.notes}</p>
+                  )}
                   <p className="text-xs text-red-700 mt-1">
                     {item.products.map((p) => `${p.quantity}x ${p.name}`).join(" · ")}
                   </p>
@@ -6588,7 +6631,7 @@ function InventoryPanel({
                         }
                       }}
                     >
-                      {reshipmentActionLoading[item.id] ? "Processando..." : "Produto chegou (sem entrada)"}
+                      {reshipmentActionLoading[item.id] ? "Processando..." : "Concluir (sem entrada)"}
                     </Button>
                   </div>
                 </div>
