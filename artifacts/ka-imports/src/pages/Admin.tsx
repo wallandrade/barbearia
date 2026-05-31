@@ -6467,7 +6467,7 @@ function InventoryPanel({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[430px]">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[470px]">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
             <div className="flex items-center gap-2">
@@ -6535,7 +6535,7 @@ function InventoryPanel({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[430px]">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[470px]">
           <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
             <p className="text-sm font-semibold text-blue-900">Entrada manual de produto voltando</p>
             <p className="text-xs text-blue-800 mt-1">Digite manualmente e preencha a entrada acima com 1 clique.</p>
