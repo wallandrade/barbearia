@@ -6209,6 +6209,7 @@ function InventoryPanel({
     clientName: "",
     returningOrder: "",
     productName: "",
+    quantity: "1",
   });
 
   useEffect(() => {
@@ -6255,9 +6256,10 @@ function InventoryPanel({
     const clientName = String(manualReturnDraft.clientName || "").trim();
     const returningOrder = String(manualReturnDraft.returningOrder || "").trim();
     const productName = String(manualReturnDraft.productName || "").trim();
+    const quantity = Number(manualReturnDraft.quantity || 0);
 
-    if (!clientName || !returningOrder || !productName) {
-      toast.error("Preencha nome do cliente, pedido voltando e produto voltando.");
+    if (!clientName || !returningOrder || !productName || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error("Preencha nome do cliente, pedido voltando, produto voltando e quantidade válida.");
       return;
     }
 
@@ -6273,7 +6275,7 @@ function InventoryPanel({
       movementType: "entry",
       entrySource: "customer_return",
       productId: selected.id,
-      quantity: prev.quantity && Number(prev.quantity) > 0 ? prev.quantity : "1",
+      quantity: String(quantity),
       clientName,
       reason: `Pedido voltando: ${returningOrder}`,
     }));
@@ -6513,6 +6515,14 @@ function InventoryPanel({
                 placeholder="Produto voltando"
                 value={manualReturnDraft.productName}
                 onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, productName: e.target.value }))}
+              />
+              <input
+                type="number"
+                min={1}
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Quantidade"
+                value={manualReturnDraft.quantity}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, quantity: e.target.value }))}
               />
               <datalist id="inventory-manual-return-products">
                 {products.map((p) => (
