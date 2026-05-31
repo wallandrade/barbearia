@@ -6467,7 +6467,7 @@ function InventoryPanel({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[430px]">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
             <div className="flex items-center gap-2">
@@ -6535,7 +6535,7 @@ function InventoryPanel({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[430px]">
           <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
             <p className="text-sm font-semibold text-blue-900">Entrada manual de produto voltando</p>
             <p className="text-xs text-blue-800 mt-1">Digite manualmente e preencha a entrada acima com 1 clique.</p>
@@ -6584,13 +6584,14 @@ function InventoryPanel({
           </div>
 
           <p className="text-sm font-semibold mb-3">Produtos voltando (fila manual)</p>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Carregando fila manual...</p>
-          ) : pendingReshipments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum produto voltando na fila manual.</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-auto pr-1">
-              {pendingReshipments.map((item) => (
+          <div className="flex-1 min-h-0">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Carregando fila manual...</p>
+            ) : pendingReshipments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum produto voltando na fila manual.</p>
+            ) : (
+              <div className="space-y-2 h-full overflow-auto pr-1">
+                {pendingReshipments.map((item) => (
                 <div key={item.id} className="rounded-lg border border-red-200 bg-red-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-red-800 truncate">
@@ -6637,9 +6638,10 @@ function InventoryPanel({
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
