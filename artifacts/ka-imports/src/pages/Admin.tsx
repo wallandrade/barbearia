@@ -6467,7 +6467,7 @@ function InventoryPanel({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
             <div className="flex items-center gap-2">
@@ -6501,36 +6501,38 @@ function InventoryPanel({
             value={balanceSearch}
             onChange={(e) => setBalanceSearch(e.target.value)}
           />
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Carregando estoque...</p>
-          ) : balances.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum saldo registrado ainda.</p>
-          ) : filteredBalances.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum produto encontrado para essa busca.</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-auto pr-1">
-              {filteredBalances.map((row) => {
-                const prod = products.find((p) => p.id === row.productId);
-                return (
-                  <div key={row.productId} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {prod?.image ? (
-                        <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
-                      ) : (
-                        <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
-                          <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      )}
-                      <span className="text-sm truncate">{row.productName}</span>
+          <div className="flex-1 min-h-0">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Carregando estoque...</p>
+            ) : balances.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum saldo registrado ainda.</p>
+            ) : filteredBalances.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum produto encontrado para essa busca.</p>
+            ) : (
+              <div className="space-y-2 h-full overflow-auto pr-1">
+                {filteredBalances.map((row) => {
+                  const prod = products.find((p) => p.id === row.productId);
+                  return (
+                    <div key={row.productId} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {prod?.image ? (
+                          <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
+                        ) : (
+                          <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
+                            <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <span className="text-sm truncate">{row.productName}</span>
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+                        {row.quantity} un
+                      </span>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
-                      {row.quantity} un
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-4">
