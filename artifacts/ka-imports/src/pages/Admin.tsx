@@ -6205,6 +6205,11 @@ function InventoryPanel({
   const [manualProductQuery, setManualProductQuery] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
   const [reshipmentActionLoading, setReshipmentActionLoading] = useState<Record<string, boolean>>({});
+  const [manualReturnDraft, setManualReturnDraft] = useState({
+    clientName: "",
+    returningOrder: "",
+    productName: "",
+  });
 
   useEffect(() => {
     if (!entryForm.productId) {
@@ -6245,6 +6250,36 @@ function InventoryPanel({
         return productName.includes(normalizedBalanceSearch);
       })
     : balances;
+
+  const onFillManualReturnEntry = () => {
+    const clientName = String(manualReturnDraft.clientName || "").trim();
+    const returningOrder = String(manualReturnDraft.returningOrder || "").trim();
+    const productName = String(manualReturnDraft.productName || "").trim();
+
+    if (!clientName || !returningOrder || !productName) {
+      toast.error("Preencha nome do cliente, pedido voltando e produto voltando.");
+      return;
+    }
+
+    const selected = products.find((p) => p.name.trim().toLowerCase() === productName.toLowerCase());
+    if (!selected) {
+      toast.error("Produto voltando inválido. Selecione um produto da lista.");
+      return;
+    }
+
+    setEntryProductQuery(selected.name);
+    setEntryForm((prev) => ({
+      ...prev,
+      movementType: "entry",
+      entrySource: "customer_return",
+      productId: selected.id,
+      quantity: prev.quantity && Number(prev.quantity) > 0 ? prev.quantity : "1",
+      clientName,
+      reason: `Pedido voltando: ${returningOrder}`,
+    }));
+
+    toast.success("Entrada manual preenchida. Clique em Dar Entrada para confirmar.");
+  };
 
   return (
     <div className="space-y-4">
@@ -6316,6 +6351,7 @@ function InventoryPanel({
                   onChange={(e) => setEntryForm((prev) => ({ ...prev, clientName: e.target.value }))}
                 />
                 <input
+                  className="h-10 rounded-lg border border-border px-3 text-sm"
                   placeholder="Telefone do cliente (opcional)"
                   value={entryForm.clientPhone}
                   onChange={(e) => setEntryForm((prev) => ({ ...prev, clientPhone: e.target.value }))}
@@ -6455,6 +6491,42 @@ function InventoryPanel({
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-4">
+          <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
+            <p className="text-sm font-semibold text-blue-900">Entrada manual de produto voltando</p>
+            <p className="text-xs text-blue-800 mt-1">Digite manualmente e preencha a entrada acima com 1 clique.</p>
+            <div className="mt-2 grid grid-cols-1 gap-2">
+              <input
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Nome cliente"
+                value={manualReturnDraft.clientName}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, clientName: e.target.value }))}
+              />
+              <input
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Pedido voltando"
+                value={manualReturnDraft.returningOrder}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, returningOrder: e.target.value }))}
+              />
+              <input
+                list="inventory-manual-return-products"
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Produto voltando"
+                value={manualReturnDraft.productName}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, productName: e.target.value }))}
+              />
+              <datalist id="inventory-manual-return-products">
+                {products.map((p) => (
+                  <option key={`manual-return-${p.id}`} value={p.name} />
+                ))}
+              </datalist>
+            </div>
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" className="h-8" onClick={onFillManualReturnEntry}>
+                Preencher entrada manual
+              </Button>
+            </div>
+          </div>
+
           <p className="text-sm font-semibold mb-3">Reenvios aguardando produto</p>
           {loading ? (
             <p className="text-sm text-muted-foreground">Carregando reenvios...</p>
