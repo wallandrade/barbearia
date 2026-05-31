@@ -6467,7 +6467,7 @@ function InventoryPanel({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col max-h-[430px]">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
             <div className="flex items-center gap-2">
@@ -6509,7 +6509,7 @@ function InventoryPanel({
             ) : filteredBalances.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum produto encontrado para essa busca.</p>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-auto pr-1">
+              <div className="space-y-2 h-full overflow-auto pr-1">
                 {filteredBalances.map((row) => {
                   const prod = products.find((p) => p.id === row.productId);
                   return (
