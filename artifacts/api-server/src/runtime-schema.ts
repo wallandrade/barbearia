@@ -125,6 +125,10 @@ async function ensureProductsColumns(databaseName: string): Promise<void> {
       name: "bulk_discount_tiers",
       sql: "ALTER TABLE products ADD COLUMN bulk_discount_tiers MEDIUMTEXT NULL",
     },
+    {
+      name: "variant_groups",
+      sql: "ALTER TABLE products ADD COLUMN variant_groups MEDIUMTEXT NULL",
+    },
   ];
 
   for (const definition of definitions) {

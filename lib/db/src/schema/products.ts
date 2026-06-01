@@ -19,6 +19,7 @@ export const productsTable = mysqlTable("products", {
   promoEndsAt: datetime("promo_ends_at", { mode: 'date' }),
   bulkDiscountEnabled: boolean("bulk_discount_enabled").notNull().default(false),
   bulkDiscountTiers: mediumtext("bulk_discount_tiers"),
+  variantGroups: mediumtext("variant_groups"),
   image: mediumtext("image"),          // public URL in R2/CDN, with legacy base64 values still supported during migration
   brand: varchar("brand", { length: 255 }),
   isActive: boolean("is_active").notNull().default(true),

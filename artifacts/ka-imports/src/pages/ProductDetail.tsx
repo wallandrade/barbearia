@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -13,6 +13,16 @@ type BulkDiscountTier = {
   maxQty: number | null;
   unitPrice: number;
   label?: string | null;
+};
+
+type ProductVariantGroup = {
+  name: string;
+  options: string[];
+};
+
+type SelectedVariant = {
+  groupName: string;
+  option: string;
 };
 
 function parseBulkDiscountTiers(raw: unknown): BulkDiscountTier[] {
@@ -40,6 +50,23 @@ function parseBulkDiscountTiers(raw: unknown): BulkDiscountTier[] {
 
 function tierForQuantity(quantity: number, tiers: BulkDiscountTier[]): BulkDiscountTier | null {
   return tiers.find((tier) => quantity >= tier.minQty && (tier.maxQty == null || quantity <= tier.maxQty)) ?? null;
+}
+
+function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((group) => {
+      const item = group as Record<string, unknown>;
+      const name = String(item.name ?? "").trim();
+      const options = Array.isArray(item.options)
+        ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
+        : [];
+
+      if (!name || options.length === 0) return null;
+      return { name, options };
+    })
+    .filter((group): group is ProductVariantGroup => Boolean(group));
 }
 
 function safeGetStorage(key: string): string {
@@ -121,6 +148,28 @@ export default function ProductDetail() {
       };
     });
   }, [product, bulkDiscountTiers, displayUnitPrice, isBulkDiscountEnabled]);
+  const variantGroups = useMemo(
+    () => parseVariantGroups((product as { variantGroups?: unknown } | null)?.variantGroups),
+    [product],
+  );
+  const [selectedVariantMap, setSelectedVariantMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setSelectedVariantMap({});
+  }, [product?.id]);
+
+  const selectedVariants = useMemo<SelectedVariant[]>(
+    () => variantGroups
+      .map((group) => {
+        const option = String(selectedVariantMap[group.name] || "").trim();
+        if (!option) return null;
+        return { groupName: group.name, option };
+      })
+      .filter((item): item is SelectedVariant => Boolean(item)),
+    [variantGroups, selectedVariantMap],
+  );
+
+  const hasRequiredVariants = variantGroups.length === 0 || selectedVariants.length === variantGroups.length;
   const isSoldOut = product ? isProductUnavailable(product) : false;
   const backHref = sellerSlug ? `/${sellerSlug}` : "/";
 
@@ -178,6 +227,27 @@ export default function ProductDetail() {
                 )}
               </div>
 
+              {variantGroups.length > 0 && (
+                <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+                  <p className="text-sm font-semibold text-foreground">Escolha as variantes</p>
+                  {variantGroups.map((group) => (
+                    <div key={group.name}>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{group.name}</label>
+                      <select
+                        value={selectedVariantMap[group.name] || ""}
+                        onChange={(event) => setSelectedVariantMap((prev) => ({ ...prev, [group.name]: event.target.value }))}
+                        className="w-full h-11 px-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm transition-colors"
+                      >
+                        <option value="">Selecione {group.name.toLowerCase()}...</option>
+                        {group.options.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {progressiveOptions.length > 0 ? (
                 <div className="space-y-3">
                   {progressiveOptions.map((option) => (
@@ -208,13 +278,21 @@ export default function ProductDetail() {
                       <Button
                         size="lg"
                         className="w-full text-base"
-                        disabled={isSoldOut}
+                        disabled={isSoldOut || !hasRequiredVariants}
                         onClick={() => {
                           if (isSoldOut) {
                             toast.error("Este produto está esgotado e não pode ser adicionado.");
                             return;
                           }
-                          addItem(product, { quantity: option.quantity, unitPrice: option.unitPrice });
+                          if (!hasRequiredVariants) {
+                            toast.error("Selecione todas as variantes para continuar.");
+                            return;
+                          }
+                          addItem(product, {
+                            quantity: option.quantity,
+                            unitPrice: option.unitPrice,
+                            selectedVariants,
+                          });
                           toast.success(`${option.quantityLabel} adicionado ao carrinho!`);
                         }}
                       >
@@ -228,13 +306,17 @@ export default function ProductDetail() {
                 <Button
                   size="lg"
                   className="w-full text-base"
-                  disabled={isSoldOut}
+                  disabled={isSoldOut || !hasRequiredVariants}
                   onClick={() => {
                     if (isSoldOut) {
                       toast.error("Este produto está esgotado e não pode ser adicionado.");
                       return;
                     }
-                    addItem(product);
+                    if (!hasRequiredVariants) {
+                      toast.error("Selecione todas as variantes para continuar.");
+                      return;
+                    }
+                    addItem(product, { selectedVariants });
                     toast.success("Produto adicionado ao carrinho!");
                   }}
                 >

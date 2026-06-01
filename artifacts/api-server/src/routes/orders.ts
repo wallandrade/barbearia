@@ -240,7 +240,27 @@ type OrderProductInput = {
   quantity: number;
   price: number;
   isBump?: boolean;
+  selectedVariants?: Array<{ groupName?: string; option?: string }>;
+  variantLabel?: string;
 };
+
+function normalizeOrderItemVariants(raw: unknown): Array<{ groupName: string; option: string }> {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      const value = item as Record<string, unknown>;
+      const groupName = String(value.groupName ?? "").trim();
+      const option = String(value.option ?? "").trim();
+      if (!groupName || !option) return null;
+      return { groupName, option };
+    })
+    .filter((item): item is { groupName: string; option: string } => Boolean(item));
+}
+
+function buildVariantLabel(variants: Array<{ groupName: string; option: string }>): string {
+  return variants.map((item) => `${item.groupName}: ${item.option}`).join(" / ");
+}
 
 type TrackingParseResult = {
   rawText: string;
@@ -1079,6 +1099,12 @@ router.post("/orders", async (req, res) => {
         const sentUnitPrice = Number(item.price) || 0;
         const isBump = item.isBump === true;
         const serverUnitPrice = isBump ? sentUnitPrice : resolveUnitPriceForQuantity(current, quantity);
+        const selectedVariants = normalizeOrderItemVariants(item.selectedVariants);
+        const variantLabel = String(item.variantLabel || "").trim() || buildVariantLabel(selectedVariants);
+        const rawName = String(item.name || current.name || "Produto");
+        const productName = variantLabel && !rawName.includes(variantLabel)
+          ? `${rawName} - ${variantLabel}`
+          : rawName;
 
         if (!isBump && Math.abs(sentUnitPrice - serverUnitPrice) > 0.001) {
           priceChanges.push({
@@ -1091,13 +1117,23 @@ router.post("/orders", async (req, res) => {
 
         return {
           id: productId,
-          name: String(item.name || current.name || "Produto"),
+          name: productName,
           quantity,
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
+          selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
+          variantLabel: variantLabel || undefined,
         };
       })
-      .filter((item): item is { id: string; name: string; quantity: number; price: number; costPrice: number } => Boolean(item));
+      .filter((item): item is {
+        id: string;
+        name: string;
+        quantity: number;
+        price: number;
+        costPrice: number;
+        selectedVariants?: Array<{ groupName: string; option: string }>;
+        variantLabel?: string;
+      } => Boolean(item));
 
     if (unavailableProducts.length > 0) {
       res.status(400).json({

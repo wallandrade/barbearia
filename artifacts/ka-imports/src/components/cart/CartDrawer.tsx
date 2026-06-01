@@ -94,6 +94,9 @@ export function CartDrawer() {
                         <div className="flex justify-between items-start gap-2">
                           <div className="flex-1">
                             <h4 className="font-semibold text-foreground leading-tight line-clamp-2">{item.name}</h4>
+                            {Boolean((item as { variantLabel?: string }).variantLabel) && (
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{(item as { variantLabel?: string }).variantLabel}</p>
+                            )}
                             {bumpItem && (
                               <span className="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold mt-0.5">
                                 🏷️ Desconto aplicado no checkout

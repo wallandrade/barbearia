@@ -9,6 +9,16 @@ type BulkDiscountTier = {
   label?: string | null;
 };
 
+type ProductVariantGroup = {
+  name: string;
+  options: string[];
+};
+
+type SelectedVariant = {
+  groupName: string;
+  option: string;
+};
+
 type ProductAvailability = Product & {
   isSoldOut?: boolean;
   isActive?: boolean;
@@ -28,11 +38,50 @@ type CartItemExtended = CartItem & {
   regularPrice: number;
   bulkDiscountEnabled?: boolean;
   bulkDiscountTiers?: BulkDiscountTier[];
+  selectedVariants?: SelectedVariant[];
+  variantLabel?: string;
   isBump?: boolean;
   bumpForProductId?: string;
   bumpOfferId?: string;
   bumpProductId?: string;
 };
+
+function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((group) => {
+      const item = group as Record<string, unknown>;
+      const name = String(item.name ?? "").trim();
+      const options = Array.isArray(item.options)
+        ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
+        : [];
+
+      if (!name || options.length === 0) return null;
+      return { name, options };
+    })
+    .filter((group): group is ProductVariantGroup => Boolean(group));
+}
+
+function normalizeSelectedVariants(
+  groups: ProductVariantGroup[],
+  raw: Array<{ groupName?: string; option?: string }> | undefined,
+): SelectedVariant[] {
+  if (!Array.isArray(raw) || groups.length === 0) return [];
+
+  return groups
+    .map((group) => {
+      const picked = raw.find((item) => String(item.groupName || "").trim() === group.name);
+      const option = String(picked?.option || "").trim();
+      if (!option || !group.options.includes(option)) return null;
+      return { groupName: group.name, option };
+    })
+    .filter((item): item is SelectedVariant => Boolean(item));
+}
+
+function buildVariantLabel(selectedVariants: SelectedVariant[]): string {
+  return selectedVariants.map((item) => `${item.groupName}: ${item.option}`).join(" / ");
+}
 
 function getBaseUnitPrice(product: Product): number {
   const bulkEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
@@ -78,7 +127,10 @@ interface CartState {
   items: CartItemExtended[];
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
-  addItem: (product: Product, options?: { quantity?: number; unitPrice?: number }) => void;
+  addItem: (
+    product: Product,
+    options?: { quantity?: number; unitPrice?: number; selectedVariants?: Array<{ groupName?: string; option?: string }> },
+  ) => void;
   addBumpItem: (
     bumpOfferId: string,
     anchorProductId: string,
@@ -142,6 +194,13 @@ export const useCart = create<CartState>()(
           }
 
           const addQuantity = Math.max(1, Number(options?.quantity ?? 1) || 1);
+          const variantGroups = parseVariantGroups((product as Product & { variantGroups?: unknown }).variantGroups);
+          const selectedVariants = normalizeSelectedVariants(variantGroups, options?.selectedVariants);
+          if (variantGroups.length > 0 && selectedVariants.length !== variantGroups.length) {
+            return state;
+          }
+          const variantLabel = buildVariantLabel(selectedVariants);
+          const displayName = variantLabel ? `${product.name} - ${variantLabel}` : product.name;
           const bulkDiscountEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
           const bulkDiscountTiers = bulkDiscountEnabled
             ? parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers)
@@ -160,11 +219,14 @@ export const useCart = create<CartState>()(
                 item.id === product.id
                   ? {
                     ...item,
+                    name: displayName,
                     quantity: nextQuantity,
                     price: nextPrice,
                     baseUnitPrice,
                     bulkDiscountEnabled,
                     bulkDiscountTiers: tiersForPrice,
+                    selectedVariants,
+                    variantLabel: variantLabel || undefined,
                   }
                   : item
               ),
@@ -179,7 +241,7 @@ export const useCart = create<CartState>()(
               ...state.items,
               {
                 id: product.id,
-                name: product.name,
+                name: displayName,
                 price: initialPrice,
                 baseUnitPrice,
                 regularPrice,
@@ -187,6 +249,8 @@ export const useCart = create<CartState>()(
                 image: product.image,
                 bulkDiscountEnabled,
                 bulkDiscountTiers,
+                selectedVariants,
+                variantLabel: variantLabel || undefined,
               } as CartItemExtended,
             ],
             isOpen: true,

@@ -6535,7 +6535,7 @@ function InventoryPanel({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[470px]">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[620px] overflow-hidden">
           <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
             <p className="text-sm font-semibold text-blue-900">Entrada manual de produto voltando</p>
             <p className="text-xs text-blue-800 mt-1">Digite manualmente e preencha a entrada acima com 1 clique.</p>
@@ -6590,7 +6590,7 @@ function InventoryPanel({
             ) : pendingReshipments.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum produto voltando na fila manual.</p>
             ) : (
-              <div className="space-y-2 h-full overflow-auto pr-1">
+              <div className="space-y-2 min-h-[260px] sm:min-h-[300px] max-h-[360px] overflow-auto pr-1">
                 {pendingReshipments.map((item) => (
                 <div key={item.id} className="rounded-lg border border-red-200 bg-red-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -10007,6 +10007,11 @@ function ProductsPanel({
     label?: string | null;
   };
 
+  type ProductVariantGroup = {
+    name: string;
+    options: string[];
+  };
+
   const normalizeBulkDiscountTiers = (raw: unknown): BulkDiscountTier[] => {
     if (!Array.isArray(raw)) return [];
     const tiers = raw
@@ -10056,6 +10061,25 @@ function ProductsPanel({
     const tier = currentTiers.find((t) => t.minQty === quantity && (quantity < 4 ? t.maxQty === quantity : t.maxQty === null));
     return tier ? Number(tier.unitPrice) : null;
   };
+
+  const normalizeVariantGroups = (raw: unknown): ProductVariantGroup[] => {
+    if (!Array.isArray(raw)) return [];
+
+    return raw
+      .map((group) => {
+        const item = group as Record<string, unknown>;
+        const name = String(item.name ?? "").trim();
+        const options = Array.isArray(item.options)
+          ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
+          : [];
+
+        if (!name || options.length === 0) return null;
+        return { name, options };
+      })
+      .filter((group): group is ProductVariantGroup => Boolean(group));
+  };
+
+  const currentVariantGroups = normalizeVariantGroups((productForm as any).variantGroups);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [expandedLinks, setExpandedLinks] = useState<string | null>(null);
@@ -10168,14 +10192,14 @@ function ProductsPanel({
   };
 
   const openCreate = () => {
-    setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [] } as any);
+    setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [], variantGroups: [] } as any);
     setNewCategoryInput("");
     setNewBrandInput("");
     setProductFormOpen(true);
   };
 
   const openEdit = (p: AdminProduct) => {
-    setProductForm({ ...(p as any), bulkDiscountTiers: normalizeBulkDiscountTiers((p as any).bulkDiscountTiers), _editing: true } as any);
+    setProductForm({ ...(p as any), bulkDiscountTiers: normalizeBulkDiscountTiers((p as any).bulkDiscountTiers), variantGroups: normalizeVariantGroups((p as any).variantGroups), _editing: true } as any);
     setNewCategoryInput("");
     setNewBrandInput("");
     setProductFormOpen(true);
@@ -10548,6 +10572,83 @@ function ProductsPanel({
                         );
                       })}
                     </div>
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block">Variantes do Produto</label>
+                        <p className="text-xs text-muted-foreground mt-1">Exemplo: Cor, Numeração, Tamanho.</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const next = [...currentVariantGroups, { name: "", options: [] }];
+                          setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-1" />Adicionar variante
+                      </Button>
+                    </div>
+
+                    {currentVariantGroups.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Sem variantes. O cliente compra sem seleção adicional.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {currentVariantGroups.map((group, groupIndex) => (
+                          <div key={`${group.name}-${groupIndex}`} className="rounded-xl border border-border bg-white p-3 space-y-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-6 gap-2">
+                              <div className="sm:col-span-2">
+                                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Nome da variante</label>
+                                <input
+                                  value={group.name}
+                                  onChange={(event) => {
+                                    const next = currentVariantGroups.map((item, index) => index === groupIndex
+                                      ? { ...item, name: event.target.value }
+                                      : item);
+                                    setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                  }}
+                                  placeholder="Ex: Cor"
+                                  className={inp2}
+                                />
+                              </div>
+                              <div className="sm:col-span-4">
+                                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Opções (separadas por vírgula)</label>
+                                <input
+                                  value={group.options.join(", ")}
+                                  onChange={(event) => {
+                                    const options = event.target.value
+                                      .split(",")
+                                      .map((value) => value.trim())
+                                      .filter(Boolean);
+                                    const next = currentVariantGroups.map((item, index) => index === groupIndex
+                                      ? { ...item, options }
+                                      : item);
+                                    setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                  }}
+                                  placeholder="Ex: Preta, Branca, Azul"
+                                  className={inp2}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="border-red-200 text-red-700 hover:bg-red-50"
+                                onClick={() => {
+                                  const next = currentVariantGroups.filter((_, index) => index !== groupIndex);
+                                  setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" />Remover
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Sort order */}

@@ -75,6 +75,27 @@ function pluralizeUnit(unit: string, qty: number): string {
   return map[unit] ?? unit + "s";
 }
 
+function normalizeSelectedVariants(raw: unknown): Array<{ groupName: string; option: string }> {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      const value = item as Record<string, unknown>;
+      const groupName = String(value.groupName ?? "").trim();
+      const option = String(value.option ?? "").trim();
+      if (!groupName || !option) return null;
+      return { groupName, option };
+    })
+    .filter((item): item is { groupName: string; option: string } => Boolean(item));
+}
+
+function resolveVariantLabel(item: Record<string, unknown>): string {
+  const explicit = String(item.variantLabel ?? "").trim();
+  if (explicit) return explicit;
+  const selected = normalizeSelectedVariants(item.selectedVariants);
+  return selected.map((variant) => `${variant.groupName}: ${variant.option}`).join(" / ");
+}
+
 function formatCEP(value: string) {
   const d = value.replace(/\D/g, "").slice(0, 8);
   if (d.length <= 5) return d;
@@ -780,6 +801,8 @@ export default function Checkout() {
         quantity: item.quantity,
         price: item.price,
         isBump: (item as { isBump?: boolean }).isBump === true,
+        selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
+        variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
       }));
 
       const affiliateCode = getStoredReferralCode();
@@ -850,7 +873,12 @@ export default function Checkout() {
               state:        data.state,
               cep:          data.cep,
             },
-            products:        items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
+            products:        items.map((i) => ({
+              name: i.name,
+              quantity: i.quantity,
+              price: i.price,
+              variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
+            })),
             shippingType:    selectedShipping?.name ?? "Frete",
             shippingCost,
             includeInsurance,
@@ -908,7 +936,12 @@ export default function Checkout() {
             state:        data.state,
             cep:          data.cep,
           },
-          products:        items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
+          products:        items.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: i.price,
+            variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
+          })),
           shippingType:    selectedShipping?.name ?? "Frete",
           shippingCost,
           includeInsurance,
@@ -983,6 +1016,8 @@ export default function Checkout() {
       quantity: i.quantity,
       price: (i as { regularPrice?: number }).regularPrice ?? i.price,
       isBump: (i as { isBump?: boolean }).isBump === true,
+      selectedVariants: normalizeSelectedVariants((i as Record<string, unknown>).selectedVariants),
+      variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
     }));
     const affiliateCode = getStoredReferralCode();
 
