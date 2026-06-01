@@ -6467,7 +6467,7 @@ function InventoryPanel({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[620px] overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[560px] overflow-hidden">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
             <div className="flex items-center gap-2">
@@ -6590,7 +6590,7 @@ function InventoryPanel({
             ) : pendingReshipments.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum produto voltando na fila manual.</p>
             ) : (
-              <div className="space-y-2 min-h-[260px] sm:min-h-[300px] max-h-[360px] overflow-auto pr-1">
+              <div className="space-y-2 min-h-[220px] sm:min-h-[250px] max-h-[300px] overflow-auto pr-1">
                 {pendingReshipments.map((item) => (
                 <div key={item.id} className="rounded-lg border border-red-200 bg-red-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
