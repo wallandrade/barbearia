@@ -6324,6 +6324,45 @@ function InventoryPanel({
     }
   };
 
+  const copyPendingReturnsAsText = async () => {
+    if (pendingReshipments.length === 0) {
+      toast.error("Sem itens na fila manual para copiar.");
+      return;
+    }
+
+    const body = pendingReshipments
+      .map((item, index) => {
+        const productsText = item.products
+          .map((product) => `- ${product.quantity}x ${product.name}`)
+          .join("\n");
+        const returningOrder = String(item.notes || "").trim();
+
+        return [
+          `#${index + 1}`,
+          `Cliente: ${item.clientName || "-"}`,
+          returningOrder ? `Pedido voltando: ${returningOrder}` : "",
+          "Produtos:",
+          productsText || "- Sem produtos",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n\n------------------------------\n\n");
+
+    const text = [
+      `FILA MANUAL - PRODUTOS VOLTANDO (${new Date().toLocaleDateString("pt-BR")})`,
+      "",
+      body,
+    ].join("\n");
+
+    try {
+      const mode = await copyText(text);
+      toast.success(mode === "manual" ? "Texto aberto para cópia manual." : "Fila manual copiada para texto.");
+    } catch {
+      toast.error("Não foi possível copiar a fila manual.");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4">
@@ -6583,7 +6622,18 @@ function InventoryPanel({
             </div>
           </div>
 
-          <p className="text-sm font-semibold mb-3">Produtos voltando (fila manual)</p>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Produtos voltando (fila manual)</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={copyPendingReturnsAsText}
+            >
+              Copiar TXT
+            </Button>
+          </div>
           <div className="flex-1 min-h-0">
             {loading ? (
               <p className="text-sm text-muted-foreground">Carregando fila manual...</p>
