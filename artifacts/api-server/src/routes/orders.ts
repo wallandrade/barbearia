@@ -1577,9 +1577,12 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
       if (!wasAlreadyPaid && existing[0]?.couponCode) {
         couponCodeToIncrement = existing[0].couponCode;
       }
-      // Record the paid amount (the current total at the time of payment confirmation)
-      if (!existing[0]?.paidAmount && existing[0]?.total) {
-        updates.paidAmount = existing[0].total;
+      // Manual paid/completed confirmation should reflect at least the current order total.
+      const currentTotal = Number(existing[0]?.total ?? 0);
+      const currentPaidAmount = Number(existing[0]?.paidAmount ?? 0);
+      const reconciledPaidAmount = Math.max(currentPaidAmount, currentTotal);
+      if (reconciledPaidAmount > 0) {
+        updates.paidAmount = String(reconciledPaidAmount);
       }
     }
 
@@ -1662,11 +1665,13 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
     }
     if (!urls.includes(proofData)) urls.push(proofData);
 
-    // Set paidAmount to current total if not already recorded
-    const proofPaidAmount = existing[0]?.paidAmount ?? existing[0]?.total ?? null;
+    // Proof upload means payment was confirmed; reconcile paidAmount with at least the current total.
+    const proofCurrentTotal = Number(existing[0]?.total ?? 0);
+    const proofCurrentPaid = Number(existing[0]?.paidAmount ?? 0);
+    const proofPaidAmount = Math.max(proofCurrentPaid, proofCurrentTotal);
 
     await db.update(ordersTable)
-      .set({ proofUrl: proofData, proofUrls: JSON.stringify(urls), status: "completed", paidAmount: proofPaidAmount, updatedAt: new Date() })
+      .set({ proofUrl: proofData, proofUrls: JSON.stringify(urls), status: "completed", paidAmount: String(proofPaidAmount), updatedAt: new Date() })
       .where(buildAdminOrderWhere(id, adminScope));
 
     await ensureOrderCommission(id);
@@ -1689,8 +1694,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { products: newProducts, address } = req.body as {
+    const { products: newProducts, address, discountAmount } = req.body as {
       products: Array<{ id: string; name: string; quantity: number; price: number }>;
+      discountAmount?: number;
       address?: {
         cep?: string | null;
         street?: string | null;
@@ -1738,7 +1744,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       return sum + product.quantity * product.price;
     }, 0);
     const computedShippingCost = Math.max(0, Number(current[0].shippingCost) || 0);
-    const computedDiscountAmount = Math.max(0, Number(current[0].discountAmount) || 0);
+    const computedDiscountAmount = discountAmount !== undefined
+      ? Math.max(0, Number(discountAmount) || 0)
+      : Math.max(0, Number(current[0].discountAmount) || 0);
     const computedInsuranceAmount = current[0].includeInsurance ? Math.max(0, computedSubtotal) * 0.1 : 0;
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
@@ -1772,6 +1780,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       products: resolvedProducts,
       subtotal: String(computedSubtotal),
       insuranceAmount: String(computedInsuranceAmount),
+      discountAmount: String(computedDiscountAmount),
       total: String(total),
       status: newStatus,
       updatedAt: new Date(),

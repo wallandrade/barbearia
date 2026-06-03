@@ -144,24 +144,26 @@ async function handleCallback(body: GatewayCallback) {
               .where(eq(ordersTable.id, row.orderId))
               .limit(1);
 
-            if (parentOrder[0] && parentOrder[0].status === "awaiting_payment") {
+            if (parentOrder[0]) {
               const orderTotal = Number(parentOrder[0].total ?? 0);
               const alreadyPaid = Number(parentOrder[0].paidAmount ?? 0);
               const diffPaid = Number(row.amount ?? 0);
               const totalPaid = alreadyPaid + diffPaid;
 
               // If cumulative payments cover the order total, mark as paid
-              const newOrderStatus = totalPaid >= orderTotal - 0.01 ? "paid" : "awaiting_payment";
+              const newOrderStatus = totalPaid >= orderTotal - 0.01
+                ? (parentOrder[0].status === "completed" ? "completed" : "paid")
+                : "awaiting_payment";
               await db
                 .update(ordersTable)
                 .set({ status: newOrderStatus, paidAmount: String(totalPaid), updatedAt: new Date() })
                 .where(eq(ordersTable.id, row.orderId));
 
               broadcastNotification({
-                type: "order_paid",
+                type: newOrderStatus === "paid" || newOrderStatus === "completed" ? "order_paid" : "order_status_updated",
                 data: { id: row.orderId, status: newOrderStatus },
               });
-              if (newOrderStatus === "paid") {
+              if (newOrderStatus === "paid" || newOrderStatus === "completed") {
                 void sendOutboundWebhook("order_paid", {
                   id: row.orderId,
                   status: newOrderStatus,
@@ -169,7 +171,7 @@ async function handleCallback(body: GatewayCallback) {
                 });
               }
 
-              if (newOrderStatus === "paid") {
+              if (newOrderStatus === "paid" || newOrderStatus === "completed") {
                 await ensureOrderCommission(row.orderId);
               }
 
@@ -403,20 +405,25 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
             .where(eq(ordersTable.id, rows[0]!.orderId))
             .limit(1);
 
-          if (parentOrder[0] && parentOrder[0].status === "awaiting_payment") {
+          if (parentOrder[0]) {
             const orderTotal   = Number(parentOrder[0].total ?? 0);
             const alreadyPaid  = Number(parentOrder[0].paidAmount ?? 0);
             const diffPaid     = Number(rows[0]!.amount ?? 0);
             const totalPaid    = alreadyPaid + diffPaid;
-            const newOrderStatus = totalPaid >= orderTotal - 0.01 ? "paid" : "awaiting_payment";
+            const newOrderStatus = totalPaid >= orderTotal - 0.01
+              ? (parentOrder[0].status === "completed" ? "completed" : "paid")
+              : "awaiting_payment";
 
             await db
               .update(ordersTable)
               .set({ status: newOrderStatus, paidAmount: String(totalPaid), updatedAt: new Date() })
               .where(eq(ordersTable.id, rows[0]!.orderId));
 
-            broadcastNotification({ type: "order_paid", data: { id: rows[0]!.orderId, status: newOrderStatus } });
-            if (newOrderStatus === "paid") {
+            broadcastNotification({
+              type: newOrderStatus === "paid" || newOrderStatus === "completed" ? "order_paid" : "order_status_updated",
+              data: { id: rows[0]!.orderId, status: newOrderStatus },
+            });
+            if (newOrderStatus === "paid" || newOrderStatus === "completed") {
               void sendOutboundWebhook("order_paid", {
                 id: rows[0]!.orderId,
                 status: newOrderStatus,
@@ -425,7 +432,7 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
             }
             console.log(`[WEBHOOK] Order ${rows[0]!.orderId} auto-updated to ${newOrderStatus} after diff charge (direct URL)`);
 
-            if (newOrderStatus === "paid") {
+            if (newOrderStatus === "paid" || newOrderStatus === "completed") {
               await ensureOrderCommission(rows[0]!.orderId);
             }
           }
