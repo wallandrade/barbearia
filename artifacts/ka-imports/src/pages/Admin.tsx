@@ -3297,7 +3297,7 @@ export default function Admin() {
 
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
               <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recorrentes</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Clientes recorrentes (qtd)</p>
                 <p className="font-bold text-blue-700">
                   {financialSummary?.customerRecurrence?.recurringCustomers ?? 0}
                   <span className="text-xs font-semibold text-blue-600 ml-1">
@@ -3315,7 +3315,7 @@ export default function Admin() {
                 </p>
               </div>
               <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recorrência</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Taxa de recorrência (%)</p>
                 <p className="font-bold text-cyan-800">
                   {Number(financialSummary?.customerRecurrence?.recurringRate ?? 0).toFixed(1)}%
                 </p>
