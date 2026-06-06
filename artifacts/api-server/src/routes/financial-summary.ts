@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, productsTable, sellersTable, siteSettingsTable } from "@workspace/db";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, lte } from "drizzle-orm";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
 const router: IRouter = Router();
@@ -34,6 +34,29 @@ function parseOrderProducts(raw: unknown): Array<Record<string, unknown>> {
   return [];
 }
 
+function toUTC(dateStr: string, hour: string, minute: string, second: string) {
+  // Cria data no fuso BRT (UTC-3)
+  const local = new Date(`${dateStr}T${hour}:${minute}:${second}-03:00`);
+  return new Date(local.toISOString());
+}
+
+function normalizeCustomerKey(order: {
+  clientDocument?: string | null;
+  clientEmail?: string | null;
+  clientPhone?: string | null;
+}): string | null {
+  const doc = String(order.clientDocument || "").replace(/\D/g, "").trim();
+  if (doc) return `doc:${doc}`;
+
+  const email = String(order.clientEmail || "").trim().toLowerCase();
+  if (email) return `email:${email}`;
+
+  const phone = String(order.clientPhone || "").replace(/\D/g, "").trim();
+  if (phone) return `phone:${phone}`;
+
+  return null;
+}
+
 // GET /api/admin/financial-summary
 router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
   try {
@@ -49,12 +72,6 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
 
     const { dateFrom, dateTo, sellerCode } = req.query as Record<string, string>;
     const conditions = [];
-    // Função para converter data local (BRT) para UTC
-    function toUTC(dateStr: string, hour: string, minute: string, second: string) {
-      // Cria data no fuso BRT (UTC-3)
-      const local = new Date(`${dateStr}T${hour}:${minute}:${second}-03:00`);
-      return new Date(local.toISOString());
-    }
     if (dateFrom) conditions.push(gte(ordersTable.createdAt, toUTC(dateFrom, "00", "00", "00")));
     if (dateTo) conditions.push(lte(ordersTable.createdAt, toUTC(dateTo, "23", "59", "59")));
     // Considera apenas pedidos pagos
@@ -69,6 +86,57 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       conditions.push(eq(ordersTable.sellerCode, sellerCode));
     }
     const orders = await db.select().from(ordersTable).where(and(...conditions));
+
+    // Customer recurrence in selected period
+    const periodCustomerKeys = new Set<string>();
+    for (const order of orders) {
+      const key = normalizeCustomerKey(order);
+      if (key) periodCustomerKeys.add(key);
+    }
+
+    let recurringCustomers = 0;
+    let newCustomers = periodCustomerKeys.size;
+
+    if (dateFrom && periodCustomerKeys.size > 0) {
+      const historyConditions = [
+        inArray(ordersTable.status, ["paid", "completed"]),
+        lt(ordersTable.createdAt, toUTC(dateFrom, "00", "00", "00")),
+      ];
+
+      if (!adminScope.hasGlobalAccess) {
+        historyConditions.push(eq(ordersTable.sellerCode, adminScope.sellerCode!));
+      } else if (sellerCode) {
+        historyConditions.push(eq(ordersTable.sellerCode, sellerCode));
+      }
+
+      const historicalOrders = await db
+        .select({
+          clientDocument: ordersTable.clientDocument,
+          clientEmail: ordersTable.clientEmail,
+          clientPhone: ordersTable.clientPhone,
+        })
+        .from(ordersTable)
+        .where(and(...historyConditions));
+
+      const historyCustomerKeys = new Set<string>();
+      for (const order of historicalOrders) {
+        const key = normalizeCustomerKey(order);
+        if (key) historyCustomerKeys.add(key);
+      }
+
+      for (const key of periodCustomerKeys) {
+        if (historyCustomerKeys.has(key)) recurringCustomers += 1;
+      }
+      newCustomers = Math.max(0, periodCustomerKeys.size - recurringCustomers);
+    }
+
+    const totalUniqueCustomers = periodCustomerKeys.size;
+    const recurringRate = totalUniqueCustomers > 0
+      ? Number(((recurringCustomers / totalUniqueCustomers) * 100).toFixed(2))
+      : 0;
+    const newRate = totalUniqueCustomers > 0
+      ? Number(((newCustomers / totalUniqueCustomers) * 100).toFixed(2))
+      : 0;
 
     // Lê taxas do settings
     const fees = await getGatewayFees();
@@ -182,6 +250,13 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       totalCost,
       totalCommission,
       realNetRevenue,
+      customerRecurrence: {
+        totalUniqueCustomers,
+        recurringCustomers,
+        newCustomers,
+        recurringRate,
+        newRate,
+      },
       fees,
       ordersCount: orders.length,
     });

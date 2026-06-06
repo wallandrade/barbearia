@@ -979,6 +979,13 @@ export default function Admin() {
     totalWithdrawFees: number;
     netRevenue: number;
     realNetRevenue: number;
+    customerRecurrence?: {
+      totalUniqueCustomers: number;
+      recurringCustomers: number;
+      newCustomers: number;
+      recurringRate: number;
+      newRate: number;
+    };
   }>(null);
   const [financialSummaryLoading, setFinancialSummaryLoading] = React.useState(false);
   const [, setLocation] = useLocation();
@@ -3271,6 +3278,50 @@ export default function Admin() {
           </div>
 
           {/* Row 1.5 — Gateway Fees/Líquido Real removido, agora integrado ao card de Faturamento Líquido */}
+
+          {/* Row 1.6 — Clientes novos vs recorrentes */}
+          <div className="mt-3 rounded-xl border bg-gradient-to-br from-cyan-50 to-sky-100/60 border-cyan-200 p-5">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold text-cyan-700 uppercase tracking-wide">Clientes no Período</p>
+              <span className="text-xs text-cyan-700/80">
+                {financialSummary?.customerRecurrence?.totalUniqueCustomers ?? 0} únicos
+              </span>
+            </div>
+
+            <div className="h-3 w-full rounded-full bg-cyan-100 overflow-hidden border border-cyan-200/70">
+              <div
+                className="h-full bg-blue-500"
+                style={{ width: `${Math.min(100, Math.max(0, financialSummary?.customerRecurrence?.recurringRate ?? 0))}%` }}
+              />
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+              <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recorrentes</p>
+                <p className="font-bold text-blue-700">
+                  {financialSummary?.customerRecurrence?.recurringCustomers ?? 0}
+                  <span className="text-xs font-semibold text-blue-600 ml-1">
+                    ({Number(financialSummary?.customerRecurrence?.recurringRate ?? 0).toFixed(1)}%)
+                  </span>
+                </p>
+              </div>
+              <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Novos</p>
+                <p className="font-bold text-emerald-700">
+                  {financialSummary?.customerRecurrence?.newCustomers ?? 0}
+                  <span className="text-xs font-semibold text-emerald-600 ml-1">
+                    ({Number(financialSummary?.customerRecurrence?.newRate ?? 0).toFixed(1)}%)
+                  </span>
+                </p>
+              </div>
+              <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recorrência</p>
+                <p className="font-bold text-cyan-800">
+                  {Number(financialSummary?.customerRecurrence?.recurringRate ?? 0).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </div>
 
           {/* Row 2 — Cards individuais */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
