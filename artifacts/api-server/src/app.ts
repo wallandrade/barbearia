@@ -412,6 +412,20 @@ app.use((req, res, next) => {
     return;
   }
 
+  // Backward compatibility: allow checkout order creation from official origins
+  // even if an old frontend bundle misses x-checkout-token.
+  if (req.path === "/api/orders") {
+    const origin = req.get("origin");
+    const refererOrigin = getRefererOrigin(req.get("referer"));
+    const originAllowed = !origin || isOriginAllowed(origin);
+    const refererAllowed = !refererOrigin || isOriginAllowed(refererOrigin);
+
+    if (originAllowed && refererAllowed) {
+      next();
+      return;
+    }
+  }
+
   if (!verifyCheckoutTokenOrReject(req, res)) return;
 
   const rule = resolvePublicWriteRule(req.path);
