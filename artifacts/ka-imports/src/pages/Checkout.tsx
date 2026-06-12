@@ -1255,89 +1255,21 @@ export default function Checkout() {
     <CheckoutLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <button
-          try {
-            const order = await createOrderWithSecurity({
-              client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
-              address: {
-                cep: data.cep,
-                street: data.street,
-                number: data.number,
-                complement: data.complement || "",
-                neighborhood: data.neighborhood,
-                city: data.city,
-                state: data.state,
-              },
-              products: productsPayload,
-              shippingType: selectedShipping?.name ?? "Frete",
-              includeInsurance,
-              subtotal,
-              shippingCost,
-              insuranceAmount,
-              total,
-              paymentMethod: "whatsapp_pix",
-              sellerCode,
-              affiliateCode: affiliateCode || undefined,
-              couponCode: appliedCoupon?.code,
-              discountAmount: discountAmount > 0 ? discountAmount : undefined,
-            });
+            onClick={() => setLocation("/")}
+            className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Voltar para loja
+          </button>
 
-            const itemsText = productsPayload
-              .map((item) => {
-                const itemTotal = item.price * item.quantity;
-                const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
-                return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
-              })
-              .join("\n");
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+            {/* Left Column */}
+            <div className="lg:col-span-7 space-y-8">
 
-            const addressFull = [
-              `${data.street}, ${data.number}`,
-              data.complement,
-              data.neighborhood,
-              `${data.city}/${data.state}`,
-              `CEP ${data.cep}`,
-            ]
-              .filter(Boolean)
-              .join(", ");
-
-            const message =
-              `Olá! Quero finalizar meu pedido.\n\n` +
-              `Pedido: #${order.id}\n` +
-              `Cliente: ${data.name}\n` +
-              `Telefone: ${data.phone}\n` +
-              `CPF: ${data.document}\n` +
-              `E-mail: ${data.email}\n\n` +
-              `Endereço: ${addressFull}\n\n` +
-              `Itens:\n${itemsText}\n\n` +
-              `Subtotal: ${formatCurrency(subtotal)}\n` +
-              `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-              (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
-              (discountAmount > 0
-                ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
-                : "") +
-              `Total: ${formatCurrency(payableTotal)}\n\n` +
-              `Pode me enviar a chave PIX para pagamento?`;
-
-            const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
-            window.open(waUrl, "_blank", "noopener,noreferrer");
-            toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
-            clearCart();
-            setIsOpen(false);
-          } catch (error) {
-            const apiError = error as { data?: { error?: string; message?: string } };
-            if (apiError?.data?.error === "PRICE_CHANGED") {
-              const synced = await syncCartWithLatestProducts();
-              toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
-              if (synced) toast.info("Revise os novos valores e tente novamente.");
-              return;
-            }
-            toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
-          }
-                  </p>
-                </div>
-
-                {/* Street + Number */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="col-span-2">
+              {/* Personal Data */}
+              <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+                <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
+                <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
                     <Input
                       label="Rua / Logradouro *"
                       placeholder="Rua das Flores"
