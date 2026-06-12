@@ -13,9 +13,10 @@ export async function getCheckoutToken(forceRefresh = false): Promise<string> {
     return tokenCache.token;
   }
 
-  const res = await fetch(`${BASE}/api/security/checkout-token`, {
+  const res = await fetch(`${BASE}/api/security/checkout-token?t=${Date.now()}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
   });
 
   if (!res.ok) {
@@ -36,8 +37,11 @@ export async function getCheckoutToken(forceRefresh = false): Promise<string> {
   return data.token;
 }
 
-export async function getCheckoutSecurityHeaders(additional?: Record<string, string>): Promise<Record<string, string>> {
-  const token = await getCheckoutToken();
+export async function getCheckoutSecurityHeaders(
+  additional?: Record<string, string>,
+  forceRefresh = false,
+): Promise<Record<string, string>> {
+  const token = await getCheckoutToken(forceRefresh);
   return {
     "Content-Type": "application/json",
     "x-checkout-token": token,

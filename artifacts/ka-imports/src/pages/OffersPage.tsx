@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
+import { useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProductCard } from "@/components/product/ProductCard";
@@ -39,7 +40,15 @@ function hasOffer(product: any): boolean {
 }
 
 export default function OffersPage() {
-  const { data: products = [], isLoading } = useGetProducts();
+  const { data, isLoading } = useGetProducts();
+
+  const products = useMemo(() => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray((data as { products?: unknown[] } | undefined)?.products)) {
+      return (data as { products: unknown[] }).products as any[];
+    }
+    return [] as any[];
+  }, [data]);
 
   const offersProducts = useMemo(() => {
     return products.filter(hasOffer).sort((a, b) => {
@@ -50,12 +59,21 @@ export default function OffersPage() {
     });
   }, [products]);
 
+  const [sellerMatch, sellerParams] = useRoute("/:seller/ofertas");
+  const [defaultMatch] = useRoute("/ofertas");
+
+  const sellerSlug = sellerMatch ? sellerParams?.seller?.toLowerCase() : undefined;
+  const catalogHref = sellerSlug ? `/${encodeURIComponent(sellerSlug)}` : "/";
+
   return (
     <AppLayout>
       <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 mb-6">
-          <Link href={`${BASE}/`} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <Link
+            href={catalogHref}
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
             <ArrowLeft className="w-4 h-4" />
             Voltar ao catálogo
           </Link>
@@ -84,7 +102,10 @@ export default function OffersPage() {
             <p className="text-lg text-muted-foreground mb-4">
               Nenhuma oferta disponível no momento.
             </p>
-            <Link href={`${BASE}/`} className="inline-block px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+            <Link
+              href={catalogHref}
+              className="inline-block px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            >
               Ver todos os produtos
             </Link>
           </div>

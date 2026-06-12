@@ -82,6 +82,7 @@ export function orderToText(order: any): string {
   const reshipmentStatus = order?.reshipment?.status;
   const reshipmentLabel = reshipmentStatus === "reenvio_aguardando_estoque" ? "⏳ AGUARDANDO ESTOQUE"
     : reshipmentStatus === "reenvio_pronto_para_envio" ? "✅ PRONTO PARA ENVIO"
+    : reshipmentStatus === "reenvio_resolvido_sem_entrada" ? "🟦 RESOLVIDO SEM ENTRADA"
     : reshipmentStatus === "reenvio_enviado" ? "📦 ENVIADO"
     : "";
 
@@ -193,14 +194,39 @@ export function orderToFullText(order: any): string {
     ? subtotalCandidates[0]
     : Math.max(0, total - frete);
 
+  const insuranceAmount = Math.max(0, Number(order?.insuranceAmount) || 0);
+  const hasInsurance = Boolean(order?.includeInsurance) || insuranceAmount > 0;
+
   const paymentMethodRaw = String(order?.paymentMethod || "").toLowerCase();
   const paymentLabel = paymentMethodRaw === "card_simulation"
     ? "Cartão"
-    : (paymentMethodRaw || "-").toUpperCase();
+    : paymentMethodRaw === "whatsapp_pix"
+      ? "WhatsApp"
+      : (paymentMethodRaw || "-").toUpperCase();
 
   const transactionId = String(order?.transactionId || order?.txid || order?.gatewayTransactionId || "").trim();
 
   const contato = `${order?.clientPhone || "-"}${order?.clientEmail ? ` · ${order.clientEmail}` : ""}`;
+
+  const normalizeProofs = (raw: unknown): string[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter(Boolean).map((v) => String(v));
+    return [String(raw)];
+  };
+
+  const allProofs = [
+    ...normalizeProofs(order?.proofUrls),
+    ...normalizeProofs(order?.proofUrl),
+  ].filter((v, i, arr) => arr.indexOf(v) === i);
+
+  const isInlineProof = (value: string) => /^data:(image|application)\//i.test(value.trim());
+  const inlineProofCount = allProofs.filter((value) => isInlineProof(value)).length;
+  const externalProofs = allProofs.filter((value) => !isInlineProof(value));
+
+  const proofLines = [
+    externalProofs.length > 0 ? `Comprovantes: ${externalProofs.join(", ")}` : "",
+    inlineProofCount > 0 ? `Comprovantes anexados: ${inlineProofCount} arquivo(s) (imagem/base64 ocultada no copiar)` : "",
+  ];
 
   return [
     prioridadeLine,
@@ -213,6 +239,7 @@ export function orderToFullText(order: any): string {
     productsText,
     `Subtotal: ${formatCurrency(subtotal)}`,
     `Frete: ${formatCurrency(frete)}`,
+    hasInsurance ? `Seguro: Sim (${formatCurrency(insuranceAmount)})` : "",
     `Total: ${formatCurrency(total)}`,
     `Status: ${order?.status || "-"}`,
     `Pagamento: ${paymentLabel}`,
@@ -222,8 +249,7 @@ export function orderToFullText(order: any): string {
     order?.observation ? "" : "",
     order?.observation ? `Observação: ${order.observation}` : "",
     order?.trackingCode ? `Rastreio: ${order.trackingCode}` : "",
-    order?.proofUrls && order.proofUrls.length > 0 ? `Comprovantes: ${order.proofUrls.join(", ")}` : "",
-    order?.proofUrl ? `Comprovante: ${order.proofUrl}` : "",
+    ...proofLines,
   ]
     .filter(Boolean)
     .join("\n");
@@ -272,15 +298,16 @@ function supplierOrderBlock(order: any, sequence: number): string {
     : "- Sem itens";
 
   const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-  const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
+  const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
   const firstOrderDate = formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-";
   const reshipmentReason = String(order?.reshipment?.ticketDescription || "").trim();
+  const reshipmentReasonText = reshipmentReason || "Nao informado no chamado";
 
   return [
     prioridadeLine,
     isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
     isReshipment ? `Data do pedido original: ${firstOrderDate}` : "",
-    isReshipment && reshipmentReason ? `Motivo do reenvio: ${reshipmentReason}` : "",
+    isReshipment ? `Motivo do reenvio: ${reshipmentReasonText}` : "",
     isReshipment ? "" : "",
     `Pedido numero: ${sequence}`,
     "",
@@ -869,7 +896,7 @@ interface ReshipmentRecord {
   source: "support" | "manual" | string;
   orderId: string | null;
   supportTicketId: string | null;
-  status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado" | string;
+  status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_resolvido_sem_entrada" | "reenvio_enviado" | string;
   clientName: string;
   clientPhone: string | null;
   clientDocument: string | null;
@@ -894,6 +921,7 @@ interface InventoryMovementRecord {
   type: string;
   entrySource?: string | null;
   clientName?: string | null;
+  clientPhone?: string | null;
   trackingCode?: string | null;
   quantity: number;
   reason: string | null;
@@ -953,6 +981,13 @@ export default function Admin() {
     totalWithdrawFees: number;
     netRevenue: number;
     realNetRevenue: number;
+    customerRecurrence?: {
+      totalUniqueCustomers: number;
+      recurringCustomers: number;
+      newCustomers: number;
+      recurringRate: number;
+      newRate: number;
+    };
   }>(null);
   const [financialSummaryLoading, setFinancialSummaryLoading] = React.useState(false);
   const [, setLocation] = useLocation();
@@ -969,6 +1004,7 @@ export default function Admin() {
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovementRecord[]>([]);
   const [pendingReshipments, setPendingReshipments] = useState<ReshipmentRecord[]>([]);
+  const [activeManualReturnItemId, setActiveManualReturnItemId] = useState<string | null>(null);
   const [inventoryEntryForm, setInventoryEntryForm] = useState({
     productId: "",
     quantity: "",
@@ -976,7 +1012,7 @@ export default function Admin() {
     movementType: "entry" as "entry" | "exit",
     entrySource: "purchase" as "purchase" | "customer_return",
     clientName: "",
-    trackingCode: "",
+    clientPhone: "",
   });
   const [inventorySubmitting, setInventorySubmitting] = useState(false);
   const [manualReshipmentForm, setManualReshipmentForm] = useState({
@@ -2030,7 +2066,11 @@ export default function Admin() {
         let message = "";
         if (event.type === "new_order") {
           const d = event.data as { clientName: string; total: number; paymentMethod: string; sellerCode?: string };
-          const method  = d.paymentMethod === "card_simulation" ? "Cartão" : "PIX";
+          const method = d.paymentMethod === "card_simulation"
+            ? "Cartão"
+            : d.paymentMethod === "whatsapp_pix"
+              ? "WhatsApp"
+              : "PIX";
           const seller  = d.sellerCode ? ` [${d.sellerCode}]` : "";
           message = `Nova venda${seller} — ${d.clientName} — ${formatCurrency(d.total)} (${method})`;
           fetchOrders(true);
@@ -2334,7 +2374,7 @@ export default function Admin() {
     const intro = isCard
       ? `Olá *${firstName}*, tudo bem? 😊\n\nEstou dando continuidade ao seu pedido no *cartão*. Seguem os detalhes para confirmarmos:\n\n`
       : "";
-    const msg = intro + orderToText(order);
+    const msg = intro + orderToFullText(order);
     const p = order.clientPhone.replace(/\D/g, "");
     window.open(`https://wa.me/${p.startsWith("55") ? p : "55" + p}?text=${encodeURIComponent(msg)}`, "_blank");
   };
@@ -2611,7 +2651,7 @@ export default function Admin() {
       setOrders((prev) => prev.map((o) => o.id === editOrderModal.id ? { ...data.order, proofUrls: o.proofUrls } : o));
       toast.success("Pedido editado com sucesso!");
       const paidAmount = editOrderModal.paidAmount ?? null;
-      const isPixOrder = editOrderModal.paymentMethod === "pix";
+      const isPixOrder = editOrderModal.paymentMethod === "pix" || editOrderModal.paymentMethod === "whatsapp_pix";
 
       if (paidAmount != null && paidAmount > 0) {
         // Order has a recorded paid amount — use it as the reference
@@ -2877,7 +2917,12 @@ export default function Admin() {
   const paidOrders      = orders.filter((o) => o.status === "paid" || o.status === "completed");
   const revenue         = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
-  const ordersParaEnviar = orders.filter((o) => (o.status === "paid" || o.status === "completed") && !o.enviado);
+  const ordersParaEnviar = orders.filter((o) => {
+    const isActiveReshipment = Boolean((o as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
+      && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((o as { reshipment?: { status?: string } }).reshipment?.status || ""));
+    const isPendingNormalShipment = (o.status === "paid" || o.status === "completed") && !o.enviado;
+    return isPendingNormalShipment || isActiveReshipment;
+  });
 
   const copyShoppingList = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     event?.preventDefault();
@@ -2891,7 +2936,7 @@ export default function Admin() {
     const totals = new Map<string, { label: string; productId: string | null; qtyNormal: number; qtyReshipment: number }>();
     for (const order of ordersParaEnviar) {
       const isReshipment = Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
-        && (order as { reshipment?: { status?: string } }).reshipment?.status !== "reenvio_enviado";
+        && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
       for (const p of getOrderProducts(order.products)) {
         const name = (p.name || "Produto").trim();
         const productId = String((p as { id?: string })?.id || "").trim() || null;
@@ -3015,7 +3060,7 @@ export default function Admin() {
 
   // ── Dashboard stats — uses independently fetched data (own API call) ─────
   const statsPaidOrders    = statsOrdersData.filter((o) => o.status === "paid" || o.status === "completed");
-  const statsPixPaid       = statsPaidOrders.filter((o) => o.paymentMethod === "pix");
+  const statsPixPaid       = statsPaidOrders.filter((o) => o.paymentMethod === "pix" || o.paymentMethod === "whatsapp_pix");
   const statsCardPaid      = statsPaidOrders.filter((o) => o.paymentMethod === "card_simulation");
   const statsLinkPaid      = statsChargesData.filter((c) => c.status === "paid");
   const statsPendingCount  = statsOrdersData.filter((o) => o.status === "awaiting_payment" || o.status === "pending").length;
@@ -3239,6 +3284,50 @@ export default function Admin() {
           </div>
 
           {/* Row 1.5 — Gateway Fees/Líquido Real removido, agora integrado ao card de Faturamento Líquido */}
+
+          {/* Row 1.6 — Clientes novos vs recorrentes */}
+          <div className="mt-3 rounded-xl border bg-gradient-to-br from-cyan-50 to-sky-100/60 border-cyan-200 p-5">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold text-cyan-700 uppercase tracking-wide">Clientes no Período</p>
+              <span className="text-xs text-cyan-700/80">
+                {financialSummary?.customerRecurrence?.totalUniqueCustomers ?? 0} únicos
+              </span>
+            </div>
+
+            <div className="h-3 w-full rounded-full bg-cyan-100 overflow-hidden border border-cyan-200/70">
+              <div
+                className="h-full bg-blue-500"
+                style={{ width: `${Math.min(100, Math.max(0, financialSummary?.customerRecurrence?.recurringRate ?? 0))}%` }}
+              />
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+              <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Clientes recorrentes (qtd)</p>
+                <p className="font-bold text-blue-700">
+                  {financialSummary?.customerRecurrence?.recurringCustomers ?? 0}
+                  <span className="text-xs font-semibold text-blue-600 ml-1">
+                    ({Number(financialSummary?.customerRecurrence?.recurringRate ?? 0).toFixed(1)}%)
+                  </span>
+                </p>
+              </div>
+              <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Novos</p>
+                <p className="font-bold text-emerald-700">
+                  {financialSummary?.customerRecurrence?.newCustomers ?? 0}
+                  <span className="text-xs font-semibold text-emerald-600 ml-1">
+                    ({Number(financialSummary?.customerRecurrence?.newRate ?? 0).toFixed(1)}%)
+                  </span>
+                </p>
+              </div>
+              <div className="rounded-lg bg-white/70 border border-cyan-200 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Taxa de recorrência (%)</p>
+                <p className="font-bold text-cyan-800">
+                  {Number(financialSummary?.customerRecurrence?.recurringRate ?? 0).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </div>
 
           {/* Row 2 — Cards individuais */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -3495,14 +3584,40 @@ export default function Admin() {
                   headers: authHeaders(),
                   body: JSON.stringify({ status }),
                 });
-                const data = await res.json() as { message?: string };
+                const data = await res.json() as {
+                  message?: string;
+                  error?: string;
+                  missingProducts?: string[];
+                  status?: string;
+                  requestedStatus?: string;
+                  alreadySent?: boolean;
+                  debitedProducts?: Array<{ productId?: string; productName?: string; quantity?: number }>;
+                };
                 if (!res.ok) {
+                  if (data?.error === "INSUFFICIENT_STOCK" && Array.isArray(data?.missingProducts) && data.missingProducts.length > 0) {
+                    toast.error(`Estoque insuficiente para este reenvio: ${data.missingProducts.join(", ")}.`);
+                    return;
+                  }
                   toast.error(data?.message || "Erro ao atualizar reenvio.");
                   return;
                 }
                 fetchOrders(true);
                 if (tab === "inventory") fetchInventoryOverview();
-                toast.success(status === "reenvio_enviado" ? "Reenvio marcado como enviado." : "Status do reenvio atualizado.");
+                if (status === "reenvio_enviado") {
+                  const debited = Array.isArray(data?.debitedProducts) ? data.debitedProducts : [];
+                  if (data?.alreadySent) {
+                    toast.success("Reenvio já estava marcado como enviado.");
+                  } else if (debited.length > 0) {
+                    const summary = debited
+                      .map((item) => `${Number(item?.quantity || 0)}x ${String(item?.productName || item?.productId || "Produto")}`)
+                      .join(", ");
+                    toast.success(`Baixa de estoque aplicada (${summary}). Reenvio marcado como enviado.`);
+                  } else {
+                    toast.success("Reenvio marcado como enviado.");
+                  }
+                } else {
+                  toast.success(status === "reenvio_enviado" ? "Reenvio marcado como enviado." : "Status do reenvio atualizado.");
+                }
               } catch {
                 toast.error("Erro ao atualizar reenvio.");
               } finally {
@@ -3729,7 +3844,7 @@ export default function Admin() {
               const movementType = inventoryEntryForm.movementType === "exit" ? "exit" : "entry";
               const entrySource = inventoryEntryForm.entrySource === "customer_return" ? "customer_return" : "purchase";
               const clientName = String(inventoryEntryForm.clientName || "").trim();
-              const trackingCode = String(inventoryEntryForm.trackingCode || "").trim();
+              const clientPhone = String(inventoryEntryForm.clientPhone || "").trim();
               if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
                 toast.error("Selecione o produto e informe quantidade válida.");
                 return;
@@ -3739,20 +3854,35 @@ export default function Admin() {
                 const res = await fetch(`${BASE}/api/admin/inventory/entries`, {
                   method: "POST",
                   headers: authHeaders(),
-                  body: JSON.stringify({ productId, quantity, reason, movementType, entrySource, clientName, trackingCode }),
+                  body: JSON.stringify({ productId, quantity, reason, movementType, entrySource, clientName, clientPhone }),
                 });
-                const data = await res.json() as { releasedCount?: number; message?: string };
+                const data = await res.json() as { releasedCount?: number; message?: string; balanceChanged?: boolean };
                 if (!res.ok) {
                   toast.error(data?.message || "Erro ao registrar entrada de estoque.");
                   return;
                 }
-                setInventoryEntryForm((prev) => ({ ...prev, productId: "", quantity: "", reason: "", clientName: "", trackingCode: "" }));
+
+                if (movementType === "entry" && entrySource === "customer_return" && activeManualReturnItemId) {
+                  await fetch(`${BASE}/api/admin/manual-return-items/${activeManualReturnItemId}/status`, {
+                    method: "PATCH",
+                    headers: authHeaders(),
+                    body: JSON.stringify({ status: "done" }),
+                  });
+                  setActiveManualReturnItemId(null);
+                }
+
+                setInventoryEntryForm((prev) => ({ ...prev, productId: "", quantity: "", reason: "", clientName: "", clientPhone: "" }));
                 fetchInventoryOverview();
                 fetchOrders(true);
                 const released = Number(data?.releasedCount || 0);
                 if (movementType === "entry") {
-                  if (released > 0) toast.success(`Entrada registrada. ${released} reenvio(s) liberado(s).`);
-                  else toast.success("Entrada de estoque registrada.");
+                  if (data?.balanceChanged === false) {
+                    toast.success("Estorno do reenvio registrado sem entrada no estoque.");
+                  } else if (released > 0) {
+                    toast.success(`Entrada registrada. ${released} reenvio(s) liberado(s).`);
+                  } else {
+                    toast.success("Entrada de estoque registrada.");
+                  }
                 } else {
                   toast.success("Saida de estoque registrada.");
                 }
@@ -3763,6 +3893,46 @@ export default function Admin() {
               }
             }}
             onCreateManualReshipment={createManualReshipment}
+            onResolvePendingReshipment={async (item, registerStockEntry) => {
+              const manualReturnId = String(item.id || "").trim();
+              const firstProduct = item.products?.[0];
+              if (!manualReturnId || !firstProduct?.id) {
+                toast.error("Item de retorno manual inválido.");
+                return;
+              }
+
+              try {
+                if (registerStockEntry) {
+                  const reasonSuffix = String(item.notes || item.resolvedReason || "").trim();
+                  setInventoryEntryForm((prev) => ({
+                    ...prev,
+                    movementType: "entry",
+                    entrySource: "customer_return",
+                    productId: firstProduct.id,
+                    quantity: String(Number(firstProduct.quantity) || 1),
+                    clientName: String(item.clientName || ""),
+                    reason: reasonSuffix ? `Pedido voltando: ${reasonSuffix}` : prev.reason,
+                  }));
+                  setActiveManualReturnItemId(manualReturnId);
+                  toast.success("Dados preenchidos. Clique em Dar Entrada para confirmar.");
+                } else {
+                  const statusRes = await fetch(`${BASE}/api/admin/manual-return-items/${manualReturnId}/status`, {
+                    method: "PATCH",
+                    headers: authHeaders(),
+                    body: JSON.stringify({ status: "done" }),
+                  });
+                  const statusData = await statusRes.json().catch(() => ({})) as { message?: string };
+                  if (!statusRes.ok) {
+                    toast.error(statusData?.message || "Erro ao concluir retorno manual.");
+                    return;
+                  }
+                  fetchInventoryOverview();
+                  toast.success("Retorno manual concluído sem entrada no estoque.");
+                }
+              } catch {
+                toast.error("Erro ao processar item de retorno manual.");
+              }
+            }}
           />
         ) : tab === "users" && isPrimary ? (
           <UsersPanel
@@ -3811,6 +3981,7 @@ export default function Admin() {
               } catch { toast.error("Erro ao salvar produto."); }
               finally { setProductSaving(false); }
             }}
+                onRefreshProducts={fetchProducts}
             onDelete={async (id: string) => {
               if (!confirm("Apagar este produto?")) return;
               setProductDeleting(id);
@@ -6023,6 +6194,7 @@ function InventoryPanel({
   onRefresh,
   onCreateEntry,
   onCreateManualReshipment,
+  onResolvePendingReshipment,
 }: {
   loading: boolean;
   products: Array<{ id: string; name: string; image?: string | null }>;
@@ -6082,10 +6254,18 @@ function InventoryPanel({
   onRefresh: () => void;
   onCreateEntry: () => void;
   onCreateManualReshipment: () => void;
+  onResolvePendingReshipment: (item: ReshipmentRecord, registerStockEntry: boolean) => Promise<void>;
 }) {
   const [entryProductQuery, setEntryProductQuery] = useState("");
   const [manualProductQuery, setManualProductQuery] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
+  const [reshipmentActionLoading, setReshipmentActionLoading] = useState<Record<string, boolean>>({});
+  const [manualReturnDraft, setManualReturnDraft] = useState({
+    clientName: "",
+    returningOrder: "",
+    productName: "",
+    quantity: "1",
+  });
 
   useEffect(() => {
     if (!entryForm.productId) {
@@ -6126,6 +6306,119 @@ function InventoryPanel({
         return productName.includes(normalizedBalanceSearch);
       })
     : balances;
+
+  const onFillManualReturnEntry = () => {
+    const clientName = String(manualReturnDraft.clientName || "").trim();
+    const returningOrder = String(manualReturnDraft.returningOrder || "").trim();
+    const productName = String(manualReturnDraft.productName || "").trim();
+    const quantity = Number(manualReturnDraft.quantity || 0);
+
+    if (!clientName || !returningOrder || !productName || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error("Preencha nome do cliente, pedido voltando, produto voltando e quantidade válida.");
+      return;
+    }
+
+    const selected = products.find((p) => p.name.trim().toLowerCase() === productName.toLowerCase());
+    if (!selected) {
+      toast.error("Produto voltando inválido. Selecione um produto da lista.");
+      return;
+    }
+
+    setEntryProductQuery(selected.name);
+    setEntryForm((prev) => ({
+      ...prev,
+      movementType: "entry",
+      entrySource: "customer_return",
+      productId: selected.id,
+      quantity: String(quantity),
+      clientName,
+      reason: `Pedido voltando: ${returningOrder}`,
+    }));
+
+    toast.success("Entrada manual preenchida. Clique em Dar Entrada para confirmar.");
+  };
+
+  const onAddManualReturnToQueue = async () => {
+    const clientName = String(manualReturnDraft.clientName || "").trim();
+    const returningOrder = String(manualReturnDraft.returningOrder || "").trim();
+    const productName = String(manualReturnDraft.productName || "").trim();
+    const quantity = Number(manualReturnDraft.quantity || 0);
+
+    if (!clientName || !productName || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error("Preencha nome do cliente, produto e quantidade válida para adicionar na fila.");
+      return;
+    }
+
+    const selected = products.find((p) => p.name.trim().toLowerCase() === productName.toLowerCase());
+    if (!selected) {
+      toast.error("Produto voltando inválido. Selecione um produto da lista.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BASE}/api/admin/manual-return-items`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          clientName,
+          returningOrder,
+          productId: selected.id,
+          productName: selected.name,
+          quantity,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string };
+      if (!res.ok) {
+        toast.error(data?.message || "Erro ao adicionar retorno manual na fila.");
+        return;
+      }
+
+      setManualReturnDraft((prev) => ({ ...prev, clientName: "", returningOrder: "", productName: "", quantity: "1" }));
+      onRefresh();
+      toast.success("Retorno manual adicionado na fila.");
+    } catch {
+      toast.error("Erro ao adicionar retorno manual na fila.");
+    }
+  };
+
+  const copyPendingReturnsAsText = async () => {
+    if (pendingReshipments.length === 0) {
+      toast.error("Sem itens na fila manual para copiar.");
+      return;
+    }
+
+    const body = pendingReshipments
+      .map((item, index) => {
+        const productsText = item.products
+          .map((product) => `- ${product.quantity}x ${product.name}`)
+          .join("\n");
+        const returningOrder = String(item.notes || "").trim();
+
+        return [
+          `#${index + 1}`,
+          `Cliente: ${item.clientName || "-"}`,
+          returningOrder ? `Pedido voltando: ${returningOrder}` : "",
+          "Produtos:",
+          productsText || "- Sem produtos",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n\n------------------------------\n\n");
+
+    const text = [
+      `FILA MANUAL - PRODUTOS VOLTANDO (${new Date().toLocaleDateString("pt-BR")})`,
+      "",
+      body,
+    ].join("\n");
+
+    try {
+      const mode = await copyText(text);
+      toast.success(mode === "manual" ? "Texto aberto para cópia manual." : "Fila manual copiada para texto.");
+    } catch {
+      toast.error("Não foi possível copiar a fila manual.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -6177,6 +6470,9 @@ function InventoryPanel({
         </div>
         {entryForm.movementType === "entry" && (
           <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="md:col-span-3 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Para entrada de produto voltando, escolha <span className="font-semibold text-foreground">Produto voltando (cliente)</span> e então informe nome e telefone.
+            </div>
             <select
               className="h-10 rounded-lg border border-border px-3 text-sm bg-white"
               value={entryForm.entrySource}
@@ -6195,9 +6491,9 @@ function InventoryPanel({
                 />
                 <input
                   className="h-10 rounded-lg border border-border px-3 text-sm"
-                  placeholder="Código de rastreio (opcional)"
-                  value={entryForm.trackingCode}
-                  onChange={(e) => setEntryForm((prev) => ({ ...prev, trackingCode: e.target.value }))}
+                  placeholder="Telefone do cliente (opcional)"
+                  value={entryForm.clientPhone}
+                  onChange={(e) => setEntryForm((prev) => ({ ...prev, clientPhone: e.target.value }))}
                 />
               </>
             )}
@@ -6267,7 +6563,7 @@ function InventoryPanel({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[560px] overflow-hidden">
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">Saldo atual por produto</p>
             <div className="flex items-center gap-2">
@@ -6301,60 +6597,158 @@ function InventoryPanel({
             value={balanceSearch}
             onChange={(e) => setBalanceSearch(e.target.value)}
           />
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Carregando estoque...</p>
-          ) : balances.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum saldo registrado ainda.</p>
-          ) : filteredBalances.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum produto encontrado para essa busca.</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-auto pr-1">
-              {filteredBalances.map((row) => {
-                const prod = products.find((p) => p.id === row.productId);
-                return (
-                  <div key={row.productId} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {prod?.image ? (
-                        <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
-                      ) : (
-                        <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
-                          <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      )}
-                      <span className="text-sm truncate">{row.productName}</span>
+          <div className="flex-1 min-h-0">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Carregando estoque...</p>
+            ) : balances.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum saldo registrado ainda.</p>
+            ) : filteredBalances.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum produto encontrado para essa busca.</p>
+            ) : (
+              <div className="space-y-2 h-full overflow-auto pr-1">
+                {filteredBalances.map((row) => {
+                  const prod = products.find((p) => p.id === row.productId);
+                  return (
+                    <div key={row.productId} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {prod?.image ? (
+                          <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
+                        ) : (
+                          <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
+                            <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <span className="text-sm truncate">{row.productName}</span>
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+                        {row.quantity} un
+                      </span>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
-                      {row.quantity} un
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm font-semibold mb-3">Reenvios aguardando produto</p>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Carregando reenvios...</p>
-          ) : pendingReshipments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum reenvio aguardando estoque.</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-auto pr-1">
-              {pendingReshipments.map((item) => (
+        <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[620px] overflow-hidden">
+          <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
+            <p className="text-sm font-semibold text-blue-900">Entrada manual de produto voltando</p>
+            <p className="text-xs text-blue-800 mt-1">Digite manualmente e preencha a entrada acima com 1 clique.</p>
+            <div className="mt-2 grid grid-cols-1 gap-2">
+              <input
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Nome cliente"
+                value={manualReturnDraft.clientName}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, clientName: e.target.value }))}
+              />
+              <input
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Pedido voltando"
+                value={manualReturnDraft.returningOrder}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, returningOrder: e.target.value }))}
+              />
+              <input
+                list="inventory-manual-return-products"
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Produto voltando"
+                value={manualReturnDraft.productName}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, productName: e.target.value }))}
+              />
+              <input
+                type="number"
+                min={1}
+                className="h-9 rounded-lg border border-blue-200 px-3 text-sm bg-white"
+                placeholder="Quantidade"
+                value={manualReturnDraft.quantity}
+                onChange={(e) => setManualReturnDraft((prev) => ({ ...prev, quantity: e.target.value }))}
+              />
+              <datalist id="inventory-manual-return-products">
+                {products.map((p) => (
+                  <option key={`manual-return-${p.id}`} value={p.name} />
+                ))}
+              </datalist>
+            </div>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button size="sm" variant="outline" className="h-8" onClick={onAddManualReturnToQueue}>
+                Adicionar na fila
+              </Button>
+              <Button size="sm" className="h-8" onClick={onFillManualReturnEntry}>
+                Preencher entrada manual
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Produtos voltando (fila manual)</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={copyPendingReturnsAsText}
+            >
+              Copiar TXT
+            </Button>
+          </div>
+          <div className="flex-1 min-h-0">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Carregando fila manual...</p>
+            ) : pendingReshipments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum produto voltando na fila manual.</p>
+            ) : (
+              <div className="space-y-2 min-h-[220px] sm:min-h-[250px] max-h-[300px] overflow-auto pr-1">
+                {pendingReshipments.map((item) => (
                 <div key={item.id} className="rounded-lg border border-red-200 bg-red-50/60 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-red-800 truncate">
-                      {item.clientName} · {item.source === "manual" ? "Manual" : `Pedido ${item.orderId || "-"}`}
+                      {item.clientName}
                     </p>
                   </div>
+                  {item.notes && (
+                    <p className="text-xs text-red-700 mt-1">Pedido voltando: {item.notes}</p>
+                  )}
                   <p className="text-xs text-red-700 mt-1">
                     {item.products.map((p) => `${p.quantity}x ${p.name}`).join(" · ")}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      disabled={!!reshipmentActionLoading[item.id]}
+                      onClick={async () => {
+                        setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: true }));
+                        try {
+                          await onResolvePendingReshipment(item, true);
+                        } finally {
+                          setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: false }));
+                        }
+                      }}
+                    >
+                      {reshipmentActionLoading[item.id] ? "Processando..." : "Produto chegou (dar entrada)"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      disabled={!!reshipmentActionLoading[item.id]}
+                      onClick={async () => {
+                        setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: true }));
+                        try {
+                          await onResolvePendingReshipment(item, false);
+                        } finally {
+                          setReshipmentActionLoading((prev) => ({ ...prev, [item.id]: false }));
+                        }
+                      }}
+                    >
+                      {reshipmentActionLoading[item.id] ? "Processando..." : "Concluir (sem entrada)"}
+                    </Button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -6371,11 +6765,16 @@ function InventoryPanel({
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{mv.productName}</p>
                   <p className="text-xs text-muted-foreground">Motivo: {mv.reason || "Movimentação"} · {formatDateBR(mv.createdAt)}</p>
-                  {(mv.clientName || mv.trackingCode) && (
+                  {(mv.clientName || mv.clientPhone || mv.trackingCode) && (
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {mv.clientName && (
                         <span className="text-[11px] px-2 py-0.5 rounded-full border border-sky-200 bg-sky-50 text-sky-700">
                           Cliente: {mv.clientName}
+                        </span>
+                      )}
+                      {mv.clientPhone && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700">
+                          Telefone: {mv.clientPhone}
                         </span>
                       )}
                       {mv.trackingCode && (
@@ -6507,6 +6906,7 @@ function OrdersPanel({
   const reshipmentStatusLabel = (status?: string) => {
     if (status === "reenvio_aguardando_estoque") return "Reenvio · Aguardando estoque";
     if (status === "reenvio_pronto_para_envio") return "Reenvio · Pronto para envio";
+    if (status === "reenvio_resolvido_sem_entrada") return "Reenvio · Resolvido sem entrada";
     if (status === "reenvio_enviado") return "Reenvio · Enviado";
     return "Reenvio";
   };
@@ -7455,13 +7855,10 @@ function OrdersPanel({
           const previewProducts = orderProducts.slice(0, 5);
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
           // Definir isReshipment no escopo correto
-          const isReshipment = Boolean(order?.reshipment?.id) && order?.reshipment?.status !== "reenvio_enviado";
+          const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
-            if (isReshipment && reshipmentTrackingCode) {
-              return `Numero rastreio informado: ${reshipmentTrackingCode}`;
-            }
             const productId = String(product?.id || "").trim();
             return productId ? String(productImageById[productId] || "").trim() : "";
           };
@@ -7761,7 +8158,7 @@ function OrdersPanel({
                     <ShieldCheck className="w-3.5 h-3.5" />KYC
                   </Button>
                 )}
-                {(order as any)?.reshipment?.id && (order as any)?.reshipment?.status !== "reenvio_enviado" && (
+                {(order as any)?.reshipment?.id && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as any)?.reshipment?.status || "")) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -7838,7 +8235,7 @@ function OrdersPanel({
                     {order.transactionId && <p className="font-mono text-xs">Tx: {order.transactionId}</p>}
                     {order.sellerCode && <p>Vendedor: <strong>{order.sellerCode}</strong></p>}
                     {[order.addressStreet, order.addressNumber, order.addressNeighborhood, order.addressCity, order.addressState, order.addressCep].some(Boolean) && (
-                      <p>Endereço: {[order.addressStreet, order.addressNumber, order.addressNeighborhood, `${order.addressCity||""}/${order.addressState||""}`, order.addressCep ? `CEP ${order.addressCep}` : ""].filter(Boolean).join(", ")}</p>
+                      <p>Endereço: {[order.addressStreet, order.addressNumber, order.addressComplement, order.addressNeighborhood, `${order.addressCity||""}/${order.addressState||""}`, order.addressCep ? `CEP ${order.addressCep}` : ""].filter(Boolean).join(", ")}</p>
                     )}
                   </div>
                   {/* Card actual payment details */}
@@ -8516,7 +8913,7 @@ function SellerAnalyticsCard({ seller, orders, charges }: { seller: SavedSellerI
   });
 
   const paidOrders      = sellerOrders.filter((o) => o.status === "paid" || o.status === "completed");
-  const pixPaid         = paidOrders.filter((o) => o.paymentMethod === "pix");
+  const pixPaid         = paidOrders.filter((o) => o.paymentMethod === "pix" || o.paymentMethod === "whatsapp_pix");
   const cardPaid        = paidOrders.filter((o) => o.paymentMethod === "card_simulation");
   const paidCharges     = sellerCharges.filter((c) => c.status === "paid");
   const pending         = sellerOrders.filter((o) => o.status === "awaiting_payment" || o.status === "pending");
@@ -8817,6 +9214,29 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
                     <Button size="sm" variant="outline" className="gap-1 h-7 text-xs text-violet-700 border-violet-200 hover:bg-violet-50" onClick={() => copyPaymentLink(slug)} title="Copiar link de pagamento">
                       {copiedPaymentLink === slug ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
                       {copiedPaymentLink === slug ? "Copiado!" : "Pgto"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1 h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                      disabled={sellerCommissionUpdatingSlug === slug}
+                      title="Editar WhatsApp do vendedor"
+                      onClick={async () => {
+                        const current = String(whatsapp || "").replace(/\D/g, "");
+                        const next = window.prompt("Novo WhatsApp do vendedor (somente números, com DDD)", current);
+                        if (next == null) return;
+
+                        const normalized = String(next).replace(/\D/g, "");
+                        if (!normalized) {
+                          toast.error("Informe um WhatsApp válido.");
+                          return;
+                        }
+
+                        await updateSellerCommission(slug, normalized, !!hasCommission, Number(commissionRate || 0));
+                      }}
+                    >
+                      <Pencil className="w-3 h-3" />
+                      WhatsApp
                     </Button>
                     {isPrimary && (
                       <Button
@@ -9671,6 +10091,7 @@ function PriceInput({
 function ProductsPanel({
   products, loading, productForm, setProductForm, productFormOpen, setProductFormOpen,
   productSaving, productDeleting, onSave, onDelete, onToggle, sellers,
+  onRefreshProducts,
 }: {
   products: AdminProduct[];
   loading: boolean;
@@ -9684,12 +10105,18 @@ function ProductsPanel({
   onDelete: (id: string) => void;
   onToggle: (id: string, isActive: boolean) => void;
   sellers: Array<{ slug: string; whatsapp: string }>;
+  onRefreshProducts: () => void;
 }) {
   type BulkDiscountTier = {
     minQty: number;
     maxQty: number | null;
     unitPrice: number;
     label?: string | null;
+  };
+
+  type ProductVariantGroup = {
+    name: string;
+    options: string[];
   };
 
   const normalizeBulkDiscountTiers = (raw: unknown): BulkDiscountTier[] => {
@@ -9742,6 +10169,25 @@ function ProductsPanel({
     return tier ? Number(tier.unitPrice) : null;
   };
 
+  const normalizeVariantGroups = (raw: unknown): ProductVariantGroup[] => {
+    if (!Array.isArray(raw)) return [];
+
+    return raw
+      .map((group) => {
+        const item = group as Record<string, unknown>;
+        const name = String(item.name ?? "").trim();
+        const options = Array.isArray(item.options)
+          ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
+          : [];
+
+        if (!name || options.length === 0) return null;
+        return { name, options };
+      })
+      .filter((group): group is ProductVariantGroup => Boolean(group));
+  };
+
+  const currentVariantGroups = normalizeVariantGroups((productForm as any).variantGroups);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const [expandedLinks, setExpandedLinks] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
@@ -9751,7 +10197,29 @@ function ProductsPanel({
   const [costHistoryProductName, setCostHistoryProductName] = useState("");
   const [costHistory, setCostHistory] = useState<Array<{ id: number; costPrice: number; changedAt: string }>>([]);
   const [costHistoryLoading, setCostHistoryLoading] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const [newBrandInput, setNewBrandInput] = useState("");
+  const [removingCategory, setRemovingCategory] = useState(false);
+  const [removingBrand, setRemovingBrand] = useState(false);
   const siteOrigin = window.location.origin;
+
+  const categoryOptions = Array.from(new Set(
+    products
+      .map((p) => String(p.category || "").trim())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const brandOptions = Array.from(
+    products
+      .map((p) => String((p as any).brand || "").trim())
+      .filter(Boolean)
+      .reduce((map, brand) => {
+        const key = brand.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim();
+        if (!map.has(key)) map.set(key, brand);
+        return map;
+      }, new Map<string, string>())
+      .values(),
+  ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
 
   const openCostHistory = async (productId: string, productName: string) => {
     setCostHistoryProductId(productId);
@@ -9831,13 +10299,119 @@ function ProductsPanel({
   };
 
   const openCreate = () => {
-    setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [] } as any);
+    setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [], variantGroups: [] } as any);
+    setNewCategoryInput("");
+    setNewBrandInput("");
     setProductFormOpen(true);
   };
 
   const openEdit = (p: AdminProduct) => {
-    setProductForm({ ...(p as any), bulkDiscountTiers: normalizeBulkDiscountTiers((p as any).bulkDiscountTiers), _editing: true } as any);
+    setProductForm({ ...(p as any), bulkDiscountTiers: normalizeBulkDiscountTiers((p as any).bulkDiscountTiers), variantGroups: normalizeVariantGroups((p as any).variantGroups), _editing: true } as any);
+    setNewCategoryInput("");
+    setNewBrandInput("");
     setProductFormOpen(true);
+  };
+
+  const removeSelectedCategory = async () => {
+    const targetCategory = String(productForm.category || "").trim();
+    if (!targetCategory) {
+      toast.error("Selecione uma categoria para remover.");
+      return;
+    }
+
+    const affectedProducts = products.filter(
+      (p) => String(p.category || "").trim().toLowerCase() === targetCategory.toLowerCase(),
+    );
+
+    if (affectedProducts.length === 0) {
+      toast.info("Nenhum produto encontrado com essa categoria.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remover a categoria "${targetCategory}" de ${affectedProducts.length} produto(s)? Eles ficarão como "Sem categoria".`,
+    );
+    if (!confirmed) return;
+
+    setRemovingCategory(true);
+    let successCount = 0;
+
+    try {
+      for (const product of affectedProducts) {
+        const res = await fetch(`${BASE}/api/admin/products/${product.id}`, {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ category: "Sem categoria" }),
+        });
+        if (res.ok) {
+          successCount += 1;
+        }
+      }
+
+      if (successCount === 0) {
+        toast.error("Não foi possível remover a categoria.");
+        return;
+      }
+
+      setProductForm({ ...productForm, category: "" });
+      onRefreshProducts();
+      toast.success(`Categoria removida de ${successCount} produto(s).`);
+    } catch {
+      toast.error("Erro ao remover categoria.");
+    } finally {
+      setRemovingCategory(false);
+    }
+  };
+
+  const removeSelectedBrand = async () => {
+    const targetBrand = String((productForm as any).brand || "").trim();
+    if (!targetBrand) {
+      toast.error("Selecione uma marca para remover.");
+      return;
+    }
+
+    const affectedProducts = products.filter(
+      (p) => String((p as any).brand || "").trim().toLowerCase() === targetBrand.toLowerCase(),
+    );
+
+    if (affectedProducts.length === 0) {
+      toast.info("Nenhum produto encontrado com essa marca.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remover a marca "${targetBrand}" de ${affectedProducts.length} produto(s)? Eles ficarão sem marca.`,
+    );
+    if (!confirmed) return;
+
+    setRemovingBrand(true);
+    let successCount = 0;
+
+    try {
+      for (const product of affectedProducts) {
+        const res = await fetch(`${BASE}/api/admin/products/${product.id}`, {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ brand: null }),
+        });
+        if (res.ok) {
+          successCount += 1;
+        }
+      }
+
+      if (successCount === 0) {
+        toast.error("Não foi possível remover a marca.");
+        return;
+      }
+
+      setProductForm({ ...productForm, brand: null } as any);
+      onRefreshProducts();
+      toast.success(`Marca removida de ${successCount} produto(s).`);
+    } catch {
+      toast.error("Erro ao remover marca.");
+    } finally {
+      setRemovingBrand(false);
+    }
   };
 
   const UNITS = ["unidade", "caixa", "caneta", "frasco", "par", "kit"];
@@ -9896,13 +10470,95 @@ function ProductsPanel({
                   {/* Category */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Categoria *</label>
-                    <input value={productForm.category || ""} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} placeholder="Ex: Canetas, Kits, Destaque..." className={inp2} />
+                    <select
+                      value={productForm.category || ""}
+                      onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
+                      className={`${inp2} cursor-pointer`}
+                    >
+                      <option value="">Selecionar categoria...</option>
+                      {categoryOptions.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={newCategoryInput}
+                        onChange={(e) => setNewCategoryInput(e.target.value)}
+                        placeholder="Cadastrar nova categoria"
+                        className={inp2}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const next = String(newCategoryInput || "").trim();
+                          if (!next) { toast.error("Digite uma categoria válida."); return; }
+                          setProductForm({ ...productForm, category: next });
+                          setNewCategoryInput("");
+                        }}
+                      >
+                        Cadastrar
+                      </Button>
+                    </div>
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                        disabled={removingCategory || !String(productForm.category || "").trim()}
+                        onClick={removeSelectedCategory}
+                      >
+                        {removingCategory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        <span className="ml-1">Remover categoria selecionada</span>
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Brand */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Marca</label>
-                    <input value={(productForm as any).brand || ""} onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)} placeholder="Ex: Tirzec, Lipoless..." className={inp2} />
+                    <select
+                      value={(productForm as any).brand || ""}
+                      onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)}
+                      className={`${inp2} cursor-pointer`}
+                    >
+                      <option value="">Selecionar marca...</option>
+                      {brandOptions.map((brand) => (
+                        <option key={brand} value={brand}>{brand}</option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={newBrandInput}
+                        onChange={(e) => setNewBrandInput(e.target.value)}
+                        placeholder="Cadastrar nova marca"
+                        className={inp2}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const next = String(newBrandInput || "").trim();
+                          if (!next) { toast.error("Digite uma marca válida."); return; }
+                          setProductForm({ ...productForm, brand: next } as any);
+                          setNewBrandInput("");
+                        }}
+                      >
+                        Cadastrar
+                      </Button>
+                    </div>
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                        disabled={removingBrand || !String((productForm as any).brand || "").trim()}
+                        onClick={removeSelectedBrand}
+                      >
+                        {removingBrand ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        <span className="ml-1">Remover marca selecionada</span>
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Unit */}
@@ -10023,6 +10679,83 @@ function ProductsPanel({
                         );
                       })}
                     </div>
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block">Variantes do Produto</label>
+                        <p className="text-xs text-muted-foreground mt-1">Exemplo: Cor, Numeração, Tamanho.</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const next = [...currentVariantGroups, { name: "", options: [] }];
+                          setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-1" />Adicionar variante
+                      </Button>
+                    </div>
+
+                    {currentVariantGroups.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Sem variantes. O cliente compra sem seleção adicional.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {currentVariantGroups.map((group, groupIndex) => (
+                          <div key={`${group.name}-${groupIndex}`} className="rounded-xl border border-border bg-white p-3 space-y-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-6 gap-2">
+                              <div className="sm:col-span-2">
+                                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Nome da variante</label>
+                                <input
+                                  value={group.name}
+                                  onChange={(event) => {
+                                    const next = currentVariantGroups.map((item, index) => index === groupIndex
+                                      ? { ...item, name: event.target.value }
+                                      : item);
+                                    setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                  }}
+                                  placeholder="Ex: Cor"
+                                  className={inp2}
+                                />
+                              </div>
+                              <div className="sm:col-span-4">
+                                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Opções (separadas por vírgula)</label>
+                                <input
+                                  value={group.options.join(", ")}
+                                  onChange={(event) => {
+                                    const options = event.target.value
+                                      .split(",")
+                                      .map((value) => value.trim())
+                                      .filter(Boolean);
+                                    const next = currentVariantGroups.map((item, index) => index === groupIndex
+                                      ? { ...item, options }
+                                      : item);
+                                    setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                  }}
+                                  placeholder="Ex: Preta, Branca, Azul"
+                                  className={inp2}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="border-red-200 text-red-700 hover:bg-red-50"
+                                onClick={() => {
+                                  const next = currentVariantGroups.filter((_, index) => index !== groupIndex);
+                                  setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" />Remover
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Sort order */}
@@ -10416,6 +11149,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
+  const whatsappEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_whatsapp"] ?? "0").toLowerCase());
   const pixGateway = String(settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
   const outboundEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_enabled"] ?? "0").toLowerCase());
   const outboundEventNewOrder = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_new_order"] ?? "1").toLowerCase());
@@ -10427,7 +11161,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
   }, [settings]);
 
-  const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card", enabled: boolean) => {
+  const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp", enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
   };
 
@@ -10680,11 +11414,27 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               />
             </label>
           </div>
+
+          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+            <label className="flex items-center justify-between gap-4 cursor-pointer">
+              <div>
+                <p className="font-semibold flex items-center gap-2"><MessageCircle className="w-4 h-4 text-primary" />WhatsApp</p>
+                <p className="text-xs text-muted-foreground">Exibe o botão "Finalizar via WhatsApp" no checkout.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={whatsappEnabled}
+                onChange={(e) => togglePaymentMethod("checkout_enable_whatsapp", e.target.checked)}
+                disabled={!!loading["checkout_enable_whatsapp"]}
+                className="w-4 h-4"
+              />
+            </label>
+          </div>
         </div>
 
-        {!pixEnabled && !cardEnabled && (
+        {!pixEnabled && !cardEnabled && !whatsappEnabled && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800 mt-4">
-            Os dois métodos estão desativados. Nesse estado, o checkout ficará sem opção de pagamento.
+            Todos os métodos estão desativados. Nesse estado, o checkout ficará sem opção de pagamento.
           </div>
         )}
       </div>

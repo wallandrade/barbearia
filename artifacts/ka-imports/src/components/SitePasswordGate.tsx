@@ -12,10 +12,20 @@ interface IsProtectedResponse {
   payment: boolean;
 }
 
+async function fetchJsonWithTimeout<T>(url: string, init?: RequestInit, timeoutMs = 8000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return await response.json() as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function checkIsProtected(): Promise<IsProtectedResponse> {
   try {
-    const r = await fetch(`${BASE}/api/is-protected`);
-    return await r.json() as IsProtectedResponse;
+    return await fetchJsonWithTimeout<IsProtectedResponse>(`${BASE}/api/is-protected`);
   } catch {
     return { site: false, payment: false };
   }
@@ -23,12 +33,11 @@ async function checkIsProtected(): Promise<IsProtectedResponse> {
 
 async function verifyPassword(type: "site" | "payment", password: string): Promise<boolean> {
   try {
-    const r = await fetch(`${BASE}/api/verify-password`, {
+    const data = await fetchJsonWithTimeout<{ ok: boolean }>(`${BASE}/api/verify-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, password }),
     });
-    const data = await r.json() as { ok: boolean };
     return data.ok;
   } catch {
     return false;
@@ -134,15 +143,9 @@ export function SitePasswordGate({ children }: { children: ReactNode }) {
   // Already unlocked or exempt — render immediately without any flash
   if (unlocked || isExemptPath) return <>{children}</>;
 
-  // Still waiting for protection check — show minimal loader so we never flash
-  // the children before knowing if a password is required.
-  if (protected_ === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // Never block initial render on protection check; this prevents white-screen
+  // lockups when the API request hangs in some client environments.
+  if (protected_ === null) return <>{children}</>;
 
   // Site not protected
   if (!protected_) return <>{children}</>;
@@ -179,14 +182,9 @@ export function PaymentPasswordGate({ children }: { children: ReactNode }) {
   // Already unlocked — render immediately
   if (unlocked) return <>{children}</>;
 
-  // Still waiting for protection check — show minimal loader
-  if (protected_ === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // Never block initial render on protection check; this prevents white-screen
+  // lockups when the API request hangs in some client environments.
+  if (protected_ === null) return <>{children}</>;
 
   // Not protected
   if (!protected_) return <>{children}</>;

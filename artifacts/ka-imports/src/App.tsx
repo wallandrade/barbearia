@@ -10,6 +10,10 @@ import SocialProofWidget from "@/components/SocialProofWidget";
 import { FloatingTelegramButton } from "@/components/FloatingTelegramButton";
 import { captureReferralFromCurrentUrl } from "@/lib/affiliate";
 import { reportClientError } from "@/lib/client-error-reporting";
+import Home from "@/pages/Home";
+import CategoryPage from "@/pages/CategoryPage";
+import OffersPage from "@/pages/OffersPage";
+import SellerPage from "@/pages/SellerPage";
 
 // ---------------------------------------------------------------------------
 // React Error Boundary — prevents blank white page on uncaught render errors
@@ -97,9 +101,6 @@ class AppErrorBoundary extends Component<
   }
 }
 
-const Home                = lazy(() => import("@/pages/Home"));
-const CategoryPage        = lazy(() => import("@/pages/CategoryPage"));
-const OffersPage          = lazy(() => import("@/pages/OffersPage"));
 const Checkout            = lazy(() => import("@/pages/Checkout"));
 const PixPayment          = lazy(() => import("@/pages/PixPayment"));
 const Success             = lazy(() => import("@/pages/Success"));
@@ -108,7 +109,6 @@ const AdminLogin          = lazy(() => import("@/pages/AdminLogin"));
 const CustomerLogin       = lazy(() => import("@/pages/CustomerLogin"));
 const CustomerOrders      = lazy(() => import("@/pages/CustomerOrders"));
 const PaymentLink         = lazy(() => import("@/pages/PaymentLink"));
-const SellerPage          = lazy(() => import("@/pages/SellerPage"));
 const ProductDetail       = lazy(() => import("@/pages/ProductDetail"));
 const SellerCheckoutPage  = lazy(() => import("@/pages/SellerCheckoutPage"));
 const KYCPolicy           = lazy(() => import("@/pages/KYCPolicy"));
@@ -219,11 +219,6 @@ function AppInner() {
 
   useEffect(() => {
     captureReferralFromCurrentUrl();
-    try {
-      sessionStorage.removeItem("ka_chunk_reload_once");
-    } catch {
-      // Ignore storage access errors.
-    }
   }, [location]);
 
   return (

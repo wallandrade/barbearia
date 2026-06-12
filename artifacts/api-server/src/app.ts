@@ -3,23 +3,6 @@ import cors from "cors";
 import router from "./routes";
 import { exec } from "child_process";
 import crypto from "crypto";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
-
-// Run lightweight column migrations on startup (safe to run repeatedly)
-(async () => {
-  try {
-    await db.execute(sql`ALTER TABLE products ADD COLUMN brand VARCHAR(255) NULL`);
-    console.log("[STARTUP] Migration: brand column added to products table");
-  } catch (e: any) {
-    if (e?.errno === 1060) {
-      // ER_DUP_FIELDNAME — coluna já existe, tudo certo
-      console.log("[STARTUP] Migration: brand column already exists, skipping");
-    } else {
-      console.error("[STARTUP] Migration error:", e?.message ?? e);
-    }
-  }
-})();
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://ka-imports.com",
@@ -288,7 +271,7 @@ const app: Express = express();
 app.set("trust proxy", 1);
 
 if (!process.env.CORS_ALLOWED_ORIGINS) {
-  console.warn("[SECURITY] CORS_ALLOWED_ORIGINS não definido. Usando fallback interno.");
+  console.info("[SECURITY] CORS_ALLOWED_ORIGINS não definido. Usando fallback interno.");
 }
 if (!CHECKOUT_TOKEN_SECRET) {
   console.warn("[SECURITY] CHECKOUT_TOKEN_SECRET não definido. Defina no ambiente para proteção máxima.");
@@ -368,6 +351,10 @@ app.get("/api/security/checkout-token", (req, res) => {
   }
 
   const token = createCheckoutToken(req.get("user-agent") || "");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
   res.json({ token, expiresInMs: CHECKOUT_TOKEN_TTL_MS });
 });
 
@@ -423,6 +410,20 @@ app.use((req, res, next) => {
   if (req.get("authorization")) {
     next();
     return;
+  }
+
+  // Backward compatibility: allow checkout order creation from official origins
+  // even if an old frontend bundle misses x-checkout-token.
+  if (req.path === "/api/orders") {
+    const origin = req.get("origin");
+    const refererOrigin = getRefererOrigin(req.get("referer"));
+    const originAllowed = !origin || isOriginAllowed(origin);
+    const refererAllowed = !refererOrigin || isOriginAllowed(refererOrigin);
+
+    if (originAllowed && refererAllowed) {
+      next();
+      return;
+    }
   }
 
   if (!verifyCheckoutTokenOrReject(req, res)) return;

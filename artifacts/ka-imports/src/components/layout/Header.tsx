@@ -58,6 +58,7 @@ function SearchBar({
   setShowSuggestions,
   inputRef,
   wrapperRef,
+  homeHref,
   className = "",
 }: {
   searchValue: string;
@@ -69,6 +70,7 @@ function SearchBar({
   setShowSuggestions: (v: boolean) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   wrapperRef?: React.RefObject<HTMLDivElement | null>;
+  homeHref: string;
   className?: string;
 }) {
   const [, setLocation] = useLocation();
@@ -97,7 +99,7 @@ function SearchBar({
         />
         {searchValue && (
           <button
-            onClick={() => { setSearchValue(""); setShowSuggestions(false); setLocation("/"); }}
+            onClick={() => { setSearchValue(""); setShowSuggestions(false); setLocation(homeHref); }}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           >
             <X className="w-4 h-4" />
@@ -156,8 +158,30 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
   const currentPath = typeof window !== "undefined"
     ? window.location.pathname
     : location.split("?")[0];
+  const rootSegment = currentPath.split("/").filter(Boolean)[0] || "";
+  const reservedRootSegments = new Set([
+    "admin",
+    "login",
+    "produto",
+    "checkout",
+    "ofertas",
+    "categoria",
+    "pix",
+    "success",
+    "r",
+    "pagamento",
+    "payment-link",
+    "kyc",
+    "suporte",
+    "rifas",
+    "grupo2",
+    "minha-conta",
+  ]);
+  const sellerSlug = rootSegment && !reservedRootSegments.has(rootSegment) ? rootSegment : "";
+  const sellerHomeHref = sellerSlug ? `/${encodeURIComponent(sellerSlug)}` : "/";
   const normalizedBase = BASE || "/";
   const isHomePage =
+    currentPath === sellerHomeHref ||
     currentPath === "/" ||
     currentPath === normalizedBase ||
     currentPath === `${normalizedBase}/`;
@@ -175,9 +199,9 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
     setMobileSearchOpen(false);
     setMenuOpen(false);
     if (q) {
-      setLocation(`/?q=${encodeURIComponent(q)}`);
+      setLocation(`${sellerHomeHref}?q=${encodeURIComponent(q)}`);
     } else {
-      setLocation("/");
+      setLocation(sellerHomeHref);
     }
   }
 
@@ -186,7 +210,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
     setShowSuggestions(false);
     setMobileSearchOpen(false);
     setMenuOpen(false);
-    setLocation(`/?q=${encodeURIComponent(name)}`);
+    setLocation(`${sellerHomeHref}?q=${encodeURIComponent(name)}`);
   }
 
   // Open mobile search and auto-focus input
@@ -234,7 +258,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                   {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                 </button>
               )}
-              <Link href="/" className="flex items-center gap-2 group cursor-pointer">
+              <Link href={sellerHomeHref} className="flex items-center gap-2 group cursor-pointer">
                 <div className="overflow-hidden rounded-full h-9 w-9 md:h-10 md:w-10 border-2 border-primary/10 group-hover:border-primary/30 transition-colors bg-muted/30 flex items-center justify-center shrink-0">
                   {logo ? (
                     <img
@@ -264,6 +288,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                 setShowSuggestions={setShowSuggestions}
                 inputRef={desktopInputRef}
                 wrapperRef={desktopWrapperRef}
+                homeHref={sellerHomeHref}
                 className="flex-1 max-w-md mx-8 hidden md:block"
               />
             )}
@@ -319,6 +344,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                 setShowSuggestions={setShowSuggestions}
                 inputRef={mobileInputRef}
                 wrapperRef={mobileWrapperRef}
+                homeHref={sellerHomeHref}
                 className="w-full"
               />
             </div>
@@ -348,7 +374,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
 
             <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
               <Link
-                href="/"
+                href={sellerHomeHref}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-primary/5 text-foreground font-medium transition-colors"
                 onClick={() => setMenuOpen(false)}
               >

@@ -3,7 +3,7 @@ import { useSearch, useRoute, Link } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProductCard } from "@/components/product/ProductCard";
-import { Loader2, X, SlidersHorizontal, Search } from "lucide-react";
+import { Loader2, X, SlidersHorizontal, Search, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
@@ -135,6 +135,9 @@ export default function Home() {
   const { data, isLoading, isError } = useGetProducts();
   const [, sellerParams] = useRoute("/:seller");
   const sellerSlug = sellerParams?.seller?.toLowerCase();
+  const offersHref = sellerSlug
+    ? `${BASE}/${encodeURIComponent(sellerSlug)}/ofertas`
+    : `${BASE}/ofertas`;
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [nameFilter, setNameFilter] = useState("");
   const [activeBrand, setActiveBrand] = useState("");
@@ -172,13 +175,15 @@ export default function Home() {
     });
 
     return filtered.sort((a, b) => {
+      const aAny = a as any;
+      const bAny = b as any;
       const aIsSoldOut = (a as typeof a & { isSoldOut?: boolean }).isSoldOut === true;
       const bIsSoldOut = (b as typeof b & { isSoldOut?: boolean }).isSoldOut === true;
       if (aIsSoldOut && !bIsSoldOut) return 1;
       if (!aIsSoldOut && bIsSoldOut) return -1;
 
-      const aSort = (a.sortOrder ?? 0) > 0 ? (a.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
-      const bSort = (b.sortOrder ?? 0) > 0 ? (b.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
+      const aSort = (aAny.sortOrder ?? 0) > 0 ? (aAny.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
+      const bSort = (bAny.sortOrder ?? 0) > 0 ? (bAny.sortOrder ?? 0) : Number.MAX_SAFE_INTEGER;
       const sortDiff = aSort - bSort;
       if (sortDiff !== 0) return sortDiff;
 
@@ -187,7 +192,7 @@ export default function Home() {
       if (aIsLaunch && !bIsLaunch) return -1;
       if (!aIsLaunch && bIsLaunch) return 1;
 
-      return String(a.createdAt).localeCompare(String(b.createdAt));
+      return String(aAny.createdAt).localeCompare(String(bAny.createdAt));
     });
   }, [data, searchQuery, activeCategories, nameFilter, activeBrand]);
 
@@ -213,6 +218,21 @@ export default function Home() {
     }));
   }, [data?.categories, filteredProducts]);
 
+  const brandOptions = useMemo(() => {
+    const rawBrands = ((data as any)?.brands ?? []) as string[];
+    return Array.from(
+      rawBrands
+        .map((brand) => String(brand || "").trim())
+        .filter(Boolean)
+        .reduce((map, brand) => {
+          const key = brand.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim();
+          if (!map.has(key)) map.set(key, brand);
+          return map;
+        }, new Map<string, string>())
+        .values(),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+  }, [data]);
+
   const filterProps: FilterContentProps = {
     categories: data?.categories ?? [],
     activeCategories,
@@ -220,7 +240,7 @@ export default function Home() {
     nameFilter,
     setNameFilter,
     setActiveCategories,
-    brands: (data as any)?.brands ?? [],
+    brands: brandOptions,
     activeBrand,
     setActiveBrand,
   };
@@ -316,14 +336,14 @@ export default function Home() {
               )}
             </div>
 
-            {((data as any)?.brands ?? []).length > 0 && (
+            {brandOptions.length > 0 && (
               <select
                 value={activeBrand}
                 onChange={(e) => setActiveBrand(e.target.value)}
                 className="w-full h-11 px-4 rounded-2xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary cursor-pointer"
               >
                 <option value="">Todas as marcas</option>
-                {((data as any)?.brands ?? []).map((brand: string) => (
+                {brandOptions.map((brand: string) => (
                   <option key={`mobile-brand-${brand}`} value={brand}>{brand}</option>
                 ))}
               </select>
@@ -368,13 +388,22 @@ export default function Home() {
         </div>
 
         {/* Offers Banner */}
-        <Link href={`${BASE}/ofertas`} className="block mb-8 p-6 sm:p-8 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-2xl hover:border-red-400 hover:shadow-lg transition-all group">
-          <div className="flex items-center justify-between">
+        <Link
+          href={offersHref}
+          className="group relative block overflow-hidden rounded-2xl border border-slate-800/10 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-5 sm:px-6 py-4 sm:py-5 shadow-sm transition-all hover:shadow-lg hover:-translate-y-0.5"
+        >
+          <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-rose-500/20 blur-2xl" />
+          <div className="relative flex items-center justify-between gap-4">
             <div className="flex-1">
-              <h3 className="text-xl sm:text-2xl font-bold text-foreground mb-1 group-hover:text-red-600 transition-colors">🎉 Ofertas</h3>
-              <p className="text-sm sm:text-base text-muted-foreground">Confira os melhores descontos e ofertas com desconto progressivo</p>
+              <div className="mb-1 inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/85">
+                Destaques da semana
+              </div>
+              <h3 className="text-xl sm:text-2xl font-bold text-white mb-1">🎉 Ofertas</h3>
+              <p className="text-sm sm:text-base text-slate-200/90">Confira os melhores descontos e ofertas com desconto progressivo</p>
             </div>
-            <ArrowRight className="w-6 h-6 text-red-600 opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all ml-4" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500/15 text-rose-300 transition-all group-hover:bg-rose-500/25 group-hover:text-rose-200 group-hover:translate-x-1">
+              <ArrowRight className="w-5 h-5" />
+            </div>
           </div>
         </Link>
 
@@ -420,7 +449,12 @@ export default function Home() {
               >
                 {groupedFilteredProducts.map((group, groupIndex) => (
                   <section key={group.category}>
-                    <Link href={`${BASE}/categoria/${encodeURIComponent(group.category)}`} className="inline-block mb-4 sm:mb-5">
+                    <Link
+                      href={sellerSlug
+                        ? `${BASE}/${encodeURIComponent(sellerSlug)}/categoria/${encodeURIComponent(group.category)}`
+                        : `${BASE}/categoria/${encodeURIComponent(group.category)}`}
+                      className="inline-block mb-4 sm:mb-5"
+                    >
                       <h3 className="text-lg sm:text-xl font-bold text-foreground hover:text-primary hover:underline transition-colors cursor-pointer">
                         {group.category}
                       </h3>

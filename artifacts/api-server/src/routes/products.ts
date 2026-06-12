@@ -14,6 +14,11 @@ type BulkDiscountTierInput = {
   label?: string | null;
 };
 
+type ProductVariantGroupInput = {
+  name: string;
+  options: string[];
+};
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Resolve effective price respecting promo expiry */
@@ -79,9 +84,36 @@ function validateBulkDiscountTiers(tiers: BulkDiscountTierInput[]): { ok: true }
   return { ok: true };
 }
 
+function parseVariantGroups(raw: unknown): ProductVariantGroupInput[] {
+  if (!raw) return [];
+
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((group) => {
+        const item = group as Record<string, unknown>;
+        const name = String(item.name ?? "").trim();
+        const optionsRaw = Array.isArray(item.options) ? item.options : [];
+        const options = optionsRaw
+          .map((option) => String(option ?? "").trim())
+          .filter(Boolean)
+          .filter((option, index, array) => array.indexOf(option) === index);
+
+        if (!name || options.length === 0) return null;
+        return { name, options };
+      })
+      .filter((group): group is ProductVariantGroupInput => Boolean(group));
+  } catch {
+    return [];
+  }
+}
+
 function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = false) {
   const { price, promoPrice } = resolvePrice(p);
   const bulkDiscountTiers = parseBulkDiscountTiers(p.bulkDiscountTiers);
+  const variantGroups = parseVariantGroups(p.variantGroups);
   const product = {
     id:          p.id,
     name:        p.name,
@@ -94,6 +126,7 @@ function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = fal
     promoEndsAt: p.promoEndsAt?.toISOString() ?? null,
     bulkDiscountEnabled: Boolean(p.bulkDiscountEnabled),
     bulkDiscountTiers,
+    variantGroups,
     image:       p.image ?? null,
     isActive:    p.isActive,
     isSoldOut:   p.isSoldOut,
@@ -215,12 +248,13 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
   try {
     const {
       name, description, category, brand, unit, price,
-      costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, image, isActive, isSoldOut, isLaunch, sortOrder,
+      costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, sortOrder,
     } = req.body as {
       name: string; description?: string; category: string; brand?: string | null; unit: string;
       price: number; costPrice?: number | null; promoPrice?: number | null; promoEndsAt?: string | null;
       bulkDiscountEnabled?: boolean;
       bulkDiscountTiers?: BulkDiscountTierInput[] | null;
+      variantGroups?: ProductVariantGroupInput[] | null;
       image?: string | null; isActive?: boolean; isSoldOut?: boolean; isLaunch?: boolean; sortOrder?: number;
     };
 
@@ -235,6 +269,7 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
       res.status(400).json({ error: "INVALID_INPUT", message: validation.message });
       return;
     }
+    const normalizedVariantGroups = parseVariantGroups(variantGroups);
 
     const id = crypto.randomBytes(8).toString("hex");
     await db.insert(productsTable).values({
@@ -250,6 +285,7 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
       promoEndsAt: promoEndsAt ? new Date(promoEndsAt) : null,
       bulkDiscountEnabled: bulkDiscountEnabled === true,
       bulkDiscountTiers: normalizedTiers.length > 0 ? JSON.stringify(normalizedTiers) : null,
+      variantGroups: normalizedVariantGroups.length > 0 ? JSON.stringify(normalizedVariantGroups) : null,
       image:       image || null,
       isActive:    isActive !== false,
       isSoldOut:   isSoldOut === true,
@@ -272,12 +308,13 @@ router.patch("/admin/products/:id", requirePrimaryAdmin, async (req, res) => {
     if (Array.isArray(id)) id = id[0];
       const {
         name, description, category, brand, unit, price,
-        costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, image, isActive, isSoldOut, isLaunch, sortOrder,
+        costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, sortOrder,
       } = req.body as Partial<{
         name: string; description: string | null; category: string; brand: string | null; unit: string;
         price: number; costPrice: number | null; promoPrice: number | null; promoEndsAt: string | null;
         bulkDiscountEnabled: boolean;
         bulkDiscountTiers: BulkDiscountTierInput[] | null;
+        variantGroups: ProductVariantGroupInput[] | null;
         image: string | null; isActive: boolean; isSoldOut: boolean; isLaunch: boolean; sortOrder: number;
       }>;
 
@@ -300,6 +337,10 @@ router.patch("/admin/products/:id", requirePrimaryAdmin, async (req, res) => {
         return;
       }
       updates.bulkDiscountTiers = normalizedTiers.length > 0 ? JSON.stringify(normalizedTiers) : null;
+    }
+    if (variantGroups !== undefined) {
+      const normalizedVariantGroups = parseVariantGroups(variantGroups);
+      updates.variantGroups = normalizedVariantGroups.length > 0 ? JSON.stringify(normalizedVariantGroups) : null;
     }
     if (image      !== undefined) updates.image       = image || null;
     if (isActive   !== undefined) updates.isActive    = isActive;

@@ -28,6 +28,127 @@ import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThresho
 const router: IRouter = Router();
 
 let priorityColumnCache: { checkedAt: number; available: boolean } = { checkedAt: 0, available: false };
+const SLA_PRIORITY_BUSINESS_MS = 48 * 60 * 60 * 1000;
+const SAO_PAULO_UTC_OFFSET_MS = -3 * 60 * 60 * 1000;
+const holidayCacheByYear = new Map<number, Set<string>>();
+
+function toDateKey(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function getEasterSunday(year: number): { month: number; day: number } {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return { month, day };
+}
+
+function addDaysFrom(year: number, month: number, day: number, deltaDays: number): { year: number; month: number; day: number } {
+  const dt = new Date(Date.UTC(year, month - 1, day + deltaDays));
+  return {
+    year: dt.getUTCFullYear(),
+    month: dt.getUTCMonth() + 1,
+    day: dt.getUTCDate(),
+  };
+}
+
+function getBrazilHolidayKeys(year: number): Set<string> {
+  const cached = holidayCacheByYear.get(year);
+  if (cached) return cached;
+
+  const holidays = new Set<string>([
+    toDateKey(year, 1, 1),
+    toDateKey(year, 4, 21),
+    toDateKey(year, 5, 1),
+    toDateKey(year, 9, 7),
+    toDateKey(year, 10, 12),
+    toDateKey(year, 11, 2),
+    toDateKey(year, 11, 15),
+    toDateKey(year, 11, 20),
+    toDateKey(year, 12, 25),
+  ]);
+
+  const easter = getEasterSunday(year);
+  const carnivalMonday = addDaysFrom(year, easter.month, easter.day, -48);
+  const carnivalTuesday = addDaysFrom(year, easter.month, easter.day, -47);
+  const goodFriday = addDaysFrom(year, easter.month, easter.day, -2);
+  const corpusChristi = addDaysFrom(year, easter.month, easter.day, 60);
+
+  holidays.add(toDateKey(carnivalMonday.year, carnivalMonday.month, carnivalMonday.day));
+  holidays.add(toDateKey(carnivalTuesday.year, carnivalTuesday.month, carnivalTuesday.day));
+  holidays.add(toDateKey(goodFriday.year, goodFriday.month, goodFriday.day));
+  holidays.add(toDateKey(year, easter.month, easter.day));
+  holidays.add(toDateKey(corpusChristi.year, corpusChristi.month, corpusChristi.day));
+
+  holidayCacheByYear.set(year, holidays);
+  return holidays;
+}
+
+function getSaoPauloDateParts(utcMs: number): { year: number; month: number; day: number; weekDay: number } {
+  const shifted = new Date(utcMs + SAO_PAULO_UTC_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    weekDay: shifted.getUTCDay(),
+  };
+}
+
+function isBusinessWeekdayInSaoPaulo(utcMs: number): boolean {
+  const parts = getSaoPauloDateParts(utcMs);
+  if (parts.weekDay < 1 || parts.weekDay > 5) return false;
+  const dateKey = toDateKey(parts.year, parts.month, parts.day);
+  return !getBrazilHolidayKeys(parts.year).has(dateKey);
+}
+
+function nextSaoPauloMidnightUtcMs(utcMs: number): number {
+  const shifted = new Date(utcMs + SAO_PAULO_UTC_OFFSET_MS);
+  const y = shifted.getUTCFullYear();
+  const m = shifted.getUTCMonth();
+  const d = shifted.getUTCDate();
+  const nextMidnightShiftedUtc = Date.UTC(y, m, d + 1, 0, 0, 0, 0);
+  return nextMidnightShiftedUtc - SAO_PAULO_UTC_OFFSET_MS;
+}
+
+function elapsedBusinessMsSince(createdAt: Date | null | undefined, now: Date = new Date()): number {
+  if (!createdAt) return 0;
+  const start = createdAt.getTime();
+  const end = now.getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+
+  let cursor = start;
+  let businessMs = 0;
+  while (cursor < end) {
+    const segmentEnd = Math.min(end, nextSaoPauloMidnightUtcMs(cursor));
+    if (isBusinessWeekdayInSaoPaulo(cursor)) {
+      businessMs += Math.max(0, segmentEnd - cursor);
+    }
+    cursor = segmentEnd;
+  }
+  return businessMs;
+}
+
+function shouldAutoPrioritizeOrder(order: { status?: string | null; enviado?: boolean | null; createdAt?: Date | null }): boolean {
+  if (!order.createdAt) return false;
+  if (order.enviado) return false;
+
+  const normalizedStatus = String(order.status || "").trim().toLowerCase();
+  if (!normalizedStatus || normalizedStatus === "cancelled") return false;
+  if (normalizedStatus !== "paid" && normalizedStatus !== "completed") return false;
+
+  return elapsedBusinessMsSince(order.createdAt) >= SLA_PRIORITY_BUSINESS_MS;
+}
 
 async function isOrderPriorityColumnAvailable(force = false): Promise<boolean> {
   const now = Date.now();
@@ -119,7 +240,27 @@ type OrderProductInput = {
   quantity: number;
   price: number;
   isBump?: boolean;
+  selectedVariants?: Array<{ groupName?: string; option?: string }>;
+  variantLabel?: string;
 };
+
+function normalizeOrderItemVariants(raw: unknown): Array<{ groupName: string; option: string }> {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      const value = item as Record<string, unknown>;
+      const groupName = String(value.groupName ?? "").trim();
+      const option = String(value.option ?? "").trim();
+      if (!groupName || !option) return null;
+      return { groupName, option };
+    })
+    .filter((item): item is { groupName: string; option: string } => Boolean(item));
+}
+
+function buildVariantLabel(variants: Array<{ groupName: string; option: string }>): string {
+  return variants.map((item) => `${item.groupName}: ${item.option}`).join(" / ");
+}
 
 type TrackingParseResult = {
   rawText: string;
@@ -619,7 +760,7 @@ function parseEnabledSetting(value?: string | null): boolean {
   return !["0", "false", "off", "no", "disabled"].includes(normalized);
 }
 
-async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card"): Promise<boolean> {
+async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp"): Promise<boolean> {
   const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, key)).limit(1);
   return parseEnabledSetting(rows[0]?.value ?? null);
 }
@@ -928,6 +1069,17 @@ router.post("/orders", async (req, res) => {
       }
     }
 
+    if (method === "whatsapp_pix") {
+      const whatsappEnabled = await isPaymentMethodEnabled("checkout_enable_whatsapp");
+      if (!whatsappEnabled) {
+        res.status(403).json({
+          error: "PAYMENT_METHOD_DISABLED",
+          message: "Pagamento via WhatsApp está temporariamente indisponível.",
+        });
+        return;
+      }
+    }
+
     const productItems = Array.isArray(products) ? (products as OrderProductInput[]) : [];
     if (productItems.length === 0) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Carrinho vazio." });
@@ -958,6 +1110,12 @@ router.post("/orders", async (req, res) => {
         const sentUnitPrice = Number(item.price) || 0;
         const isBump = item.isBump === true;
         const serverUnitPrice = isBump ? sentUnitPrice : resolveUnitPriceForQuantity(current, quantity);
+        const selectedVariants = normalizeOrderItemVariants(item.selectedVariants);
+        const variantLabel = String(item.variantLabel || "").trim() || buildVariantLabel(selectedVariants);
+        const rawName = String(item.name || current.name || "Produto");
+        const productName = variantLabel && !rawName.includes(variantLabel)
+          ? `${rawName} - ${variantLabel}`
+          : rawName;
 
         if (!isBump && Math.abs(sentUnitPrice - serverUnitPrice) > 0.001) {
           priceChanges.push({
@@ -970,13 +1128,23 @@ router.post("/orders", async (req, res) => {
 
         return {
           id: productId,
-          name: String(item.name || current.name || "Produto"),
+          name: productName,
           quantity,
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
+          selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
+          variantLabel: variantLabel || undefined,
         };
       })
-      .filter((item): item is { id: string; name: string; quantity: number; price: number; costPrice: number } => Boolean(item));
+      .filter((item): item is {
+        id: string;
+        name: string;
+        quantity: number;
+        price: number;
+        costPrice: number;
+        selectedVariants?: Array<{ groupName: string; option: string }>;
+        variantLabel?: string;
+      } => Boolean(item));
 
     if (unavailableProducts.length > 0) {
       res.status(400).json({
@@ -1303,6 +1471,12 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     const priorityByOrder = await loadOrderPriorityMap(orders.map((o) => o.id));
 
     const enriched = orders.map((order) => {
+      const manualPriority = priorityByOrder.get(order.id) ?? false;
+      const automaticPriority = shouldAutoPrioritizeOrder({
+        status: order.status,
+        enviado: !!order.enviado,
+        createdAt: order.createdAt,
+      });
       const ipCity   = String((order as any).ipCity   || "").trim().toLowerCase();
       const ipRegion = String((order as any).ipRegion || "").trim().toLowerCase();
       const addrCity = String(order.addressCity  || "").trim().toLowerCase();
@@ -1337,7 +1511,10 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
 
       return {
         ...mapOrder(order),
-        isPrioridade: priorityByOrder.get(order.id) ?? false,
+        isPrioridade: manualPriority || automaticPriority,
+        priorityManual: manualPriority,
+        priorityAutomatic: automaticPriority,
+        prioritySource: manualPriority ? "manual" : automaticPriority ? "automatic" : null,
         purchaseRisk,
         purchaseRiskReason,
         reshipment: reshipmentByOrder.get(order.id) || null,
@@ -1349,6 +1526,11 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
       const aActive = a.reshipment?.status === "reenvio_aguardando_estoque" || a.reshipment?.status === "reenvio_pronto_para_envio";
       const bActive = b.reshipment?.status === "reenvio_aguardando_estoque" || b.reshipment?.status === "reenvio_pronto_para_envio";
       if (aActive !== bActive) return bActive ? 1 : -1;
+
+      const aPriority = !!a.isPrioridade;
+      const bPriority = !!b.isPrioridade;
+      if (aPriority !== bPriority) return bPriority ? 1 : -1;
+
       const aTime = Date.parse(a.createdAt || "");
       const bTime = Date.parse(b.createdAt || "");
       return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
@@ -1406,9 +1588,12 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
       if (!wasAlreadyPaid && existing[0]?.couponCode) {
         couponCodeToIncrement = existing[0].couponCode;
       }
-      // Record the paid amount (the current total at the time of payment confirmation)
-      if (!existing[0]?.paidAmount && existing[0]?.total) {
-        updates.paidAmount = existing[0].total;
+      // Manual paid/completed confirmation should reflect at least the current order total.
+      const currentTotal = Number(existing[0]?.total ?? 0);
+      const currentPaidAmount = Number(existing[0]?.paidAmount ?? 0);
+      const reconciledPaidAmount = Math.max(currentPaidAmount, currentTotal);
+      if (reconciledPaidAmount > 0) {
+        updates.paidAmount = String(reconciledPaidAmount);
       }
     }
 
@@ -1491,11 +1676,13 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
     }
     if (!urls.includes(proofData)) urls.push(proofData);
 
-    // Set paidAmount to current total if not already recorded
-    const proofPaidAmount = existing[0]?.paidAmount ?? existing[0]?.total ?? null;
+    // Proof upload means payment was confirmed; reconcile paidAmount with at least the current total.
+    const proofCurrentTotal = Number(existing[0]?.total ?? 0);
+    const proofCurrentPaid = Number(existing[0]?.paidAmount ?? 0);
+    const proofPaidAmount = Math.max(proofCurrentPaid, proofCurrentTotal);
 
     await db.update(ordersTable)
-      .set({ proofUrl: proofData, proofUrls: JSON.stringify(urls), status: "completed", paidAmount: proofPaidAmount, updatedAt: new Date() })
+      .set({ proofUrl: proofData, proofUrls: JSON.stringify(urls), status: "completed", paidAmount: String(proofPaidAmount), updatedAt: new Date() })
       .where(buildAdminOrderWhere(id, adminScope));
 
     await ensureOrderCommission(id);
@@ -1518,8 +1705,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { products: newProducts, address } = req.body as {
+    const { products: newProducts, address, discountAmount } = req.body as {
       products: Array<{ id: string; name: string; quantity: number; price: number }>;
+      discountAmount?: number;
       address?: {
         cep?: string | null;
         street?: string | null;
@@ -1567,7 +1755,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       return sum + product.quantity * product.price;
     }, 0);
     const computedShippingCost = Math.max(0, Number(current[0].shippingCost) || 0);
-    const computedDiscountAmount = Math.max(0, Number(current[0].discountAmount) || 0);
+    const computedDiscountAmount = discountAmount !== undefined
+      ? Math.max(0, Number(discountAmount) || 0)
+      : Math.max(0, Number(current[0].discountAmount) || 0);
     const computedInsuranceAmount = current[0].includeInsurance ? Math.max(0, computedSubtotal) * 0.1 : 0;
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
@@ -1601,6 +1791,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       products: resolvedProducts,
       subtotal: String(computedSubtotal),
       insuranceAmount: String(computedInsuranceAmount),
+      discountAmount: String(computedDiscountAmount),
       total: String(total),
       status: newStatus,
       updatedAt: new Date(),
@@ -1976,6 +2167,17 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     const wasEnviado = !!order.enviado;
+    const shouldSkipReturnToStock = !enviado && wasEnviado
+      ? await db
+          .select({ id: reshipmentsTable.id })
+          .from(reshipmentsTable)
+          .where(and(
+            eq(reshipmentsTable.orderId, id),
+            inArray(reshipmentsTable.status, ["reenvio_aguardando_estoque", "reenvio_pronto_para_envio"]),
+          ))
+          .limit(1)
+          .then((rows) => !!rows[0])
+      : false;
 
     if (enviado !== wasEnviado) {
       const orderItems = parseOrderItemsForInventory(order.products);
@@ -2033,6 +2235,9 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         }
 
         for (const item of resolvedItems) {
+          if (shouldSkipReturnToStock && !enviado) {
+            continue;
+          }
           const qty = enviado ? -item.quantity : item.quantity;
           await registerInventoryEntry({
             productId: item.productId!,

@@ -19,7 +19,6 @@ import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
 import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
-import { useCreateOrder } from "@workspace/api-client-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
@@ -73,6 +72,27 @@ function pluralizeUnit(unit: string, qty: number): string {
     ampola: "ampolas", caneta: "canetas", par: "pares", kit: "kits",
   };
   return map[unit] ?? unit + "s";
+}
+
+function normalizeSelectedVariants(raw: unknown): Array<{ groupName: string; option: string }> {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      const value = item as Record<string, unknown>;
+      const groupName = String(value.groupName ?? "").trim();
+      const option = String(value.option ?? "").trim();
+      if (!groupName || !option) return null;
+      return { groupName, option };
+    })
+    .filter((item): item is { groupName: string; option: string } => Boolean(item));
+}
+
+function resolveVariantLabel(item: Record<string, unknown>): string {
+  const explicit = String(item.variantLabel ?? "").trim();
+  if (explicit) return explicit;
+  const selected = normalizeSelectedVariants(item.selectedVariants);
+  return selected.map((variant) => `${variant.groupName}: ${variant.option}`).join(" / ");
 }
 
 function formatCEP(value: string) {
@@ -130,7 +150,7 @@ export default function Checkout() {
   const [affiliateCreditAvailable, setAffiliateCreditAvailable] = useState(0);
   const [affiliateCreditLoading, setAffiliateCreditLoading] = useState(false);
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true });
+  const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true, whatsapp: false });
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState<number | null>(null);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
   const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
@@ -350,13 +370,51 @@ export default function Checkout() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nonBumpSnapshot, checkoutBumps]);
 
-  const { mutate: createOrder, isPending: isCreatingOrder } = useCreateOrder({
-    request: {
-      headers: getCustomerAuthHeaders(),
-    },
-  });
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const isLoading = isCreatingOrder || isCheckingOut;
+
+  const createOrderWithSecurity = useCallback(async (payload: Record<string, unknown>) => {
+    setIsCreatingOrder(true);
+    try {
+      const submitOrder = async (forceRefreshToken = false) => {
+        const resp = await fetch(`${BASE}/api/orders`, {
+          method: "POST",
+          headers: await getCheckoutSecurityHeaders(
+            getCustomerAuthHeaders() as Record<string, string>,
+            forceRefreshToken,
+          ),
+          body: JSON.stringify(payload),
+        });
+        const result = await resp.json() as Record<string, unknown>;
+        return { resp, result };
+      };
+
+      let { resp, result } = await submitOrder(false);
+      const invalidToken =
+        resp.status === 403 &&
+        (result.error === "INVALID_CHECKOUT_TOKEN" || result.message === "Sessão de checkout inválida. Recarregue a página e tente novamente.");
+
+      if (invalidToken) {
+        ({ resp, result } = await submitOrder(true));
+      }
+
+      if (!resp.ok) {
+        const error = new Error(String(result.message || "Erro ao registrar pedido.")) as Error & {
+          data?: { error?: string; message?: string };
+        };
+        error.data = {
+          error: typeof result.error === "string" ? result.error : undefined,
+          message: typeof result.message === "string" ? result.message : undefined,
+        };
+        throw error;
+      }
+
+      return result as { id: string };
+    } finally {
+      setIsCreatingOrder(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -366,8 +424,8 @@ export default function Checkout() {
         const res = await fetch(`${BASE}/api/settings`);
         if (!res.ok) return;
         const data = await res.json() as Record<string, string>;
-        const parseEnabled = (value?: string) => {
-          if (value == null || value === "") return true;
+        const parseEnabled = (value: string | undefined, defaultValue = true) => {
+          if (value == null || value === "") return defaultValue;
           const normalized = String(value).trim().toLowerCase();
           return !["0", "false", "off", "no", "disabled"].includes(normalized);
         };
@@ -380,6 +438,7 @@ export default function Checkout() {
           setPaymentMethods({
             pix: parseEnabled(data["checkout_enable_pix"]),
             card: parseEnabled(data["checkout_enable_card"]),
+            whatsapp: parseEnabled(data["checkout_enable_whatsapp"], false),
           });
           setFreeShippingMinSubtotal(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
         }
@@ -780,6 +839,8 @@ export default function Checkout() {
         quantity: item.quantity,
         price: item.price,
         isBump: (item as { isBump?: boolean }).isBump === true,
+        selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
+        variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
       }));
 
       const affiliateCode = getStoredReferralCode();
@@ -850,7 +911,12 @@ export default function Checkout() {
               state:        data.state,
               cep:          data.cep,
             },
-            products:        items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
+            products:        items.map((i) => ({
+              name: i.name,
+              quantity: i.quantity,
+              price: i.price,
+              variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
+            })),
             shippingType:    selectedShipping?.name ?? "Frete",
             shippingCost,
             includeInsurance,
@@ -908,7 +974,12 @@ export default function Checkout() {
             state:        data.state,
             cep:          data.cep,
           },
-          products:        items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
+          products:        items.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: i.price,
+            variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
+          })),
           shippingType:    selectedShipping?.name ?? "Frete",
           shippingCost,
           includeInsurance,
@@ -970,7 +1041,124 @@ export default function Checkout() {
     })();
   };
 
-  const finalizeCardPayment = () => {
+  const handleWhatsAppPayment = async (data: CheckoutFormData) => {
+    if (!paymentMethods.whatsapp) {
+      toast.error("Pagamento via WhatsApp está desativado no momento.");
+      return;
+    }
+
+    if (!validateLanderGoldRule()) return;
+
+    const cartAvailable = await validateCartAvailability();
+    if (!cartAvailable) return;
+
+    const productsPayload = items.map((item) => ({
+      id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      isBump: (item as { isBump?: boolean }).isBump === true,
+      selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
+      variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
+    }));
+
+    const affiliateCode = getStoredReferralCode();
+
+    try {
+      const order = await createOrderWithSecurity({
+        client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
+        address: {
+          cep: data.cep,
+          street: data.street,
+          number: data.number,
+          complement: data.complement || "",
+          neighborhood: data.neighborhood,
+          city: data.city,
+          state: data.state,
+        },
+        products: productsPayload,
+        shippingType: selectedShipping?.name ?? "Frete",
+        includeInsurance,
+        subtotal,
+        shippingCost,
+        insuranceAmount,
+        total,
+        paymentMethod: "whatsapp_pix",
+        sellerCode,
+        affiliateCode: affiliateCode || undefined,
+        couponCode: appliedCoupon?.code,
+        discountAmount: discountAmount > 0 ? discountAmount : undefined,
+      });
+
+      const itemsText = productsPayload
+        .map((item) => {
+          const itemTotal = item.price * item.quantity;
+          const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
+          return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
+        })
+        .join("\n");
+
+      const addressFull = [
+        `${data.street}, ${data.number}`,
+        data.complement,
+        data.neighborhood,
+        `${data.city}/${data.state}`,
+        `CEP ${data.cep}`,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      const message =
+        `Olá! Quero finalizar meu pedido.\n\n` +
+        `Pedido: #${order.id}\n` +
+        `Cliente: ${data.name}\n` +
+        `Telefone: ${data.phone}\n` +
+        `CPF: ${data.document}\n` +
+        `E-mail: ${data.email}\n\n` +
+        `Endereço: ${addressFull}\n\n` +
+        `Itens:\n${itemsText}\n\n` +
+        `Subtotal: ${formatCurrency(subtotal)}\n` +
+        `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+        (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+        (discountAmount > 0
+          ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
+          : "") +
+        `Total: ${formatCurrency(payableTotal)}\n\n` +
+        `Pode me enviar a chave PIX para pagamento?`;
+
+      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+
+      // Try to open in new window; if blocked, navigate directly
+      const newWindow = window.open(waUrl, "_blank", "noopener,noreferrer");
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+        // Pop-up was blocked; use direct navigation instead
+        window.location.href = waUrl;
+      }
+
+      toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
+      clearCart();
+      setIsOpen(false);
+    } catch (error) {
+      const apiError = error as { data?: { error?: string; message?: string } };
+      if (apiError?.data?.error === "PRICE_CHANGED") {
+        const synced = await syncCartWithLatestProducts();
+        toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
+        if (synced) toast.info("Revise os novos valores e tente novamente.");
+        return;
+      }
+      toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
+    }
+  };
+
+  const handleWhatsAppCheckout = () => {
+    if (!paymentMethods.whatsapp) {
+      toast.error("Pagamento via WhatsApp está desativado no momento.");
+      return;
+    }
+    handleSubmit(handleWhatsAppPayment)();
+  };
+
+  const finalizeCardPayment = async () => {
     if (!validateLanderGoldRule()) return;
 
     const data = getValues();
@@ -983,174 +1171,167 @@ export default function Checkout() {
       quantity: i.quantity,
       price: (i as { regularPrice?: number }).regularPrice ?? i.price,
       isBump: (i as { isBump?: boolean }).isBump === true,
+      selectedVariants: normalizeSelectedVariants((i as Record<string, unknown>).selectedVariants),
+      variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
     }));
     const affiliateCode = getStoredReferralCode();
 
-    // Save card simulation order in DB for admin tracking
-    createOrder(
-      {
-        data: {
-          client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
-          address: {
-            cep: data.cep, street: data.street, number: data.number,
-            complement: data.complement || "", neighborhood: data.neighborhood,
-            city: data.city, state: data.state,
-          },
-          products: cardProductsPayload,
-          shippingType: selectedShipping?.name ?? "Frete",
-          includeInsurance,
-          subtotal: cardSubtotal,
-          shippingCost,
-          insuranceAmount: cardInsuranceAmount,
-          total: cardTotal,
-          paymentMethod: "card_simulation",
-          cardInstallments: installments,
-          sellerCode,
-          affiliateCode: affiliateCode || undefined,
-          couponCode:     appliedCoupon?.code,
-          discountAmount: cardDiscountAmount > 0 ? cardDiscountAmount : undefined,
+    try {
+      const order = await createOrderWithSecurity({
+        client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
+        address: {
+          cep: data.cep,
+          street: data.street,
+          number: data.number,
+          complement: data.complement || "",
+          neighborhood: data.neighborhood,
+          city: data.city,
+          state: data.state,
         },
-      },
-      {
-        onSuccess: (order) => {
-          const itemsText = cardProductsPayload
-            .map((item) => `  • ${item.quantity}x ${item.name} — ${formatCurrency(item.price * item.quantity)}`)
-            .join("\n");
+        products: cardProductsPayload,
+        shippingType: selectedShipping?.name ?? "Frete",
+        includeInsurance,
+        subtotal: cardSubtotal,
+        shippingCost,
+        insuranceAmount: cardInsuranceAmount,
+        total: cardTotal,
+        paymentMethod: "card_simulation",
+        cardInstallments: installments,
+        sellerCode,
+        affiliateCode: affiliateCode || undefined,
+        couponCode: appliedCoupon?.code,
+        discountAmount: cardDiscountAmount > 0 ? cardDiscountAmount : undefined,
+      });
 
-          const addressFull = [
-            `${data.street}, ${data.number}`,
-            data.complement,
-            data.neighborhood,
-            `${data.city}/${data.state}`,
-            `CEP ${data.cep}`,
-          ].filter(Boolean).join(", ");
+      const itemsText = cardProductsPayload
+        .map((item) => `  • ${item.quantity}x ${item.name} — ${formatCurrency(item.price * item.quantity)}`)
+        .join("\n");
 
-          const message =
-            `💳 *Pedido via Cartão — KA Imports*\n\n` +
-            `*Nº do Pedido:* ${order.id}\n` +
-            `*Cliente:* ${data.name}\n` +
-            `*CPF:* ${data.document}\n` +
-            `*Telefone:* ${data.phone}\n` +
-            `*E-mail:* ${data.email}\n\n` +
-            `*Endereço de Entrega:*\n  ${addressFull}\n\n` +
-            `*Produtos:*\n${itemsText}\n\n` +
-            `*Subtotal:* ${formatCurrency(cardSubtotal)}\n` +
-            `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-            (includeInsurance ? `*Seguro de Envio:* Sim (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
-            (cardDiscountAmount > 0
-              ? `*Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(cardDiscountAmount)}\n`
-              : "") +
-            (cardFee > 0 ? `*Taxa parcelamento:* +${formatCurrency(cardFee)}\n` : "") +
-            `*Parcelamento desejado:* ${installments}x\n` +
-            `*Total:* ${formatCurrency(cardTotal)}\n\n` +
-            `Aguardo o retorno para confirmar os detalhes!`;
+      const addressFull = [
+        `${data.street}, ${data.number}`,
+        data.complement,
+        data.neighborhood,
+        `${data.city}/${data.state}`,
+        `CEP ${data.cep}`,
+      ].filter(Boolean).join(", ");
 
-          const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
-          setKycOrderId(order.id);
-          setKycWhatsAppUrl(waUrl);
-          setCardModalStep("kyc_link");
-        },
-        onError: async (error) => {
-          const apiError = error as { data?: { error?: string; message?: string } };
-          if (apiError?.data?.error === "PRICE_CHANGED") {
-            const synced = await syncCartWithLatestProducts();
-            toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
-            if (synced) toast.info("Revise os novos valores e tente novamente.");
-            return;
-          }
-          toast.error("Erro ao registrar pedido. Tente novamente.");
-        },
+      const message =
+        `💳 *Pedido via Cartão — KA Imports*\n\n` +
+        `*Nº do Pedido:* ${order.id}\n` +
+        `*Cliente:* ${data.name}\n` +
+        `*CPF:* ${data.document}\n` +
+        `*Telefone:* ${data.phone}\n` +
+        `*E-mail:* ${data.email}\n\n` +
+        `*Endereço de Entrega:*\n  ${addressFull}\n\n` +
+        `*Produtos:*\n${itemsText}\n\n` +
+        `*Subtotal:* ${formatCurrency(cardSubtotal)}\n` +
+        `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+        (includeInsurance ? `*Seguro de Envio:* Sim (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
+        (cardDiscountAmount > 0
+          ? `*Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(cardDiscountAmount)}\n`
+          : "") +
+        (cardFee > 0 ? `*Taxa parcelamento:* +${formatCurrency(cardFee)}\n` : "") +
+        `*Parcelamento desejado:* ${installments}x\n` +
+        `*Total:* ${formatCurrency(cardTotal)}\n\n` +
+        `Aguardo o retorno para confirmar os detalhes!`;
+
+      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+      setKycOrderId(order.id);
+      setKycWhatsAppUrl(waUrl);
+      setCardModalStep("kyc_link");
+    } catch (error) {
+      const apiError = error as { data?: { error?: string; message?: string } };
+      if (apiError?.data?.error === "PRICE_CHANGED") {
+        const synced = await syncCartWithLatestProducts();
+        toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
+        if (synced) toast.info("Revise os novos valores e tente novamente.");
+        return;
       }
-    );
+      toast.error(apiError?.data?.message || "Erro ao registrar pedido. Tente novamente.");
+    }
   };
 
   return (
     <CheckoutLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <button
-          onClick={() => setLocation("/")}
-          className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Voltar para loja
-        </button>
+          try {
+            const order = await createOrderWithSecurity({
+              client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
+              address: {
+                cep: data.cep,
+                street: data.street,
+                number: data.number,
+                complement: data.complement || "",
+                neighborhood: data.neighborhood,
+                city: data.city,
+                state: data.state,
+              },
+              products: productsPayload,
+              shippingType: selectedShipping?.name ?? "Frete",
+              includeInsurance,
+              subtotal,
+              shippingCost,
+              insuranceAmount,
+              total,
+              paymentMethod: "whatsapp_pix",
+              sellerCode,
+              affiliateCode: affiliateCode || undefined,
+              couponCode: appliedCoupon?.code,
+              discountAmount: discountAmount > 0 ? discountAmount : undefined,
+            });
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-          {/* Left Column */}
-          <div className="lg:col-span-7 space-y-8">
+            const itemsText = productsPayload
+              .map((item) => {
+                const itemTotal = item.price * item.quantity;
+                const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
+                return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
+              })
+              .join("\n");
 
-            {/* Personal Data */}
-            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
-              <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
-              <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
-                <Input
-                  label="Nome Completo *"
-                  placeholder="João da Silva"
-                  {...register("name")}
-                  error={errors.name?.message}
-                />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="E-mail *"
-                    type="email"
-                    placeholder="joao@exemplo.com"
-                    {...register("email")}
-                    error={errors.email?.message}
-                  />
-                  <div className="w-full space-y-1.5">
-                    <label className="text-sm font-medium text-foreground ml-1">Telefone (WhatsApp) *</label>
-                    <input
-                      type="tel"
-                      value={phoneDisplay}
-                      onChange={handlePhoneChange}
-                      placeholder="(11) 99999-9999"
-                      className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 ${errors.phone ? "border-destructive" : ""}`}
-                    />
-                    {errors.phone && <p className="text-sm text-destructive ml-1">{errors.phone.message}</p>}
-                  </div>
-                </div>
-                <div className="w-full space-y-1.5">
-                  <label className="text-sm font-medium text-foreground ml-1">CPF *</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={cpfDisplay}
-                    onChange={handleCPFChange}
-                    placeholder="000.000.000-00"
-                    className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 ${errors.document ? "border-destructive" : ""}`}
-                  />
-                  {errors.document && <p className="text-sm text-destructive ml-1">{errors.document.message}</p>}
-                </div>
-              </form>
-            </div>
+            const addressFull = [
+              `${data.street}, ${data.number}`,
+              data.complement,
+              data.neighborhood,
+              `${data.city}/${data.state}`,
+              `CEP ${data.cep}`,
+            ]
+              .filter(Boolean)
+              .join(", ");
 
-            {/* Address */}
-            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
-              <div className="flex items-center gap-2 mb-6">
-                <MapPin className="w-5 h-5 text-primary" />
-                <h2 className="text-2xl font-bold">Endereço de Entrega</h2>
-              </div>
-              <div className="space-y-4">
-                {/* CEP */}
-                <div className="w-full space-y-1.5">
-                  <label className="text-sm font-medium text-foreground ml-1">CEP *</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={cepDisplay}
-                      onChange={handleCEPChange}
-                      placeholder="00000-000"
-                      maxLength={9}
-                      className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 pr-10 ${errors.cep ? "border-destructive" : ""}`}
-                    />
-                    {cepLoading && (
-                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
-                    )}
-                  </div>
-                  {errors.cep && <p className="text-sm text-destructive ml-1">{errors.cep.message}</p>}
-                  <p className="text-xs text-muted-foreground ml-1">
-                    Digite o CEP para preenchimento automático do endereço
+            const message =
+              `Olá! Quero finalizar meu pedido.\n\n` +
+              `Pedido: #${order.id}\n` +
+              `Cliente: ${data.name}\n` +
+              `Telefone: ${data.phone}\n` +
+              `CPF: ${data.document}\n` +
+              `E-mail: ${data.email}\n\n` +
+              `Endereço: ${addressFull}\n\n` +
+              `Itens:\n${itemsText}\n\n` +
+              `Subtotal: ${formatCurrency(subtotal)}\n` +
+              `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+              (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+              (discountAmount > 0
+                ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
+                : "") +
+              `Total: ${formatCurrency(payableTotal)}\n\n` +
+              `Pode me enviar a chave PIX para pagamento?`;
+
+            const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+            window.open(waUrl, "_blank", "noopener,noreferrer");
+            toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
+            clearCart();
+            setIsOpen(false);
+          } catch (error) {
+            const apiError = error as { data?: { error?: string; message?: string } };
+            if (apiError?.data?.error === "PRICE_CHANGED") {
+              const synced = await syncCartWithLatestProducts();
+              toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
+              if (synced) toast.info("Revise os novos valores e tente novamente.");
+              return;
+            }
+            toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
+          }
                   </p>
                 </div>
 
@@ -1855,7 +2036,21 @@ export default function Checkout() {
                   </Button>
                 )}
 
-                {!paymentMethods.pix && !paymentMethods.card && (
+                {paymentMethods.whatsapp && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="w-full text-lg border-2 border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+                    onClick={handleWhatsAppCheckout}
+                    disabled={isLoading || shouldBlockLanderGoldOnlyCheckout}
+                  >
+                    <MessageCircle className="w-5 h-5 mr-2" />
+                    Finalizar via WhatsApp
+                  </Button>
+                )}
+
+                {!paymentMethods.pix && !paymentMethods.card && !paymentMethods.whatsapp && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     No momento, os pagamentos estão temporariamente desativados. Tente novamente em instantes.
                   </div>

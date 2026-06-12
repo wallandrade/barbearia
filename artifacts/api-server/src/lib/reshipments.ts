@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   inventoryBalancesTable,
@@ -14,6 +14,7 @@ import {
 export type ReshipmentStatus =
   | "reenvio_aguardando_estoque"
   | "reenvio_pronto_para_envio"
+  | "reenvio_resolvido_sem_entrada"
   | "reenvio_enviado";
 
 type OrderProductInput = {
@@ -94,7 +95,7 @@ async function changeBalance(productId: string, delta: number): Promise<void> {
 
 async function reserveForReshipment(reshipmentId: string, items: ReshipmentProduct[]): Promise<void> {
   for (const item of items) {
-    await changeBalance(item.id, -item.quantity);
+    // Reservation is now a planning marker only; stock is debited when sent.
     await db.insert(inventoryMovementsTable).values({
       id: crypto.randomBytes(8).toString("hex"),
       productId: item.id,
@@ -105,6 +106,179 @@ async function reserveForReshipment(reshipmentId: string, items: ReshipmentProdu
       createdAt: new Date(),
     });
   }
+}
+
+export async function ensureReshipmentReservation(params: {
+  id: string;
+  source: ReshipmentSource;
+}): Promise<{ ok: boolean; notFound?: boolean; invalidProducts?: boolean; missingProducts: string[] }> {
+  const rows = params.source === "support"
+    ? await db
+        .select({
+          productsSnapshot: reshipmentsTable.productsSnapshot,
+          orderProducts: ordersTable.products,
+        })
+        .from(reshipmentsTable)
+        .leftJoin(ordersTable, eq(ordersTable.id, reshipmentsTable.orderId))
+        .where(eq(reshipmentsTable.id, params.id))
+        .limit(1)
+    : await db
+        .select({ productsSnapshot: manualReshipmentsTable.productsSnapshot })
+        .from(manualReshipmentsTable)
+        .where(eq(manualReshipmentsTable.id, params.id))
+        .limit(1);
+
+  if (!rows[0]) {
+    return { ok: false, notFound: true, missingProducts: [] };
+  }
+
+  const items = params.source === "support"
+    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
+    : toProducts(rows[0].productsSnapshot);
+  if (items.length === 0) {
+    return { ok: false, invalidProducts: true, missingProducts: [] };
+  }
+
+  const reservationRows = await db
+    .select({ productId: inventoryMovementsTable.productId, quantity: inventoryMovementsTable.quantity })
+    .from(inventoryMovementsTable)
+    .where(and(
+      eq(inventoryMovementsTable.referenceId, params.id),
+      eq(inventoryMovementsTable.type, "reservation"),
+    ));
+
+  const reservedByProduct = new Map<string, number>();
+  for (const row of reservationRows) {
+    const productId = String(row.productId || "").trim();
+    if (!productId) continue;
+    const qty = Math.max(0, -Number(row.quantity || 0));
+    reservedByProduct.set(productId, (reservedByProduct.get(productId) || 0) + qty);
+  }
+
+  const remainingItems = items
+    .map((item) => ({
+      ...item,
+      quantity: Math.max(0, item.quantity - (reservedByProduct.get(item.id) || 0)),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  if (remainingItems.length === 0) {
+    return { ok: true, missingProducts: [] };
+  }
+
+  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
+  const stockByProduct = await getStockMap(productIds);
+  const missingProducts = remainingItems
+    .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
+    .map((item) => item.name);
+
+  if (missingProducts.length > 0) {
+    return { ok: false, missingProducts };
+  }
+
+  // Keep this flow as stock validation only for "pronto para envio".
+  return { ok: true, missingProducts: [] };
+}
+
+export async function ensureReshipmentSendDebit(params: {
+  id: string;
+  source: ReshipmentSource;
+}): Promise<{
+  ok: boolean;
+  notFound?: boolean;
+  invalidProducts?: boolean;
+  missingProducts: string[];
+  debitedProducts: Array<{ productId: string; productName: string; quantity: number }>;
+}> {
+  const rows = params.source === "support"
+    ? await db
+        .select({
+          productsSnapshot: reshipmentsTable.productsSnapshot,
+          orderProducts: ordersTable.products,
+        })
+        .from(reshipmentsTable)
+        .leftJoin(ordersTable, eq(ordersTable.id, reshipmentsTable.orderId))
+        .where(eq(reshipmentsTable.id, params.id))
+        .limit(1)
+    : await db
+        .select({ productsSnapshot: manualReshipmentsTable.productsSnapshot })
+        .from(manualReshipmentsTable)
+        .where(eq(manualReshipmentsTable.id, params.id))
+        .limit(1);
+
+  if (!rows[0]) {
+    return { ok: false, notFound: true, missingProducts: [], debitedProducts: [] };
+  }
+
+  const items = params.source === "support"
+    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
+    : toProducts(rows[0].productsSnapshot);
+  if (items.length === 0) {
+    return { ok: false, invalidProducts: true, missingProducts: [], debitedProducts: [] };
+  }
+
+  const movementRows = await db
+    .select({
+      productId: inventoryMovementsTable.productId,
+      quantity: inventoryMovementsTable.quantity,
+      type: inventoryMovementsTable.type,
+      reason: inventoryMovementsTable.reason,
+    })
+    .from(inventoryMovementsTable)
+    .where(and(
+      eq(inventoryMovementsTable.referenceId, params.id),
+      inArray(inventoryMovementsTable.type, ["exit", "entry"]),
+    ));
+
+  const netDebitedByProduct = new Map<string, number>();
+  for (const row of movementRows) {
+    const productId = String(row.productId || "").trim();
+    if (!productId) continue;
+    const qty = Number(row.quantity || 0);
+    if (row.type === "exit" && qty < 0) {
+      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) + Math.abs(qty));
+      continue;
+    }
+    const normalizedReason = String(row.reason || "").trim().toLowerCase();
+    const isEstornoEntry = row.type === "entry" && qty > 0 && normalizedReason.startsWith("estorno de baixa do reenvio");
+    if (isEstornoEntry) {
+      netDebitedByProduct.set(productId, (netDebitedByProduct.get(productId) || 0) - qty);
+    }
+  }
+
+  const remainingItems = items
+    .map((item) => ({
+      ...item,
+      quantity: Math.max(0, item.quantity - Math.max(0, netDebitedByProduct.get(item.id) || 0)),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  if (remainingItems.length === 0) {
+    return { ok: true, missingProducts: [], debitedProducts: [] };
+  }
+
+  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
+  const stockByProduct = await getStockMap(productIds);
+  const missingProducts = remainingItems
+    .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
+    .map((item) => item.name);
+
+  if (missingProducts.length > 0) {
+    return { ok: false, missingProducts, debitedProducts: [] };
+  }
+
+  const debitedProducts: Array<{ productId: string; productName: string; quantity: number }> = [];
+  for (const item of remainingItems) {
+    await registerInventoryEntry({
+      productId: item.id,
+      quantity: -item.quantity,
+      reason: `Saída por envio do reenvio ${params.id}`,
+      referenceId: params.id,
+    });
+    debitedProducts.push({ productId: item.id, productName: item.name, quantity: item.quantity });
+  }
+
+  return { ok: true, missingProducts: [], debitedProducts };
 }
 
 export async function createOrRefreshReshipment(params: {
@@ -134,16 +308,19 @@ export async function createOrRefreshReshipment(params: {
     throw new Error("Itens do pedido não existem no catálogo de produtos.");
   }
 
-  const validProductIds = Array.from(new Set(validItems.map((item) => item.id)));
-  const stockByProduct = await getStockMap(validProductIds);
-  const enoughNow = hasEnoughStock(validItems, stockByProduct);
-  const nextStatus: ReshipmentStatus = enoughNow ? "reenvio_pronto_para_envio" : "reenvio_aguardando_estoque";
-
   const existingRows = await db
     .select({ id: reshipmentsTable.id, status: reshipmentsTable.status })
     .from(reshipmentsTable)
     .where(eq(reshipmentsTable.orderId, params.orderId))
     .limit(1);
+
+  const validProductIds = Array.from(new Set(validItems.map((item) => item.id)));
+  const stockByProduct = await getStockMap(validProductIds);
+  const enoughNow = hasEnoughStock(validItems, stockByProduct);
+  const keepAwaiting = existingRows[0]?.status === "reenvio_aguardando_estoque";
+  const nextStatus: ReshipmentStatus = keepAwaiting
+    ? "reenvio_aguardando_estoque"
+    : (enoughNow ? "reenvio_pronto_para_envio" : "reenvio_aguardando_estoque");
 
   const reshipmentId = existingRows[0]?.id || id;
 
@@ -173,11 +350,6 @@ export async function createOrRefreshReshipment(params: {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-  }
-
-  const alreadyReserved = existingRows[0]?.status === "reenvio_pronto_para_envio";
-  if (enoughNow && !alreadyReserved) {
-    await reserveForReshipment(reshipmentId, validItems);
   }
 
   const missingProducts = validItems
@@ -224,7 +396,6 @@ export async function releasePendingReshipments(): Promise<number> {
 
     if (!canRelease) continue;
 
-    await reserveForReshipment(row.id, items);
     await db
       .update(reshipmentsTable)
       .set({ status: "reenvio_pronto_para_envio", updatedAt: new Date() })
@@ -242,7 +413,6 @@ export async function releasePendingReshipments(): Promise<number> {
 
     if (!canRelease) continue;
 
-    await reserveForReshipment(row.id, items);
     await db
       .update(manualReshipmentsTable)
       .set({ status: "reenvio_pronto_para_envio", updatedAt: new Date() })
@@ -315,10 +485,6 @@ export async function createManualReshipment(params: {
     updatedAt: new Date(),
   });
 
-  if (enoughNow) {
-    await reserveForReshipment(id, items);
-  }
-
   return {
     id,
     status: nextStatus,
@@ -333,9 +499,13 @@ export async function registerInventoryEntry(params: {
   referenceId?: string;
   entrySource?: "purchase" | "customer_return";
   clientName?: string | null;
+  clientPhone?: string | null;
   trackingCode?: string | null;
+  affectBalance?: boolean;
 }): Promise<void> {
-  await changeBalance(params.productId, params.quantity);
+  if (params.affectBalance !== false) {
+    await changeBalance(params.productId, params.quantity);
+  }
 
   const isExit = Number(params.quantity) < 0;
 
@@ -345,6 +515,7 @@ export async function registerInventoryEntry(params: {
     type: isExit ? "exit" : "entry",
     entrySource: params.entrySource || null,
     clientName: params.clientName || null,
+    clientPhone: params.clientPhone || null,
     trackingCode: params.trackingCode || null,
     quantity: params.quantity,
     reason: params.reason || (isExit ? "Saida manual de estoque" : "Entrada manual de estoque"),
@@ -376,6 +547,7 @@ export async function listReshipments(status?: string): Promise<Array<{
       supportTicketId: reshipmentsTable.supportTicketId,
       status: reshipmentsTable.status,
       productsSnapshot: reshipmentsTable.productsSnapshot,
+      orderProducts: ordersTable.products,
       resolvedReason: reshipmentsTable.resolvedReason,
       authorizedAt: reshipmentsTable.authorizedAt,
       sentAt: reshipmentsTable.sentAt,
@@ -498,6 +670,7 @@ export async function getInventoryOverview(): Promise<{
     type: string;
     entrySource: string | null;
     clientName: string | null;
+    clientPhone: string | null;
     trackingCode: string | null;
     quantity: number;
     reason: string | null;
@@ -537,6 +710,7 @@ export async function getInventoryOverview(): Promise<{
         type: row.type,
         entrySource: row.entrySource || null,
         clientName: row.clientName || null,
+        clientPhone: (row as { clientPhone?: string | null }).clientPhone || null,
         trackingCode: row.trackingCode || null,
         quantity: Number(row.quantity) || 0,
         reason: row.reason || null,

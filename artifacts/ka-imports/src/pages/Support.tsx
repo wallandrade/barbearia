@@ -74,6 +74,7 @@ export default function Support() {
     city: "",
     state: "",
   });
+  const [cepLoading, setCepLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [ticketId, setTicketId] = useState<string | null>(null);
 
@@ -137,6 +138,46 @@ export default function Support() {
       setImageData((e.target?.result as string) || null);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleAddressCepChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCep(event.target.value);
+    setNewAddress((prev) => ({ ...prev, cep: formatted }));
+
+    const rawCep = digitsOnly(formatted);
+    if (rawCep.length !== 8) return;
+
+    setCepLoading(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${rawCep}/json/`);
+      const data = (await res.json()) as {
+        erro?: boolean;
+        logradouro?: string;
+        bairro?: string;
+        localidade?: string;
+        uf?: string;
+      };
+
+      if (!data.erro) {
+        setNewAddress((prev) => ({
+          ...prev,
+          street: data.logradouro || prev.street,
+          neighborhood: data.bairro || prev.neighborhood,
+          city: data.localidade || prev.city,
+          state: data.uf || prev.state,
+        }));
+
+        if (!data.logradouro) {
+          toast.info("CEP encontrado, mas sem rua cadastrada. Preencha o endereco manualmente.");
+        }
+      } else {
+        toast.error("CEP nao encontrado. Preencha o endereco manualmente.");
+      }
+    } catch {
+      toast.error("Erro ao consultar CEP. Preencha o endereco manualmente.");
+    } finally {
+      setCepLoading(false);
+    }
   };
 
   const submitTicket = async () => {
@@ -362,7 +403,7 @@ export default function Support() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <input
                             value={newAddress.cep}
-                            onChange={(e) => setNewAddress((prev) => ({ ...prev, cep: formatCep(e.target.value) }))}
+                            onChange={handleAddressCepChange}
                             placeholder="CEP"
                             className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
                           />
@@ -403,6 +444,12 @@ export default function Support() {
                             className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
                           />
                         </div>
+                      )}
+                      {wantsAddressChange && cepLoading && (
+                        <p className="text-xs text-slate-500 inline-flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Buscando endereco pelo CEP...
+                        </p>
                       )}
                     </div>
 

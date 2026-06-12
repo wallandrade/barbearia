@@ -2,7 +2,7 @@ import { ArrowRight, ShoppingCart } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { Product } from "@workspace/api-client-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 
 interface ProductCardProps {
@@ -43,6 +43,19 @@ function getTierForQuantity(quantity: number, tiers: BulkDiscountTier[]): BulkDi
   return tiers.find((tier) => quantity >= tier.minQty && (tier.maxQty == null || quantity <= tier.maxQty)) ?? null;
 }
 
+function hasVariantGroups(product: Product): boolean {
+  const raw = (product as Product & { variantGroups?: unknown }).variantGroups;
+  if (!Array.isArray(raw)) return false;
+  return raw.some((group) => {
+    const item = group as Record<string, unknown>;
+    const name = String(item.name ?? "").trim();
+    const options = Array.isArray(item.options)
+      ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
+      : [];
+    return Boolean(name) && options.length > 0;
+  });
+}
+
 export function ProductCard({ product, sellerSlug, priority = false }: ProductCardProps) {
   const hasPromo = product.promoPrice != null && product.promoPrice < product.price;
   const isSoldOut = isProductUnavailable(product);
@@ -56,10 +69,16 @@ export function ProductCard({ product, sellerSlug, priority = false }: ProductCa
     : (hasPromo ? product.promoPrice! : product.price);
   const href = sellerSlug ? `/${sellerSlug}/produto/${product.id}` : `/produto/${product.id}`;
   const { addItem, setIsOpen } = useCart();
+  const [, setLocation] = useLocation();
+  const requiresVariantSelection = hasVariantGroups(product);
 
   function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault();
     if (isSoldOut) return;
+    if (requiresVariantSelection) {
+      setLocation(href);
+      return;
+    }
     addItem(product);
     setIsOpen(true);
   }
@@ -142,7 +161,7 @@ export function ProductCard({ product, sellerSlug, priority = false }: ProductCa
               disabled={isSoldOut}
             >
               <ShoppingCart className="w-4 h-4 mr-1.5" />
-              {isSoldOut ? "Produto esgotado" : "Adicionar ao carrinho"}
+              {isSoldOut ? "Produto esgotado" : requiresVariantSelection ? "Escolher variantes" : "Adicionar ao carrinho"}
             </Button>
           </div>
         </div>

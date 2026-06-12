@@ -484,19 +484,24 @@ router.patch("/admin/custom-charges/:id/status", requireAdminAuth, async (req, r
           .where(eq(ordersTable.id, existing.orderId))
           .limit(1);
 
-        if (parentOrder[0] && parentOrder[0].status === "awaiting_payment") {
+        if (parentOrder[0]) {
           const orderTotal  = Number(parentOrder[0].total ?? 0);
           const alreadyPaid = Number(parentOrder[0].paidAmount ?? 0);
           const diffPaid    = Number(existing.amount ?? 0);
           const totalPaid   = alreadyPaid + diffPaid;
-          const newOrderStatus = totalPaid >= orderTotal - 0.01 ? "paid" : "awaiting_payment";
+          const newOrderStatus = totalPaid >= orderTotal - 0.01
+            ? (parentOrder[0].status === "completed" ? "completed" : "paid")
+            : "awaiting_payment";
 
           await db
             .update(ordersTable)
             .set({ status: newOrderStatus, paidAmount: String(totalPaid), updatedAt: new Date() })
             .where(eq(ordersTable.id, existing.orderId));
 
-          broadcastNotification({ type: "order_paid", data: { id: existing.orderId, status: newOrderStatus } });
+          broadcastNotification({
+            type: newOrderStatus === "paid" || newOrderStatus === "completed" ? "order_paid" : "order_status_updated",
+            data: { id: existing.orderId, status: newOrderStatus },
+          });
         }
       }
     }
@@ -542,6 +547,35 @@ router.patch("/admin/custom-charges/:id/proof", requireAdminAuth, async (req, re
       .where(eq(customChargesTable.id, id));
 
     broadcastNotification({ type: "charge_paid", data: { id, status: "paid" } });
+
+    // If this charge is linked to an order, propagate cumulative paid amount.
+    if (existing.orderId && existing.status !== "paid") {
+      const parentOrder = await db
+        .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+        .from(ordersTable)
+        .where(eq(ordersTable.id, existing.orderId))
+        .limit(1);
+
+      if (parentOrder[0]) {
+        const orderTotal = Number(parentOrder[0].total ?? 0);
+        const alreadyPaid = Number(parentOrder[0].paidAmount ?? 0);
+        const diffPaid = Number(existing.amount ?? 0);
+        const totalPaid = alreadyPaid + diffPaid;
+        const newOrderStatus = totalPaid >= orderTotal - 0.01
+          ? (parentOrder[0].status === "completed" ? "completed" : "paid")
+          : "awaiting_payment";
+
+        await db
+          .update(ordersTable)
+          .set({ status: newOrderStatus, paidAmount: String(totalPaid), updatedAt: new Date() })
+          .where(eq(ordersTable.id, existing.orderId));
+
+        broadcastNotification({
+          type: newOrderStatus === "paid" || newOrderStatus === "completed" ? "order_paid" : "order_status_updated",
+          data: { id: existing.orderId, status: newOrderStatus },
+        });
+      }
+    }
 
     res.json({ ok: true, proofUrls: urls });
   } catch (err) {
