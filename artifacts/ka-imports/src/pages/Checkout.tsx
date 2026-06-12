@@ -1127,7 +1127,14 @@ export default function Checkout() {
         `Pode me enviar a chave PIX para pagamento?`;
 
       const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, "_blank", "noopener,noreferrer");
+
+      // Try to open in new window; if blocked, navigate directly
+      const newWindow = window.open(waUrl, "_blank", "noopener,noreferrer");
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+        // Pop-up was blocked; use direct navigation instead
+        window.location.href = waUrl;
+      }
+
       toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
       clearCart();
       setIsOpen(false);
