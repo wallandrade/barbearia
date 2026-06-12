@@ -351,6 +351,10 @@ app.get("/api/security/checkout-token", (req, res) => {
   }
 
   const token = createCheckoutToken(req.get("user-agent") || "");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
   res.json({ token, expiresInMs: CHECKOUT_TOKEN_TTL_MS });
 });
 

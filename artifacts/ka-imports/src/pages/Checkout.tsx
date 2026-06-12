@@ -377,13 +377,28 @@ export default function Checkout() {
   const createOrderWithSecurity = useCallback(async (payload: Record<string, unknown>) => {
     setIsCreatingOrder(true);
     try {
-      const resp = await fetch(`${BASE}/api/orders`, {
-        method: "POST",
-        headers: await getCheckoutSecurityHeaders(getCustomerAuthHeaders() as Record<string, string>),
-        body: JSON.stringify(payload),
-      });
+      const submitOrder = async (forceRefreshToken = false) => {
+        const resp = await fetch(`${BASE}/api/orders`, {
+          method: "POST",
+          headers: await getCheckoutSecurityHeaders(
+            getCustomerAuthHeaders() as Record<string, string>,
+            forceRefreshToken,
+          ),
+          body: JSON.stringify(payload),
+        });
+        const result = await resp.json() as Record<string, unknown>;
+        return { resp, result };
+      };
 
-      const result = await resp.json() as Record<string, unknown>;
+      let { resp, result } = await submitOrder(false);
+      const invalidToken =
+        resp.status === 403 &&
+        (result.error === "INVALID_CHECKOUT_TOKEN" || result.message === "Sessão de checkout inválida. Recarregue a página e tente novamente.");
+
+      if (invalidToken) {
+        ({ resp, result } = await submitOrder(true));
+      }
+
       if (!resp.ok) {
         const error = new Error(String(result.message || "Erro ao registrar pedido.")) as Error & {
           data?: { error?: string; message?: string };
