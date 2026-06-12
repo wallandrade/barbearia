@@ -200,7 +200,9 @@ export function orderToFullText(order: any): string {
   const paymentMethodRaw = String(order?.paymentMethod || "").toLowerCase();
   const paymentLabel = paymentMethodRaw === "card_simulation"
     ? "Cartão"
-    : (paymentMethodRaw || "-").toUpperCase();
+    : paymentMethodRaw === "whatsapp_pix"
+      ? "WhatsApp"
+      : (paymentMethodRaw || "-").toUpperCase();
 
   const transactionId = String(order?.transactionId || order?.txid || order?.gatewayTransactionId || "").trim();
 
@@ -2064,7 +2066,11 @@ export default function Admin() {
         let message = "";
         if (event.type === "new_order") {
           const d = event.data as { clientName: string; total: number; paymentMethod: string; sellerCode?: string };
-          const method  = d.paymentMethod === "card_simulation" ? "Cartão" : "PIX";
+          const method = d.paymentMethod === "card_simulation"
+            ? "Cartão"
+            : d.paymentMethod === "whatsapp_pix"
+              ? "WhatsApp"
+              : "PIX";
           const seller  = d.sellerCode ? ` [${d.sellerCode}]` : "";
           message = `Nova venda${seller} — ${d.clientName} — ${formatCurrency(d.total)} (${method})`;
           fetchOrders(true);
@@ -2645,7 +2651,7 @@ export default function Admin() {
       setOrders((prev) => prev.map((o) => o.id === editOrderModal.id ? { ...data.order, proofUrls: o.proofUrls } : o));
       toast.success("Pedido editado com sucesso!");
       const paidAmount = editOrderModal.paidAmount ?? null;
-      const isPixOrder = editOrderModal.paymentMethod === "pix";
+      const isPixOrder = editOrderModal.paymentMethod === "pix" || editOrderModal.paymentMethod === "whatsapp_pix";
 
       if (paidAmount != null && paidAmount > 0) {
         // Order has a recorded paid amount — use it as the reference
@@ -3054,7 +3060,7 @@ export default function Admin() {
 
   // ── Dashboard stats — uses independently fetched data (own API call) ─────
   const statsPaidOrders    = statsOrdersData.filter((o) => o.status === "paid" || o.status === "completed");
-  const statsPixPaid       = statsPaidOrders.filter((o) => o.paymentMethod === "pix");
+  const statsPixPaid       = statsPaidOrders.filter((o) => o.paymentMethod === "pix" || o.paymentMethod === "whatsapp_pix");
   const statsCardPaid      = statsPaidOrders.filter((o) => o.paymentMethod === "card_simulation");
   const statsLinkPaid      = statsChargesData.filter((c) => c.status === "paid");
   const statsPendingCount  = statsOrdersData.filter((o) => o.status === "awaiting_payment" || o.status === "pending").length;
@@ -8907,7 +8913,7 @@ function SellerAnalyticsCard({ seller, orders, charges }: { seller: SavedSellerI
   });
 
   const paidOrders      = sellerOrders.filter((o) => o.status === "paid" || o.status === "completed");
-  const pixPaid         = paidOrders.filter((o) => o.paymentMethod === "pix");
+  const pixPaid         = paidOrders.filter((o) => o.paymentMethod === "pix" || o.paymentMethod === "whatsapp_pix");
   const cardPaid        = paidOrders.filter((o) => o.paymentMethod === "card_simulation");
   const paidCharges     = sellerCharges.filter((c) => c.status === "paid");
   const pending         = sellerOrders.filter((o) => o.status === "awaiting_payment" || o.status === "pending");
@@ -11143,6 +11149,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
+  const whatsappEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_whatsapp"] ?? "0").toLowerCase());
   const pixGateway = String(settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
   const outboundEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_enabled"] ?? "0").toLowerCase());
   const outboundEventNewOrder = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_new_order"] ?? "1").toLowerCase());
@@ -11154,7 +11161,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
   }, [settings]);
 
-  const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card", enabled: boolean) => {
+  const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp", enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
   };
 
@@ -11407,11 +11414,27 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               />
             </label>
           </div>
+
+          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+            <label className="flex items-center justify-between gap-4 cursor-pointer">
+              <div>
+                <p className="font-semibold flex items-center gap-2"><MessageCircle className="w-4 h-4 text-primary" />WhatsApp</p>
+                <p className="text-xs text-muted-foreground">Exibe o botão "Finalizar via WhatsApp" no checkout.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={whatsappEnabled}
+                onChange={(e) => togglePaymentMethod("checkout_enable_whatsapp", e.target.checked)}
+                disabled={!!loading["checkout_enable_whatsapp"]}
+                className="w-4 h-4"
+              />
+            </label>
+          </div>
         </div>
 
-        {!pixEnabled && !cardEnabled && (
+        {!pixEnabled && !cardEnabled && !whatsappEnabled && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800 mt-4">
-            Os dois métodos estão desativados. Nesse estado, o checkout ficará sem opção de pagamento.
+            Todos os métodos estão desativados. Nesse estado, o checkout ficará sem opção de pagamento.
           </div>
         )}
       </div>

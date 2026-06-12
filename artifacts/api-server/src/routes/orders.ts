@@ -760,7 +760,7 @@ function parseEnabledSetting(value?: string | null): boolean {
   return !["0", "false", "off", "no", "disabled"].includes(normalized);
 }
 
-async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card"): Promise<boolean> {
+async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp"): Promise<boolean> {
   const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, key)).limit(1);
   return parseEnabledSetting(rows[0]?.value ?? null);
 }
@@ -1064,6 +1064,17 @@ router.post("/orders", async (req, res) => {
         res.status(403).json({
           error: "PAYMENT_METHOD_DISABLED",
           message: "Pagamento via cartão está temporariamente indisponível.",
+        });
+        return;
+      }
+    }
+
+    if (method === "whatsapp_pix") {
+      const whatsappEnabled = await isPaymentMethodEnabled("checkout_enable_whatsapp");
+      if (!whatsappEnabled) {
+        res.status(403).json({
+          error: "PAYMENT_METHOD_DISABLED",
+          message: "Pagamento via WhatsApp está temporariamente indisponível.",
         });
         return;
       }

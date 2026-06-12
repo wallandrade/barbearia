@@ -151,7 +151,7 @@ export default function Checkout() {
   const [affiliateCreditAvailable, setAffiliateCreditAvailable] = useState(0);
   const [affiliateCreditLoading, setAffiliateCreditLoading] = useState(false);
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true });
+  const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true, whatsapp: false });
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState<number | null>(null);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
   const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
@@ -387,8 +387,8 @@ export default function Checkout() {
         const res = await fetch(`${BASE}/api/settings`);
         if (!res.ok) return;
         const data = await res.json() as Record<string, string>;
-        const parseEnabled = (value?: string) => {
-          if (value == null || value === "") return true;
+        const parseEnabled = (value: string | undefined, defaultValue = true) => {
+          if (value == null || value === "") return defaultValue;
           const normalized = String(value).trim().toLowerCase();
           return !["0", "false", "off", "no", "disabled"].includes(normalized);
         };
@@ -401,6 +401,7 @@ export default function Checkout() {
           setPaymentMethods({
             pix: parseEnabled(data["checkout_enable_pix"]),
             card: parseEnabled(data["checkout_enable_card"]),
+            whatsapp: parseEnabled(data["checkout_enable_whatsapp"], false),
           });
           setFreeShippingMinSubtotal(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
         }
@@ -1001,6 +1002,122 @@ export default function Checkout() {
       setCardModalStep(hasPromo ? "card_pricing" : "kyc_notice");
       setShowCardModal(true);
     })();
+  };
+
+  const handleWhatsAppPayment = async (data: CheckoutFormData) => {
+    if (!paymentMethods.whatsapp) {
+      toast.error("Pagamento via WhatsApp está desativado no momento.");
+      return;
+    }
+
+    if (!validateLanderGoldRule()) return;
+
+    const cartAvailable = await validateCartAvailability();
+    if (!cartAvailable) return;
+
+    const productsPayload = items.map((item) => ({
+      id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      isBump: (item as { isBump?: boolean }).isBump === true,
+      selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
+      variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
+    }));
+
+    const affiliateCode = getStoredReferralCode();
+
+    createOrder(
+      {
+        data: {
+          client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
+          address: {
+            cep: data.cep,
+            street: data.street,
+            number: data.number,
+            complement: data.complement || "",
+            neighborhood: data.neighborhood,
+            city: data.city,
+            state: data.state,
+          },
+          products: productsPayload,
+          shippingType: selectedShipping?.name ?? "Frete",
+          includeInsurance,
+          subtotal,
+          shippingCost,
+          insuranceAmount,
+          total,
+          paymentMethod: "whatsapp_pix",
+          sellerCode,
+          affiliateCode: affiliateCode || undefined,
+          couponCode: appliedCoupon?.code,
+          discountAmount: discountAmount > 0 ? discountAmount : undefined,
+        },
+      },
+      {
+        onSuccess: (order) => {
+          const itemsText = productsPayload
+            .map((item) => {
+              const itemTotal = item.price * item.quantity;
+              const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
+              return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
+            })
+            .join("\n");
+
+          const addressFull = [
+            `${data.street}, ${data.number}`,
+            data.complement,
+            data.neighborhood,
+            `${data.city}/${data.state}`,
+            `CEP ${data.cep}`,
+          ]
+            .filter(Boolean)
+            .join(", ");
+
+          const message =
+            `Olá! Quero finalizar meu pedido.\n\n` +
+            `Pedido: #${order.id}\n` +
+            `Cliente: ${data.name}\n` +
+            `Telefone: ${data.phone}\n` +
+            `CPF: ${data.document}\n` +
+            `E-mail: ${data.email}\n\n` +
+            `Endereço: ${addressFull}\n\n` +
+            `Itens:\n${itemsText}\n\n` +
+            `Subtotal: ${formatCurrency(subtotal)}\n` +
+            `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+            (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+            (discountAmount > 0
+              ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
+              : "") +
+            `Total: ${formatCurrency(payableTotal)}\n\n` +
+            `Pode me enviar a chave PIX para pagamento?`;
+
+          const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+          window.open(waUrl, "_blank", "noopener,noreferrer");
+          toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
+          clearCart();
+          setIsOpen(false);
+        },
+        onError: async (error) => {
+          const apiError = error as { data?: { error?: string; message?: string } };
+          if (apiError?.data?.error === "PRICE_CHANGED") {
+            const synced = await syncCartWithLatestProducts();
+            toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
+            if (synced) toast.info("Revise os novos valores e tente novamente.");
+            return;
+          }
+          toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
+        },
+      }
+    );
+  };
+
+  const handleWhatsAppCheckout = () => {
+    if (!paymentMethods.whatsapp) {
+      toast.error("Pagamento via WhatsApp está desativado no momento.");
+      return;
+    }
+    handleSubmit(handleWhatsAppPayment)();
   };
 
   const finalizeCardPayment = () => {
@@ -1890,7 +2007,21 @@ export default function Checkout() {
                   </Button>
                 )}
 
-                {!paymentMethods.pix && !paymentMethods.card && (
+                {paymentMethods.whatsapp && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="w-full text-lg border-2 border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+                    onClick={handleWhatsAppCheckout}
+                    disabled={isLoading || shouldBlockLanderGoldOnlyCheckout}
+                  >
+                    <MessageCircle className="w-5 h-5 mr-2" />
+                    Finalizar via WhatsApp
+                  </Button>
+                )}
+
+                {!paymentMethods.pix && !paymentMethods.card && !paymentMethods.whatsapp && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     No momento, os pagamentos estão temporariamente desativados. Tente novamente em instantes.
                   </div>
