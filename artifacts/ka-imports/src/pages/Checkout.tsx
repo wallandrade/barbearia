@@ -1064,89 +1064,83 @@ export default function Checkout() {
 
     const affiliateCode = getStoredReferralCode();
 
-    createOrder(
-      {
-        data: {
-          client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
-          address: {
-            cep: data.cep,
-            street: data.street,
-            number: data.number,
-            complement: data.complement || "",
-            neighborhood: data.neighborhood,
-            city: data.city,
-            state: data.state,
-          },
-          products: productsPayload,
-          shippingType: selectedShipping?.name ?? "Frete",
-          includeInsurance,
-          subtotal,
-          shippingCost,
-          insuranceAmount,
-          total,
-          paymentMethod: "whatsapp_pix",
-          sellerCode,
-          affiliateCode: affiliateCode || undefined,
-          couponCode: appliedCoupon?.code,
-          discountAmount: discountAmount > 0 ? discountAmount : undefined,
+    try {
+      const order = await createOrderWithSecurity({
+        client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
+        address: {
+          cep: data.cep,
+          street: data.street,
+          number: data.number,
+          complement: data.complement || "",
+          neighborhood: data.neighborhood,
+          city: data.city,
+          state: data.state,
         },
-      },
-      {
-        onSuccess: (order) => {
-          const itemsText = productsPayload
-            .map((item) => {
-              const itemTotal = item.price * item.quantity;
-              const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
-              return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
-            })
-            .join("\n");
+        products: productsPayload,
+        shippingType: selectedShipping?.name ?? "Frete",
+        includeInsurance,
+        subtotal,
+        shippingCost,
+        insuranceAmount,
+        total,
+        paymentMethod: "whatsapp_pix",
+        sellerCode,
+        affiliateCode: affiliateCode || undefined,
+        couponCode: appliedCoupon?.code,
+        discountAmount: discountAmount > 0 ? discountAmount : undefined,
+      });
 
-          const addressFull = [
-            `${data.street}, ${data.number}`,
-            data.complement,
-            data.neighborhood,
-            `${data.city}/${data.state}`,
-            `CEP ${data.cep}`,
-          ]
-            .filter(Boolean)
-            .join(", ");
+      const itemsText = productsPayload
+        .map((item) => {
+          const itemTotal = item.price * item.quantity;
+          const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
+          return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
+        })
+        .join("\n");
 
-          const message =
-            `Olá! Quero finalizar meu pedido.\n\n` +
-            `Pedido: #${order.id}\n` +
-            `Cliente: ${data.name}\n` +
-            `Telefone: ${data.phone}\n` +
-            `CPF: ${data.document}\n` +
-            `E-mail: ${data.email}\n\n` +
-            `Endereço: ${addressFull}\n\n` +
-            `Itens:\n${itemsText}\n\n` +
-            `Subtotal: ${formatCurrency(subtotal)}\n` +
-            `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-            (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
-            (discountAmount > 0
-              ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
-              : "") +
-            `Total: ${formatCurrency(payableTotal)}\n\n` +
-            `Pode me enviar a chave PIX para pagamento?`;
+      const addressFull = [
+        `${data.street}, ${data.number}`,
+        data.complement,
+        data.neighborhood,
+        `${data.city}/${data.state}`,
+        `CEP ${data.cep}`,
+      ]
+        .filter(Boolean)
+        .join(", ");
 
-          const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
-          window.open(waUrl, "_blank", "noopener,noreferrer");
-          toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
-          clearCart();
-          setIsOpen(false);
-        },
-        onError: async (error) => {
-          const apiError = error as { data?: { error?: string; message?: string } };
-          if (apiError?.data?.error === "PRICE_CHANGED") {
-            const synced = await syncCartWithLatestProducts();
-            toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
-            if (synced) toast.info("Revise os novos valores e tente novamente.");
-            return;
-          }
-          toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
-        },
+      const message =
+        `Olá! Quero finalizar meu pedido.\n\n` +
+        `Pedido: #${order.id}\n` +
+        `Cliente: ${data.name}\n` +
+        `Telefone: ${data.phone}\n` +
+        `CPF: ${data.document}\n` +
+        `E-mail: ${data.email}\n\n` +
+        `Endereço: ${addressFull}\n\n` +
+        `Itens:\n${itemsText}\n\n` +
+        `Subtotal: ${formatCurrency(subtotal)}\n` +
+        `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+        (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+        (discountAmount > 0
+          ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
+          : "") +
+        `Total: ${formatCurrency(payableTotal)}\n\n` +
+        `Pode me enviar a chave PIX para pagamento?`;
+
+      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, "_blank", "noopener,noreferrer");
+      toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
+      clearCart();
+      setIsOpen(false);
+    } catch (error) {
+      const apiError = error as { data?: { error?: string; message?: string } };
+      if (apiError?.data?.error === "PRICE_CHANGED") {
+        const synced = await syncCartWithLatestProducts();
+        toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
+        if (synced) toast.info("Revise os novos valores e tente novamente.");
+        return;
       }
-    );
+      toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
+    }
   };
 
   const handleWhatsAppCheckout = () => {
