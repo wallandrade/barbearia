@@ -1261,32 +1261,15 @@ export default function Checkout() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Voltar para loja
         </button>
-            window.open(waUrl, "_blank", "noopener,noreferrer");
-            toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
-            clearCart();
-            setIsOpen(false);
-          } catch (error) {
-            const apiError = error as { data?: { error?: string; message?: string } };
-            if (apiError?.data?.error === "PRICE_CHANGED") {
-              const synced = await syncCartWithLatestProducts();
-              toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
-              if (synced) toast.info("Revise os novos valores e tente novamente.");
-              return;
-            }
-            toast.error(apiError?.data?.message || "Erro ao registrar pedido via WhatsApp. Tente novamente.");
-          }
-                  </p>
-                </div>
 
-                {/* Street + Number */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="col-span-2">
-                    <Input
-                      label="Rua / Logradouro *"
-                      placeholder="Rua das Flores"
-                      {...register("street")}
-                      error={errors.street?.message}
-                    />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          {/* Left Column */}
+          <div className="lg:col-span-7 space-y-8">
+
+            {/* Personal Data */}
+            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+              <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
+              <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
                   </div>
                   <Input
                     label="Número *"
