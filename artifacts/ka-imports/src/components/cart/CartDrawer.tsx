@@ -11,7 +11,11 @@ export function CartDrawer() {
 
   const handleCheckout = () => {
     setIsOpen(false);
-    setLocation("/checkout");
+    const sellerCode = (
+      sessionStorage.getItem("sellerCode") || localStorage.getItem("sellerCode") || ""
+    ).trim().toLowerCase();
+    const checkoutHref = sellerCode ? `/${encodeURIComponent(sellerCode)}/checkout` : "/checkout";
+    setLocation(checkoutHref);
   };
 
   return (
