@@ -526,6 +526,8 @@ export default function Checkout() {
 
   // Capture seller from localStorage (set by SellerPage redirect)
   const sellerCode = safeReadStorage("sellerCode") || undefined;
+  const normalizedSellerCode = String(sellerCode || "").trim().toLowerCase();
+  const sellerHomeHref = normalizedSellerCode ? `/${encodeURIComponent(normalizedSellerCode)}` : "/";
 
   const resolveSellerWhatsAppStrict = useCallback(async (): Promise<string | null> => {
     const normalizedSeller = String(sellerCode || "").trim().toLowerCase();
@@ -825,7 +827,7 @@ export default function Checkout() {
       <CheckoutLayout>
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <h2 className="text-2xl font-bold mb-4">Seu carrinho está vazio</h2>
-          <Button onClick={() => setLocation("/")}>Voltar para loja</Button>
+          <Button onClick={() => setLocation(sellerHomeHref)}>Voltar para loja</Button>
         </div>
 
         <AnimatePresence>
@@ -1344,7 +1346,7 @@ export default function Checkout() {
     <CheckoutLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <button
-          onClick={() => setLocation("/")}
+          onClick={() => setLocation(sellerHomeHref)}
           className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -1948,7 +1950,7 @@ export default function Checkout() {
                         variant="outline"
                         size="sm"
                         className="mt-3 border-red-300 text-red-700 hover:bg-red-100"
-                        onClick={() => setLocation("/")}
+                        onClick={() => setLocation(sellerHomeHref)}
                       >
                         Voltar ao catalogo
                       </Button>
