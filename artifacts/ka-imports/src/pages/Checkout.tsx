@@ -527,6 +527,32 @@ export default function Checkout() {
   // Capture seller from localStorage (set by SellerPage redirect)
   const sellerCode = safeReadStorage("sellerCode") || undefined;
 
+  const resolveSellerWhatsAppStrict = useCallback(async (): Promise<string | null> => {
+    const normalizedSeller = String(sellerCode || "").trim().toLowerCase();
+    if (!normalizedSeller) return getActiveWhatsApp();
+
+    try {
+      const res = await fetch(`${BASE}/api/sellers/${encodeURIComponent(normalizedSeller)}`);
+      if (res.ok) {
+        const data = (await res.json()) as { whatsapp?: string };
+        const whatsapp = String(data?.whatsapp || "").replace(/\D/g, "");
+        if (whatsapp) return whatsapp;
+      }
+    } catch {
+      // ignore and fall back below
+    }
+
+    const cachedWhatsapp = sessionStorage.getItem("sellerWhatsapp") || "";
+    const cachedSlug = (sessionStorage.getItem("sellerWhatsappSlug") || "").toLowerCase();
+    if (cachedWhatsapp && cachedSlug === normalizedSeller) {
+      const normalizedCached = cachedWhatsapp.replace(/\D/g, "");
+      if (normalizedCached) return normalizedCached;
+    }
+
+    // Fail closed to avoid routing customer to another seller.
+    return null;
+  }, [sellerCode]);
+
   // Load shipping options from API
   useEffect(() => {
     setShippingLoading(true);
@@ -1184,7 +1210,12 @@ export default function Checkout() {
         `Total: ${formatCurrency(payableTotal)}\n\n` +
         `Pode me enviar a chave PIX para pagamento?`;
 
-      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+      const sellerWhatsApp = await resolveSellerWhatsAppStrict();
+      if (!sellerWhatsApp) {
+        toast.error("Nao foi possivel confirmar o WhatsApp do vendedor deste link. Tente novamente em instantes.");
+        return;
+      }
+      const waUrl = `https://wa.me/${sellerWhatsApp}?text=${encodeURIComponent(message)}`;
 
       // Store modal data to show confirmation dialog
       setWhatsappModalData({ url: waUrl, orderId: order.id });
@@ -1288,7 +1319,12 @@ export default function Checkout() {
         `*Total:* ${formatCurrency(cardTotal)}\n\n` +
         `Aguardo o retorno para confirmar os detalhes!`;
 
-      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+      const sellerWhatsApp = await resolveSellerWhatsAppStrict();
+      if (!sellerWhatsApp) {
+        toast.error("Nao foi possivel confirmar o WhatsApp do vendedor deste link. Tente novamente em instantes.");
+        return;
+      }
+      const waUrl = `https://wa.me/${sellerWhatsApp}?text=${encodeURIComponent(message)}`;
       setKycOrderId(order.id);
       setKycWhatsAppUrl(waUrl);
       setCardModalStep("kyc_link");

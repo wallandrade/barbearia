@@ -22,6 +22,41 @@ export type SavedSellerItem = {
 };
 
 const _BASE = () => (import.meta.env?.BASE_URL ?? "/").replace(/\/$/, "");
+const SELLER_CODE_KEY = "sellerCode";
+const SELLER_WHATSAPP_KEY = "sellerWhatsapp";
+const SELLER_WHATSAPP_SLUG_KEY = "sellerWhatsappSlug";
+
+function normalizeSellerSlug(value: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeWhatsApp(value: string): string {
+  return String(value || "").replace(/\D/g, "");
+}
+
+export function setSellerContext(slug: string): void {
+  const normalized = normalizeSellerSlug(slug);
+  if (!normalized) return;
+  try {
+    sessionStorage.setItem(SELLER_CODE_KEY, normalized);
+    localStorage.setItem(SELLER_CODE_KEY, normalized);
+    // Prevent stale seller WhatsApp being reused after context switch.
+    sessionStorage.removeItem(SELLER_WHATSAPP_KEY);
+    sessionStorage.removeItem(SELLER_WHATSAPP_SLUG_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getActiveSellerCode(): string {
+  try {
+    return normalizeSellerSlug(
+      sessionStorage.getItem(SELLER_CODE_KEY) || localStorage.getItem(SELLER_CODE_KEY) || "",
+    );
+  } catch {
+    return "";
+  }
+}
 
 /**
  * Fetches the seller's WhatsApp from the API and stores it in sessionStorage.
@@ -29,13 +64,22 @@ const _BASE = () => (import.meta.env?.BASE_URL ?? "/").replace(/\/$/, "");
  * already has a stale entry from a different seller).
  */
 export async function fetchAndCacheSellerWhatsApp(slug: string): Promise<void> {
-  if (!slug) return;
+  const normalizedSlug = normalizeSellerSlug(slug);
+  if (!normalizedSlug) return;
   try {
-    const res = await fetch(`${_BASE()}/api/sellers/${encodeURIComponent(slug)}`);
+    const res = await fetch(`${_BASE()}/api/sellers/${encodeURIComponent(normalizedSlug)}`);
     if (!res.ok) return;
     const data = (await res.json()) as { whatsapp?: string };
-    if (data?.whatsapp) {
-      sessionStorage.setItem("sellerWhatsapp", data.whatsapp.trim());
+    const whatsapp = normalizeWhatsApp(data?.whatsapp ?? "");
+    if (!whatsapp) return;
+
+    const activeSeller = getActiveSellerCode();
+    // Ignore late responses from an old seller route.
+    if (activeSeller && activeSeller !== normalizedSlug) return;
+
+    if (whatsapp) {
+      sessionStorage.setItem(SELLER_WHATSAPP_KEY, whatsapp);
+      sessionStorage.setItem(SELLER_WHATSAPP_SLUG_KEY, normalizedSlug);
     }
   } catch {
     // ignore — fall back to default
@@ -59,22 +103,17 @@ export function makeWhatsAppLink(text: string): string {
  */
 export function getActiveWhatsApp(): string {
   try {
-    // 1. Prefer the number fetched from the API (set by SellerPage preload)
-    const apiWhatsApp = sessionStorage.getItem("sellerWhatsapp");
-    if (apiWhatsApp?.trim()) return apiWhatsApp.trim();
+    const sellerCode = getActiveSellerCode();
+    const apiWhatsApp = normalizeWhatsApp(sessionStorage.getItem(SELLER_WHATSAPP_KEY) || "");
+    const apiSellerSlug = normalizeSellerSlug(sessionStorage.getItem(SELLER_WHATSAPP_SLUG_KEY) || "");
 
-    // 2. Fallback: look up in the admin's localStorage seller list (only present on admin browser)
-    const sellerCode =
-      sessionStorage.getItem("sellerCode") ||
-      localStorage.getItem("sellerCode");
-    if (!sellerCode) return DEFAULT_WHATSAPP;
-
-    const raw = localStorage.getItem("savedSellersList");
-    if (raw) {
-      const list: SavedSellerItem[] = JSON.parse(raw);
-      const found = list.find((s) => s.slug === sellerCode);
-      if (found?.whatsapp) return found.whatsapp.replace(/\D/g, "");
+    // Strict binding: only use cached WhatsApp if it belongs to active seller context.
+    if (sellerCode && apiWhatsApp && apiSellerSlug === sellerCode) {
+      return apiWhatsApp;
     }
+
+    // No strict seller-bound number available.
+    if (sellerCode) return DEFAULT_WHATSAPP;
   } catch {
     // ignore
   }

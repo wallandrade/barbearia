@@ -36,6 +36,7 @@ async function resolveSupportWhatsApp(): Promise<string> {
       const whatsapp = (data?.whatsapp ?? "").replace(/\D/g, "");
       if (whatsapp) {
         try { sessionStorage.setItem("sellerWhatsapp", whatsapp); } catch {}
+        try { sessionStorage.setItem("sellerWhatsappSlug", slug); } catch {}
         return whatsapp;
       }
     }

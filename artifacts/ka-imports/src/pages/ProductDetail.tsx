@@ -4,7 +4,7 @@ import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
-import { formatCurrency } from "@/lib/utils";
+import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,15 +77,6 @@ function safeGetStorage(key: string): string {
   }
 }
 
-function safeSetStorage(key: string, value: string) {
-  try {
-    sessionStorage.setItem(key, value);
-    localStorage.setItem(key, value);
-  } catch {
-    // ignore storage errors
-  }
-}
-
 export default function ProductDetail() {
   const [, paramsSeller] = useRoute("/:seller/produto/:id");
   const [, paramsGlobal] = useRoute("/produto/:id");
@@ -104,8 +95,13 @@ export default function ProductDetail() {
   }, [sellerSlug, productId, setLocation]);
 
   if (sellerSlug) {
-    safeSetStorage("sellerCode", sellerSlug);
+    setSellerContext(sellerSlug);
   }
+
+  useEffect(() => {
+    if (!sellerSlug) return;
+    fetchAndCacheSellerWhatsApp(sellerSlug);
+  }, [sellerSlug]);
 
   const { data, isLoading, isError } = useGetProducts();
 

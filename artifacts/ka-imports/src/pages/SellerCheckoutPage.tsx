@@ -8,28 +8,7 @@
 import { useRef, useEffect } from "react";
 import { useRoute, useSearch } from "wouter";
 import Checkout from "@/pages/Checkout";
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-type SellerRecord = { slug: string; whatsapp: string };
-
-function saveSellerSync(seller: string) {
-  sessionStorage.setItem("sellerCode", seller);
-  localStorage.setItem("sellerCode", seller);
-}
-
-async function preloadSellerWhatsApp(seller: string): Promise<void> {
-  try {
-    const res = await fetch(`${BASE}/api/sellers/${encodeURIComponent(seller)}`);
-    if (!res.ok) return;
-    const data = (await res.json()) as SellerRecord;
-    if (data?.whatsapp) {
-      sessionStorage.setItem("sellerWhatsapp", data.whatsapp);
-    }
-  } catch {
-    // ignore
-  }
-}
+import { fetchAndCacheSellerWhatsApp, setSellerContext } from "@/lib/utils";
 
 export default function SellerCheckoutPage() {
   const [, params] = useRoute("/:seller/checkout");
@@ -41,7 +20,7 @@ export default function SellerCheckoutPage() {
   const lastSavedRef = useRef<string | null>(null);
   if (seller && lastSavedRef.current !== seller) {
     lastSavedRef.current = seller;
-    saveSellerSync(seller);
+    setSellerContext(seller);
   }
 
   // --- Queue pending product from ?product= (synchronous, before Checkout mounts) ---
@@ -57,7 +36,7 @@ export default function SellerCheckoutPage() {
 
   // --- Async WhatsApp pre-load ---
   useEffect(() => {
-    if (seller) preloadSellerWhatsApp(seller);
+    if (seller) fetchAndCacheSellerWhatsApp(seller);
   }, [seller]);
 
   return <Checkout />;
