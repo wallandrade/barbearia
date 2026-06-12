@@ -132,6 +132,8 @@ export default function Checkout() {
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
+  const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string } | null>(null);
+  const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
   const [cardModalStep, setCardModalStep] = useState<"card_pricing" | "kyc_notice" | "installments" | "kyc_link">("card_pricing");
   const [installments, setInstallments] = useState(1);
   const [kycOrderId, setKycOrderId] = useState("");
@@ -1128,14 +1130,9 @@ export default function Checkout() {
 
       const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
 
-      // Try to open in new window; if blocked, navigate directly
-      const newWindow = window.open(waUrl, "_blank", "noopener,noreferrer");
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-        // Pop-up was blocked; use direct navigation instead
-        window.location.href = waUrl;
-      }
-
-      toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
+      // Store modal data to show confirmation dialog
+      setWhatsappModalData({ url: waUrl, orderId: order.id });
+      toast.success(`Pedido #${order.id} criado com sucesso!`);
       clearCart();
       setIsOpen(false);
     } catch (error) {
@@ -1255,21 +1252,95 @@ export default function Checkout() {
     <CheckoutLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <button
-            onClick={() => setLocation("/")}
-            className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar para loja
-          </button>
+          onClick={() => setLocation("/")}
+          className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Voltar para loja
+        </button>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-            {/* Left Column */}
-            <div className="lg:col-span-7 space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          {/* Left Column */}
+          <div className="lg:col-span-7 space-y-8">
 
-              {/* Personal Data */}
-              <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
-                <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
-                <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
+            {/* Personal Data */}
+            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+              <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
+              <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
+                <Input
+                  label="Nome Completo *"
+                  placeholder="João da Silva"
+                  {...register("name")}
+                  error={errors.name?.message}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="E-mail *"
+                    type="email"
+                    placeholder="joao@exemplo.com"
+                    {...register("email")}
+                    error={errors.email?.message}
+                  />
+                  <div className="w-full space-y-1.5">
+                    <label className="text-sm font-medium text-foreground ml-1">Telefone (WhatsApp) *</label>
+                    <input
+                      type="tel"
+                      value={phoneDisplay}
+                      onChange={handlePhoneChange}
+                      placeholder="(11) 99999-9999"
+                      className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 ${errors.phone ? "border-destructive" : ""}`}
+                    />
+                    {errors.phone && <p className="text-sm text-destructive ml-1">{errors.phone.message}</p>}
+                  </div>
+                </div>
+                <div className="w-full space-y-1.5">
+                  <label className="text-sm font-medium text-foreground ml-1">CPF *</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={cpfDisplay}
+                    onChange={handleCPFChange}
+                    placeholder="000.000.000-00"
+                    className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 ${errors.document ? "border-destructive" : ""}`}
+                  />
+                  {errors.document && <p className="text-sm text-destructive ml-1">{errors.document.message}</p>}
+                </div>
+              </form>
+            </div>
+
+            {/* Address */}
+            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+              <div className="flex items-center gap-2 mb-6">
+                <MapPin className="w-5 h-5 text-primary" />
+                <h2 className="text-2xl font-bold">Endereço de Entrega</h2>
+              </div>
+              <div className="space-y-4">
+                {/* CEP */}
+                <div className="w-full space-y-1.5">
+                  <label className="text-sm font-medium text-foreground ml-1">CEP *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cepDisplay}
+                      onChange={handleCEPChange}
+                      placeholder="00000-000"
+                      maxLength={9}
+                      className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 pr-10 ${errors.cep ? "border-destructive" : ""}`}
+                    />
+                    {cepLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
+                    )}
+                  </div>
+                  {errors.cep && <p className="text-sm text-destructive ml-1">{errors.cep.message}</p>}
+                  <p className="text-xs text-muted-foreground ml-1">
+                    Digite o CEP para preenchimento automático do endereço
+                  </p>
+                </div>
+
+                {/* Street + Number */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2">
                     <Input
                       label="Rua / Logradouro *"
                       placeholder="Rua das Flores"
