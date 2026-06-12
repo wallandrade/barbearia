@@ -1255,12 +1255,69 @@ export default function Checkout() {
     <CheckoutLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <button
-          onClick={() => setLocation("/")}
-          className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Voltar para loja
-        </button>
+          try {
+            const order = await createOrderWithSecurity({
+              client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
+              address: {
+                cep: data.cep,
+                street: data.street,
+                number: data.number,
+                complement: data.complement || "",
+                neighborhood: data.neighborhood,
+                city: data.city,
+                state: data.state,
+              },
+              products: productsPayload,
+              shippingType: selectedShipping?.name ?? "Frete",
+              includeInsurance,
+              subtotal,
+              shippingCost,
+              insuranceAmount,
+              total,
+              paymentMethod: "whatsapp_pix",
+              sellerCode,
+              affiliateCode: affiliateCode || undefined,
+              couponCode: appliedCoupon?.code,
+              discountAmount: discountAmount > 0 ? discountAmount : undefined,
+            });
+
+            const itemsText = productsPayload
+              .map((item) => {
+                const itemTotal = item.price * item.quantity;
+                const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
+                return `- ${item.quantity}x ${item.name}${variant} — ${formatCurrency(itemTotal)}`;
+              })
+              .join("\n");
+
+            const addressFull = [
+              `${data.street}, ${data.number}`,
+              data.complement,
+              data.neighborhood,
+              `${data.city}/${data.state}`,
+              `CEP ${data.cep}`,
+            ]
+              .filter(Boolean)
+              .join(", ");
+
+            const message =
+              `Olá! Quero finalizar meu pedido.\n\n` +
+              `Pedido: #${order.id}\n` +
+              `Cliente: ${data.name}\n` +
+              `Telefone: ${data.phone}\n` +
+              `CPF: ${data.document}\n` +
+              `E-mail: ${data.email}\n\n` +
+              `Endereço: ${addressFull}\n\n` +
+              `Itens:\n${itemsText}\n\n` +
+              `Subtotal: ${formatCurrency(subtotal)}\n` +
+              `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+              (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+              (discountAmount > 0
+                ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
+                : "") +
+              `Total: ${formatCurrency(payableTotal)}\n\n` +
+              `Pode me enviar a chave PIX para pagamento?`;
+
+            const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
             window.open(waUrl, "_blank", "noopener,noreferrer");
             toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
             clearCart();
