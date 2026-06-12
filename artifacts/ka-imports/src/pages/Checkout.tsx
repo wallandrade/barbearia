@@ -2167,6 +2167,60 @@ export default function Checkout() {
             </motion.div>
           </div>
         )}
+
+      {whatsappModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setWhatsappModalData(null)}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="bg-card w-full max-w-md rounded-3xl shadow-2xl relative z-10 p-8 text-center"
+          >
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            </div>
+            
+            <h2 className="text-2xl font-bold mb-2">Pedido #{whatsappModalData.orderId} criado!</h2>
+            <p className="text-muted-foreground mb-6">
+              Seu pedido foi criado com sucesso. Agora, clique no botão abaixo para solicitar a chave PIX ao vendedor.
+            </p>
+
+            <div className="space-y-3">
+              <Button
+                className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => {
+                  setIsOpeningWhatsApp(true);
+                  window.open(whatsappModalData.url, "_blank", "noopener,noreferrer");
+                  setTimeout(() => {
+                    setWhatsappModalData(null);
+                    setIsOpeningWhatsApp(false);
+                  }, 500);
+                }}
+                disabled={isOpeningWhatsApp}
+              >
+                <MessageCircle className="w-4 h-4" />
+                {isOpeningWhatsApp ? "Abrindo..." : "Solicitar PIX no WhatsApp"}
+              </Button>
+
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => setWhatsappModalData(null)}
+                disabled={isOpeningWhatsApp}
+              >
+                Fechar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
       </AnimatePresence>
     </CheckoutLayout>
   );
