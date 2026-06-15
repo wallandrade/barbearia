@@ -253,7 +253,7 @@ export async function getSessionInfo(req: Request) {
   const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return undefined;
-  const sessionRows = await db.select().from(adminSessionsTable).where(adminSessionsTable.token.eq(token)).limit(1);
+  const sessionRows = await db.select().from(adminSessionsTable).where(eq(adminSessionsTable.token, token)).limit(1);
   if (!sessionRows[0]) return undefined;
   return { ...sessionRows[0], ...resolveAdminScopeFromSession(sessionRows[0]) };
 }
@@ -321,7 +321,7 @@ router.post("/admin/logout", async (req, res) => {
   const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (token) {
-    await db.delete(adminSessionsTable).where(adminSessionsTable.token.eq(token));
+    await db.delete(adminSessionsTable).where(eq(adminSessionsTable.token, token));
   }
   res.json({ ok: true });
 });
