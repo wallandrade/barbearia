@@ -9768,11 +9768,12 @@ function UsersPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="shrink-0"
+                className="shrink-0 gap-1.5"
                 onClick={() => openPasswordEditor(u.id)}
                 disabled={userPasswordUpdating === u.id}
               >
                 {userPasswordUpdating === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                Alterar senha
               </Button>
               {/* Delete */}
               <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 shrink-0"
