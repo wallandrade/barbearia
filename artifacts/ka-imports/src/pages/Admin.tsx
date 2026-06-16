@@ -978,6 +978,7 @@ export default function Admin() {
   const [financialSummary, setFinancialSummary] = React.useState<null | {
     totalRevenue: number;
     totalGatewayFees: number;
+    whatsappEconomy: number;
     totalWithdrawFees: number;
     netRevenue: number;
     realNetRevenue: number;
@@ -3277,6 +3278,9 @@ export default function Admin() {
                   <>
                     <span>Taxas do gateway: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalGatewayFees) || 0)}</strong></span>
                     <span>Taxas de saque: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalWithdrawFees) || 0)}</strong></span>
+                    {financialSummary.whatsappEconomy > 0 && (
+                      <span>Economia WhatsApp: <strong className="text-green-700">+{formatCurrency(Number(financialSummary.whatsappEconomy) || 0)}</strong></span>
+                    )}
                   </>
                 )}
               </div>
