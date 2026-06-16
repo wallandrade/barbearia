@@ -213,6 +213,33 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
     setLocation(`${sellerHomeHref}?q=${encodeURIComponent(name)}`);
   }
 
+  async function openSupportWhatsApp() {
+    let number = getActiveWhatsApp();
+
+    if (sellerSlug) {
+      try {
+        const res = await fetch(`${BASE}/api/sellers/${encodeURIComponent(sellerSlug)}`);
+        if (res.ok) {
+          const data = (await res.json()) as { whatsapp?: string };
+          const sellerWhatsApp = String(data?.whatsapp || "").replace(/\D/g, "");
+          if (sellerWhatsApp) {
+            number = sellerWhatsApp;
+            sessionStorage.setItem("sellerWhatsapp", sellerWhatsApp);
+            sessionStorage.setItem("sellerWhatsappSlug", sellerSlug);
+          }
+        }
+      } catch {
+        // ignore and use current fallback number
+      }
+    }
+
+    window.open(
+      `https://wa.me/${number}?text=${encodeURIComponent("Olá, gostaria de suporte.")}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
   // Open mobile search and auto-focus input
   function openMobileSearch() {
     setMobileSearchOpen(true);
@@ -393,13 +420,9 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
 
               <button
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-green-50 text-green-700 font-medium transition-colors"
-                onClick={() => {
+                onClick={async () => {
                   setMenuOpen(false);
-                  window.open(
-                    `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent("Olá, gostaria de suporte.")}`,
-                    "_blank",
-                    "noopener,noreferrer"
-                  );
+                  await openSupportWhatsApp();
                 }}
               >
                 <MessageCircle className="w-5 h-5" />

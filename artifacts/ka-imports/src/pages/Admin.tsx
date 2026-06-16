@@ -342,7 +342,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -1104,6 +1104,7 @@ export default function Admin() {
   const [userCreating, setUserCreating] = useState(false);
   const [userDeleting, setUserDeleting] = useState<string | null>(null);
   const [userAccessUpdating, setUserAccessUpdating] = useState<string | null>(null);
+  const [userPasswordUpdating, setUserPasswordUpdating] = useState<string | null>(null);
   // Seller links
   const [sellerInput, setSellerInput] = useState("");
   const [sellerWhatsappInput, setSellerWhatsappInput] = useState("");
@@ -2754,6 +2755,32 @@ export default function Admin() {
     finally { setUserDeleting(null); }
   };
 
+  const changeUserPassword = async (id: string, username: string, password: string): Promise<boolean> => {
+    if (!password.trim()) { toast.error("Informe a nova senha."); return false; }
+    if (password.trim().length < 6) { toast.error("A senha deve ter no mínimo 6 caracteres."); return false; }
+
+    setUserPasswordUpdating(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/users/${id}/password`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ password: password.trim() }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao alterar senha.");
+        return false;
+      }
+      toast.success(`Senha de "${username}" atualizada.`);
+      return true;
+    } catch {
+      toast.error("Erro ao alterar senha.");
+      return false;
+    } finally {
+      setUserPasswordUpdating(null);
+    }
+  };
+
   // Coupons handlers
   const createCoupon = async () => {
     if (!couponForm.code.trim() || !couponForm.discountValue) { toast.error("Preencha código e valor."); return; }
@@ -3952,9 +3979,11 @@ export default function Admin() {
             userCreating={userCreating}
             userDeleting={userDeleting}
             userAccessUpdating={userAccessUpdating}
+            userPasswordUpdating={userPasswordUpdating}
             createUser={createUser}
             deleteUser={deleteUser}
             toggleUserAccess={toggleUserAccess}
+            changeUserPassword={changeUserPassword}
           />
         ) : tab === "products" ? (
           <ProductsPanel
@@ -9607,17 +9636,39 @@ function CustomersPanel({
 function UsersPanel({
   users, newUsername, setNewUsername, newPassword, setNewPassword,
   newFullAccess, setNewFullAccess, showNewPw, setShowNewPw,
-  userCreating, userDeleting, userAccessUpdating,
-  createUser, deleteUser, toggleUserAccess,
+  userCreating, userDeleting, userAccessUpdating, userPasswordUpdating,
+  createUser, deleteUser, toggleUserAccess, changeUserPassword,
 }: {
   users: AdminUser[]; newUsername: string; setNewUsername: (v: string) => void;
   newPassword: string; setNewPassword: (v: string) => void;
   newFullAccess: boolean; setNewFullAccess: (v: boolean) => void;
   showNewPw: boolean; setShowNewPw: (v: boolean) => void;
-  userCreating: boolean; userDeleting: string | null; userAccessUpdating: string | null;
+  userCreating: boolean; userDeleting: string | null; userAccessUpdating: string | null; userPasswordUpdating: string | null;
   createUser: () => void; deleteUser: (id: string, username: string) => void;
   toggleUserAccess: (id: string, username: string, fullAccess: boolean) => void;
+  changeUserPassword: (id: string, username: string, password: string) => Promise<boolean>;
 }) {
+  const [editingPasswordUserId, setEditingPasswordUserId] = useState<string | null>(null);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [showPasswordDraft, setShowPasswordDraft] = useState(false);
+
+  const openPasswordEditor = (userId: string) => {
+    setEditingPasswordUserId(userId);
+    setPasswordDraft("");
+    setShowPasswordDraft(false);
+  };
+
+  const closePasswordEditor = () => {
+    setEditingPasswordUserId(null);
+    setPasswordDraft("");
+    setShowPasswordDraft(false);
+  };
+
+  const submitPasswordChange = async (id: string, username: string) => {
+    const ok = await changeUserPassword(id, username, passwordDraft);
+    if (ok) closePasswordEditor();
+  };
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm">
@@ -9683,7 +9734,8 @@ function UsersPanel({
             <p className="text-muted-foreground text-sm">Nenhum usuário cadastrado.</p>
           </div>
         ) : users.map((u) => (
-          <div key={u.id} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+          <div key={u.id} className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+            <div className="flex items-center gap-4">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${u.isPrimary ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
               {u.username[0]?.toUpperCase()}
             </div>
@@ -9717,6 +9769,16 @@ function UsersPanel({
                     ? <IconLucide name="ToggleRight" className="w-6 h-6 text-primary" />
                     : <ToggleLeft className="w-6 h-6" />}
               </button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => openPasswordEditor(u.id)}
+                disabled={userPasswordUpdating === u.id}
+              >
+                {userPasswordUpdating === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                Alterar senha
+              </Button>
               {/* Delete */}
               <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 shrink-0"
                 disabled={userDeleting === u.id}
@@ -9724,6 +9786,50 @@ function UsersPanel({
                 {userDeleting === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
               </Button>
             </div>
+            </div>
+
+            {editingPasswordUserId === u.id && (
+              <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Alterar senha de {u.username}
+                </p>
+                <div className="relative">
+                  <input
+                    type={showPasswordDraft ? "text" : "password"}
+                    value={passwordDraft}
+                    onChange={(e) => setPasswordDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        void submitPasswordChange(u.id, u.username);
+                      }
+                    }}
+                    placeholder="Nova senha (mínimo 6 caracteres)"
+                    className="w-full h-10 px-3 pr-10 rounded-lg border border-border bg-white text-sm focus:border-primary outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordDraft(!showPasswordDraft)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPasswordDraft ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => void submitPasswordChange(u.id, u.username)}
+                    disabled={userPasswordUpdating === u.id || passwordDraft.trim().length < 6}
+                  >
+                    {userPasswordUpdating === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Salvar senha
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={closePasswordEditor} disabled={userPasswordUpdating === u.id}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

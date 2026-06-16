@@ -253,7 +253,7 @@ export async function getSessionInfo(req: Request) {
   const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return undefined;
-  const sessionRows = await db.select().from(adminSessionsTable).where(adminSessionsTable.token.eq(token)).limit(1);
+  const sessionRows = await db.select().from(adminSessionsTable).where(eq(adminSessionsTable.token, token)).limit(1);
   if (!sessionRows[0]) return undefined;
   return { ...sessionRows[0], ...resolveAdminScopeFromSession(sessionRows[0]) };
 }
@@ -321,7 +321,7 @@ router.post("/admin/logout", async (req, res) => {
   const auth  = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (token) {
-    await db.delete(adminSessionsTable).where(adminSessionsTable.token.eq(token));
+    await db.delete(adminSessionsTable).where(eq(adminSessionsTable.token, token));
   }
   res.json({ ok: true });
 });
@@ -458,14 +458,19 @@ router.patch("/admin/users/:id/access", requirePrimaryAdmin, async (req, res) =>
 // --------------------------------------------------------------------------
 // PATCH /api/admin/users/:id/password  — change own password (primary admin) or any user (super)
 // --------------------------------------------------------------------------
-router.patch("/admin/users/:id/password", requireAdminAuth, requirePrimaryAdmin, async (req, res) => {
+router.patch("/admin/users/:id/password", requireAdminAuth, async (req, res) => {
   const { id }       = req.params;
   const userId = Array.isArray(id) ? id[0] : id;
   const { password } = req.body as { password?: string };
-  const session      = getSessionInfo(req);
+  const session      = await getSessionInfo(req);
 
   if (!password || password.length < 6) {
     res.status(400).json({ error: "INVALID_INPUT", message: "Senha deve ter pelo menos 6 caracteres." });
+    return;
+  }
+
+  if (!session) {
+    res.status(401).json({ error: "UNAUTHORIZED", message: "Acesso não autorizado." });
     return;
   }
 
@@ -481,8 +486,11 @@ router.patch("/admin/users/:id/password", requireAdminAuth, requirePrimaryAdmin,
       return;
     }
 
-    // Only allow if primary admin OR changing own account
-    if (!session?.isPrimary && existing[0].username !== session?.username) {
+    const targetUsername = String(existing[0].username || "").trim().toLowerCase();
+    const actorUsername = String(session.username || "").trim().toLowerCase();
+
+    // Allow password change if actor is primary admin or is changing their own account.
+    if (!session.isPrimary && targetUsername !== actorUsername) {
       res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão para alterar esta senha." });
       return;
     }

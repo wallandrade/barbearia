@@ -132,6 +132,8 @@ export default function Checkout() {
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
+  const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string } | null>(null);
+  const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
   const [cardModalStep, setCardModalStep] = useState<"card_pricing" | "kyc_notice" | "installments" | "kyc_link">("card_pricing");
   const [installments, setInstallments] = useState(1);
   const [kycOrderId, setKycOrderId] = useState("");
@@ -524,6 +526,34 @@ export default function Checkout() {
 
   // Capture seller from localStorage (set by SellerPage redirect)
   const sellerCode = safeReadStorage("sellerCode") || undefined;
+  const normalizedSellerCode = String(sellerCode || "").trim().toLowerCase();
+  const sellerHomeHref = normalizedSellerCode ? `/${encodeURIComponent(normalizedSellerCode)}` : "/";
+
+  const resolveSellerWhatsAppStrict = useCallback(async (): Promise<string | null> => {
+    const normalizedSeller = String(sellerCode || "").trim().toLowerCase();
+    if (!normalizedSeller) return getActiveWhatsApp();
+
+    try {
+      const res = await fetch(`${BASE}/api/sellers/${encodeURIComponent(normalizedSeller)}`);
+      if (res.ok) {
+        const data = (await res.json()) as { whatsapp?: string };
+        const whatsapp = String(data?.whatsapp || "").replace(/\D/g, "");
+        if (whatsapp) return whatsapp;
+      }
+    } catch {
+      // ignore and fall back below
+    }
+
+    const cachedWhatsapp = sessionStorage.getItem("sellerWhatsapp") || "";
+    const cachedSlug = (sessionStorage.getItem("sellerWhatsappSlug") || "").toLowerCase();
+    if (cachedWhatsapp && cachedSlug === normalizedSeller) {
+      const normalizedCached = cachedWhatsapp.replace(/\D/g, "");
+      if (normalizedCached) return normalizedCached;
+    }
+
+    // Fail closed to avoid routing customer to another seller.
+    return null;
+  }, [sellerCode]);
 
   // Load shipping options from API
   useEffect(() => {
@@ -797,8 +827,64 @@ export default function Checkout() {
       <CheckoutLayout>
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <h2 className="text-2xl font-bold mb-4">Seu carrinho está vazio</h2>
-          <Button onClick={() => setLocation("/")}>Voltar para loja</Button>
+          <Button onClick={() => setLocation(sellerHomeHref)}>Voltar para loja</Button>
         </div>
+
+        <AnimatePresence>
+          {whatsappModalData && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setWhatsappModalData(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="bg-card w-full max-w-md rounded-3xl shadow-2xl relative z-10 p-8 text-center"
+              >
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-green-600" />
+                </div>
+
+                <h2 className="text-2xl font-bold mb-2">Pedido #{whatsappModalData.orderId} criado!</h2>
+                <p className="text-muted-foreground mb-6">
+                  Seu pedido foi criado com sucesso. Agora, clique no botão abaixo para solicitar a chave PIX ao vendedor.
+                </p>
+
+                <div className="space-y-3">
+                  <Button
+                    className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => {
+                      setIsOpeningWhatsApp(true);
+                      window.open(whatsappModalData.url, "_blank", "noopener,noreferrer");
+                      setTimeout(() => {
+                        setWhatsappModalData(null);
+                        setIsOpeningWhatsApp(false);
+                      }, 500);
+                    }}
+                    disabled={isOpeningWhatsApp}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    {isOpeningWhatsApp ? "Abrindo..." : "Solicitar PIX no WhatsApp"}
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => setWhatsappModalData(null)}
+                    disabled={isOpeningWhatsApp}
+                  >
+                    Fechar
+                  </Button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </CheckoutLayout>
     );
   }
@@ -1126,16 +1212,16 @@ export default function Checkout() {
         `Total: ${formatCurrency(payableTotal)}\n\n` +
         `Pode me enviar a chave PIX para pagamento?`;
 
-      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
-
-      // Try to open in new window; if blocked, navigate directly
-      const newWindow = window.open(waUrl, "_blank", "noopener,noreferrer");
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-        // Pop-up was blocked; use direct navigation instead
-        window.location.href = waUrl;
+      const sellerWhatsApp = await resolveSellerWhatsAppStrict();
+      if (!sellerWhatsApp) {
+        toast.error("Nao foi possivel confirmar o WhatsApp do vendedor deste link. Tente novamente em instantes.");
+        return;
       }
+      const waUrl = `https://wa.me/${sellerWhatsApp}?text=${encodeURIComponent(message)}`;
 
-      toast.success(`Pedido #${order.id} criado. Você foi direcionado ao WhatsApp da vendedora.`);
+      // Store modal data to show confirmation dialog
+      setWhatsappModalData({ url: waUrl, orderId: order.id });
+      toast.success(`Pedido #${order.id} criado com sucesso!`);
       clearCart();
       setIsOpen(false);
     } catch (error) {
@@ -1235,7 +1321,12 @@ export default function Checkout() {
         `*Total:* ${formatCurrency(cardTotal)}\n\n` +
         `Aguardo o retorno para confirmar os detalhes!`;
 
-      const waUrl = `https://wa.me/${getActiveWhatsApp()}?text=${encodeURIComponent(message)}`;
+      const sellerWhatsApp = await resolveSellerWhatsAppStrict();
+      if (!sellerWhatsApp) {
+        toast.error("Nao foi possivel confirmar o WhatsApp do vendedor deste link. Tente novamente em instantes.");
+        return;
+      }
+      const waUrl = `https://wa.me/${sellerWhatsApp}?text=${encodeURIComponent(message)}`;
       setKycOrderId(order.id);
       setKycWhatsAppUrl(waUrl);
       setCardModalStep("kyc_link");
@@ -1255,21 +1346,95 @@ export default function Checkout() {
     <CheckoutLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <button
-            onClick={() => setLocation("/")}
-            className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar para loja
-          </button>
+          onClick={() => setLocation(sellerHomeHref)}
+          className="flex items-center text-muted-foreground hover:text-primary mb-8 font-medium transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Voltar para loja
+        </button>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-            {/* Left Column */}
-            <div className="lg:col-span-7 space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          {/* Left Column */}
+          <div className="lg:col-span-7 space-y-8">
 
-              {/* Personal Data */}
-              <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
-                <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
-                <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
+            {/* Personal Data */}
+            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+              <h2 className="text-2xl font-bold mb-6">Dados do Comprador</h2>
+              <form id="checkout-form" onSubmit={handleSubmit(handlePixPayment)} className="space-y-4">
+                <Input
+                  label="Nome Completo *"
+                  placeholder="João da Silva"
+                  {...register("name")}
+                  error={errors.name?.message}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="E-mail *"
+                    type="email"
+                    placeholder="joao@exemplo.com"
+                    {...register("email")}
+                    error={errors.email?.message}
+                  />
+                  <div className="w-full space-y-1.5">
+                    <label className="text-sm font-medium text-foreground ml-1">Telefone (WhatsApp) *</label>
+                    <input
+                      type="tel"
+                      value={phoneDisplay}
+                      onChange={handlePhoneChange}
+                      placeholder="(11) 99999-9999"
+                      className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 ${errors.phone ? "border-destructive" : ""}`}
+                    />
+                    {errors.phone && <p className="text-sm text-destructive ml-1">{errors.phone.message}</p>}
+                  </div>
+                </div>
+                <div className="w-full space-y-1.5">
+                  <label className="text-sm font-medium text-foreground ml-1">CPF *</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={cpfDisplay}
+                    onChange={handleCPFChange}
+                    placeholder="000.000.000-00"
+                    className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 ${errors.document ? "border-destructive" : ""}`}
+                  />
+                  {errors.document && <p className="text-sm text-destructive ml-1">{errors.document.message}</p>}
+                </div>
+              </form>
+            </div>
+
+            {/* Address */}
+            <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+              <div className="flex items-center gap-2 mb-6">
+                <MapPin className="w-5 h-5 text-primary" />
+                <h2 className="text-2xl font-bold">Endereço de Entrega</h2>
+              </div>
+              <div className="space-y-4">
+                {/* CEP */}
+                <div className="w-full space-y-1.5">
+                  <label className="text-sm font-medium text-foreground ml-1">CEP *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cepDisplay}
+                      onChange={handleCEPChange}
+                      placeholder="00000-000"
+                      maxLength={9}
+                      className={`flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 pr-10 ${errors.cep ? "border-destructive" : ""}`}
+                    />
+                    {cepLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
+                    )}
+                  </div>
+                  {errors.cep && <p className="text-sm text-destructive ml-1">{errors.cep.message}</p>}
+                  <p className="text-xs text-muted-foreground ml-1">
+                    Digite o CEP para preenchimento automático do endereço
+                  </p>
+                </div>
+
+                {/* Street + Number */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2">
                     <Input
                       label="Rua / Logradouro *"
                       placeholder="Rua das Flores"
@@ -1785,7 +1950,7 @@ export default function Checkout() {
                         variant="outline"
                         size="sm"
                         className="mt-3 border-red-300 text-red-700 hover:bg-red-100"
-                        onClick={() => setLocation("/")}
+                        onClick={() => setLocation(sellerHomeHref)}
                       >
                         Voltar ao catalogo
                       </Button>

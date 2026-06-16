@@ -95,6 +95,10 @@ export default function Success() {
   const [, setLocation] = useLocation();
   const { clearCart } = useCart();
   const [orderInfo, setOrderInfo] = useState<OrderInfo | null>(null);
+  const sellerCode = (
+    sessionStorage.getItem("sellerCode") || localStorage.getItem("sellerCode") || ""
+  ).trim().toLowerCase();
+  const homeHref = sellerCode ? `/${encodeURIComponent(sellerCode)}` : "/";
 
   useEffect(() => {
     clearCart();
@@ -166,7 +170,7 @@ export default function Success() {
               variant="outline"
               size="lg"
               className="w-full text-lg"
-              onClick={() => setLocation("/")}
+              onClick={() => setLocation(homeHref)}
             >
               Voltar à Loja
             </Button>

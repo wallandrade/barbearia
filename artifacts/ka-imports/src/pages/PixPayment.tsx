@@ -32,6 +32,11 @@ export default function PixPayment() {
   const transactionId = params?.id ?? "";
   const [, setLocation] = useLocation();
 
+  const sellerCode = (
+    sessionStorage.getItem("sellerCode") || localStorage.getItem("sellerCode") || ""
+  ).trim().toLowerCase();
+  const checkoutHref = sellerCode ? `/${encodeURIComponent(sellerCode)}/checkout` : "/checkout";
+
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [storedPix, setStoredPix] = useState<StoredPix | null>(null);
   const [isCopied, setIsCopied] = useState(false);
@@ -75,7 +80,7 @@ export default function PixPayment() {
     const stored = localStorage.getItem("currentPix");
 
     if (!stored) {
-      setLocation("/checkout");
+      setLocation(checkoutHref);
       return;
     }
 
@@ -83,12 +88,12 @@ export default function PixPayment() {
     try {
       parsed = JSON.parse(stored) as StoredPix;
     } catch {
-      setLocation("/checkout");
+      setLocation(checkoutHref);
       return;
     }
 
     if (parsed.transactionId !== transactionId) {
-      setLocation("/checkout");
+      setLocation(checkoutHref);
       return;
     }
 
@@ -102,7 +107,7 @@ export default function PixPayment() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [transactionId, setLocation]);
+  }, [checkoutHref, transactionId, setLocation]);
 
   const handleCopy = async () => {
     if (!storedPix?.pixCode) return;
@@ -120,7 +125,7 @@ export default function PixPayment() {
     const raw = localStorage.getItem("pixOrderData");
     if (!raw) {
       // If no saved data, go back to checkout
-      setLocation("/checkout");
+      setLocation(checkoutHref);
       return;
     }
 
@@ -128,7 +133,7 @@ export default function PixPayment() {
     try {
       orderData = JSON.parse(raw) as PixOrderData;
     } catch {
-      setLocation("/checkout");
+      setLocation(checkoutHref);
       return;
     }
 
@@ -167,7 +172,7 @@ export default function PixPayment() {
         },
       }
     );
-  }, [generatePix, setLocation]);
+  }, [checkoutHref, generatePix, setLocation]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
