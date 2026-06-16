@@ -141,13 +141,19 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     // Lê taxas do settings
     const fees = await getGatewayFees();
 
-    // Calcula taxas de transação
+    // Calcula taxas de transação, separando economia WhatsApp
     let totalGatewayFees = 0;
+    let whatsappEconomy = 0;
     for (const order of orders) {
       const amount = parseFloat(order.total || "0");
       let fee = (amount * (fees.feePercent / 100)) + fees.feeFixed;
       if (fee < fees.feeMin) fee = fees.feeMin;
-      totalGatewayFees += fee;
+      
+      if (order.paymentMethod === "whatsapp_pix") {
+        whatsappEconomy += fee;
+      } else {
+        totalGatewayFees += fee;
+      }
     }
     // Cálculo do custo total dos produtos:
     // 1) usa costPrice salvo no item do pedido, quando existir
@@ -250,6 +256,7 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       totalCost,
       totalCommission,
       realNetRevenue,
+        whatsappEconomy,
       customerRecurrence: {
         totalUniqueCustomers,
         recurringCustomers,
