@@ -18,21 +18,22 @@ interface ProductSuggestion {
   image: string | null;
 }
 
-function useSiteLogo() {
-  const [logo, setLogo] = useState<string | null>(() => {
-    try { return JSON.parse(localStorage.getItem("siteSettings") || "{}").logo ?? null; } catch { return null; }
+function usePublicSiteSettings() {
+  const [settings, setSettings] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("siteSettings") || "{}"); } catch { return {}; }
   });
+
   useEffect(() => {
     fetch(`${BASE}/api/settings`)
       .then((r) => r.json())
       .then((data: Record<string, string>) => {
         localStorage.setItem("siteSettings", JSON.stringify(data));
-        if (data.logo) setLogo(data.logo);
-        else setLogo(null);
+        setSettings(data || {});
       })
       .catch(() => {});
   }, []);
-  return logo;
+
+  return settings;
 }
 
 function useProducts() {
@@ -153,7 +154,8 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
 
   const itemCount = items.reduce((acc, item) => acc + item.quantity, 0);
   const isLoggedIn = Boolean(getCustomerToken());
-  const logo = useSiteLogo();
+  const siteSettings = usePublicSiteSettings();
+  const logo = siteSettings.logo ?? null;
   const allProducts = useProducts();
   const currentPath = typeof window !== "undefined"
     ? window.location.pathname
@@ -185,6 +187,24 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
     currentPath === "/" ||
     currentPath === normalizedBase ||
     currentPath === `${normalizedBase}/`;
+
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const promoCountdownEnabled = !["0", "false", "off", "no", "disabled"].includes(String(siteSettings["promo_countdown_enabled"] ?? "0").toLowerCase());
+  const promoCountdownText = String(siteSettings["promo_countdown_text"] ?? "").trim();
+  const promoCountdownAtRaw = String(siteSettings["promo_countdown_datetime"] ?? "").trim();
+  const promoTargetMs = promoCountdownAtRaw ? new Date(promoCountdownAtRaw).getTime() : Number.NaN;
+  const countdownDiff = Number.isFinite(promoTargetMs) ? Math.max(0, promoTargetMs - nowMs) : 0;
+  const countdownDays = Math.floor(countdownDiff / (1000 * 60 * 60 * 24));
+  const countdownHours = Math.floor((countdownDiff / (1000 * 60 * 60)) % 24);
+  const countdownMinutes = Math.floor((countdownDiff / (1000 * 60)) % 60);
+  const countdownSeconds = Math.floor((countdownDiff / 1000) % 60);
+  const hasValidPromoSchedule = !minimal && promoCountdownEnabled && !!promoCountdownText && Number.isFinite(promoTargetMs);
+  const promoStarted = hasValidPromoSchedule && nowMs >= promoTargetMs;
 
   const suggestions = searchValue.trim().length >= 1
     ? allProducts.filter((p) =>
@@ -270,6 +290,26 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
 
   return (
     <>
+      {hasValidPromoSchedule && (
+        <div className="w-full bg-gradient-to-r from-rose-700 via-red-600 to-orange-500 text-white border-b border-red-300/50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+            <p className="text-sm font-semibold tracking-tight">{promoCountdownText}</p>
+            {promoStarted ? (
+              <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold">
+                <span className="px-3 py-1 rounded-lg bg-white/20 text-white">Promocao no ar</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold">
+                <span className="px-2.5 py-1 rounded-lg bg-white/15 min-w-[64px] text-center">{String(countdownDays).padStart(2, "0")}d</span>
+                <span className="px-2.5 py-1 rounded-lg bg-white/15 min-w-[64px] text-center">{String(countdownHours).padStart(2, "0")}h</span>
+                <span className="px-2.5 py-1 rounded-lg bg-white/15 min-w-[64px] text-center">{String(countdownMinutes).padStart(2, "0")}m</span>
+                <span className="px-2.5 py-1 rounded-lg bg-white/15 min-w-[64px] text-center">{String(countdownSeconds).padStart(2, "0")}s</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 w-full glass border-b border-border/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 md:h-20">

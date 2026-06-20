@@ -11257,6 +11257,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const [showOutboundSecret, setShowOutboundSecret] = useState(false);
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
+  const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
+  const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
+  const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
   const whatsappEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_whatsapp"] ?? "0").toLowerCase());
@@ -11269,6 +11272,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
+    setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
+    setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
+    setPromoCountdownText(settings["promo_countdown_text"] ?? "");
   }, [settings]);
 
   const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp", enabled: boolean) => {
@@ -11353,6 +11359,106 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               onDelete={onDelete}
             />
           </div>
+        </div>
+      </div>
+
+      {/* ── Cronograma de Promoção no Topo ─────────────────────────────── */}
+      <div className="max-w-3xl">
+        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-primary" />
+          Cronograma da Promoção no Topo
+        </h2>
+        <p className="text-muted-foreground text-sm mb-5">
+          Configure um contador regressivo no topo da loja com data, horário e texto personalizado.
+        </p>
+
+        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+          <label className="flex items-center justify-between gap-4 cursor-pointer">
+            <div>
+              <p className="font-semibold">Ativar contador regressivo</p>
+              <p className="text-xs text-muted-foreground">Quando ativo, o contador aparece no topo do site até chegar no horário programado.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={promoCountdownEnabled}
+              onChange={(e) => setPromoCountdownEnabled(e.target.checked)}
+              className="w-4 h-4"
+            />
+          </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium mb-1">Data e horário da promoção</label>
+              <input
+                type="datetime-local"
+                value={promoCountdownDateTime}
+                onChange={(e) => setPromoCountdownDateTime(e.target.value)}
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                disabled={!!loading["promo_countdown_datetime"]}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium mb-1">Texto exibido no topo</label>
+              <input
+                type="text"
+                value={promoCountdownText}
+                onChange={(e) => setPromoCountdownText(e.target.value)}
+                placeholder="Ex: Oferta Relâmpago começa em"
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                disabled={!!loading["promo_countdown_text"]}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                if (promoCountdownEnabled) {
+                  if (!promoCountdownDateTime.trim()) {
+                    toast.error("Selecione data e horário da promoção.");
+                    return;
+                  }
+                  if (!promoCountdownText.trim()) {
+                    toast.error("Digite o texto do contador.");
+                    return;
+                  }
+                }
+
+                onSave("promo_countdown_enabled", promoCountdownEnabled ? "1" : "0");
+                onSave("promo_countdown_datetime", promoCountdownDateTime.trim());
+                onSave("promo_countdown_text", promoCountdownText.trim());
+              }}
+              disabled={!!loading["promo_countdown_enabled"] || !!loading["promo_countdown_datetime"] || !!loading["promo_countdown_text"]}
+              className="gap-2"
+            >
+              {(loading["promo_countdown_enabled"] || loading["promo_countdown_datetime"] || loading["promo_countdown_text"])
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Save className="w-4 h-4" />}
+              Salvar cronograma
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setPromoCountdownEnabled(false);
+                setPromoCountdownDateTime("");
+                setPromoCountdownText("");
+                onDelete("promo_countdown_enabled");
+                onDelete("promo_countdown_datetime");
+                onDelete("promo_countdown_text");
+              }}
+              disabled={!!loading["promo_countdown_enabled"] || !!loading["promo_countdown_datetime"] || !!loading["promo_countdown_text"]}
+            >
+              Limpar cronograma
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            O contador será exibido no topo até a data programada e para automaticamente quando o tempo acabar.
+          </p>
         </div>
       </div>
 
