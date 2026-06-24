@@ -10359,6 +10359,22 @@ function ProductsPanel({
     });
   };
 
+  const copyProductDetails = async (product: AdminProduct, mode: "cost" | "sale") => {
+    const description = String(product.description || "").trim() || "-";
+    const isPromoActive = product.promoPrice != null && (!product.promoEndsAt || new Date() < new Date(product.promoEndsAt));
+    const salePrice = isPromoActive ? Number(product.promoPrice) : Number(product.price);
+    const text = [
+      `Produto: ${String(product.name || "Produto").trim() || "Produto"}`,
+      `Descrição: ${description}`,
+      mode === "cost"
+        ? `Custo: ${formatCurrency(Number(product.costPrice || 0))}`
+        : `Venda: ${formatCurrency(Number.isFinite(salePrice) ? salePrice : Number(product.price || 0))}`,
+    ].join("\n");
+
+    const copyMode = await copyText(text);
+    toast.success(copyMode === "manual" ? "Texto aberto para copia manual." : "Texto copiado!");
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -11012,6 +11028,22 @@ function ProductsPanel({
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => copyProductDetails(p, "cost")}
+                      title="Copiar descrição + custo"
+                      className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                    >
+                      Desc + Custo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyProductDetails(p, "sale")}
+                      title="Copiar descrição + valor de venda"
+                      className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                    >
+                      Desc + Venda
+                    </button>
                     <button
                       type="button"
                       onClick={() => setExpandedLinks(expandedLinks === p.id ? null : p.id)}
