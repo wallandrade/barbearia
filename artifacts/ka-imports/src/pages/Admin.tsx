@@ -10375,12 +10375,12 @@ function ProductsPanel({
     toast.success(copyMode === "manual" ? "Texto aberto para copia manual." : "Texto copiado!");
   };
 
-  const copyAllProductNames = async () => {
+  const copyAllProductCosts = async () => {
     const text = visibleProducts
-      .map((product) => String(product.name || "Produto").trim() || "Produto")
+      .map((product) => `${String(product.name || "Produto").trim() || "Produto"} - ${formatCurrency(Number(product.costPrice || 0))}`)
       .join("\n");
     const copyMode = await copyText(text);
-    toast.success(copyMode === "manual" ? "Lista aberta para copia manual." : "Lista de nomes copiada!");
+    toast.success(copyMode === "manual" ? "Lista aberta para copia manual." : "Lista de custos copiada!");
   };
 
   const copyAllProductSalePrices = async () => {
@@ -10573,8 +10573,8 @@ function ProductsPanel({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 justify-end">
-          <Button variant="outline" onClick={copyAllProductNames} className="gap-2">
-            <Copy className="w-4 h-4" />Copiar nomes
+          <Button variant="outline" onClick={copyAllProductCosts} className="gap-2">
+            <Copy className="w-4 h-4" />Copiar custo
           </Button>
           <Button variant="outline" onClick={copyAllProductSalePrices} className="gap-2">
             <Copy className="w-4 h-4" />Copiar venda
