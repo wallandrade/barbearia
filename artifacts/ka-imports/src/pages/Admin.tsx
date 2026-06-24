@@ -10375,6 +10375,26 @@ function ProductsPanel({
     toast.success(copyMode === "manual" ? "Texto aberto para copia manual." : "Texto copiado!");
   };
 
+  const copyAllProductNames = async () => {
+    const text = visibleProducts
+      .map((product) => String(product.name || "Produto").trim() || "Produto")
+      .join("\n");
+    const copyMode = await copyText(text);
+    toast.success(copyMode === "manual" ? "Lista aberta para copia manual." : "Lista de nomes copiada!");
+  };
+
+  const copyAllProductSalePrices = async () => {
+    const text = visibleProducts
+      .map((product) => {
+        const isPromoActive = product.promoPrice != null && (!product.promoEndsAt || new Date() < new Date(product.promoEndsAt));
+        const salePrice = isPromoActive ? Number(product.promoPrice) : Number(product.price);
+        return `${String(product.name || "Produto").trim() || "Produto"} - ${formatCurrency(Number.isFinite(salePrice) ? salePrice : Number(product.price || 0))}`;
+      })
+      .join("\n");
+    const copyMode = await copyText(text);
+    toast.success(copyMode === "manual" ? "Lista aberta para copia manual." : "Lista de venda copiada!");
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -10552,7 +10572,15 @@ function ProductsPanel({
             {visibleProducts.length} de {products.length} produto{products.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <Button onClick={openCreate} className="gap-2"><Plus className="w-4 h-4" />Novo Produto</Button>
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <Button variant="outline" onClick={copyAllProductNames} className="gap-2">
+            <Copy className="w-4 h-4" />Copiar nomes
+          </Button>
+          <Button variant="outline" onClick={copyAllProductSalePrices} className="gap-2">
+            <Copy className="w-4 h-4" />Copiar venda
+          </Button>
+          <Button onClick={openCreate} className="gap-2"><Plus className="w-4 h-4" />Novo Produto</Button>
+        </div>
       </div>
 
       <div className="relative">
