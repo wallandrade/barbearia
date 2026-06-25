@@ -49,11 +49,6 @@ router.post("/pix/generate", async (req, res) => {
       return;
     }
 
-    if (Number(amount) > 10000) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "O valor máximo para PIX é R$10.000." });
-      return;
-    }
-
     const gatewayProvider = await getActivePixGateway();
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.

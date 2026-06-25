@@ -1204,10 +1204,6 @@ router.post("/orders", async (req, res) => {
       res.status(400).json({ error: "INVALID_INPUT", message: "Valor inválido. Deve ser maior que zero." });
       return;
     }
-    if (computedTotal > 10000) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "O valor máximo por pedido é R$10.000." });
-      return;
-    }
 
     await db.insert(ordersTable).values({
       id,

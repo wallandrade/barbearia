@@ -230,11 +230,6 @@ function PaymentLinkInner() {
       return;
     }
 
-    if (amountVal > 10000) {
-      toast.error("Valor máximo é R$10.000.");
-      return;
-    }
-
     setSubmitting(true);
     try {
       const res = await fetch(`${BASE}/api/custom-charges`, {

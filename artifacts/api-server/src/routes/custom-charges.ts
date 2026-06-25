@@ -122,12 +122,6 @@ router.post("/custom-charges", async (req, res) => {
       return;
     }
 
-    if (Number(amount) > 10000) {
-      console.log(`[CustomCharge:${requestId}] Validation FAILED — amount too large: ${amount}`);
-      res.status(400).json({ error: "INVALID_INPUT", message: "Valor máximo é R$10.000." });
-      return;
-    }
-
     console.log(`[CustomCharge:${requestId}] Validation OK — client=${client.name} amount=${amount} seller=${sellerCode || "none"}`);
 
     const id = crypto.randomBytes(8).toString("hex");

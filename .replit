@@ -30,7 +30,6 @@ timeoutMs = 20000
 [userenv.shared]
 GATEWAY_API_URL = "https://api-de-pagamentos.com"
 WHATSAPP_NUMBER = "11917082244"
-PIX_LIMIT = "10000"
 
 [nix]
 channel = "stable-25_05"

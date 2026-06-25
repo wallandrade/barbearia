@@ -412,11 +412,6 @@ router.post("/checkout/pix", async (req, res) => {
       res.status(400).json({ error: "INVALID_INPUT", message: "Valor inválido. Deve ser maior que zero." });
       return;
     }
-    if (amount > 10000) {
-      console.warn(`[CHECKOUT/PIX:${requestId}] Validation failed — amount exceeds limit: ${amount}`);
-      res.status(400).json({ error: "INVALID_INPUT", message: "O valor máximo para PIX é R$10.000." });
-      return;
-    }
 
     await db.insert(ordersTable).values({
       id:                  orderId,
