@@ -19,3 +19,4 @@ export * from "./manual-reshipments";
 export * from "./inventory";
 export * from "./product-cost-history";
 export * from "./manual-return-items";
+export * from "./marketing-expenses";

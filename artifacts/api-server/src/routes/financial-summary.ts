@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, productsTable, sellersTable, siteSettingsTable } from "@workspace/db";
-import { and, eq, gte, inArray, lt, lte } from "drizzle-orm";
+import { db, marketingExpensesTable, ordersTable, productsTable, sellersTable, siteSettingsTable } from "@workspace/db";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
 const router: IRouter = Router();
@@ -55,6 +55,11 @@ function normalizeCustomerKey(order: {
   if (phone) return `phone:${phone}`;
 
   return null;
+}
+
+function normalizeSellerCode(value: unknown): string | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || null;
 }
 
 // GET /api/admin/financial-summary
@@ -246,8 +251,45 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     // TODO: calcular taxas de saque se houver tabela de saques
     let totalWithdrawFees = 0; // implementar se necessário
 
+    const expenseConditions = [];
+    if (dateFrom) expenseConditions.push(gte(marketingExpensesTable.expenseDate, toUTC(dateFrom, "00", "00", "00")));
+    if (dateTo) expenseConditions.push(lte(marketingExpensesTable.expenseDate, toUTC(dateTo, "23", "59", "59")));
+
+    if (!adminScope.hasGlobalAccess) {
+      expenseConditions.push(or(eq(marketingExpensesTable.sellerCode, adminScope.sellerCode!), isNull(marketingExpensesTable.sellerCode)));
+    } else if (sellerCode) {
+      expenseConditions.push(or(eq(marketingExpensesTable.sellerCode, normalizeSellerCode(sellerCode)), isNull(marketingExpensesTable.sellerCode)));
+    }
+
+    const expenseRows = await db
+      .select()
+      .from(marketingExpensesTable)
+      .where(and(...expenseConditions))
+      .orderBy(desc(marketingExpensesTable.expenseDate), desc(marketingExpensesTable.createdAt), desc(marketingExpensesTable.id));
+
+    const marketingExpenses = expenseRows.map((row) => ({
+      id: row.id,
+      sellerCode: row.sellerCode ?? null,
+      expenseDate: row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
+      channel: row.channel,
+      amount: Number(row.amount || 0),
+      note: row.note ?? null,
+      createdAt: row.createdAt?.toISOString?.() ?? new Date().toISOString(),
+    }));
+
+    const totalMarketingExpenses = marketingExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+    const marketingExpensesByChannelMap = new Map<string, number>();
+    for (const expense of marketingExpenses) {
+      const key = String(expense.channel || "Sem canal").trim() || "Sem canal";
+      marketingExpensesByChannelMap.set(key, (marketingExpensesByChannelMap.get(key) || 0) + Number(expense.amount || 0));
+    }
+
+    const marketingExpensesByChannel = Array.from(marketingExpensesByChannelMap.entries())
+      .map(([channelName, channelTotal]) => ({ channel: channelName, total: channelTotal }))
+      .sort((a, b) => b.total - a.total);
+
     const totalPaid = orders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-    const realNetRevenue = totalPaid - totalCost - totalCommission - totalGatewayFees - totalWithdrawFees;
+    const realNetRevenue = totalPaid - totalCost - totalCommission - totalGatewayFees - totalWithdrawFees - totalMarketingExpenses;
 
     res.json({
       totalPaid,
@@ -256,6 +298,9 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       totalWithdrawFees,
       totalCost,
       totalCommission,
+      totalMarketingExpenses,
+      marketingExpenses,
+      marketingExpensesByChannel,
       realNetRevenue,
       customerRecurrence: {
         totalUniqueCustomers,

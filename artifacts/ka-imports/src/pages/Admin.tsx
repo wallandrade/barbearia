@@ -980,8 +980,19 @@ export default function Admin() {
     totalGatewayFees: number;
     whatsappEconomy: number;
     totalWithdrawFees: number;
+    totalMarketingExpenses: number;
     netRevenue: number;
     realNetRevenue: number;
+    marketingExpenses?: Array<{
+      id: string;
+      sellerCode?: string | null;
+      expenseDate: string;
+      channel: string;
+      amount: number;
+      note?: string | null;
+      createdAt?: string;
+    }>;
+    marketingExpensesByChannel?: Array<{ channel: string; total: number }>;
     customerRecurrence?: {
       totalUniqueCustomers: number;
       recurringCustomers: number;
@@ -1004,6 +1015,13 @@ export default function Admin() {
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovementRecord[]>([]);
+  const [marketingExpenseForm, setMarketingExpenseForm] = useState({
+    expenseDate: todayStr(),
+    channel: "Facebook",
+    amount: "",
+    note: "",
+  });
+  const [marketingExpensesSubmitting, setMarketingExpensesSubmitting] = useState(false);
   const [pendingReshipments, setPendingReshipments] = useState<ReshipmentRecord[]>([]);
   const [activeManualReturnItemId, setActiveManualReturnItemId] = useState<string | null>(null);
   const [inventoryEntryForm, setInventoryEntryForm] = useState({
@@ -1247,6 +1265,48 @@ export default function Admin() {
   
   useEffect(() => {
     if (!authChecked || !getToken()) return;
+
+  const handleAddMarketingExpense = React.useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const amount = Number(String(marketingExpenseForm.amount).replace(",", "."));
+    if (!marketingExpenseForm.expenseDate || !marketingExpenseForm.channel.trim() || !Number.isFinite(amount) || amount <= 0) {
+      toast.error("Preencha data, canal e valor do gasto.");
+      return;
+    }
+
+    setMarketingExpensesSubmitting(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/marketing-expenses`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          expenseDate: marketingExpenseForm.expenseDate,
+          channel: marketingExpenseForm.channel.trim(),
+          amount,
+          note: marketingExpenseForm.note.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => null) as { message?: string } | null;
+      if (!res.ok) {
+        toast.error(data?.message || "Erro ao registrar gasto.");
+        return;
+      }
+
+      setMarketingExpenseForm((current) => ({
+        ...current,
+        amount: "",
+        note: "",
+      }));
+      toast.success("Gasto adicionado com sucesso.");
+      fetchFinancialSummary();
+    } catch {
+      toast.error("Erro ao registrar gasto.");
+    } finally {
+      setMarketingExpensesSubmitting(false);
+    }
+  }, [BASE, fetchFinancialSummary, marketingExpenseForm]);
     const fetchLive = () => {
       fetch(`${BASE}/api/admin/tracking/live`, { headers: authHeaders() })
         .then((r) => r.json())
@@ -3297,6 +3357,7 @@ export default function Admin() {
                   ? formatCurrency(Number(financialSummary.realNetRevenue) || 0)
                   : formatCurrency(Number(statsNetRevenue) || 0)}
               </p>
+                    <span>Gastos marketing: <strong className="text-red-700">-{formatCurrency(Number(financialSummary.totalMarketingExpenses) || 0)}</strong></span>
               <p className="text-xs text-teal-700">Total pago - custo dos produtos - comissão - taxas do gateway - taxas de saque</p>
               <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
                 <span>Custo: <strong className="text-red-700">-{formatCurrency(Number(financialSummary?.totalCost) || 0)}</strong></span>
@@ -3305,6 +3366,94 @@ export default function Admin() {
                   <>
                     <span>Taxas do gateway: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalGatewayFees) || 0)}</strong></span>
                     <span>Taxas de saque: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalWithdrawFees) || 0)}</strong></span>
+
+          <div className="mt-3 rounded-xl border bg-gradient-to-br from-rose-50 to-orange-50/60 border-rose-200 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+              <div>
+                <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide">Gastos por data</p>
+                <p className="text-sm text-rose-700/80">Adicione novos gastos de marketing sem alterar os registros antigos.</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-rose-700/70 uppercase tracking-wide">Total no período</p>
+                <p className="text-2xl font-bold text-rose-700">{formatCurrency(Number(financialSummary?.totalMarketingExpenses) || 0)}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddMarketingExpense} className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
+              <input
+                type="date"
+                value={marketingExpenseForm.expenseDate}
+                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseDate: e.target.value }))}
+                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
+              />
+              <input
+                type="text"
+                value={marketingExpenseForm.channel}
+                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, channel: e.target.value }))}
+                placeholder="Canal, ex: Facebook"
+                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={marketingExpenseForm.amount}
+                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, amount: e.target.value }))}
+                placeholder="Valor"
+                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+              />
+              <input
+                type="text"
+                value={marketingExpenseForm.note}
+                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, note: e.target.value }))}
+                placeholder="Observação opcional"
+                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+              />
+              <Button type="submit" disabled={marketingExpensesSubmitting} className="h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+                {marketingExpensesSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar gasto"}
+              </Button>
+            </form>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
+                <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Resumo por canal</p>
+                <div className="space-y-2">
+                  {(financialSummary?.marketingExpensesByChannel?.length || 0) > 0 ? (
+                    financialSummary!.marketingExpensesByChannel!.map((item) => (
+                      <div key={item.channel} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">
+                        <span className="text-sm font-medium text-rose-900">{item.channel}</span>
+                        <span className="text-sm font-semibold text-rose-700">{formatCurrency(Number(item.total) || 0)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-rose-700/80">Nenhum gasto registrado no período selecionado.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
+                <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Lançamentos recentes</p>
+                <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                  {(financialSummary?.marketingExpenses?.length || 0) > 0 ? (
+                    financialSummary!.marketingExpenses!.map((item) => (
+                      <div key={item.id} className="rounded-lg border border-rose-100 bg-white px-3 py-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-rose-900">{item.channel}</p>
+                            <p className="text-xs text-muted-foreground">{formatDateBR(item.expenseDate)}</p>
+                            {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
+                          </div>
+                          <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-rose-700/80">Sem lançamentos para mostrar.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
                     {financialSummary.whatsappEconomy > 0 && (
                       <span>Economia WhatsApp: <strong className="text-green-700">+{formatCurrency(Number(financialSummary.whatsappEconomy) || 0)}</strong></span>
                     )}
