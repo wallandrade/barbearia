@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, marketingExpensesTable, ordersTable, productsTable, sellersTable, siteSettingsTable } from "@workspace/db";
-import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
 const router: IRouter = Router();
