@@ -3366,93 +3366,6 @@ export default function Admin() {
                     <span>Taxas do gateway: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalGatewayFees) || 0)}</strong></span>
                     <span>Taxas de saque: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalWithdrawFees) || 0)}</strong></span>
 
-          <div className="mt-3 rounded-xl border bg-gradient-to-br from-rose-50 to-orange-50/60 border-rose-200 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
-              <div>
-                <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide">Gastos por data</p>
-                <p className="text-sm text-rose-700/80">Adicione novos gastos de marketing sem alterar os registros antigos.</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-rose-700/70 uppercase tracking-wide">Total no período</p>
-                <p className="text-2xl font-bold text-rose-700">{formatCurrency(Number(financialSummary?.totalMarketingExpenses) || 0)}</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleAddMarketingExpense} className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
-              <input
-                type="date"
-                value={marketingExpenseForm.expenseDate}
-                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseDate: e.target.value }))}
-                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
-              />
-              <input
-                type="text"
-                value={marketingExpenseForm.channel}
-                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, channel: e.target.value }))}
-                placeholder="Canal, ex: Facebook"
-                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
-              />
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={marketingExpenseForm.amount}
-                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, amount: e.target.value }))}
-                placeholder="Valor"
-                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
-              />
-              <input
-                type="text"
-                value={marketingExpenseForm.note}
-                onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, note: e.target.value }))}
-                placeholder="Observação opcional"
-                className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
-              />
-              <Button type="submit" disabled={marketingExpensesSubmitting} className="h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
-                {marketingExpensesSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar gasto"}
-              </Button>
-            </form>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
-                <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Resumo por canal</p>
-                <div className="space-y-2">
-                  {(financialSummary?.marketingExpensesByChannel?.length || 0) > 0 ? (
-                    financialSummary!.marketingExpensesByChannel!.map((item) => (
-                      <div key={item.channel} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">
-                        <span className="text-sm font-medium text-rose-900">{item.channel}</span>
-                        <span className="text-sm font-semibold text-rose-700">{formatCurrency(Number(item.total) || 0)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-rose-700/80">Nenhum gasto registrado no período selecionado.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
-                <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Lançamentos recentes</p>
-                <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                  {(financialSummary?.marketingExpenses?.length || 0) > 0 ? (
-                    financialSummary!.marketingExpenses!.map((item) => (
-                      <div key={item.id} className="rounded-lg border border-rose-100 bg-white px-3 py-2">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-rose-900">{item.channel}</p>
-                            <p className="text-xs text-muted-foreground">{formatDateBR(item.expenseDate)}</p>
-                            {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
-                          </div>
-                          <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-rose-700/80">Sem lançamentos para mostrar.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
                     {financialSummary.whatsappEconomy > 0 && (
                       <span>Economia WhatsApp: <strong className="text-green-700">+{formatCurrency(Number(financialSummary.whatsappEconomy) || 0)}</strong></span>
                     )}
@@ -5549,21 +5462,111 @@ export default function Admin() {
             }}
           />
         ) : tab === "configuracoes" ? (
-          <ConfiguracoesPanel
-            settings={settings}
-            loading={settingsLoading}
-            clientErrors={clientErrors}
-            clientErrorsLoading={clientErrorsLoading}
-            onRefreshClientErrors={fetchClientErrors}
-            onTestOutboundWebhook={testOutboundWebhook}
-            onSave={saveSetting}
-            onDelete={deleteSetting}
-            brevoApiKey={brevoApiKey}
-            setBrevoApiKey={setBrevoApiKey}
-            brevoConfigured={brevoConfigured}
-            brevoTesting={brevoTesting}
-            onTestBrevoConnection={testBrevoConnection}
-          />
+          <div className="space-y-6">
+            <div className="rounded-xl border bg-gradient-to-br from-rose-50 to-orange-50/60 border-rose-200 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+                <div>
+                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide">Gastos por data</p>
+                  <p className="text-sm text-rose-700/80">Cadastre novas despesas de marketing aqui. Os registros antigos ficam intactos.</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-rose-700/70 uppercase tracking-wide">Total no período</p>
+                  <p className="text-2xl font-bold text-rose-700">{formatCurrency(Number(financialSummary?.totalMarketingExpenses) || 0)}</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleAddMarketingExpense} className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
+                <input
+                  type="date"
+                  value={marketingExpenseForm.expenseDate}
+                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseDate: e.target.value }))}
+                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={marketingExpenseForm.channel}
+                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, channel: e.target.value }))}
+                  placeholder="Canal, ex: Facebook"
+                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={marketingExpenseForm.amount}
+                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, amount: e.target.value }))}
+                  placeholder="Valor"
+                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+                />
+                <input
+                  type="text"
+                  value={marketingExpenseForm.note}
+                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, note: e.target.value }))}
+                  placeholder="Observação opcional"
+                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+                />
+                <Button type="submit" disabled={marketingExpensesSubmitting} className="h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+                  {marketingExpensesSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar gasto"}
+                </Button>
+              </form>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
+                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Resumo por canal</p>
+                  <div className="space-y-2">
+                    {(financialSummary?.marketingExpensesByChannel?.length || 0) > 0 ? (
+                      financialSummary!.marketingExpensesByChannel!.map((item) => (
+                        <div key={item.channel} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">
+                          <span className="text-sm font-medium text-rose-900">{item.channel}</span>
+                          <span className="text-sm font-semibold text-rose-700">{formatCurrency(Number(item.total) || 0)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-rose-700/80">Nenhum gasto registrado no período selecionado.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
+                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Lançamentos recentes</p>
+                  <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                    {(financialSummary?.marketingExpenses?.length || 0) > 0 ? (
+                      financialSummary!.marketingExpenses!.map((item) => (
+                        <div key={item.id} className="rounded-lg border border-rose-100 bg-white px-3 py-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-rose-900">{item.channel}</p>
+                              <p className="text-xs text-muted-foreground">{formatDateBR(item.expenseDate)}</p>
+                              {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
+                            </div>
+                            <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-rose-700/80">Sem lançamentos para mostrar.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <ConfiguracoesPanel
+              settings={settings}
+              loading={settingsLoading}
+              clientErrors={clientErrors}
+              clientErrorsLoading={clientErrorsLoading}
+              onRefreshClientErrors={fetchClientErrors}
+              onTestOutboundWebhook={testOutboundWebhook}
+              onSave={saveSetting}
+              onDelete={deleteSetting}
+              brevoApiKey={brevoApiKey}
+              setBrevoApiKey={setBrevoApiKey}
+              brevoConfigured={brevoConfigured}
+              brevoTesting={brevoTesting}
+              onTestBrevoConnection={testBrevoConnection}
+            />
+          </div>
         ) : null}
 
         {/* Raffle delete confirmation modal */}
