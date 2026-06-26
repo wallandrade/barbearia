@@ -10837,17 +10837,12 @@ function ProductsPanel({
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Marca</label>
                     <input
-                      list="admin-brand-options"
                       value={String((productForm as any).brand || "")}
                       onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)}
-                      placeholder="Digite ou selecione uma marca"
+                      placeholder="Digite uma marca nova ou existente"
                       className={inp2}
                     />
-                    <datalist id="admin-brand-options">
-                      {brandOptions.map((brand) => (
-                        <option key={brand} value={brand} />
-                      ))}
-                    </datalist>
+                    <p className="mt-1 text-xs text-muted-foreground">Campo livre: pode escrever qualquer marca.</p>
                     <div className="mt-2">
                       <Button
                         type="button"
