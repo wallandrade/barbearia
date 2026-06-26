@@ -660,6 +660,24 @@ async function ensureProductCostHistoryTable(databaseName: string): Promise<void
   `);
 }
 
+async function ensureMarketingExpensesTable(databaseName: string): Promise<void> {
+  if (await tableExists("marketing_expenses", databaseName)) return;
+
+  await pool.query(`
+    CREATE TABLE marketing_expenses (
+      id VARCHAR(255) NOT NULL PRIMARY KEY,
+      seller_code VARCHAR(255) NULL,
+      expense_date TIMESTAMP NOT NULL,
+      channel VARCHAR(255) NOT NULL,
+      amount DECIMAL(10,2) NOT NULL,
+      note TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY marketing_expenses_expense_date_idx (expense_date),
+      KEY marketing_expenses_seller_code_idx (seller_code)
+    )
+  `);
+}
+
 export async function ensureRuntimeSchema(): Promise<void> {
   try {
     const databaseName = getDatabaseName();
@@ -682,6 +700,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureManualReshipmentsTable(databaseName);
     await ensureManualReturnItemsTable(databaseName);
     await ensureProductCostHistoryTable(databaseName);
+    await ensureMarketingExpensesTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {
