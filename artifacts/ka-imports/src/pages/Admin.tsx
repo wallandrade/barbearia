@@ -10476,7 +10476,6 @@ function ProductsPanel({
   const [costHistory, setCostHistory] = useState<Array<{ id: number; costPrice: number; changedAt: string }>>([]);
   const [costHistoryLoading, setCostHistoryLoading] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState("");
-  const [newBrandInput, setNewBrandInput] = useState("");
   const [removingCategory, setRemovingCategory] = useState(false);
   const [removingBrand, setRemovingBrand] = useState(false);
   const siteOrigin = window.location.origin;
@@ -10615,14 +10614,12 @@ function ProductsPanel({
   const openCreate = () => {
     setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [], variantGroups: [] } as any);
     setNewCategoryInput("");
-    setNewBrandInput("");
     setProductFormOpen(true);
   };
 
   const openEdit = (p: AdminProduct) => {
     setProductForm({ ...(p as any), bulkDiscountTiers: normalizeBulkDiscountTiers((p as any).bulkDiscountTiers), variantGroups: normalizeVariantGroups((p as any).variantGroups), _editing: true } as any);
     setNewCategoryInput("");
-    setNewBrandInput("");
     setProductFormOpen(true);
   };
 
@@ -10839,36 +10836,18 @@ function ProductsPanel({
                   {/* Brand */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Marca</label>
-                    <select
-                      value={(productForm as any).brand || ""}
+                    <input
+                      list="admin-brand-options"
+                      value={String((productForm as any).brand || "")}
                       onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)}
-                      className={`${inp2} cursor-pointer`}
-                    >
-                      <option value="">Selecionar marca...</option>
+                      placeholder="Digite ou selecione uma marca"
+                      className={inp2}
+                    />
+                    <datalist id="admin-brand-options">
                       {brandOptions.map((brand) => (
-                        <option key={brand} value={brand}>{brand}</option>
+                        <option key={brand} value={brand} />
                       ))}
-                    </select>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        value={newBrandInput}
-                        onChange={(e) => setNewBrandInput(e.target.value)}
-                        placeholder="Cadastrar nova marca"
-                        className={inp2}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          const next = String(newBrandInput || "").trim();
-                          if (!next) { toast.error("Digite uma marca válida."); return; }
-                          setProductForm({ ...productForm, brand: next } as any);
-                          setNewBrandInput("");
-                        }}
-                      >
-                        Cadastrar
-                      </Button>
-                    </div>
+                    </datalist>
                     <div className="mt-2">
                       <Button
                         type="button"
