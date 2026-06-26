@@ -25,7 +25,9 @@ const ALLOWED_KEYS = [
   "outbound_webhook_secret",
   "outbound_webhook_enabled",
   "outbound_webhook_event_new_order",
-  "outbound_webhook_event_order_paid"
+  "outbound_webhook_event_order_paid",
+  // Admin helpers
+  "admin_saved_brands"
 ];
 
 const IMAGE_SETTING_KEYS = new Set([

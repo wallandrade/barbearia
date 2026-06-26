@@ -10477,6 +10477,7 @@ function ProductsPanel({
   const [costHistoryLoading, setCostHistoryLoading] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState("");
   const [newBrandInput, setNewBrandInput] = useState("");
+  const [savedBrandOptions, setSavedBrandOptions] = useState<string[]>([]);
   const [removingCategory, setRemovingCategory] = useState(false);
   const [removingBrand, setRemovingBrand] = useState(false);
   const siteOrigin = window.location.origin;
@@ -10498,6 +10499,60 @@ function ProductsPanel({
       }, new Map<string, string>())
       .values(),
   ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+
+  const normalizeOptions = React.useCallback((values: string[]) => {
+    return Array.from(
+      values
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .reduce((map, value) => {
+          const key = value.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim();
+          if (!map.has(key)) map.set(key, value);
+          return map;
+        }, new Map<string, string>())
+        .values(),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+  }, []);
+
+  const allBrandOptions = React.useMemo(
+    () => normalizeOptions([...brandOptions, ...savedBrandOptions]),
+    [brandOptions, normalizeOptions, savedBrandOptions],
+  );
+
+  const saveBrandsSetting = React.useCallback(async (brands: string[]) => {
+    const payload = JSON.stringify(normalizeOptions(brands));
+    await fetch(`${BASE}/api/admin/settings/admin_saved_brands`, {
+      method: "PUT",
+      headers: authHeaders(),
+      body: JSON.stringify({ value: payload }),
+    });
+  }, [normalizeOptions]);
+
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/api/admin/settings`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json() as Record<string, string>;
+        const raw = String(data?.admin_saved_brands || "").trim();
+        if (!raw) {
+          if (active) setSavedBrandOptions([]);
+          return;
+        }
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return;
+        const normalized = normalizeOptions(parsed.map((item) => String(item || "")));
+        if (active) setSavedBrandOptions(normalized);
+      } catch {
+        // ignore saved brands loading failures
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [normalizeOptions]);
 
   const openCostHistory = async (productId: string, productName: string) => {
     setCostHistoryProductId(productId);
@@ -10850,7 +10905,7 @@ function ProductsPanel({
                       className={inp2}
                     />
                     <datalist id="admin-brand-options">
-                      {brandOptions.map((brand) => (
+                      {allBrandOptions.map((brand) => (
                         <option key={brand} value={brand} />
                       ))}
                     </datalist>
@@ -10864,11 +10919,25 @@ function ProductsPanel({
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => {
+                        onClick={async () => {
                           const next = String(newBrandInput || "").trim();
                           if (!next) { toast.error("Digite uma marca válida."); return; }
                           setProductForm({ ...productForm, brand: next } as any);
                           setNewBrandInput("");
+
+                          const exists = allBrandOptions.some((brand) =>
+                            brand.toLocaleLowerCase("pt-BR") === next.toLocaleLowerCase("pt-BR"),
+                          );
+                          if (exists) return;
+
+                          const updatedBrands = normalizeOptions([...allBrandOptions, next]);
+                          setSavedBrandOptions(updatedBrands);
+                          try {
+                            await saveBrandsSetting(updatedBrands);
+                            toast.success("Marca cadastrada na lista.");
+                          } catch {
+                            toast.error("Marca aplicada, mas falhou ao salvar na lista.");
+                          }
                         }}
                       >
                         Cadastrar
