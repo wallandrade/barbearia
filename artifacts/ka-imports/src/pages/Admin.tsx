@@ -987,6 +987,8 @@ export default function Admin() {
       id: string;
       sellerCode?: string | null;
       expenseDate: string;
+      expenseStartDate?: string;
+      expenseEndDate?: string;
       channel: string;
       amount: number;
       note?: string | null;
@@ -1016,7 +1018,8 @@ export default function Admin() {
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovementRecord[]>([]);
   const [marketingExpenseForm, setMarketingExpenseForm] = useState({
-    expenseDate: todayStr(),
+    expenseStartDate: todayStr(),
+    expenseEndDate: todayStr(),
     channel: "Facebook",
     amount: "",
     note: "",
@@ -1266,8 +1269,13 @@ export default function Admin() {
     event.preventDefault();
 
     const amount = Number(String(marketingExpenseForm.amount).replace(",", "."));
-    if (!marketingExpenseForm.expenseDate || !marketingExpenseForm.channel.trim() || !Number.isFinite(amount) || amount <= 0) {
-      toast.error("Preencha data, canal e valor do gasto.");
+    if (!marketingExpenseForm.expenseStartDate || !marketingExpenseForm.expenseEndDate || !marketingExpenseForm.channel.trim() || !Number.isFinite(amount) || amount <= 0) {
+      toast.error("Preencha data inicial, final, canal e valor do gasto.");
+      return;
+    }
+
+    if (marketingExpenseForm.expenseEndDate < marketingExpenseForm.expenseStartDate) {
+      toast.error("A data final deve ser igual ou posterior à data inicial.");
       return;
     }
 
@@ -1277,7 +1285,8 @@ export default function Admin() {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          expenseDate: marketingExpenseForm.expenseDate,
+          expenseStartDate: marketingExpenseForm.expenseStartDate,
+          expenseEndDate: marketingExpenseForm.expenseEndDate,
           channel: marketingExpenseForm.channel.trim(),
           amount,
           note: marketingExpenseForm.note.trim(),
@@ -5475,11 +5484,17 @@ export default function Admin() {
                 </div>
               </div>
 
-              <form onSubmit={handleAddMarketingExpense} className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
+              <form onSubmit={handleAddMarketingExpense} className="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4">
                 <input
                   type="date"
-                  value={marketingExpenseForm.expenseDate}
-                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseDate: e.target.value }))}
+                  value={marketingExpenseForm.expenseStartDate}
+                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseStartDate: e.target.value }))}
+                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
+                />
+                <input
+                  type="date"
+                  value={marketingExpenseForm.expenseEndDate}
+                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseEndDate: e.target.value }))}
                   className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
                 />
                 <input
@@ -5536,7 +5551,9 @@ export default function Admin() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold text-rose-900">{item.channel}</p>
-                              <p className="text-xs text-muted-foreground">{formatDateBR(item.expenseDate)}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatDateBR(item.expenseStartDate || item.expenseDate)} até {formatDateBR(item.expenseEndDate || item.expenseDate)}
+                              </p>
                               {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
                             </div>
                             <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>

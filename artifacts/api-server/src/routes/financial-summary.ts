@@ -252,8 +252,14 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     let totalWithdrawFees = 0; // implementar se necessário
 
     const expenseConditions = [];
-    if (dateFrom) expenseConditions.push(gte(marketingExpensesTable.expenseDate, toUTC(dateFrom, "00", "00", "00")));
-    if (dateTo) expenseConditions.push(lte(marketingExpensesTable.expenseDate, toUTC(dateTo, "23", "59", "59")));
+    if (dateFrom) {
+      const fromDate = toUTC(dateFrom, "00", "00", "00");
+      expenseConditions.push(sql`COALESCE(${marketingExpensesTable.expenseEndDate}, ${marketingExpensesTable.expenseDate}) >= ${fromDate}`);
+    }
+    if (dateTo) {
+      const toDate = toUTC(dateTo, "23", "59", "59");
+      expenseConditions.push(sql`COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}) <= ${toDate}`);
+    }
 
     if (!adminScope.hasGlobalAccess) {
       expenseConditions.push(or(eq(marketingExpensesTable.sellerCode, adminScope.sellerCode!), isNull(marketingExpensesTable.sellerCode)));
@@ -271,6 +277,8 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       id: row.id,
       sellerCode: row.sellerCode ?? null,
       expenseDate: row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
+      expenseStartDate: row.expenseStartDate?.toISOString?.() ?? row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
+      expenseEndDate: row.expenseEndDate?.toISOString?.() ?? row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
       channel: row.channel,
       amount: Number(row.amount || 0),
       note: row.note ?? null,

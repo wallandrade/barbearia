@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
-import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { db, marketingExpensesTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
@@ -31,8 +31,14 @@ router.get("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
 
     const { dateFrom, dateTo, sellerCode } = req.query as Record<string, string>;
     const conditions = [];
-    if (dateFrom) conditions.push(gte(marketingExpensesTable.expenseDate, toUTC(dateFrom, "00", "00", "00")));
-    if (dateTo) conditions.push(lte(marketingExpensesTable.expenseDate, toUTC(dateTo, "23", "59", "59")));
+    if (dateFrom) {
+      const fromDate = toUTC(dateFrom, "00", "00", "00");
+      conditions.push(sql`COALESCE(${marketingExpensesTable.expenseEndDate}, ${marketingExpensesTable.expenseDate}) >= ${fromDate}`);
+    }
+    if (dateTo) {
+      const toDate = toUTC(dateTo, "23", "59", "59");
+      conditions.push(sql`COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}) <= ${toDate}`);
+    }
 
     const effectiveSellerCode = !scope.hasGlobalAccess
       ? normalizeSellerCode(scope.sellerCode)
@@ -52,6 +58,8 @@ router.get("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
       id: row.id,
       sellerCode: row.sellerCode ?? null,
       expenseDate: row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
+      expenseStartDate: row.expenseStartDate?.toISOString?.() ?? row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
+      expenseEndDate: row.expenseEndDate?.toISOString?.() ?? row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
       channel: row.channel,
       amount: Number(row.amount || 0),
       note: row.note ?? null,
@@ -91,13 +99,14 @@ router.post("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
       return;
     }
 
-    const expenseDateRaw = String(req.body?.expenseDate ?? "").trim();
+    const expenseStartDateRaw = String(req.body?.expenseStartDate ?? req.body?.expenseDate ?? "").trim();
+    const expenseEndDateRaw = String(req.body?.expenseEndDate ?? req.body?.expenseDate ?? "").trim();
     const channel = String(req.body?.channel ?? "").trim();
     const note = String(req.body?.note ?? "").trim();
     const amount = Number(req.body?.amount ?? 0);
 
-    if (!expenseDateRaw) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Informe a data do gasto." });
+    if (!expenseStartDateRaw || !expenseEndDateRaw) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe a data inicial e final do gasto." });
       return;
     }
 
@@ -111,11 +120,14 @@ router.post("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
       return;
     }
 
-    const expenseDate = new Date(`${expenseDateRaw}T00:00:00-03:00`);
-    if (Number.isNaN(expenseDate.getTime())) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Data inválida." });
+    const expenseStartDate = new Date(`${expenseStartDateRaw}T00:00:00-03:00`);
+    const expenseEndDate = new Date(`${expenseEndDateRaw}T23:59:59-03:00`);
+    if (Number.isNaN(expenseStartDate.getTime()) || Number.isNaN(expenseEndDate.getTime()) || expenseEndDate < expenseStartDate) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Período inválido." });
       return;
     }
+
+    const expenseDate = expenseStartDate;
 
     const id = crypto.randomUUID();
     const sellerCode = scope.hasGlobalAccess ? null : normalizeSellerCode(scope.sellerCode);
@@ -124,6 +136,8 @@ router.post("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
       id,
       sellerCode,
       expenseDate,
+      expenseStartDate,
+      expenseEndDate,
       channel,
       amount: amount.toFixed(2),
       note: note || null,
@@ -133,6 +147,8 @@ router.post("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
       id,
       sellerCode,
       expenseDate: expenseDate.toISOString(),
+      expenseStartDate: expenseStartDate.toISOString(),
+      expenseEndDate: expenseEndDate.toISOString(),
       channel,
       amount,
       note: note || null,

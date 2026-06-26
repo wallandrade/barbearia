@@ -668,14 +668,35 @@ async function ensureMarketingExpensesTable(databaseName: string): Promise<void>
       id VARCHAR(255) NOT NULL PRIMARY KEY,
       seller_code VARCHAR(255) NULL,
       expense_date TIMESTAMP NOT NULL,
+      expense_start_date TIMESTAMP NULL,
+      expense_end_date TIMESTAMP NULL,
       channel VARCHAR(255) NOT NULL,
       amount DECIMAL(10,2) NOT NULL,
       note TEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY marketing_expenses_expense_date_idx (expense_date),
+      KEY marketing_expenses_expense_start_date_idx (expense_start_date),
+      KEY marketing_expenses_expense_end_date_idx (expense_end_date),
       KEY marketing_expenses_seller_code_idx (seller_code)
     )
   `);
+
+  return;
+}
+
+async function ensureMarketingExpensesColumns(databaseName: string): Promise<void> {
+  if (!(await tableExists("marketing_expenses", databaseName))) return;
+
+  const definitions = [
+    { name: "expense_start_date", sql: "ALTER TABLE marketing_expenses ADD COLUMN expense_start_date TIMESTAMP NULL AFTER expense_date" },
+    { name: "expense_end_date", sql: "ALTER TABLE marketing_expenses ADD COLUMN expense_end_date TIMESTAMP NULL AFTER expense_start_date" },
+  ];
+
+  for (const definition of definitions) {
+    if (!(await columnExists("marketing_expenses", definition.name, databaseName))) {
+      await pool.query(definition.sql);
+    }
+  }
 }
 
 export async function ensureRuntimeSchema(): Promise<void> {
@@ -701,6 +722,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureManualReturnItemsTable(databaseName);
     await ensureProductCostHistoryTable(databaseName);
     await ensureMarketingExpensesTable(databaseName);
+    await ensureMarketingExpensesColumns(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

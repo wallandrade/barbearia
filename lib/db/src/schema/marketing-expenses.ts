@@ -6,6 +6,8 @@ export const marketingExpensesTable = mysqlTable("marketing_expenses", {
   id: varchar("id", { length: 255 }).primaryKey(),
   sellerCode: varchar("seller_code", { length: 255 }),
   expenseDate: timestamp("expense_date").notNull(),
+  expenseStartDate: timestamp("expense_start_date"),
+  expenseEndDate: timestamp("expense_end_date"),
   channel: varchar("channel", { length: 255 }).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   note: text("note"),
