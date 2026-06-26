@@ -10792,16 +10792,18 @@ function ProductsPanel({
                   {/* Category */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Categoria *</label>
-                    <select
+                    <input
+                      list="admin-category-options"
                       value={productForm.category || ""}
                       onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
-                      className={`${inp2} cursor-pointer`}
-                    >
-                      <option value="">Selecionar categoria...</option>
+                      placeholder="Digite uma categoria nova ou existente"
+                      className={inp2}
+                    />
+                    <datalist id="admin-category-options">
                       {categoryOptions.map((category) => (
-                        <option key={category} value={category}>{category}</option>
+                        <option key={category} value={category} />
                       ))}
-                    </select>
+                    </datalist>
                     <div className="mt-2 flex gap-2">
                       <input
                         value={newCategoryInput}
@@ -10822,6 +10824,7 @@ function ProductsPanel({
                         Cadastrar
                       </Button>
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">Campo livre: pode escrever qualquer categoria.</p>
                     <div className="mt-2">
                       <Button
                         type="button"
@@ -10840,11 +10843,17 @@ function ProductsPanel({
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Marca</label>
                     <input
+                      list="admin-brand-options"
                       value={String((productForm as any).brand || "")}
                       onChange={(e) => setProductForm({ ...productForm, brand: e.target.value } as any)}
                       placeholder="Digite uma marca nova ou existente"
                       className={inp2}
                     />
+                    <datalist id="admin-brand-options">
+                      {brandOptions.map((brand) => (
+                        <option key={brand} value={brand} />
+                      ))}
+                    </datalist>
                     <div className="mt-2 flex gap-2">
                       <input
                         value={newBrandInput}
