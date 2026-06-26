@@ -1025,6 +1025,7 @@ export default function Admin() {
     note: "",
   });
   const [marketingExpensesSubmitting, setMarketingExpensesSubmitting] = useState(false);
+  const [marketingExpenseDeletingId, setMarketingExpenseDeletingId] = useState<string | null>(null);
   const [pendingReshipments, setPendingReshipments] = useState<ReshipmentRecord[]>([]);
   const [activeManualReturnItemId, setActiveManualReturnItemId] = useState<string | null>(null);
   const [inventoryEntryForm, setInventoryEntryForm] = useState({
@@ -1312,6 +1313,32 @@ export default function Admin() {
       setMarketingExpensesSubmitting(false);
     }
   }, [BASE, fetchFinancialSummary, marketingExpenseForm]);
+
+  const handleDeleteMarketingExpense = React.useCallback(async (expenseId: string) => {
+    if (!expenseId) return;
+    if (!window.confirm("Remover este gasto de marketing?")) return;
+
+    setMarketingExpenseDeletingId(expenseId);
+    try {
+      const res = await fetch(`${BASE}/api/admin/marketing-expenses/${expenseId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+
+      const data = await res.json().catch(() => null) as { message?: string } | null;
+      if (!res.ok) {
+        toast.error(data?.message || "Erro ao remover gasto.");
+        return;
+      }
+
+      toast.success("Gasto removido com sucesso.");
+      fetchFinancialSummary();
+    } catch {
+      toast.error("Erro ao remover gasto.");
+    } finally {
+      setMarketingExpenseDeletingId(null);
+    }
+  }, [BASE, fetchFinancialSummary]);
 
   useEffect(() => {
     if (!authChecked || !getToken()) return;
@@ -5556,7 +5583,24 @@ export default function Admin() {
                               </p>
                               {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
                             </div>
-                            <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
+                            <div className="flex flex-col items-end gap-2">
+                              <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2 border-rose-200 text-rose-700 hover:bg-rose-50"
+                                disabled={marketingExpenseDeletingId === item.id}
+                                onClick={() => handleDeleteMarketingExpense(item.id)}
+                              >
+                                {marketingExpenseDeletingId === item.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                                <span className="ml-1">Remover</span>
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ))
