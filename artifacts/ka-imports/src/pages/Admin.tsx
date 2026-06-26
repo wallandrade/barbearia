@@ -1262,10 +1262,6 @@ export default function Admin() {
     } catch {}
     setFinancialSummaryLoading(false);
   }, [statsDateFrom, statsDateTo, statsSeller]);
-  
-  useEffect(() => {
-    if (!authChecked || !getToken()) return;
-
   const handleAddMarketingExpense = React.useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1307,6 +1303,9 @@ export default function Admin() {
       setMarketingExpensesSubmitting(false);
     }
   }, [BASE, fetchFinancialSummary, marketingExpenseForm]);
+
+  useEffect(() => {
+    if (!authChecked || !getToken()) return;
     const fetchLive = () => {
       fetch(`${BASE}/api/admin/tracking/live`, { headers: authHeaders() })
         .then((r) => r.json())
