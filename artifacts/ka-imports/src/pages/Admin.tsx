@@ -2164,8 +2164,8 @@ export default function Admin() {
     const token = getToken();
     if (!token) return;
 
-    const url = `${BASE}/api/admin/notifications?token=${encodeURIComponent(token)}&t=${Date.now()}`;
-    const es   = new EventSource(url);
+    const url = `${BASE}/api/admin/notifications?t=${Date.now()}`;
+    const es = new EventSource(url, { withCredentials: true });
     sseRef.current = es;
 
     es.onmessage = (e) => {
@@ -2466,16 +2466,47 @@ export default function Admin() {
     finally { setChargeProofUploading(false); }
   };
 
-  const exportData = () => {
+  const exportData = async () => {
     const params = new URLSearchParams({ dateFrom, dateTo });
     if (statusFilter !== "all") params.set("status", statusFilter);
+    const endpoint = tab === "orders"
+      ? `${BASE}/api/admin/export`
+      : `${BASE}/api/admin/custom-charges/export`;
+
     if (tab === "orders") {
       if (methodFilter !== "all") params.set("paymentMethod", methodFilter);
       if (sellerFilter !== "all") params.set("sellerCode", sellerFilter);
       if (groupFilter !== "all") params.set("whatsappGroup", groupFilter);
-      window.open(`${BASE}/api/admin/export?${params}&token=${getToken()}`, "_blank");
-    } else {
-      window.open(`${BASE}/api/admin/custom-charges/export?${params}&token=${getToken()}`, "_blank");
+    }
+
+    try {
+      const res = await fetch(`${endpoint}?${params.toString()}`, {
+        method: "GET",
+        headers: authHeaders(),
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        toast.error("Erro ao exportar dados.");
+        return;
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+      const fallback = tab === "orders" ? "orders-export.csv" : "charges-export.csv";
+      const filename = match?.[1] ? decodeURIComponent(match[1].replace(/\"/g, "").trim()) : fallback;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Erro ao exportar dados.");
     }
   };
 
