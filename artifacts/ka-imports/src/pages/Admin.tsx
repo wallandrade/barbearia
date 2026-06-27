@@ -1261,6 +1261,7 @@ export default function Admin() {
   const sseRef = useRef<EventSource | null>(null);
   const sseReconnectTimerRef = useRef<number | null>(null);
   const sseUnauthorizedRef = useRef(false);
+  const sseCookieMismatchNotifiedRef = useRef(false);
   const swRef  = useRef<ServiceWorkerRegistration | null>(null);
   // Live Visitors Tracking
   const [liveStats, setLiveStats] = useState({ catalog: 0, checkout: 0 });
@@ -2176,6 +2177,7 @@ export default function Admin() {
     const token = getToken();
     if (!token) return;
     sseUnauthorizedRef.current = false;
+    sseCookieMismatchNotifiedRef.current = false;
 
     const url = `${BASE}/api/admin/notifications?t=${Date.now()}`;
     const es = new EventSource(url, { withCredentials: true });
@@ -2273,6 +2275,23 @@ export default function Admin() {
           });
 
           if (verifyRes.status === 401 || verifyRes.status === 403) {
+            // SSE depends on cookie auth, while most admin requests still support bearer.
+            // If bearer is still valid, keep user logged in and just stop SSE reconnect loop.
+            const bearerVerifyRes = await fetch(`${BASE}/api/admin/verify`, {
+              headers: authHeaders(),
+              credentials: "include",
+              cache: "no-store",
+            });
+
+            if (bearerVerifyRes.ok) {
+              sseUnauthorizedRef.current = true;
+              if (!sseCookieMismatchNotifiedRef.current) {
+                sseCookieMismatchNotifiedRef.current = true;
+                toast.error("Sessao de notificacoes expirou. Recarregue e faça login novamente para reativar o tempo real.");
+              }
+              return;
+            }
+
             handleUnauthorized();
             return;
           }
