@@ -2268,7 +2268,6 @@ export default function Admin() {
 
         try {
           const verifyRes = await fetch(`${BASE}/api/admin/verify`, {
-            headers: authHeaders(),
             credentials: "include",
             cache: "no-store",
           });
