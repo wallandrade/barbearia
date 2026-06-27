@@ -6,6 +6,10 @@ import { lt, eq } from "drizzle-orm";
 const router: IRouter = Router();
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const ADMIN_AUTH_VERBOSE_LOGS = String(process.env.ADMIN_AUTH_VERBOSE_LOGS || "false").toLowerCase() === "true";
+const ADMIN_ALLOW_QUERY_TOKEN = String(process.env.ADMIN_ALLOW_QUERY_TOKEN || "true").toLowerCase() === "true";
+const ADMIN_SESSION_COOKIE_NAME = String(process.env.ADMIN_SESSION_COOKIE_NAME || "admin_session").trim();
+const ADMIN_SESSION_COOKIE_SECURE =
+  String(process.env.ADMIN_SESSION_COOKIE_SECURE || (process.env.NODE_ENV === "production" ? "true" : "false")).toLowerCase() === "true";
 
 type AdminSessionRecord = {
   username: string;
@@ -37,6 +41,25 @@ function sanitizeHeadersForLog(headers: Request["headers"]): Record<string, unkn
       return [key, value];
     }),
   );
+}
+
+function getTokenFromRequest(req: Request): string {
+  const auth = req.headers.authorization || "";
+  const bearerToken = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (bearerToken) return bearerToken;
+
+  const cookieToken = String((req as any).cookies?.[ADMIN_SESSION_COOKIE_NAME] || "").trim();
+  if (cookieToken) return cookieToken;
+
+  const tokenFromQuery = String((req.query as Record<string, string>)?.token || "").trim();
+  if (tokenFromQuery && ADMIN_ALLOW_QUERY_TOKEN) {
+    if (ADMIN_AUTH_VERBOSE_LOGS) {
+      console.warn("[AdminAuth] Token via query string (legacy mode) usado em", req.path);
+    }
+    return tokenFromQuery;
+  }
+
+  return "";
 }
 
 function normalizeSellerCode(value: unknown): string | null {
@@ -173,13 +196,7 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
     if (ADMIN_AUTH_VERBOSE_LOGS) {
       console.log('[requireAdminAuth] INICIO', { headers: sanitizeHeadersForLog(req.headers), query: req.query });
     }
-    const tokenFromQuery = (req.query as Record<string, string>)["token"];
-    if (tokenFromQuery && !req.headers.authorization) {
-      req.headers.authorization = `Bearer ${tokenFromQuery}`;
-    }
-
-    const auth  = req.headers.authorization || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const token = getTokenFromRequest(req);
     await purgeExpiredSessions();
 
     if (!token) {
@@ -226,13 +243,7 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
 }
 
 export async function requirePrimaryAdmin(req: Request, res: Response, next: NextFunction) {
-  const tokenFromQuery = (req.query as Record<string, string>)["token"];
-  if (tokenFromQuery && !req.headers.authorization) {
-    req.headers.authorization = `Bearer ${tokenFromQuery}`;
-  }
-
-  const auth  = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const token = getTokenFromRequest(req);
   await purgeExpiredSessions();
 
   if (!token) {
@@ -250,8 +261,7 @@ export async function requirePrimaryAdmin(req: Request, res: Response, next: Nex
 }
 
 export async function getSessionInfo(req: Request) {
-  const auth  = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const token = getTokenFromRequest(req);
   if (!token) return undefined;
   const sessionRows = await db.select().from(adminSessionsTable).where(eq(adminSessionsTable.token, token)).limit(1);
   if (!sessionRows[0]) return undefined;
@@ -306,6 +316,13 @@ router.post("/admin/login", async (req, res) => {
       expiresAt,
       createdAt: new Date(),
     });
+    res.cookie(ADMIN_SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: ADMIN_SESSION_COOKIE_SECURE,
+      sameSite: "lax",
+      path: "/api",
+      maxAge: TOKEN_TTL_MS,
+    });
     const sellerCode = resolveAdminScopeFromSession({ username: user.username, isPrimary: user.isPrimary }).sellerCode;
     res.json({ token, expiresIn: TOKEN_TTL_MS / 1000, isPrimary: user.isPrimary, username: user.username, sellerCode });
   } catch (err) {
@@ -318,11 +335,16 @@ router.post("/admin/login", async (req, res) => {
 // POST /api/admin/logout
 // --------------------------------------------------------------------------
 router.post("/admin/logout", async (req, res) => {
-  const auth  = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const token = getTokenFromRequest(req);
   if (token) {
     await db.delete(adminSessionsTable).where(eq(adminSessionsTable.token, token));
   }
+  res.clearCookie(ADMIN_SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    secure: ADMIN_SESSION_COOKIE_SECURE,
+    sameSite: "lax",
+    path: "/api",
+  });
   res.json({ ok: true });
 });
 

@@ -2262,7 +2262,7 @@ export default function Admin() {
       return;
     }
 
-    fetch(`${BASE}/api/admin/verify`, { headers: authHeaders() })
+    fetch(`${BASE}/api/admin/verify`, { headers: authHeaders(), credentials: "include" })
       .then(async (res) => {
         console.log('[DEBUG] Resposta /api/admin/verify:', res.status);
         if (res.status === 401) {
@@ -2332,7 +2332,7 @@ export default function Admin() {
   // Handlers
   // -------------------------------------------------------------------------
   const handleLogout = async () => {
-    try { await fetch(`${BASE}/api/admin/logout`, { method: "POST", headers: authHeaders() }); } catch { /* ignore */ }
+    try { await fetch(`${BASE}/api/admin/logout`, { method: "POST", headers: authHeaders(), credentials: "include" }); } catch { /* ignore */ }
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminIsPrimary");
     localStorage.removeItem("adminUsername");
