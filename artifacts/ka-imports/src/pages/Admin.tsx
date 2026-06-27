@@ -40,6 +40,17 @@ function authHeaders() {
 // BASE URL para requisições (igual outros arquivos)
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+const ORDER_WHATSAPP_GROUP_OPTIONS = ["grupo_1", "grupo_2", "grupo_3"];
+
+function whatsappGroupLabel(group: string | null | undefined): string {
+  const raw = String(group || "").trim();
+  if (!raw) return "Sem grupo";
+  if (raw === "grupo_1") return "Grupo 1";
+  if (raw === "grupo_2") return "Grupo 2";
+  if (raw === "grupo_3") return "Grupo 3";
+  return raw.replace(/_/g, " ");
+}
+
 // Funções utilitárias de data
 function todayStr() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -1081,6 +1092,7 @@ export default function Admin() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [methodFilter, setMethodFilter] = useState("all");
   const [sellerFilter, setSellerFilter] = useState("all");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState(todayStr());
   const [dateTo, setDateTo] = useState(todayStr());
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -1413,6 +1425,7 @@ export default function Admin() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (methodFilter !== "all") params.set("paymentMethod", methodFilter);
       if (sellerFilter !== "all") params.set("sellerCode", sellerFilter);
+      if (groupFilter !== "all") params.set("whatsappGroup", groupFilter);
       const res = await fetch(`${BASE}/api/admin/orders?${params}`, {
         headers: authHeaders(),
         cache: "no-store",
@@ -1422,7 +1435,7 @@ export default function Admin() {
       setOrders(data.orders || []);
       setOrdersReady(true);
     } catch { /* silent — don't show toast for background refreshes */ }
-  }, [dateFrom, dateTo, statusFilter, methodFilter, sellerFilter, handleUnauthorized]);
+  }, [dateFrom, dateTo, statusFilter, methodFilter, sellerFilter, groupFilter, handleUnauthorized]);
 
   const fetchCharges = useCallback(async (_silent?: boolean) => {
     try {
@@ -2459,6 +2472,7 @@ export default function Admin() {
     if (tab === "orders") {
       if (methodFilter !== "all") params.set("paymentMethod", methodFilter);
       if (sellerFilter !== "all") params.set("sellerCode", sellerFilter);
+      if (groupFilter !== "all") params.set("whatsappGroup", groupFilter);
       window.open(`${BASE}/api/admin/export?${params}&token=${getToken()}`, "_blank");
     } else {
       window.open(`${BASE}/api/admin/custom-charges/export?${params}&token=${getToken()}`, "_blank");
@@ -3256,6 +3270,12 @@ export default function Admin() {
 
   // All registered sellers for dropdowns — use sellers state (always loaded on mount)
   const allSellers = sellers.map((s) => s.slug);
+  const orderGroups = Array.from(new Set(
+    orders
+      .map((o) => String((o as { whatsappGroup?: string | null }).whatsappGroup || "").trim())
+      .filter(Boolean),
+  ));
+  const availableWhatsappGroups = Array.from(new Set([...ORDER_WHATSAPP_GROUP_OPTIONS, ...orderGroups]));
 
   // =========================================================================
   // RENDER
@@ -3648,6 +3668,12 @@ export default function Admin() {
                       <option key={s!} value={s!}>{s}</option>
                     ))}
                   </select>
+                  <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
+                    <option value="all">Todos os grupos</option>
+                    {availableWhatsappGroups.map((group) => (
+                      <option key={group} value={group}>{whatsappGroupLabel(group)}</option>
+                    ))}
+                  </select>
                 </>
               )}
             </div>
@@ -3703,6 +3729,7 @@ export default function Admin() {
             onSetOrderPatched={(order) => {
               setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
             }}
+            availableWhatsappGroups={availableWhatsappGroups}
             onSetReshipmentStatus={async (reshipmentId, status) => {
               if (!reshipmentId) return;
               setReshipmentUpdatingId(reshipmentId);
@@ -7055,7 +7082,7 @@ function OrdersPanel({
   orders, statusUpdating, expandedOrder, setExpandedOrder,
   updateOrderStatus, setProofModal, setProofViewer, openWhatsApp,
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
-  onSetOrderEnviado, onSetOrderPatched, onSetReshipmentStatus, onRemoveOrder,
+  onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups, onSetReshipmentStatus, onRemoveOrder,
 }: {
   allOrders: AdminOrder[];
   productImageById: Record<string, string>;
@@ -7082,6 +7109,7 @@ function OrdersPanel({
   onOpenKycModal: (orderId: string) => void;
   onSetOrderEnviado: (id: string, enviado: boolean) => void;
   onSetOrderPatched: (order: AdminOrder) => void;
+  availableWhatsappGroups: string[];
   onSetReshipmentStatus: (reshipmentId: string, status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado") => void;
   onRemoveOrder: (id: string) => void;
 }) {
@@ -7133,6 +7161,8 @@ function OrdersPanel({
   const [trackingSelectedOrderId, setTrackingSelectedOrderId] = useState<string | null>(null);
   const [trackingInventoryBalances, setTrackingInventoryBalances] = useState<InventoryBalanceRecord[] | null>(null);
   const [trackingInventoryLoading, setTrackingInventoryLoading] = useState(false);
+  const [whatsappGroupDrafts, setWhatsappGroupDrafts] = useState<Record<string, string>>({});
+  const [whatsappGroupUpdating, setWhatsappGroupUpdating] = useState<Record<string, boolean>>({});
   const trackingBatchInputRef = useRef<HTMLInputElement | null>(null);
   const trackingBatchWatchdogRef = useRef<number | null>(null);
 
@@ -7186,6 +7216,15 @@ function OrdersPanel({
   }, [ordersLookup]);
 
   useEffect(() => {
+    const map: Record<string, string> = {};
+    for (const order of ordersLookup) {
+      const current = String((order as { whatsappGroup?: string | null }).whatsappGroup || "").trim();
+      map[order.id] = current || "__none";
+    }
+    setWhatsappGroupDrafts(map);
+  }, [ordersLookup]);
+
+  useEffect(() => {
     if (!imagePreview) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setImagePreview(null);
@@ -7224,6 +7263,35 @@ function OrdersPanel({
   }, [trackingReview]);
 
   // Funções SEM hooks
+
+  const saveOrderWhatsappGroup = async (order: AdminOrder) => {
+    const id = String(order.id || "").trim();
+    if (!id) return;
+    const draft = whatsappGroupDrafts[id] || "__none";
+    const whatsappGroup = draft === "__none" ? null : draft;
+
+    setWhatsappGroupUpdating((prev) => ({ ...prev, [id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${encodeURIComponent(id)}/whatsapp-group`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ whatsappGroup }),
+      });
+
+      const data = await res.json().catch(() => ({})) as { message?: string; order?: AdminOrder };
+      if (!res.ok) {
+        toast.error(data?.message || "Erro ao salvar grupo do pedido.");
+        return;
+      }
+
+      if (data?.order) onSetOrderPatched(data.order);
+      toast.success("Grupo do pedido atualizado.");
+    } catch {
+      toast.error("Erro ao salvar grupo do pedido.");
+    } finally {
+      setWhatsappGroupUpdating((prev) => ({ ...prev, [id]: false }));
+    }
+  };
 
   const resolveOrderPriority = (order: AdminOrder): boolean => {
     const id = String(order.id || "").trim();
@@ -8166,6 +8234,11 @@ function OrdersPanel({
                             <Tag className="w-3 h-3" />{order.sellerCode}
                           </span>
                         )}
+                        {String((order as { whatsappGroup?: string | null }).whatsappGroup || "").trim() && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-xs font-semibold border border-cyan-200">
+                            Grupo: {whatsappGroupLabel((order as { whatsappGroup?: string | null }).whatsappGroup || null)}
+                          </span>
+                        )}
                         {order.purchaseIp && (
                           <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded" title={(order as any).ipIsp || "IP de compra"}>
                             {normalizeIp(order.purchaseIp)}
@@ -8278,6 +8351,28 @@ function OrdersPanel({
                 <p className={`text-sm font-semibold mb-3 ${isCard ? "text-purple-800" : "text-blue-800"}`}>
                   Gestão — {isCard ? "Cartão (simulação)" : "PIX"}
                 </p>
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <select
+                    value={whatsappGroupDrafts[order.id] || "__none"}
+                    onChange={(event) => setWhatsappGroupDrafts((prev) => ({ ...prev, [order.id]: event.target.value }))}
+                    className="h-8 px-2 rounded-lg border border-border bg-white text-xs cursor-pointer outline-none focus:border-primary"
+                  >
+                    <option value="__none">Sem grupo</option>
+                    {availableWhatsappGroups.map((group) => (
+                      <option key={group} value={group}>{whatsappGroupLabel(group)}</option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-cyan-700 border-cyan-200 hover:bg-cyan-50"
+                    disabled={!!whatsappGroupUpdating[order.id]}
+                    onClick={() => { void saveOrderWhatsappGroup(order); }}
+                  >
+                    {whatsappGroupUpdating[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Salvar grupo
+                  </Button>
+                </div>
                 <div className="flex gap-2 flex-wrap">
                   <Button size="sm" variant="outline" className="gap-1.5 text-green-700 border-green-200 hover:bg-green-50"
                     disabled={statusUpdating === order.id || order.status === "paid" || order.status === "completed"}

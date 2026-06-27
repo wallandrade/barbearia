@@ -1397,7 +1397,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     const adminScope = ensureSellerScopeOnOrderQuery(req, res);
     if (!adminScope) return;
 
-    const { dateFrom, dateTo, status, paymentMethod, sellerCode, pinReshipments } = req.query as Record<string, string>;
+    const { dateFrom, dateTo, status, paymentMethod, sellerCode, whatsappGroup, pinReshipments } = req.query as Record<string, string>;
     const shouldPinReshipments = pinReshipments !== "0";
 
     // São Paulo = UTC-3: midnight SP = 03:00 UTC; end-of-day SP 23:59:59 = next day 02:59:59 UTC
@@ -1419,6 +1419,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
       else nonDateConditions.push(eq(ordersTable.status, status));
     }
     if (paymentMethod && paymentMethod !== "all") nonDateConditions.push(eq(ordersTable.paymentMethod, paymentMethod));
+    if (whatsappGroup && whatsappGroup !== "all") nonDateConditions.push(eq(ordersTable.whatsappGroup, whatsappGroup));
     if (!adminScope.hasGlobalAccess) {
       if (sellerCode && sellerCode !== "all" && sellerCode !== adminScope.sellerCode) {
         res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão para acessar outro seller." });
@@ -1633,6 +1634,54 @@ router.patch("/admin/orders/:id/observation", requireAdminAuth, async (req, res)
   } catch (err) {
     console.error("Update observation error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar observação." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/whatsapp-group  (protected)
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/whatsapp-group", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const rawGroup = req.body?.whatsappGroup;
+    let normalizedGroup: string | null = null;
+    if (rawGroup !== undefined && rawGroup !== null) {
+      const parsed = String(rawGroup).trim().toLowerCase().replace(/\s+/g, "_");
+      if (parsed.length > 0) {
+        if (!/^[a-z0-9_-]{1,64}$/.test(parsed)) {
+          res.status(400).json({ error: "INVALID_INPUT", message: "Grupo inválido. Use apenas letras, números, _ ou -." });
+          return;
+        }
+        normalizedGroup = parsed;
+      }
+    }
+
+    const existing = await db.select({ id: ordersTable.id }).from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    await db
+      .update(ordersTable)
+      .set({ whatsappGroup: normalizedGroup, updatedAt: new Date() })
+      .where(buildAdminOrderWhere(id, adminScope));
+
+    const updated = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    if (!updated[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    res.json({ ok: true, order: mapOrder(updated[0]) });
+  } catch (err) {
+    console.error("Update whatsapp group error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar grupo do pedido." });
   }
 });
 
@@ -1898,7 +1947,7 @@ router.get("/admin/export", requireAdminAuth, async (req, res) => {
     const adminScope = ensureSellerScopeOnOrderQuery(req, res);
     if (!adminScope) return;
 
-    const { dateFrom, dateTo, status, paymentMethod, sellerCode } = req.query as Record<string, string>;
+    const { dateFrom, dateTo, status, paymentMethod, sellerCode, whatsappGroup } = req.query as Record<string, string>;
 
     // São Paulo = UTC-3: midnight SP = 03:00 UTC; end-of-day SP 23:59:59 = next day 02:59:59 UTC
     const SP_OFFSET_MS = 3 * 60 * 60 * 1000;
@@ -1918,6 +1967,7 @@ router.get("/admin/export", requireAdminAuth, async (req, res) => {
       else conditions.push(eq(ordersTable.status, status));
     }
     if (paymentMethod && paymentMethod !== "all") conditions.push(eq(ordersTable.paymentMethod, paymentMethod));
+    if (whatsappGroup && whatsappGroup !== "all") conditions.push(eq(ordersTable.whatsappGroup, whatsappGroup));
     if (!adminScope.hasGlobalAccess) {
       if (sellerCode && sellerCode !== "all" && sellerCode !== adminScope.sellerCode) {
         res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão para acessar outro seller." });
@@ -2033,6 +2083,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     total:               Number(o.total),
     status:              o.status,
     paymentMethod:       o.paymentMethod || "pix",
+    whatsappGroup:       o.whatsappGroup ?? null,
     cardInstallments:    o.cardInstallments,
     proofUrl:            o.proofUrl,
     proofUrls,
