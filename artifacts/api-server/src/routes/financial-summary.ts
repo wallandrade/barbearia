@@ -253,12 +253,10 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
 
     const expenseConditions = [];
     if (dateFrom) {
-      const fromDate = toUTC(dateFrom, "00", "00", "00");
-      expenseConditions.push(sql`COALESCE(${marketingExpensesTable.expenseEndDate}, ${marketingExpensesTable.expenseDate}) >= ${fromDate}`);
+      expenseConditions.push(sql`DATE(DATE_SUB(COALESCE(${marketingExpensesTable.expenseEndDate}, ${marketingExpensesTable.expenseDate}), INTERVAL 3 HOUR)) >= ${dateFrom}`);
     }
     if (dateTo) {
-      const toDate = toUTC(dateTo, "23", "59", "59");
-      expenseConditions.push(sql`COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}) <= ${toDate}`);
+      expenseConditions.push(sql`DATE(DATE_SUB(COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}), INTERVAL 3 HOUR)) <= ${dateTo}`);
     }
 
     if (!adminScope.hasGlobalAccess) {

@@ -32,12 +32,10 @@ router.get("/admin/marketing-expenses", requireAdminAuth, async (req, res) => {
     const { dateFrom, dateTo, sellerCode } = req.query as Record<string, string>;
     const conditions = [];
     if (dateFrom) {
-      const fromDate = toUTC(dateFrom, "00", "00", "00");
-      conditions.push(sql`COALESCE(${marketingExpensesTable.expenseEndDate}, ${marketingExpensesTable.expenseDate}) >= ${fromDate}`);
+      conditions.push(sql`DATE(DATE_SUB(COALESCE(${marketingExpensesTable.expenseEndDate}, ${marketingExpensesTable.expenseDate}), INTERVAL 3 HOUR)) >= ${dateFrom}`);
     }
     if (dateTo) {
-      const toDate = toUTC(dateTo, "23", "59", "59");
-      conditions.push(sql`COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}) <= ${toDate}`);
+      conditions.push(sql`DATE(DATE_SUB(COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}), INTERVAL 3 HOUR)) <= ${dateTo}`);
     }
 
     const effectiveSellerCode = !scope.hasGlobalAccess
