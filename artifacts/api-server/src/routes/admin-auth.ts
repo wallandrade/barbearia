@@ -8,8 +8,16 @@ const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const ADMIN_AUTH_VERBOSE_LOGS = String(process.env.ADMIN_AUTH_VERBOSE_LOGS || "false").toLowerCase() === "true";
 const ADMIN_ALLOW_QUERY_TOKEN = String(process.env.ADMIN_ALLOW_QUERY_TOKEN || "true").toLowerCase() === "true";
 const ADMIN_SESSION_COOKIE_NAME = String(process.env.ADMIN_SESSION_COOKIE_NAME || "admin_session").trim();
-const ADMIN_SESSION_COOKIE_SECURE =
-  String(process.env.ADMIN_SESSION_COOKIE_SECURE || (process.env.NODE_ENV === "production" ? "true" : "false")).toLowerCase() === "true";
+const ADMIN_SESSION_COOKIE_SAMESITE = (() => {
+  const raw = String(process.env.ADMIN_SESSION_COOKIE_SAMESITE || (process.env.NODE_ENV === "production" ? "none" : "lax")).trim().toLowerCase();
+  if (raw === "none" || raw === "lax" || raw === "strict") return raw as "none" | "lax" | "strict";
+  return process.env.NODE_ENV === "production" ? "none" : "lax";
+})();
+const ADMIN_SESSION_COOKIE_SECURE = (() => {
+  const configured = String(process.env.ADMIN_SESSION_COOKIE_SECURE || (process.env.NODE_ENV === "production" ? "true" : "false")).toLowerCase() === "true";
+  // Browsers require Secure when SameSite=None.
+  return configured || ADMIN_SESSION_COOKIE_SAMESITE === "none";
+})();
 
 type AdminSessionRecord = {
   username: string;
@@ -319,7 +327,7 @@ router.post("/admin/login", async (req, res) => {
     res.cookie(ADMIN_SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       secure: ADMIN_SESSION_COOKIE_SECURE,
-      sameSite: "lax",
+      sameSite: ADMIN_SESSION_COOKIE_SAMESITE,
       path: "/api",
       maxAge: TOKEN_TTL_MS,
     });
@@ -342,7 +350,7 @@ router.post("/admin/logout", async (req, res) => {
   res.clearCookie(ADMIN_SESSION_COOKIE_NAME, {
     httpOnly: true,
     secure: ADMIN_SESSION_COOKIE_SECURE,
-    sameSite: "lax",
+    sameSite: ADMIN_SESSION_COOKIE_SAMESITE,
     path: "/api",
   });
   res.json({ ok: true });
