@@ -1259,6 +1259,8 @@ export default function Admin() {
   const [clientErrors, setClientErrors] = useState<ClientErrorEvent[]>([]);
   const [clientErrorsLoading, setClientErrorsLoading] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
+  const sseReconnectTimerRef = useRef<number | null>(null);
+  const sseUnauthorizedRef = useRef(false);
   const swRef  = useRef<ServiceWorkerRegistration | null>(null);
   // Live Visitors Tracking
   const [liveStats, setLiveStats] = useState({ catalog: 0, checkout: 0 });
@@ -1410,6 +1412,12 @@ export default function Admin() {
   // Auth check
   // -------------------------------------------------------------------------
   const handleUnauthorized = useCallback(() => {
+    if (sseReconnectTimerRef.current !== null) {
+      window.clearTimeout(sseReconnectTimerRef.current);
+      sseReconnectTimerRef.current = null;
+    }
+    sseRef.current?.close();
+    sseUnauthorizedRef.current = true;
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminIsPrimary");
     localStorage.removeItem("adminUsername");
@@ -2160,9 +2168,14 @@ export default function Admin() {
   // SSE
   // -------------------------------------------------------------------------
   const connectSSE = useCallback(() => {
+    if (sseReconnectTimerRef.current !== null) {
+      window.clearTimeout(sseReconnectTimerRef.current);
+      sseReconnectTimerRef.current = null;
+    }
     if (sseRef.current) sseRef.current.close();
     const token = getToken();
     if (!token) return;
+    sseUnauthorizedRef.current = false;
 
     const url = `${BASE}/api/admin/notifications?t=${Date.now()}`;
     const es = new EventSource(url, { withCredentials: true });
@@ -2246,9 +2259,32 @@ export default function Admin() {
 
     es.onerror = () => {
       es.close();
-      setTimeout(() => { if (getToken()) connectSSE(); }, 1000);
+      if (sseReconnectTimerRef.current !== null) {
+        window.clearTimeout(sseReconnectTimerRef.current);
+      }
+      sseReconnectTimerRef.current = window.setTimeout(async () => {
+        sseReconnectTimerRef.current = null;
+        if (!getToken() || sseUnauthorizedRef.current) return;
+
+        try {
+          const verifyRes = await fetch(`${BASE}/api/admin/verify`, {
+            headers: authHeaders(),
+            credentials: "include",
+            cache: "no-store",
+          });
+
+          if (verifyRes.status === 401 || verifyRes.status === 403) {
+            handleUnauthorized();
+            return;
+          }
+        } catch {
+          // Network blip: keep trying to reconnect while token still exists.
+        }
+
+        if (getToken() && !sseUnauthorizedRef.current) connectSSE();
+      }, 1000);
     };
-  }, [fetchOrders, fetchCharges, fetchSellerData, fetchStatsData, fetchSupportTickets, fetchInventoryOverview, showPushNotification]);
+  }, [fetchOrders, fetchCharges, fetchSellerData, fetchStatsData, fetchSupportTickets, fetchInventoryOverview, showPushNotification, handleUnauthorized]);
 
   // -------------------------------------------------------------------------
   // Mount
@@ -2290,7 +2326,13 @@ export default function Admin() {
         handleUnauthorized();
       });
 
-    return () => { sseRef.current?.close(); };
+    return () => {
+      sseRef.current?.close();
+      if (sseReconnectTimerRef.current !== null) {
+        window.clearTimeout(sseReconnectTimerRef.current);
+        sseReconnectTimerRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2336,6 +2378,11 @@ export default function Admin() {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminIsPrimary");
     localStorage.removeItem("adminUsername");
+    if (sseReconnectTimerRef.current !== null) {
+      window.clearTimeout(sseReconnectTimerRef.current);
+      sseReconnectTimerRef.current = null;
+    }
+    sseUnauthorizedRef.current = true;
     sseRef.current?.close();
     setLocation("/admin/login");
   };
