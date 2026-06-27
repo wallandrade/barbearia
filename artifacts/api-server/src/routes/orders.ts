@@ -1889,7 +1889,11 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
     const chargeId = crypto.randomBytes(8).toString("hex");
     const gatewayProvider = await getActivePixGateway();
     const identifier = genIdentifier();
-    const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
+    const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+    const callbackBase = buildCallbackUrl(req as never, "/webhook/pix");
+    const callbackUrl = webhookSecret
+      ? `${callbackBase}${callbackBase.includes("?") ? "&" : "?"}whsec=${encodeURIComponent(webhookSecret)}`
+      : callbackBase;
     const desc = description || `Diferença pedido #${id}`;
 
     const gatewayData = await createPixChargeWithProvider({

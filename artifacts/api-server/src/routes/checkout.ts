@@ -538,7 +538,11 @@ router.post("/checkout/pix", async (req, res) => {
     // ── Generate PIX charge ───────────────────────────────────────────────
     const gatewayProvider = await getActivePixGateway();
     const identifier  = genIdentifier();
-    const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
+    const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+    const callbackBase = buildCallbackUrl(req as never, "/webhook/pix");
+    const callbackUrl = webhookSecret
+      ? `${callbackBase}${callbackBase.includes("?") ? "&" : "?"}whsec=${encodeURIComponent(webhookSecret)}`
+      : callbackBase;
     console.log(`[CHECKOUT/PIX:${requestId}] Generating PIX for order ${orderId} via ${gatewayProvider} — amount: ${payableAmount} — callback: ${callbackUrl}`);
 
     let gatewayData;

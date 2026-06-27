@@ -129,7 +129,11 @@ router.post("/custom-charges", async (req, res) => {
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.
     // The generic handler matches transactions by transactionId in the body.
-    const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
+    const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+    const callbackBase = buildCallbackUrl(req as never, "/webhook/pix");
+    const callbackUrl = webhookSecret
+      ? `${callbackBase}${callbackBase.includes("?") ? "&" : "?"}whsec=${encodeURIComponent(webhookSecret)}`
+      : callbackBase;
 
     console.log(`[CustomCharge:${requestId}] Calling gateway — id=${id} identifier=${identifier} amount=${Number(amount)} callbackUrl=${callbackUrl}`);
 

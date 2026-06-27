@@ -11,16 +11,23 @@
  *   POST /api/webhook/pix        (generic — gateway uses transactionId to match)
  */
 import { Router, type IRouter } from "express";
+import type { Request } from "express";
+import crypto from "crypto";
 import { db, ordersTable, customChargesTable } from "@workspace/db";
 import { eq, or } from "drizzle-orm";
 import { broadcastNotification } from "./notifications";
-import { isPaymentConfirmed } from "../gateway";
+import { fetchTransactionStatus, isPaymentConfirmed } from "../gateway";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { requirePrimaryAdmin } from "./admin-auth";
 
 const router: IRouter = Router();
+
+const WEBHOOK_SHARED_SECRET = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+const WEBHOOK_DIRECT_TOKEN = String(process.env.WEBHOOK_DIRECT_TOKEN || WEBHOOK_SHARED_SECRET).trim();
+const SECURITY_REQUIRE_WEBHOOK_SHARED_SECRET =
+  String(process.env.SECURITY_REQUIRE_WEBHOOK_SHARED_SECRET || "true").toLowerCase() === "true";
 
 interface GatewayCallback {
   transactionId?: string;
@@ -29,6 +36,32 @@ interface GatewayCallback {
   amount?: number;
   paidAt?: string;
   metadata?: Record<string, string>;
+}
+
+function safeTokenEquals(expected: string, provided: string): boolean {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function readWebhookSecret(req: Request): string {
+  const headerSecret = String(req.get("x-webhook-secret") || req.get("x-signature") || "").trim();
+  if (headerSecret) return headerSecret;
+  const querySecret = req.query?.whsec;
+  return typeof querySecret === "string" ? querySecret.trim() : "";
+}
+
+function hasValidWebhookSecret(req: Request): boolean {
+  if (!WEBHOOK_SHARED_SECRET) {
+    return !SECURITY_REQUIRE_WEBHOOK_SHARED_SECRET;
+  }
+  return safeTokenEquals(WEBHOOK_SHARED_SECRET, readWebhookSecret(req));
+}
+
+function hasValidDirectToken(token: string | undefined): boolean {
+  return safeTokenEquals(WEBHOOK_DIRECT_TOKEN, String(token || "").trim());
 }
 
 async function handleCallback(body: GatewayCallback) {
@@ -191,6 +224,7 @@ async function handleCallback(body: GatewayCallback) {
 // Handles APPCNPay format: { event, transaction: { id, status, ... }, client }
 router.post("/webhook/pix", async (req, res) => {
   try {
+    const trustedWebhook = hasValidWebhookSecret(req);
     const raw = req.body as Record<string, unknown>;
     console.log("[WEBHOOK/pix] Raw body:", JSON.stringify(raw));
 
@@ -224,6 +258,34 @@ router.post("/webhook/pix", async (req, res) => {
       if (ev === "deposit.refunded") normalized.status = "REFUNDED";
     }
 
+    if (!trustedWebhook) {
+      if (!normalized.transactionId) {
+        console.warn("[WEBHOOK/pix] Rejected untrusted webhook without transactionId", {
+          ip: req.ip,
+          ua: req.get("user-agent"),
+        });
+        res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "missing_transaction_id" });
+        return;
+      }
+
+      const gatewayStatus = await fetchTransactionStatus(normalized.transactionId);
+      if (!gatewayStatus?.status) {
+        console.warn("[WEBHOOK/pix] Rejected untrusted webhook due to unverifiable transaction", {
+          transactionId: normalized.transactionId,
+          ip: req.ip,
+          ua: req.get("user-agent"),
+        });
+        res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "gateway_verification_failed" });
+        return;
+      }
+
+      normalized.status = gatewayStatus.status;
+      console.warn("[WEBHOOK/pix] Untrusted webhook accepted only after gateway verification", {
+        transactionId: normalized.transactionId,
+        verifiedStatus: gatewayStatus.status,
+      });
+    }
+
     console.log("[WEBHOOK/pix] Normalized:", JSON.stringify(normalized));
 
     const result = await handleCallback(normalized);
@@ -251,6 +313,7 @@ router.post("/webhook/pix", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/webhook", async (req, res) => {
   try {
+    const trustedWebhook = hasValidWebhookSecret(req);
     // Normalize various payload shapes into our standard GatewayCallback
     const body = req.body as Record<string, unknown>;
 
@@ -267,12 +330,48 @@ router.post("/webhook", async (req, res) => {
              payload.external_id    || payload.reference      || payload.charge_id ||
              (body.data as Record<string, unknown> | undefined)?.depositId || "");
 
-    const rawStatus: string =
+    let rawStatus: string =
       String(payload.status || payload.state || payload.situation || payload.paymentStatus ||
              payload.payment_status || (body.data as Record<string, unknown> | undefined)?.status || body.event || "");
 
     const rawOrderId: string =
       String(body.orderId || payload.orderId || payload.order_id || payload.metadata?.orderId || "");
+
+    if (!trustedWebhook) {
+      if (rawOrderId) {
+        console.warn("[WEBHOOK/universal] Rejected untrusted direct order update", {
+          orderId: rawOrderId,
+          ip: req.ip,
+          ua: req.get("user-agent"),
+        });
+        res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "direct_order_update_forbidden" });
+        return;
+      }
+      if (!rawTxId) {
+        console.warn("[WEBHOOK/universal] Rejected untrusted webhook without transactionId", {
+          ip: req.ip,
+          ua: req.get("user-agent"),
+        });
+        res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "missing_transaction_id" });
+        return;
+      }
+
+      const gatewayStatus = await fetchTransactionStatus(rawTxId);
+      if (!gatewayStatus?.status) {
+        console.warn("[WEBHOOK/universal] Rejected untrusted webhook due to unverifiable transaction", {
+          transactionId: rawTxId,
+          ip: req.ip,
+          ua: req.get("user-agent"),
+        });
+        res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "gateway_verification_failed" });
+        return;
+      }
+      rawStatus = gatewayStatus.status;
+      console.warn("[WEBHOOK/universal] Untrusted webhook accepted only after gateway verification", {
+        transactionId: rawTxId,
+        verifiedStatus: rawStatus,
+      });
+    }
 
     console.log(`[WEBHOOK/universal] txId=${rawTxId} status=${rawStatus} orderId=${rawOrderId}`);
 
@@ -336,7 +435,17 @@ router.post("/webhook", async (req, res) => {
 // Per-order webhook URL
 router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
   try {
-    const { orderId } = req.params;
+    const { token, orderId } = req.params;
+    const trustedWebhook = hasValidWebhookSecret(req) || hasValidDirectToken(token);
+    if (!trustedWebhook) {
+      console.warn("[WEBHOOK/order] Rejected webhook with invalid token/secret", {
+        orderId,
+        ip: req.ip,
+        ua: req.get("user-agent"),
+      });
+      res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK" });
+      return;
+    }
     const body = req.body as GatewayCallback;
 
     // Also patch by orderId directly in case transactionId isn't in the body
@@ -378,7 +487,17 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
 // Per-charge webhook URL
 router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
   try {
-    const { chargeId } = req.params;
+    const { token, chargeId } = req.params;
+    const trustedWebhook = hasValidWebhookSecret(req) || hasValidDirectToken(token);
+    if (!trustedWebhook) {
+      console.warn("[WEBHOOK/charge] Rejected webhook with invalid token/secret", {
+        chargeId,
+        ip: req.ip,
+        ua: req.get("user-agent"),
+      });
+      res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK" });
+      return;
+    }
     const body = req.body as GatewayCallback;
 
     if (chargeId && isPaymentConfirmed(body.status || "")) {

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "crypto";
 import { db, ordersTable, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { broadcastNotification } from "./notifications";
@@ -15,6 +16,18 @@ import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 
 const router: IRouter = Router();
+
+const ENABLE_LEGACY_PIX_CALLBACK =
+  String(process.env.ENABLE_LEGACY_PIX_CALLBACK || "false").toLowerCase() === "true";
+const LEGACY_PIX_CALLBACK_TOKEN = String(process.env.LEGACY_PIX_CALLBACK_TOKEN || "").trim();
+
+function safeTokenEquals(expected: string, provided: string): boolean {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
 
 async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
   const row = await db
@@ -53,7 +66,11 @@ router.post("/pix/generate", async (req, res) => {
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.
     // The generic handler matches transactions by transactionId in the body.
-    const callbackUrl = buildCallbackUrl(req as never, "/webhook/pix");
+    const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+    const callbackBase = buildCallbackUrl(req as never, "/webhook/pix");
+    const callbackUrl = webhookSecret
+      ? `${callbackBase}${callbackBase.includes("?") ? "&" : "?"}whsec=${encodeURIComponent(webhookSecret)}`
+      : callbackBase;
     console.log(`[PIX] Creating charge for order ${orderId || identifier} via ${gatewayProvider} — callback: ${callbackUrl}`);
 
     let gatewayData;
@@ -190,6 +207,23 @@ router.get("/pix/status/:transactionId", async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post("/pix/callback/:token", async (req, res) => {
   try {
+    const token = String(req.params.token || "").trim();
+    if (!ENABLE_LEGACY_PIX_CALLBACK) {
+      res.status(410).json({
+        error: "LEGACY_CALLBACK_DISABLED",
+        message: "Callback legado desabilitado por segurança.",
+      });
+      return;
+    }
+    if (!safeTokenEquals(LEGACY_PIX_CALLBACK_TOKEN, token)) {
+      console.warn("[PIX] Legacy callback rejected: invalid token", {
+        ip: req.ip,
+        ua: req.get("user-agent"),
+      });
+      res.status(403).json({ error: "FORBIDDEN", message: "Token inválido." });
+      return;
+    }
+
     const body = req.body as { transactionId?: string; status?: string };
     console.log("[PIX] Legacy callback received:", JSON.stringify(body));
 
