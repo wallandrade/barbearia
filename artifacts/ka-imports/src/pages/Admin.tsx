@@ -16,6 +16,13 @@ function formatTimeBR(date: string | Date | undefined | null): string {
     timeZone: "America/Sao_Paulo",
   });
 }
+
+function daysSince(date: string | Date | undefined | null): number {
+  if (!date) return 0;
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
 // Funções utilitárias para recuperar dados do localStorage
 function getIsPrimary() {
   return localStorage.getItem("adminIsPrimary") === "true";
@@ -819,7 +826,7 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
   );
 }
 
-type TabType = "orders" | "charges" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
+type TabType = "orders" | "charges" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
 
 const PRIMARY_ONLY_TABS = new Set<TabType>([
   "users",
@@ -874,6 +881,18 @@ interface CustomerUserRecord {
   orderCount: number; affiliateCode: string | null;
   phone?: string | null;
   hasAccount?: boolean;
+}
+
+interface RecurringCustomerRecord {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  firstOrderAt: string;
+  lastOrderAt: string;
+  orderCount: number;
+  totalSpent: number;
+  averageTicket: number;
 }
 
 interface SupportTicketRecord {
@@ -1023,6 +1042,7 @@ export default function Admin() {
   const [sellerAllCharges, setSellerAllCharges] = useState<CustomCharge[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [customerUsers, setCustomerUsers] = useState<CustomerUserRecord[]>([]);
+  const [recurringCustomers, setRecurringCustomers] = useState<RecurringCustomerRecord[]>([]);
   const [supportTickets, setSupportTickets] = useState<SupportTicketRecord[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
@@ -1067,8 +1087,10 @@ export default function Admin() {
   const [manualReshipmentSubmitting, setManualReshipmentSubmitting] = useState(false);
   const [reshipmentUpdatingId, setReshipmentUpdatingId] = useState<string | null>(null);
   const [customersLoading, setCustomersLoading] = useState(false);
+  const [recurringCustomersLoading, setRecurringCustomersLoading] = useState(false);
   const [customerImpersonatingId, setCustomerImpersonatingId] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [recurringCustomerSearch, setRecurringCustomerSearch] = useState("");
   const [exportingCustomersCSV, setExportingCustomersCSV] = useState(false);
   const [syncingCustomersBrevo, setSyncingCustomersBrevo] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -1520,6 +1542,17 @@ export default function Admin() {
       setCustomerUsers(data.customers || []);
     } catch { /* ignore */ }
     finally { setCustomersLoading(false); }
+  }, []);
+
+  const fetchRecurringCustomers = useCallback(async () => {
+    setRecurringCustomersLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/customers/recurring`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json() as { recurringCustomers: RecurringCustomerRecord[] };
+      setRecurringCustomers(data.recurringCustomers || []);
+    } catch { /* ignore */ }
+    finally { setRecurringCustomersLoading(false); }
   }, []);
 
   const impersonateCustomerAccount = useCallback(async (customer: CustomerUserRecord) => {
@@ -2151,6 +2184,7 @@ export default function Admin() {
     else if (tab === "charges")    fetchCharges();
     else if (tab === "users")      fetchUsers();
     else if (tab === "customers")  fetchCustomers();
+    else if (tab === "recurringCustomers") fetchRecurringCustomers();
     else if (tab === "support")    fetchSupportTickets();
     else if (tab === "inventory")  { fetchInventoryOverview(); fetchProducts(); }
     else if (tab === "coupons")    { fetchCoupons(); fetchProducts(); }
@@ -2163,7 +2197,7 @@ export default function Admin() {
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
     else setLoading(false);
-  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
+  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
   // -------------------------------------------------------------------------
   // SSE
@@ -2199,6 +2233,7 @@ export default function Admin() {
           const seller  = d.sellerCode ? ` [${d.sellerCode}]` : "";
           message = `Nova venda${seller} — ${d.clientName} — ${formatCurrency(d.total)} (${method})`;
           fetchOrders(true);
+          fetchRecurringCustomers();
           fetchStatsData();
           fetchSellerData();
           showPushNotification("KA Imports — Nova Venda! 🛍️", message);
@@ -2212,12 +2247,14 @@ export default function Admin() {
         } else if (event.type === "order_paid") {
           message = `Pagamento PIX confirmado!`;
           fetchOrders(true);
+          fetchRecurringCustomers();
           fetchStatsData();
           fetchSellerData();
           showPushNotification("KA Imports — PIX Confirmado! ✅", message);
         } else if (event.type === "order_status_updated") {
           message = `Pedido atualizado`;
           fetchOrders(true);
+          fetchRecurringCustomers();
           fetchStatsData();
           fetchSellerData();
         } else if (event.type === "charge_paid") {
@@ -2229,6 +2266,7 @@ export default function Admin() {
           showPushNotification("KA Imports — Cobrança Paga! ✅", message);
         } else if (event.type === "order_updated") {
           fetchOrders(true);
+          fetchRecurringCustomers();
         } else if (event.type === "support_ticket_created") {
           const d = event.data as { id?: string; orderId?: string; clientName?: string };
           const orderLabel = d.orderId ? `pedido ${String(d.orderId).slice(0, 8)}` : "pedido";
@@ -2373,14 +2411,16 @@ export default function Admin() {
       fetchOrders(true);
       fetchCharges(true);
       fetchStatsData();
+      if (tab === "recurringCustomers") fetchRecurringCustomers();
     }, 20000);
     return () => clearInterval(id);
-  }, [authChecked, fetchOrders, fetchCharges, fetchStatsData]);
+  }, [authChecked, tab, fetchOrders, fetchCharges, fetchStatsData, fetchRecurringCustomers]);
 
   useEffect(() => {
     if (authChecked && tab === "users") fetchUsers();
     if (authChecked && tab === "customers") fetchCustomers();
-  }, [tab, authChecked, fetchUsers, fetchCustomers]);
+    if (authChecked && tab === "recurringCustomers") fetchRecurringCustomers();
+  }, [tab, authChecked, fetchUsers, fetchCustomers, fetchRecurringCustomers]);
 
   useEffect(() => {
     if (!isPrimary && PRIMARY_ONLY_TABS.has(tab)) {
@@ -3704,6 +3744,7 @@ export default function Admin() {
             { key: "sellers",       label: "Vendedores",       icon: "Tag" },
             { key: "kyc",           label: "KYC",              icon: "ShieldCheck", count: kycList.length > 0 ? kycList.filter((k) => k.status === "submitted").length : undefined },
             { key: "customers",     label: "Clientes",         icon: "UserPlus",    count: customerUsers.length || undefined },
+            { key: "recurringCustomers", label: "Clientes recorrentes", icon: "RefreshCw", count: recurringCustomers.length || undefined },
             { key: "support",       label: "Suporte",          icon: "MessageCircle", count: supportTickets.filter((t) => t.status === "open").length || undefined },
             ...(isPrimary ? [
               { key: "coupons",       label: "Cupons",           icon: "Ticket",      count: coupons.length },
@@ -3977,6 +4018,14 @@ export default function Admin() {
             setExportModalOpen={setExportModalOpen}
             exportColumns={exportColumns}
             setExportColumns={setExportColumns}
+          />
+        ) : tab === "recurringCustomers" ? (
+          <RecurringCustomersPanel
+            customers={recurringCustomers}
+            loading={recurringCustomersLoading}
+            search={recurringCustomerSearch}
+            setSearch={setRecurringCustomerSearch}
+            onRefresh={fetchRecurringCustomers}
           />
         ) : tab === "support" ? (
           <SupportTicketsPanel
@@ -10030,6 +10079,138 @@ function CustomersPanel({
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecurringCustomersPanel({
+  customers,
+  loading,
+  search,
+  setSearch,
+  onRefresh,
+}: {
+  customers: RecurringCustomerRecord[];
+  loading: boolean;
+  search: string;
+  setSearch: (v: string) => void;
+  onRefresh: () => void;
+}) {
+  const filtered = customers.filter((customer) => {
+    if (!search.trim()) return true;
+    const query = search.toLowerCase();
+    return (
+      customer.name.toLowerCase().includes(query) ||
+      customer.email.toLowerCase().includes(query) ||
+      String(customer.phone || "").toLowerCase().includes(query)
+    );
+  });
+
+  const totalSpent = filtered.reduce((sum, customer) => sum + Number(customer.totalSpent || 0), 0);
+  const totalOrders = filtered.reduce((sum, customer) => sum + Number(customer.orderCount || 0), 0);
+  const maxDaysWithoutPurchase = filtered.reduce((max, customer) => Math.max(max, daysSince(customer.lastOrderAt)), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Clientes recorrentes</h2>
+          <p className="text-sm text-muted-foreground">Clientes com mais de um pedido, ordenados do que está há mais tempo sem comprar para o mais recente.</p>
+        </div>
+        <div className="flex gap-2">
+          <div className="relative">
+            <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, e-mail ou telefone..."
+              className="h-10 pl-9 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm w-72"
+            />
+          </div>
+          <button
+            onClick={onRefresh}
+            className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Clientes recorrentes</p>
+          <p className="text-2xl font-bold mt-1">{filtered.length}</p>
+        </div>
+        <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Pedidos somados</p>
+          <p className="text-2xl font-bold mt-1">{totalOrders}</p>
+        </div>
+        <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Faturamento total</p>
+          <p className="text-2xl font-bold mt-1">{formatCurrency(totalSpent)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Maior inatividade: {maxDaysWithoutPurchase} dia{maxDaysWithoutPurchase === 1 ? "" : "s"}</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-16 text-center border border-dashed border-border rounded-2xl bg-white">
+          <Users className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+          <p className="font-semibold text-foreground">{search ? "Nenhum cliente encontrado." : "Nenhum cliente recorrente encontrado."}</p>
+          {search && (
+            <button onClick={() => setSearch("")} className="mt-2 text-sm text-primary hover:underline">Limpar busca</button>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-border bg-white shadow-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/60 border-b border-border">
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Cliente</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">E-mail</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Telefone</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Total gasto</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Ticket médio</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Primeira compra</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Última compra</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Dias sem comprar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((customer, index) => {
+                const staleDays = daysSince(customer.lastOrderAt);
+                return (
+                  <tr key={customer.id} className={`border-b border-border last:border-0 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}>
+                    <td className="px-4 py-3 font-medium text-foreground">{customer.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{customer.email || "—"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{customer.phone || "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                        <IconLucide name="Package" className="w-3 h-3" />
+                        {customer.orderCount}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-foreground">{formatCurrency(Number(customer.totalSpent || 0))}</td>
+                    <td className="px-4 py-3 font-medium text-foreground">{formatCurrency(Number(customer.averageTicket || 0))}</td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateBR(customer.firstOrderAt)}</td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateBR(customer.lastOrderAt)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${staleDays >= 30 ? "bg-red-100 text-red-700" : staleDays >= 14 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
+                        {staleDays} dia{staleDays === 1 ? "" : "s"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

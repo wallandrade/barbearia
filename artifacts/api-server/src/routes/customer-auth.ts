@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import { db, customerUsersTable, ordersTable, affiliatesTable } from "@workspace/db";
-import { eq, sql, desc, inArray, and } from "drizzle-orm";
+import { eq, sql, desc, inArray, and, asc } from "drizzle-orm";
 import {
   createCustomerSession,
   generateSalt,
@@ -280,6 +280,65 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
   } catch (err) {
     console.error("[Admin] list customers error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar clientes." });
+  }
+});
+
+// --------------------------------------------------------------------------
+// GET /api/admin/customers/recurring — list recurring buyers (admin only)
+// --------------------------------------------------------------------------
+router.get("/admin/customers/recurring", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Sessão inválida." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess && !adminScope.sellerCode) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Usuário sem seller vinculado." });
+      return;
+    }
+
+    const customerKey = sql<string>`coalesce(nullif(lower(trim(${ordersTable.clientEmail})), ''), nullif(trim(${ordersTable.clientPhone}), ''), nullif(trim(${ordersTable.clientDocument}), ''))`;
+
+    const recurringCustomers = await db
+      .select({
+        id: customerKey.as("id"),
+        name: sql<string>`max(${ordersTable.clientName})`.as("name"),
+        email: sql<string>`max(${ordersTable.clientEmail})`.as("email"),
+        phone: sql<string>`max(${ordersTable.clientPhone})`.as("phone"),
+        firstOrderAt: sql<Date>`min(${ordersTable.createdAt})`.as("first_order_at"),
+        lastOrderAt: sql<Date>`max(${ordersTable.createdAt})`.as("last_order_at"),
+        orderCount: sql<number>`count(*)`.as("order_count"),
+        totalSpent: sql<string>`coalesce(sum(cast(${ordersTable.total} as decimal(12,2))), 0)`.as("total_spent"),
+        averageTicket: sql<string>`coalesce(avg(cast(${ordersTable.total} as decimal(12,2))), 0)`.as("average_ticket"),
+      })
+      .from(ordersTable)
+      .where(
+        and(
+          adminScope.hasGlobalAccess ? undefined : eq(ordersTable.sellerCode, adminScope.sellerCode!),
+          sql`${customerKey} <> ''`,
+        ),
+      )
+      .groupBy(customerKey)
+      .having(sql`count(*) > 1`)
+      .orderBy(asc(sql`max(${ordersTable.createdAt})`));
+
+    res.json({
+      recurringCustomers: recurringCustomers.map((row) => ({
+        id: String(row.id || ""),
+        name: String(row.name || "Cliente"),
+        email: String(row.email || ""),
+        phone: String(row.phone || "") || null,
+        firstOrderAt: row.firstOrderAt,
+        lastOrderAt: row.lastOrderAt,
+        orderCount: Number(row.orderCount || 0),
+        totalSpent: Number(row.totalSpent || 0),
+        averageTicket: Number(row.averageTicket || 0),
+      })),
+    });
+  } catch (err) {
+    console.error("[Admin] list recurring customers error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar clientes recorrentes." });
   }
 });
 
