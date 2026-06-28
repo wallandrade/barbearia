@@ -270,6 +270,7 @@ function cleanupExpiredRateBuckets(now: number): void {
 
 const app: Express = express();
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
 
 if (!process.env.CORS_ALLOWED_ORIGINS) {
   console.info("[SECURITY] CORS_ALLOWED_ORIGINS não definido. Usando fallback interno.");
@@ -336,6 +337,15 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(), geolocation=(), payment=()");
+  next();
+});
+
 app.use(cookieParser());
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
