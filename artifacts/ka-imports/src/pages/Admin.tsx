@@ -58,6 +58,15 @@ function whatsappGroupLabel(group: string | null | undefined): string {
   return raw.replace(/_/g, " ");
 }
 
+function escapeHtml(value: string | number | null | undefined): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Funções utilitárias de data
 function todayStr() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -2769,17 +2778,25 @@ export default function Admin() {
     const w = window.open("", "_blank");
     if (!w) return;
     const sigHtml = kyc.declarationSignature && kyc.declarationSignature.startsWith("data:image")
-      ? `<img src="${kyc.declarationSignature}" alt="Assinatura" style="max-height:80px;display:block;margin:0 auto 8px auto;">`
-      : `<span style="font-family:'Times New Roman',serif;font-style:italic;font-size:18px">${kyc.declarationSignature ?? order.clientName}</span>`;
+      ? `<img src="${escapeHtml(kyc.declarationSignature)}" alt="Assinatura" style="max-height:80px;display:block;margin:0 auto 8px auto;">`
+      : `<span style="font-family:'Times New Roman',serif;font-style:italic;font-size:18px">${escapeHtml(kyc.declarationSignature ?? order.clientName)}</span>`;
     const dateSp = new Date(order.createdAt).toLocaleDateString("pt-BR");
     const totalStr = Number(order.total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     const last4 = kyc.cardNumber && kyc.cardNumber.length >= 4 ? kyc.cardNumber.slice(-4) : "****";
     const prodStr = kyc.declarationProduct || "---";
+    const clientName = escapeHtml(order.clientName);
+    const clientDocument = escapeHtml(order.clientDocument);
+    const cityName = escapeHtml(order.addressCity || "São Paulo");
+    const signedDateSafe = escapeHtml(signedDate);
+    const dateSpSafe = escapeHtml(dateSp);
+    const totalStrSafe = escapeHtml(totalStr);
+    const last4Safe = escapeHtml(last4);
+    const prodStrSafe = escapeHtml(prodStr);
 
     w.document.write(`<!DOCTYPE html>
 <html>
 <head>
-  <title>Declaração KYC — ${order.clientName}</title>
+  <title>Declaração KYC — ${clientName}</title>
   <style>
     body { font-family: 'Times New Roman', serif; max-width: 680px; margin: 40px auto; padding: 0 20px; color: #000; }
     h1 { text-align: center; font-size: 18px; text-transform: uppercase; margin-bottom: 30px; }
@@ -2795,7 +2812,7 @@ export default function Admin() {
 </head>
 <body>
   <h1>Declaração de Compra</h1>
-  <p>A quem possa interessar, eu <strong>${order.clientName}</strong>, CPF nº <strong>${order.clientDocument}</strong>, titular do cartão utilizado na transação relacionada à compra em questão, afirmo que reconheço a compra efetuada e que recebi corretamente as mercadorias/serviços adquiridos, segundo as informações abaixo citadas:</p>
+  <p>A quem possa interessar, eu <strong>${clientName}</strong>, CPF nº <strong>${clientDocument}</strong>, titular do cartão utilizado na transação relacionada à compra em questão, afirmo que reconheço a compra efetuada e que recebi corretamente as mercadorias/serviços adquiridos, segundo as informações abaixo citadas:</p>
   
   <table>
     <thead>
@@ -2808,10 +2825,10 @@ export default function Admin() {
     </thead>
     <tbody>
       <tr>
-        <td>${dateSp}</td>
-        <td>${totalStr}</td>
-        <td>${last4}</td>
-        <td>${prodStr}</td>
+        <td>${dateSpSafe}</td>
+        <td>${totalStrSafe}</td>
+        <td>${last4Safe}</td>
+        <td>${prodStrSafe}</td>
       </tr>
     </tbody>
   </table>
@@ -2825,12 +2842,12 @@ export default function Admin() {
   
   <p>Ratifico serem verdadeiras as informações prestadas neste documento, e por ser expressa verdade, firmo a presente declaração, para que se produza seus efeitos legais.</p>
 
-  <p style="margin-top:40px; text-align: center">${order.addressCity || "São Paulo"}, ${signedDate}</p>
+  <p style="margin-top:40px; text-align: center">${cityName}, ${signedDateSafe}</p>
   <div class="sig-container">
     ${sigHtml}<br/>
     <div class="sig">
-      <strong>${order.clientName}</strong><br>
-      <small>CPF: ${order.clientDocument}</small>
+      <strong>${clientName}</strong><br>
+      <small>CPF: ${clientDocument}</small>
     </div>
   </div>
 </body>

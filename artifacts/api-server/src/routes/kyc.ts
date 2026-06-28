@@ -34,6 +34,14 @@ async function canAccessOrderId(orderId: string, scope: { hasGlobalAccess: boole
   return !!rows[0];
 }
 
+function normalizeKycSignature(value: unknown): string | null {
+  const signature = String(value ?? "").trim();
+  if (!signature) return null;
+  if (!/^data:image\/(png|jpeg|jpg);base64,[a-z0-9+/=]+$/i.test(signature)) return null;
+  if (signature.length > 2_000_000) return null;
+  return signature;
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/kyc/check-cpf/:cpf — public: check if CPF has an approved KYC
 // ---------------------------------------------------------------------------
@@ -162,7 +170,8 @@ router.post("/kyc/:orderId", async (req, res) => {
       clientDocument?: string;
     };
 
-    if (!selfieUrl || !rgFrontUrl || !declarationSignature?.trim()) {
+    const safeDeclarationSignature = normalizeKycSignature(declarationSignature);
+    if (!selfieUrl || !rgFrontUrl || !safeDeclarationSignature) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Todos os documentos são obrigatórios." });
       return;
     }
@@ -211,7 +220,7 @@ router.post("/kyc/:orderId", async (req, res) => {
         .set({
           selfieUrl,
           rgFrontUrl,
-          declarationSignature: declarationSignature.trim(),
+          declarationSignature: safeDeclarationSignature,
           declarationSignedAt: now,
           clientDocument:      cpf,
           clientName:          order.clientName,
@@ -230,7 +239,7 @@ router.post("/kyc/:orderId", async (req, res) => {
         orderId,
         selfieUrl,
         rgFrontUrl,
-        declarationSignature: declarationSignature.trim(),
+        declarationSignature: safeDeclarationSignature,
         declarationSignedAt:  now,
         clientDocument:       cpf,
         clientName:           order.clientName,
