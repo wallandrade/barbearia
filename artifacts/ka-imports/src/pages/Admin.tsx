@@ -10174,7 +10174,7 @@ function RecurringCustomersPanel({
       <div className="rounded-2xl border border-border bg-white p-4 shadow-sm space-y-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Mensagem pronta para o WhatsApp</p>
-          <p className="text-sm text-muted-foreground mt-1">Personalize o texto que será usado ao clicar no telefone. Use <span className="font-semibold text-foreground">{{nome}}</span>, <span className="font-semibold text-foreground">{{email}}</span>, <span className="font-semibold text-foreground">{{telefone}}</span>, <span className="font-semibold text-foreground">{{pedidos}}</span>, <span className="font-semibold text-foreground">{{total}}</span> e <span className="font-semibold text-foreground">{{dias_sem_compra}}</span>.</p>
+          <p className="text-sm text-muted-foreground mt-1">Personalize o texto que será usado ao clicar no telefone. Use <span className="font-semibold text-foreground">{"{{nome}}"}</span>, <span className="font-semibold text-foreground">{"{{email}}"}</span>, <span className="font-semibold text-foreground">{"{{telefone}}"}</span>, <span className="font-semibold text-foreground">{"{{pedidos}}"}</span>, <span className="font-semibold text-foreground">{"{{total}}"}</span> e <span className="font-semibold text-foreground">{"{{dias_sem_compra}}"}</span>.</p>
         </div>
         <textarea
           value={messageTemplate}
