@@ -10106,6 +10106,9 @@ function RecurringCustomersPanel({
   onRefresh: () => void;
 }) {
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [messageTemplate, setMessageTemplate] = useState(
+    "Olá, {{nome}}! Tudo bem? Vi aqui que você já comprou conosco antes e queria falar com você.",
+  );
 
   const filtered = customers.filter((customer) => {
     if (!search.trim()) return true;
@@ -10130,7 +10133,14 @@ function RecurringCustomersPanel({
     const phoneDigits = String(customer.phone || "").replace(/\D/g, "");
     if (!phoneDigits) return;
     const normalizedPhone = phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`;
-    const message = `Olá, ${customer.name}! Tudo bem? Vi aqui que você já comprou conosco antes e queria falar com você.`;
+    const message = messageTemplate
+      .replace(/\{\{\s*nome\s*\}\}/gi, customer.name)
+      .replace(/\{\{\s*email\s*\}\}/gi, customer.email || "")
+      .replace(/\{\{\s*telefone\s*\}\}/gi, customer.phone || "")
+      .replace(/\{\{\s*pedidos\s*\}\}/gi, String(customer.orderCount || 0))
+      .replace(/\{\{\s*total\s*\}\}/gi, formatCurrency(Number(customer.totalSpent || 0)))
+      .replace(/\{\{\s*dias_sem_compra\s*\}\}/gi, String(daysSince(customer.lastOrderAt)))
+      .trim();
     window.open(`https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`, "_blank");
   };
 
@@ -10159,6 +10169,20 @@ function RecurringCustomersPanel({
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-white p-4 shadow-sm space-y-3">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Mensagem pronta para o WhatsApp</p>
+          <p className="text-sm text-muted-foreground mt-1">Personalize o texto que será usado ao clicar no telefone. Use <span className="font-semibold text-foreground">{{nome}}</span>, <span className="font-semibold text-foreground">{{email}}</span>, <span className="font-semibold text-foreground">{{telefone}}</span>, <span className="font-semibold text-foreground">{{pedidos}}</span>, <span className="font-semibold text-foreground">{{total}}</span> e <span className="font-semibold text-foreground">{{dias_sem_compra}}</span>.</p>
+        </div>
+        <textarea
+          value={messageTemplate}
+          onChange={(e) => setMessageTemplate(e.target.value)}
+          rows={3}
+          className="w-full rounded-xl border-2 border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+          placeholder="Digite sua mensagem pronta..."
+        />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
