@@ -10169,18 +10169,18 @@ function RecurringCustomersPanel({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-border bg-white shadow-sm">
-          <table className="w-full text-sm">
+          <table className="min-w-[980px] w-full table-fixed text-xs">
             <thead>
               <tr className="bg-muted/60 border-b border-border">
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Cliente</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">E-mail</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Telefone</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Total gasto</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Ticket médio</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Primeira compra</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Última compra</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Dias sem comprar</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-36">Cliente</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-44">E-mail</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-28">Telefone</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-20">Pedidos</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-28">Total gasto</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-28">Ticket médio</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-28">Primeira compra</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-28">Última compra</th>
+                <th className="text-left px-2 py-2 font-semibold text-muted-foreground whitespace-nowrap w-28">Dias sem comprar</th>
               </tr>
             </thead>
             <tbody>
@@ -10188,20 +10188,20 @@ function RecurringCustomersPanel({
                 const staleDays = daysSince(customer.lastOrderAt);
                 return (
                   <tr key={customer.id} className={`border-b border-border last:border-0 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}>
-                    <td className="px-4 py-3 font-medium text-foreground">{customer.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{customer.email || "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{customer.phone || "—"}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2 font-medium text-foreground truncate" title={customer.name}>{customer.name}</td>
+                    <td className="px-2 py-2 text-muted-foreground truncate" title={customer.email || ""}>{customer.email || "—"}</td>
+                    <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{customer.phone || "—"}</td>
+                    <td className="px-2 py-2">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
                         <IconLucide name="Package" className="w-3 h-3" />
                         {customer.orderCount}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-foreground">{formatCurrency(Number(customer.totalSpent || 0))}</td>
-                    <td className="px-4 py-3 font-medium text-foreground">{formatCurrency(Number(customer.averageTicket || 0))}</td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateBR(customer.firstOrderAt)}</td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateBR(customer.lastOrderAt)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2 font-semibold text-foreground whitespace-nowrap">{formatCurrency(Number(customer.totalSpent || 0))}</td>
+                    <td className="px-2 py-2 font-medium text-foreground whitespace-nowrap">{formatCurrency(Number(customer.averageTicket || 0))}</td>
+                    <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDateBR(customer.firstOrderAt)}</td>
+                    <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDateBR(customer.lastOrderAt)}</td>
+                    <td className="px-2 py-2 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${staleDays >= 30 ? "bg-red-100 text-red-700" : staleDays >= 14 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
                         {staleDays} dia{staleDays === 1 ? "" : "s"}
                       </span>
