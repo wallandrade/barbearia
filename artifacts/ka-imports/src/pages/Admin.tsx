@@ -10126,6 +10126,14 @@ function RecurringCustomersPanel({
     return products.map((product) => `${product.quantity}x ${product.name}`).join(" · ");
   };
 
+  const openCustomerWhatsApp = (customer: RecurringCustomerRecord) => {
+    const phoneDigits = String(customer.phone || "").replace(/\D/g, "");
+    if (!phoneDigits) return;
+    const normalizedPhone = phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`;
+    const message = `Olá, ${customer.name}! Tudo bem? Vi aqui que você já comprou conosco antes e queria falar com você.`;
+    window.open(`https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`, "_blank");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -10210,7 +10218,23 @@ function RecurringCustomersPanel({
                   >
                     <td className="px-2 py-2 font-medium text-foreground truncate" title={customer.name}>{customer.name}</td>
                     <td className="px-2 py-2 text-muted-foreground truncate" title={customer.email || ""}>{customer.email || "—"}</td>
-                    <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{customer.phone || "—"}</td>
+                    <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">
+                      {customer.phone ? (
+                        <button
+                          type="button"
+                          className="text-emerald-700 hover:text-emerald-800 font-semibold hover:underline"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openCustomerWhatsApp(customer);
+                          }}
+                          title="Abrir WhatsApp"
+                        >
+                          {customer.phone}
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="px-2 py-2">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
                         <IconLucide name="Package" className="w-3 h-3" />
