@@ -41,7 +41,8 @@ export default function AdminLogin() {
         return;
       }
 
-      localStorage.setItem("adminToken", data.token);
+      sessionStorage.setItem("adminToken", data.token);
+      localStorage.removeItem("adminToken");
       toast.success("Login realizado com sucesso!");
       setLocation("/admin");
     } catch {

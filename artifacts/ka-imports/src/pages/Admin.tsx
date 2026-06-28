@@ -33,7 +33,7 @@ function getAdminUsername() {
 
 // Recupera o token do admin do localStorage
 function getToken() {
-  return localStorage.getItem("adminToken") || "";
+  return sessionStorage.getItem("adminToken") || localStorage.getItem("adminToken") || "";
 }
 
 // Retorna headers de autenticação para requisições admin
@@ -1457,6 +1457,7 @@ export default function Admin() {
     }
     sseRef.current?.close();
     sseUnauthorizedRef.current = true;
+    sessionStorage.removeItem("adminToken");
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminIsPrimary");
     localStorage.removeItem("adminUsername");
@@ -2449,6 +2450,7 @@ export default function Admin() {
   // -------------------------------------------------------------------------
   const handleLogout = async () => {
     try { await fetch(`${BASE}/api/admin/logout`, { method: "POST", headers: authHeaders(), credentials: "include" }); } catch { /* ignore */ }
+    sessionStorage.removeItem("adminToken");
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminIsPrimary");
     localStorage.removeItem("adminUsername");

@@ -2,16 +2,18 @@ const CUSTOMER_TOKEN_KEY = "customerToken";
 
 export function getCustomerToken(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem(CUSTOMER_TOKEN_KEY) || "";
+  return sessionStorage.getItem(CUSTOMER_TOKEN_KEY) || localStorage.getItem(CUSTOMER_TOKEN_KEY) || "";
 }
 
 export function saveCustomerToken(token: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(CUSTOMER_TOKEN_KEY, token);
+  sessionStorage.setItem(CUSTOMER_TOKEN_KEY, token);
+  localStorage.removeItem(CUSTOMER_TOKEN_KEY);
 }
 
 export function clearCustomerToken(): void {
   if (typeof window === "undefined") return;
+  sessionStorage.removeItem(CUSTOMER_TOKEN_KEY);
   localStorage.removeItem(CUSTOMER_TOKEN_KEY);
 }
 
