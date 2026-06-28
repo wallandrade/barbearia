@@ -2228,7 +2228,6 @@ export default function Admin() {
     const token = getToken();
     if (!token) return;
     sseUnauthorizedRef.current = false;
-    sseCookieMismatchNotifiedRef.current = false;
 
     const url = `${BASE}/api/admin/notifications?t=${Date.now()}`;
     const es = new EventSource(url, { withCredentials: true });
