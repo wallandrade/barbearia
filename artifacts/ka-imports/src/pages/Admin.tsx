@@ -2339,10 +2339,8 @@ export default function Admin() {
 
             if (bearerVerifyRes.ok) {
               sseUnauthorizedRef.current = true;
-              if (!sseCookieMismatchNotifiedRef.current) {
-                sseCookieMismatchNotifiedRef.current = true;
-                toast.error("Sessao de notificacoes expirou. Recarregue e faça login novamente para reativar o tempo real.");
-              }
+              sseCookieMismatchNotifiedRef.current = true;
+              console.warn("[SSE] Cookie auth expired; realtime updates paused until reload.");
               return;
             }
 
