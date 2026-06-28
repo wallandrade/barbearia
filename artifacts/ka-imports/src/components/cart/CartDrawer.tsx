@@ -57,8 +57,32 @@ export function CartDrawer() {
                       className="w-full h-full object-contain relative z-10"
                       onError={(e) => {
                         // fallback if image generation failed
-                        e.currentTarget.style.display = 'none';
-                        e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center text-primary/20"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>';
+                        const parent = e.currentTarget.parentElement;
+                        if (!parent) return;
+                        e.currentTarget.style.display = "none";
+                        const fallback = document.createElement("div");
+                        fallback.className = "w-full h-full flex items-center justify-center text-primary/20";
+                        const svgNS = "http://www.w3.org/2000/svg";
+                        const icon = document.createElementNS(svgNS, "svg");
+                        icon.setAttribute("width", "64");
+                        icon.setAttribute("height", "64");
+                        icon.setAttribute("viewBox", "0 0 24 24");
+                        icon.setAttribute("fill", "none");
+                        icon.setAttribute("stroke", "currentColor");
+                        icon.setAttribute("stroke-width", "2");
+                        icon.setAttribute("stroke-linecap", "round");
+                        icon.setAttribute("stroke-linejoin", "round");
+
+                        const pathOuter = document.createElementNS(svgNS, "path");
+                        pathOuter.setAttribute("d", "M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z");
+                        const pathTop = document.createElementNS(svgNS, "path");
+                        pathTop.setAttribute("d", "M3 6h18");
+                        const pathInner = document.createElementNS(svgNS, "path");
+                        pathInner.setAttribute("d", "M16 10a4 4 0 0 1-8 0");
+
+                        icon.append(pathOuter, pathTop, pathInner);
+                        fallback.appendChild(icon);
+                        parent.appendChild(fallback);
                       }}
                     />
                   </div>
