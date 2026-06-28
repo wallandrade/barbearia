@@ -47,14 +47,13 @@ function authHeaders() {
 // BASE URL para requisições (igual outros arquivos)
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const ORDER_WHATSAPP_GROUP_OPTIONS = ["grupo_1", "grupo_2", "grupo_3"];
+const ORDER_WHATSAPP_GROUP_OPTIONS = Array.from({ length: 10 }, (_, index) => `grupo_${index + 1}`);
 
 function whatsappGroupLabel(group: string | null | undefined): string {
   const raw = String(group || "").trim();
   if (!raw) return "Sem grupo";
-  if (raw === "grupo_1") return "Grupo 1";
-  if (raw === "grupo_2") return "Grupo 2";
-  if (raw === "grupo_3") return "Grupo 3";
+  const match = raw.match(/^grupo_(\d+)$/i);
+  if (match) return `Grupo ${match[1]}`;
   return raw.replace(/_/g, " ");
 }
 
