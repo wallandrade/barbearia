@@ -893,6 +893,13 @@ interface RecurringCustomerRecord {
   orderCount: number;
   totalSpent: number;
   averageTicket: number;
+  purchases: Array<{
+    id: string;
+    createdAt: string | null;
+    total: number;
+    status: string;
+    products: Array<{ id: string; name: string; quantity: number; price?: number }>;
+  }>;
 }
 
 interface SupportTicketRecord {
@@ -10098,6 +10105,8 @@ function RecurringCustomersPanel({
   setSearch: (v: string) => void;
   onRefresh: () => void;
 }) {
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+
   const filtered = customers.filter((customer) => {
     if (!search.trim()) return true;
     const query = search.toLowerCase();
@@ -10111,6 +10120,11 @@ function RecurringCustomersPanel({
   const totalSpent = filtered.reduce((sum, customer) => sum + Number(customer.totalSpent || 0), 0);
   const totalOrders = filtered.reduce((sum, customer) => sum + Number(customer.orderCount || 0), 0);
   const maxDaysWithoutPurchase = filtered.reduce((max, customer) => Math.max(max, daysSince(customer.lastOrderAt)), 0);
+
+  const formatPurchaseProducts = (products: Array<{ id: string; name: string; quantity: number; price?: number }>) => {
+    if (!products.length) return "Sem produtos informados";
+    return products.map((product) => `${product.quantity}x ${product.name}`).join(" · ");
+  };
 
   return (
     <div className="space-y-4">
@@ -10186,8 +10200,14 @@ function RecurringCustomersPanel({
             <tbody>
               {filtered.map((customer, index) => {
                 const staleDays = daysSince(customer.lastOrderAt);
+                const isExpanded = expandedCustomerId === customer.id;
                 return (
-                  <tr key={customer.id} className={`border-b border-border last:border-0 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}>
+                  <>
+                  <tr
+                    key={customer.id}
+                    className={`border-b border-border last:border-0 cursor-pointer hover:bg-primary/5 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}`}
+                    onClick={() => setExpandedCustomerId(isExpanded ? null : customer.id)}
+                  >
                     <td className="px-2 py-2 font-medium text-foreground truncate" title={customer.name}>{customer.name}</td>
                     <td className="px-2 py-2 text-muted-foreground truncate" title={customer.email || ""}>{customer.email || "—"}</td>
                     <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{customer.phone || "—"}</td>
@@ -10207,6 +10227,41 @@ function RecurringCustomersPanel({
                       </span>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="bg-slate-50/80 border-b border-border">
+                      <td colSpan={9} className="px-4 py-4">
+                        <div className="rounded-xl border border-border bg-white p-4">
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Produtos comprados</p>
+                              <p className="text-xs text-muted-foreground">{customer.purchases.length} pedido{customer.purchases.length === 1 ? "" : "s"} listado{customer.purchases.length === 1 ? "" : "s"} abaixo</p>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-primary hover:underline"
+                              onClick={(e) => { e.stopPropagation(); setExpandedCustomerId(null); }}
+                            >
+                              Fechar
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {customer.purchases.map((purchase) => (
+                              <div key={purchase.id} className="rounded-lg border border-border bg-slate-50 px-3 py-2">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                                  <p className="text-xs font-semibold text-foreground">Pedido #{purchase.id}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {purchase.createdAt ? formatDateBR(purchase.createdAt) : "Data indisponível"} · {formatCurrency(Number(purchase.total || 0))}
+                                  </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">{formatPurchaseProducts(purchase.products)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 );
               })}
             </tbody>

@@ -300,6 +300,17 @@ router.get("/admin/customers/recurring", requireAdminAuth, async (req, res) => {
 
     const customerKey = sql<string>`coalesce(nullif(lower(trim(${ordersTable.clientEmail})), ''), nullif(trim(${ordersTable.clientPhone}), ''), nullif(trim(${ordersTable.clientDocument}), ''))`;
 
+    const parseProducts = (raw: unknown): Array<{ id: string; name: string; quantity: number; price?: number }> => {
+      if (Array.isArray(raw)) return raw as Array<{ id: string; name: string; quantity: number; price?: number }>;
+      if (typeof raw !== "string" || !raw.trim()) return [];
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed as Array<{ id: string; name: string; quantity: number; price?: number }> : [];
+      } catch {
+        return [];
+      }
+    };
+
     const recurringCustomers = await db
       .select({
         id: customerKey.as("id"),
@@ -323,6 +334,39 @@ router.get("/admin/customers/recurring", requireAdminAuth, async (req, res) => {
       .having(sql`count(*) > 1`)
       .orderBy(asc(sql`max(${ordersTable.createdAt})`));
 
+    const recurringCustomerRows = await db
+      .select({
+        customerId: customerKey.as("customer_id"),
+        id: ordersTable.id,
+        createdAt: ordersTable.createdAt,
+        total: ordersTable.total,
+        products: ordersTable.products,
+        status: ordersTable.status,
+      })
+      .from(ordersTable)
+      .where(
+        and(
+          adminScope.hasGlobalAccess ? undefined : eq(ordersTable.sellerCode, adminScope.sellerCode!),
+          sql`${customerKey} <> ''`,
+        ),
+      );
+
+    const purchasesByCustomer = new Map<string, Array<{ id: string; createdAt: Date | null; total: number; status: string; products: Array<{ id: string; name: string; quantity: number; price?: number }> }>>();
+    for (const row of recurringCustomerRows) {
+      const customerId = String(row.customerId || "").trim();
+      if (!customerId) continue;
+      const purchase = {
+        id: String(row.id || ""),
+        createdAt: row.createdAt ?? null,
+        total: Number(row.total || 0),
+        status: String(row.status || ""),
+        products: parseProducts(row.products),
+      };
+      const current = purchasesByCustomer.get(customerId) || [];
+      current.push(purchase);
+      purchasesByCustomer.set(customerId, current);
+    }
+
     res.json({
       recurringCustomers: recurringCustomers.map((row) => ({
         id: String(row.id || ""),
@@ -334,6 +378,13 @@ router.get("/admin/customers/recurring", requireAdminAuth, async (req, res) => {
         orderCount: Number(row.orderCount || 0),
         totalSpent: Number(row.totalSpent || 0),
         averageTicket: Number(row.averageTicket || 0),
+        purchases: (purchasesByCustomer.get(String(row.id || "").trim()) || []).map((purchase) => ({
+          id: purchase.id,
+          createdAt: purchase.createdAt?.toISOString() ?? null,
+          total: purchase.total,
+          status: purchase.status,
+          products: purchase.products,
+        })),
       })),
     });
   } catch (err) {
