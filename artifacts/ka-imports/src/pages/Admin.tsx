@@ -8622,6 +8622,7 @@ function OrdersPanel({
                     <CheckCircle className="w-3.5 h-3.5" />{isCard ? "Marcar Pago" : "Marcar Pago"}
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                    type="button"
                     disabled={statusUpdating === order.id || order.status === "cancelled"}
                     onClick={() => {
                       if (order.status === "paid" || order.status === "completed") {
@@ -9089,6 +9090,7 @@ function OrdersPanel({
             <motion.div
               initial={{ opacity: 0, y: 16, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
+              onClick={(event) => event.stopPropagation()}
               className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden"
             >
               <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-slate-50 to-white">
@@ -9133,8 +9135,8 @@ function OrdersPanel({
               </div>
 
               <div className="px-5 py-4 border-t border-border bg-slate-50/60 flex items-center justify-end gap-2">
-                <Button variant="outline" onClick={closeAdminPasswordModal} disabled={adminPasswordSubmitting}>Cancelar</Button>
-                <Button className="gap-1.5" onClick={() => { void submitAdminPasswordModal(); }} disabled={adminPasswordSubmitting}>
+                <Button type="button" variant="outline" onClick={closeAdminPasswordModal} disabled={adminPasswordSubmitting}>Cancelar</Button>
+                <Button type="button" className="gap-1.5" onClick={() => { void submitAdminPasswordModal(); }} disabled={adminPasswordSubmitting}>
                   {adminPasswordSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                   Confirmar
                 </Button>
