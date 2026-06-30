@@ -1579,9 +1579,10 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
       return;
     }
 
-    const currentStatus = String(existing[0]?.status || "");
+    const currentStatus = String(existing[0]?.status || "").trim().toLowerCase();
+    const nextStatus = String(status || "").trim().toLowerCase();
     const wasAlreadyPaid = currentStatus === "paid" || currentStatus === "completed";
-    const isBeingPaid = status === "paid" || status === "completed";
+    const isBeingPaid = nextStatus === "paid" || nextStatus === "completed";
 
     if (wasAlreadyPaid && !isBeingPaid) {
       const providedPassword = String(adminPassword || "").trim();
@@ -1597,7 +1598,7 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
       console.warn("[SECURITY] Status rollback autorizado por senha", {
         orderId: id,
         fromStatus: currentStatus,
-        toStatus: status,
+        toStatus: nextStatus,
         admin: (req as any).adminSession?.username || "unknown",
       });
     }

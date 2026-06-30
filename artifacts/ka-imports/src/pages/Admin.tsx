@@ -398,6 +398,10 @@ function statusBadge(status: string) {
   );
 }
 
+
+function normalizeOrderStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
 async function copyText(text: string): Promise<"auto" | "manual"> {
   // First try async clipboard API (works in secure contexts and with permission).
   if (navigator.clipboard?.writeText) {
@@ -8617,15 +8621,16 @@ function OrdersPanel({
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <Button type="button" size="sm" variant="outline" className="gap-1.5 text-green-700 border-green-200 hover:bg-green-50"
-                    disabled={statusUpdating === order.id || order.status === "paid" || order.status === "completed"}
+                    disabled={statusUpdating === order.id || normalizeOrderStatus(order.status) === "paid" || normalizeOrderStatus(order.status) === "completed"}
                     onClick={() => isCard ? onOpenCardPaidModal(order.id) : updateOrderStatus(order.id, "paid")}>
                     <CheckCircle className="w-3.5 h-3.5" />{isCard ? "Marcar Pago" : "Marcar Pago"}
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
                     type="button"
-                    disabled={statusUpdating === order.id || order.status === "cancelled"}
+                    disabled={statusUpdating === order.id || normalizeOrderStatus(order.status) === "cancelled"}
                     onClick={() => {
-                      if (order.status === "paid" || order.status === "completed") {
+                      const currentStatus = normalizeOrderStatus(order.status);
+                      if (currentStatus === "paid" || currentStatus === "completed") {
                         openAdminPasswordModal(
                           "Confirmar desfazer status pago",
                           "Para alterar um pedido já pago/concluído, confirme sua senha de admin.",
