@@ -7573,16 +7573,49 @@ function OrdersPanel({
   };
 
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
+  const [adminPasswordModalOpen, setAdminPasswordModalOpen] = useState(false);
+  const [adminPasswordModalTitle, setAdminPasswordModalTitle] = useState("Confirmar ação sensível");
+  const [adminPasswordModalDescription, setAdminPasswordModalDescription] = useState("");
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [adminPasswordVisible, setAdminPasswordVisible] = useState(false);
+  const [adminPasswordSubmitting, setAdminPasswordSubmitting] = useState(false);
+  const adminPasswordActionRef = useRef<((password: string) => Promise<void>) | null>(null);
 
-  const askAdminPasswordForSensitiveAction = (actionLabel: string): string | null => {
-    const answer = window.prompt(`Digite sua senha de admin para ${actionLabel}:`);
-    if (answer === null) return null;
-    const password = answer.trim();
+  const closeAdminPasswordModal = () => {
+    if (adminPasswordSubmitting) return;
+    setAdminPasswordModalOpen(false);
+    setAdminPasswordInput("");
+    setAdminPasswordVisible(false);
+    adminPasswordActionRef.current = null;
+  };
+
+  const openAdminPasswordModal = (title: string, description: string, onConfirm: (password: string) => Promise<void>) => {
+    setAdminPasswordModalTitle(title);
+    setAdminPasswordModalDescription(description);
+    setAdminPasswordInput("");
+    setAdminPasswordVisible(false);
+    adminPasswordActionRef.current = onConfirm;
+    setAdminPasswordModalOpen(true);
+  };
+
+  const submitAdminPasswordModal = async () => {
+    const password = adminPasswordInput.trim();
     if (!password) {
       toast.error("Senha do admin é obrigatória para esta ação.");
-      return null;
+      return;
     }
-    return password;
+    const action = adminPasswordActionRef.current;
+    if (!action) {
+      closeAdminPasswordModal();
+      return;
+    }
+    setAdminPasswordSubmitting(true);
+    try {
+      await action(password);
+      closeAdminPasswordModal();
+    } finally {
+      setAdminPasswordSubmitting(false);
+    }
   };
   const verifyOrderStock = (orderId: string, balancesSnapshot: InventoryBalanceRecord[] = inventoryBalances): { hasStock: boolean; message: string; missingItems: string[] } => {
     // Only check stock when marking as enviado (novoValor = true)
@@ -7717,14 +7750,14 @@ function OrdersPanel({
     return { hasStock: true, message: "", missingItems: [] };
   };
 
-  const toggleEnviado = async (orderId: string) => {
+  const executeToggleEnviado = async (orderId: string, adminPassword?: string) => {
+    const novoValor = !enviados[orderId];
     if (!orderId || typeof orderId !== "string" || orderId.length === 0) {
       toast.error("ID do pedido inválido!");
       return;
     }
 
     // Verify stock before marking as enviado
-    const novoValor = !enviados[orderId];
     if (novoValor) {
       // Only check stock when marking as enviado (not when unmarking)
       const stockCheck = verifyOrderStock(orderId, trackingInventoryBalances ?? inventoryBalances);
@@ -7732,13 +7765,6 @@ function OrdersPanel({
         toast.error(stockCheck.message);
         return;
       }
-    }
-
-    let adminPassword: string | undefined;
-    if (!novoValor && enviados[orderId]) {
-      const confirmedPassword = askAdminPasswordForSensitiveAction("desfazer envio");
-      if (!confirmedPassword) return;
-      adminPassword = confirmedPassword;
     }
 
     setEnviando(prev => ({ ...prev, [orderId]: true }));
@@ -7770,6 +7796,21 @@ function OrdersPanel({
     } finally {
       setEnviando(prev => ({ ...prev, [orderId]: false }));
     }
+  };
+
+  const toggleEnviado = async (orderId: string) => {
+    const novoValor = !enviados[orderId];
+    if (!novoValor && enviados[orderId]) {
+      openAdminPasswordModal(
+        "Confirmar desmarcar envio",
+        "Para desfazer o status de enviado, confirme sua senha de admin.",
+        async (password) => {
+          await executeToggleEnviado(orderId, password);
+        },
+      );
+      return;
+    }
+    await executeToggleEnviado(orderId);
   };
 
   const fileToDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -8582,14 +8623,18 @@ function OrdersPanel({
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
                     disabled={statusUpdating === order.id || order.status === "cancelled"}
-                    onClick={async () => {
-                      let adminPassword: string | undefined;
+                    onClick={() => {
                       if (order.status === "paid" || order.status === "completed") {
-                        const confirmedPassword = askAdminPasswordForSensitiveAction("desfazer status pago");
-                        if (!confirmedPassword) return;
-                        adminPassword = confirmedPassword;
+                        openAdminPasswordModal(
+                          "Confirmar desfazer status pago",
+                          "Para alterar um pedido já pago/concluído, confirme sua senha de admin.",
+                          async (password) => {
+                            await updateOrderStatus(order.id, "cancelled", undefined, { adminPassword: password });
+                          },
+                        );
+                        return;
                       }
-                      await updateOrderStatus(order.id, "cancelled", undefined, adminPassword ? { adminPassword } : undefined);
+                      void updateOrderStatus(order.id, "cancelled");
                     }}>
                     <XCircle className="w-3.5 h-3.5" />Cancelar
                   </Button>
@@ -9037,6 +9082,65 @@ function OrdersPanel({
               </div>
             </motion.div>
           </motion.div>
+        )}
+
+        {adminPasswordModalOpen && (
+          <div className="fixed inset-0 z-[120] bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-slate-50 to-white">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">{adminPasswordModalTitle}</h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">{adminPasswordModalDescription}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                <label className="text-sm font-medium text-foreground block">Senha do admin</label>
+                <div className="relative">
+                  <input
+                    type={adminPasswordVisible ? "text" : "password"}
+                    value={adminPasswordInput}
+                    onChange={(event) => setAdminPasswordInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void submitAdminPasswordModal();
+                      }
+                    }}
+                    autoFocus
+                    placeholder="Digite sua senha"
+                    className="w-full h-11 rounded-xl border-2 border-border focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none px-3 pr-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAdminPasswordVisible((value) => !value)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground"
+                    aria-label={adminPasswordVisible ? "Ocultar senha" : "Mostrar senha"}
+                  >
+                    {adminPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">Essa confirmação é exigida para evitar alterações críticas sem autorização.</p>
+              </div>
+
+              <div className="px-5 py-4 border-t border-border bg-slate-50/60 flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={closeAdminPasswordModal} disabled={adminPasswordSubmitting}>Cancelar</Button>
+                <Button className="gap-1.5" onClick={() => { void submitAdminPasswordModal(); }} disabled={adminPasswordSubmitting}>
+                  {adminPasswordSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  Confirmar
+                </Button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
