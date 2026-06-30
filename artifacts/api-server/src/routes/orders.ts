@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable } from "@workspace/db";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
-import { getAdminScope, requireAdminAuth } from "./admin-auth";
+import { getAdminScope, requireAdminAuth, verifyCurrentAdminPassword } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { evaluateCouponForProducts, incrementCouponUse } from "./coupons";
 import {
@@ -1550,11 +1550,12 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { status, cardInstallmentsActual, cardInstallmentValue, cardTotalActual } = req.body as {
+    const { status, cardInstallmentsActual, cardInstallmentValue, cardTotalActual, adminPassword } = req.body as {
       status: string;
       cardInstallmentsActual?: number;
       cardInstallmentValue?: number;
       cardTotalActual?: number;
+      adminPassword?: string;
     };
 
     const allowed = ["pending", "awaiting_payment", "paid", "cancelled", "completed"];
@@ -1568,20 +1569,41 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
     if (cardInstallmentValue !== undefined) updates.cardInstallmentValue = String(cardInstallmentValue);
     if (cardTotalActual !== undefined) updates.cardTotalActual = String(cardTotalActual);
 
-    // Fetch coupon before updating (to increment usage on manual paid confirmation)
+    const existing = await db
+      .select({ status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const currentStatus = String(existing[0]?.status || "");
+    const wasAlreadyPaid = currentStatus === "paid" || currentStatus === "completed";
     const isBeingPaid = status === "paid" || status === "completed";
-    let couponCodeToIncrement: string | null = null;
-    if (isBeingPaid) {
-      const existing = await db
-        .select({ status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
-        .from(ordersTable)
-        .where(buildAdminOrderWhere(id, adminScope))
-        .limit(1);
-      if (!existing[0]) {
-        res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+
+    if (wasAlreadyPaid && !isBeingPaid) {
+      const providedPassword = String(adminPassword || "").trim();
+      if (!providedPassword) {
+        res.status(403).json({ error: "PASSWORD_REQUIRED", message: "Senha do admin é obrigatória para desfazer status pago." });
         return;
       }
-      const wasAlreadyPaid = existing[0]?.status === "paid" || existing[0]?.status === "completed";
+      const passwordOk = await verifyCurrentAdminPassword(req, providedPassword);
+      if (!passwordOk) {
+        res.status(403).json({ error: "INVALID_ADMIN_PASSWORD", message: "Senha do admin inválida." });
+        return;
+      }
+      console.warn("[SECURITY] Status rollback autorizado por senha", {
+        orderId: id,
+        fromStatus: currentStatus,
+        toStatus: status,
+        admin: (req as any).adminSession?.username || "unknown",
+      });
+    }
+
+    let couponCodeToIncrement: string | null = null;
+    if (isBeingPaid) {
       if (!wasAlreadyPaid && existing[0]?.couponCode) {
         couponCodeToIncrement = existing[0].couponCode;
       }
@@ -2196,7 +2218,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { enviado } = req.body as { enviado: boolean };
+    const { enviado, adminPassword } = req.body as { enviado: boolean; adminPassword?: string };
     if (typeof enviado !== "boolean") {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'enviado' obrigatório e deve ser boolean." });
       return;
@@ -2218,6 +2240,23 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     const wasEnviado = !!order.enviado;
+    if (wasEnviado && !enviado) {
+      const providedPassword = String(adminPassword || "").trim();
+      if (!providedPassword) {
+        res.status(403).json({ error: "PASSWORD_REQUIRED", message: "Senha do admin é obrigatória para desfazer envio." });
+        return;
+      }
+      const passwordOk = await verifyCurrentAdminPassword(req, providedPassword);
+      if (!passwordOk) {
+        res.status(403).json({ error: "INVALID_ADMIN_PASSWORD", message: "Senha do admin inválida." });
+        return;
+      }
+      console.warn("[SECURITY] Envio rollback autorizado por senha", {
+        orderId: id,
+        admin: (req as any).adminSession?.username || "unknown",
+      });
+    }
+
     const shouldSkipReturnToStock = !enviado && wasEnviado
       ? await db
           .select({ id: reshipmentsTable.id })

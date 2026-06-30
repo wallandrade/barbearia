@@ -2459,13 +2459,24 @@ export default function Admin() {
     setLocation("/admin/login");
   };
 
-  const updateOrderStatus = async (id: string, status: string, cardActuals?: { cardInstallmentsActual?: number; cardInstallmentValue?: number; cardTotalActual?: number }) => {
+  const updateOrderStatus = async (
+    id: string,
+    status: string,
+    cardActuals?: { cardInstallmentsActual?: number; cardInstallmentValue?: number; cardTotalActual?: number },
+    opts?: { adminPassword?: string },
+  ) => {
     setStatusUpdating(id);
     try {
       const res = await fetch(`${BASE}/api/admin/orders/${id}/status`, {
-        method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status, ...cardActuals }),
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ status, ...cardActuals, ...(opts?.adminPassword ? { adminPassword: opts.adminPassword } : {}) }),
       });
-      if (!res.ok) { toast.error("Erro ao atualizar status."); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { message?: string }));
+        toast.error(data?.message || "Erro ao atualizar status.");
+        return;
+      }
       toast.success("Status atualizado!");
       setOrders((prev) => prev.map((o) => o.id === id ? { ...o, status, ...cardActuals } : o));
       if (status === "completed") setProofModal(id);
@@ -7265,7 +7276,12 @@ function OrdersPanel({
   statusUpdating: string | null;
   expandedOrder: string | null;
   setExpandedOrder: (id: string | null) => void;
-  updateOrderStatus: (id: string, status: string) => void;
+  updateOrderStatus: (
+    id: string,
+    status: string,
+    cardActuals?: { cardInstallmentsActual?: number; cardInstallmentValue?: number; cardTotalActual?: number },
+    opts?: { adminPassword?: string },
+  ) => Promise<void>;
   setProofModal: (id: string) => void;
   setProofViewer: (url: string) => void;
   openWhatsApp: (order: AdminOrder) => void;
@@ -7557,6 +7573,17 @@ function OrdersPanel({
   };
 
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
+
+  const askAdminPasswordForSensitiveAction = (actionLabel: string): string | null => {
+    const answer = window.prompt(`Digite sua senha de admin para ${actionLabel}:`);
+    if (answer === null) return null;
+    const password = answer.trim();
+    if (!password) {
+      toast.error("Senha do admin é obrigatória para esta ação.");
+      return null;
+    }
+    return password;
+  };
   const verifyOrderStock = (orderId: string, balancesSnapshot: InventoryBalanceRecord[] = inventoryBalances): { hasStock: boolean; message: string; missingItems: string[] } => {
     // Only check stock when marking as enviado (novoValor = true)
     const order = ordersLookup.find(o => o.id === orderId);
@@ -7707,6 +7734,13 @@ function OrdersPanel({
       }
     }
 
+    let adminPassword: string | undefined;
+    if (!novoValor && enviados[orderId]) {
+      const confirmedPassword = askAdminPasswordForSensitiveAction("desfazer envio");
+      if (!confirmedPassword) return;
+      adminPassword = confirmedPassword;
+    }
+
     setEnviando(prev => ({ ...prev, [orderId]: true }));
     try {
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/enviado`, {
@@ -7715,7 +7749,7 @@ function OrdersPanel({
           ...authHeaders(),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ enviado: novoValor }),
+        body: JSON.stringify({ enviado: novoValor, ...(adminPassword ? { adminPassword } : {}) }),
       });
       if (res.status === 404) {
         toast.error("Pedido não encontrado no banco de dados!");
@@ -8548,7 +8582,15 @@ function OrdersPanel({
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
                     disabled={statusUpdating === order.id || order.status === "cancelled"}
-                    onClick={() => updateOrderStatus(order.id, "cancelled")}>
+                    onClick={async () => {
+                      let adminPassword: string | undefined;
+                      if (order.status === "paid" || order.status === "completed") {
+                        const confirmedPassword = askAdminPasswordForSensitiveAction("desfazer status pago");
+                        if (!confirmedPassword) return;
+                        adminPassword = confirmedPassword;
+                      }
+                      await updateOrderStatus(order.id, "cancelled", undefined, adminPassword ? { adminPassword } : undefined);
+                    }}>
                     <XCircle className="w-3.5 h-3.5" />Cancelar
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50"

@@ -139,6 +139,32 @@ export function getAdminScope(req: Request): AdminScope | null {
   };
 }
 
+export async function verifyCurrentAdminPassword(req: Request, password: string): Promise<boolean> {
+  const plain = String(password || "");
+  if (!plain) return false;
+
+  const session = (req as any).adminSession as { username?: string } | undefined;
+  const sessionUsername = String(session?.username || "").trim().toLowerCase();
+  if (!sessionUsername) return false;
+
+  let user = (
+    await db
+      .select()
+      .from(adminUsersTable)
+      .where(eq(adminUsersTable.username, sessionUsername))
+      .limit(1)
+  )[0];
+
+  if (!user) {
+    const allUsers = await db.select().from(adminUsersTable);
+    user = allUsers.find((u) => u.username.toLowerCase() === sessionUsername);
+  }
+
+  if (!user) return false;
+  const hash = hashPassword(plain, user.salt);
+  return hash === user.passwordHash;
+}
+
 // Utilitário para limpar sessões expiradas do banco
 async function purgeExpiredSessions() {
   const now = new Date();
