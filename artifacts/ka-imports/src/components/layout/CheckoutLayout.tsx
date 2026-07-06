@@ -28,8 +28,8 @@ export function CheckoutLayout({ children }: { children: ReactNode }) {
             </Link>
             <div className="flex-1 flex items-center justify-center gap-2">
               {logo && (
-                <div className="overflow-hidden rounded-full h-8 w-8 border border-primary/10">
-                  <img src={logo} alt="Clayton" className="w-full h-full object-cover" />
+                <div className="overflow-hidden rounded-md h-8 w-14 border border-primary/10">
+                  <img src={logo} alt="Clayton" className="w-full h-full object-contain" />
                 </div>
               )}
               <span className="font-display font-bold text-lg tracking-tight text-primary">Clayton</span>
