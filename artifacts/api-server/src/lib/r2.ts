@@ -1,22 +1,40 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import crypto from "crypto";
 
-const R2_ACCOUNT_ID = String(process.env.CLOUDFLARE_R2_ACCOUNT_ID || "").trim();
+const R2_ACCOUNT_ID_RAW = String(process.env.CLOUDFLARE_R2_ACCOUNT_ID || "").trim();
 const R2_ACCESS_KEY_ID = String(process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || "").trim();
 const R2_SECRET_ACCESS_KEY = String(process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || "").trim();
 const R2_BUCKET_NAME = String(process.env.CLOUDFLARE_R2_BUCKET_NAME || "").trim();
 const R2_PUBLIC_BASE_URL = String(process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL || "").trim().replace(/\/$/, "");
+const R2_S3_ENDPOINT = String(process.env.CLOUDFLARE_R2_S3_ENDPOINT || "").trim().replace(/\/$/, "");
+
+function normalizeR2AccountId(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  // Accept common misconfigurations, like full endpoint or URL with path.
+  const withoutProtocol = raw.replace(/^https?:\/\//i, "");
+  const hostname = withoutProtocol.split("/")[0] || "";
+  const fromEndpoint = hostname.match(/^([a-z0-9]+)\.r2\.cloudflarestorage\.com$/i)?.[1];
+  if (fromEndpoint) return fromEndpoint;
+
+  return raw;
+}
+
+const R2_ACCOUNT_ID = normalizeR2AccountId(R2_ACCOUNT_ID_RAW);
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 function getR2Client(): S3Client {
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_BASE_URL) {
+  if ((!R2_ACCOUNT_ID && !R2_S3_ENDPOINT) || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_BASE_URL) {
     throw new Error("CLOUDFLARE_R2_NOT_CONFIGURED");
   }
 
+  const endpoint = R2_S3_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+
   return new S3Client({
     region: "auto",
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint,
     credentials: {
       accessKeyId: R2_ACCESS_KEY_ID,
       secretAccessKey: R2_SECRET_ACCESS_KEY,
@@ -40,12 +58,12 @@ function getExtensionFromMimeType(mimeType: string): string {
 }
 
 export function isR2Configured(): boolean {
-  return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME && R2_PUBLIC_BASE_URL);
+  return !!((R2_ACCOUNT_ID || R2_S3_ENDPOINT) && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME && R2_PUBLIC_BASE_URL);
 }
 
 export function getR2MissingConfig(): string[] {
   const missing: string[] = [];
-  if (!R2_ACCOUNT_ID) missing.push("CLOUDFLARE_R2_ACCOUNT_ID");
+  if (!R2_ACCOUNT_ID && !R2_S3_ENDPOINT) missing.push("CLOUDFLARE_R2_ACCOUNT_ID ou CLOUDFLARE_R2_S3_ENDPOINT");
   if (!R2_ACCESS_KEY_ID) missing.push("CLOUDFLARE_R2_ACCESS_KEY_ID");
   if (!R2_SECRET_ACCESS_KEY) missing.push("CLOUDFLARE_R2_SECRET_ACCESS_KEY");
   if (!R2_BUCKET_NAME) missing.push("CLOUDFLARE_R2_BUCKET_NAME");
