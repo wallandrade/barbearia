@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import router from "./routes";
@@ -562,12 +562,13 @@ app.get("/health", (req, res) => {
 app.use("/api", router);
 
 // Middleware global de tratamento de erros
-app.use((err, req, res, next) => {
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const typedError = err as { status?: number; message?: string; stack?: string };
   console.error("[GLOBAL ERROR]", err);
-  res.status(err.status || 500).json({
+  res.status(typedError.status || 500).json({
     error: true,
-    message: err.message || "Internal Server Error",
-    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    message: typedError.message || "Internal Server Error",
+    stack: process.env.NODE_ENV === "development" ? typedError.stack : undefined,
   });
 });
 
