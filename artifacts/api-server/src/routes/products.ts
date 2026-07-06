@@ -6,6 +6,7 @@ import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadProductImageToR2 } from "../lib/r2";
 
 const router: IRouter = Router();
+const ALLOW_INLINE_IMAGE_FALLBACK = String(process.env.ALLOW_INLINE_IMAGE_FALLBACK || "true").toLowerCase() === "true";
 
 type BulkDiscountTierInput = {
   minQty: number;
@@ -212,7 +213,15 @@ router.post("/admin/products/upload-image", requirePrimaryAdmin, async (req, res
       return;
     }
 
-    if (!isR2Configured()) {
+    let imageUrl = imageData;
+    if (isR2Configured()) {
+      try {
+        imageUrl = await uploadProductImageToR2({ dataUrl: imageData, productId });
+      } catch (err) {
+        if (!ALLOW_INLINE_IMAGE_FALLBACK) throw err;
+        console.warn("[Products] R2 upload falhou, usando fallback inline.", err);
+      }
+    } else if (!ALLOW_INLINE_IMAGE_FALLBACK) {
       const missing = getR2MissingConfig();
       res.status(503).json({
         error: "R2_NOT_CONFIGURED",
@@ -222,7 +231,6 @@ router.post("/admin/products/upload-image", requirePrimaryAdmin, async (req, res
       return;
     }
 
-    const imageUrl = await uploadProductImageToR2({ dataUrl: imageData, productId });
     res.status(201).json({ imageUrl });
   } catch (err) {
     console.error("Upload product image error:", err);

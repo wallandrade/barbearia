@@ -38,6 +38,9 @@ const IMAGE_SETTING_KEYS = new Set([
   "catalog_banner_mobile",
 ]);
 
+const ALLOW_INLINE_IMAGE_FALLBACK = String(process.env.ALLOW_INLINE_IMAGE_FALLBACK || "true").toLowerCase() === "true";
+const SITE_SETTINGS_TEXT_LIMIT_BYTES = 64000;
+
 /** GET /api/settings — public, returns only safe display keys */
 router.get("/settings", async (_req, res) => {
   try {
@@ -80,15 +83,35 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
     } else {
       let storedValue = value;
       if (IMAGE_SETTING_KEYS.has(key) && value.startsWith("data:image/")) {
-        if (!isR2Configured()) {
-          res.status(503).json({
-            error: "R2_NOT_CONFIGURED",
-            message: "Cloudflare R2 não está configurado no servidor.",
-            missing: getR2MissingConfig(),
+        if (isR2Configured()) {
+          try {
+            storedValue = await uploadSiteSettingImageToR2({ dataUrl: value, settingKey: key });
+          } catch (err) {
+            if (!ALLOW_INLINE_IMAGE_FALLBACK) {
+              throw err;
+            }
+            console.warn("[Settings] R2 upload falhou, usando fallback inline.", err);
+            storedValue = value;
+          }
+        } else {
+          if (!ALLOW_INLINE_IMAGE_FALLBACK) {
+            res.status(503).json({
+              error: "R2_NOT_CONFIGURED",
+              message: "Cloudflare R2 não está configurado no servidor.",
+              missing: getR2MissingConfig(),
+            });
+            return;
+          }
+          storedValue = value;
+        }
+
+        if (Buffer.byteLength(storedValue, "utf8") > SITE_SETTINGS_TEXT_LIMIT_BYTES) {
+          res.status(413).json({
+            error: "IMAGE_TOO_LARGE_INLINE",
+            message: "Imagem muito grande para salvar sem R2. Comprima a imagem ou ajuste o R2.",
           });
           return;
         }
-        storedValue = await uploadSiteSettingImageToR2({ dataUrl: value, settingKey: key });
       }
       await db
         .insert(siteSettingsTable)
