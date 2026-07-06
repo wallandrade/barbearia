@@ -305,7 +305,7 @@ function PaymentLinkInner() {
   // =========================================================================
   if (paid) {
     const waMsg =
-      `✅ *Pagamento PIX Confirmado — KA Imports*\n\n` +
+      `✅ *Pagamento PIX Confirmado — Clayton*\n\n` +
       `*Nome:* ${form.name}\n` +
       `*CPF:* ${form.document}\n` +
       `*Telefone:* ${form.phone}\n` +

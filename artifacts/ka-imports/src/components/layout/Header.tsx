@@ -330,7 +330,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                   {logo ? (
                     <img
                       src={logo}
-                      alt="KA Imports Logo"
+                      alt="Clayton Logo"
                       loading="eager"
                       fetchPriority="high"
                       className="w-full h-full object-cover"
@@ -338,7 +338,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                   ) : null}
                 </div>
                 <span className="font-display font-bold text-xl tracking-tight text-primary hidden sm:block">
-                  KA IMPORTS
+                  Clayton
                 </span>
               </Link>
             </div>

@@ -29,10 +29,10 @@ export function CheckoutLayout({ children }: { children: ReactNode }) {
             <div className="flex-1 flex items-center justify-center gap-2">
               {logo && (
                 <div className="overflow-hidden rounded-full h-8 w-8 border border-primary/10">
-                  <img src={logo} alt="KA Imports" className="w-full h-full object-cover" />
+                  <img src={logo} alt="Clayton" className="w-full h-full object-cover" />
                 </div>
               )}
-              <span className="font-display font-bold text-lg tracking-tight text-primary">KA IMPORTS</span>
+              <span className="font-display font-bold text-lg tracking-tight text-primary">Clayton</span>
             </div>
             <div className="w-16" />
           </div>

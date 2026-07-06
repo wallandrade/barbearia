@@ -260,14 +260,14 @@ export default function Home() {
               {banners["banner_desktop"] ? (
                 <img
                   src={banners["banner_desktop"]}
-                  alt="KA Imports Premium Banner"
+                  alt="Clayton Premium Banner"
                   fetchPriority="high"
                   className="block w-full h-[180px] sm:h-[260px] md:h-[380px] object-cover object-center"
                 />
               ) : banners["banner_mobile"] ? (
                 <img
                   src={banners["banner_mobile"]}
-                  alt="KA Imports Banner"
+                  alt="Clayton Banner"
                   fetchPriority="high"
                   className="block w-full h-[180px] sm:h-[260px] md:h-[380px] object-cover object-center"
                 />

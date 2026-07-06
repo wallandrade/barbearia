@@ -60,7 +60,7 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <span className="font-bold text-xl text-primary">KA IMPORTS</span>
+              <span className="font-bold text-xl text-primary">Clayton</span>
             </div>
             <p className="text-muted-foreground text-sm">
               A sua loja de importados com os melhores preços e garantia de qualidade.
@@ -101,7 +101,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} KA Imports - Todos os direitos reservados</p>
+          <p>© {new Date().getFullYear()} Clayton - Todos os direitos reservados</p>
         </div>
       </div>
     </footer>

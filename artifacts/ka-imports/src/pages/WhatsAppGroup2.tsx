@@ -16,7 +16,7 @@ export default function WhatsAppGroup2() {
 
           {/* Title */}
           <div>
-            <h1 className="text-3xl font-bold text-white mb-4">Grupo Ka Imports</h1>
+            <h1 className="text-3xl font-bold text-white mb-4">Grupo Clayton</h1>
             <p className="text-slate-300 text-sm leading-relaxed">
               Clique no botão abaixo para ser redirecionado(a) imediatamente para nosso grupo exclusivo no WhatsApp.
             </p>
@@ -30,7 +30,7 @@ export default function WhatsAppGroup2() {
             className="inline-block w-full"
           >
             <button className="w-full bg-gradient-to-r from-green-400 to-green-500 hover:from-green-500 hover:to-green-600 text-white font-bold py-4 px-6 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg shadow-green-500/30 hover:shadow-green-500/50">
-              ENTRAR NO GRUPO KA IMPORTS
+              ENTRAR NO GRUPO Clayton
             </button>
           </a>
 

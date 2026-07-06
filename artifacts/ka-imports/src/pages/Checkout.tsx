@@ -1302,7 +1302,7 @@ export default function Checkout() {
       ].filter(Boolean).join(", ");
 
       const message =
-        `💳 *Pedido via Cartão — KA Imports*\n\n` +
+        `💳 *Pedido via Cartão — Clayton*\n\n` +
         `*Nº do Pedido:* ${order.id}\n` +
         `*Cliente:* ${data.name}\n` +
         `*CPF:* ${data.document}\n` +
