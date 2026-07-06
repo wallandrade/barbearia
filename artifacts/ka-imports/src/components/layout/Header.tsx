@@ -326,14 +326,14 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                 </button>
               )}
               <Link href={sellerHomeHref} className="flex items-center gap-2 group cursor-pointer">
-                <div className="overflow-hidden rounded-md h-9 w-14 md:h-10 md:w-16 border-2 border-primary/10 group-hover:border-primary/30 transition-colors bg-muted/30 flex items-center justify-center shrink-0">
+                <div className="h-9 md:h-10 max-w-[160px] border border-primary/10 group-hover:border-primary/30 transition-colors bg-muted/30 flex items-center justify-center shrink-0 px-1 rounded-sm">
                   {logo ? (
                     <img
                       src={logo}
                       alt="Clayton Logo"
                       loading="eager"
                       fetchPriority="high"
-                      className="w-full h-full object-contain"
+                      className="h-full w-auto object-contain"
                     />
                   ) : null}
                 </div>
