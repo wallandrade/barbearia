@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://oficialKaimports-production.up.railway.app/api/:path*"
+      "destination": "https://workspaceapi-server-production-8c03.up.railway.app/api/:path*"
     },
     {
       "source": "/((?!api/|assets/|favicon.ico|robots.txt|sitemap.xml|sw.js|manifest.webmanifest).*)",
