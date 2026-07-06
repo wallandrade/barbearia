@@ -35,9 +35,14 @@ function getAllowedOrigins(): Set<string> {
 
 const allowedOrigins = getAllowedOrigins();
 
+function isProjectVercelOrigin(origin: string): boolean {
+  return /^https:\/\/barbearia-ka-imports(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
+}
+
 function isOriginAllowed(origin?: string | null): boolean {
   if (!origin) return true;
-  return allowedOrigins.has(normalizeOrigin(origin));
+  const normalized = normalizeOrigin(origin);
+  return allowedOrigins.has(normalized) || isProjectVercelOrigin(normalized);
 }
 
 function getRefererOrigin(referer?: string | null): string | null {
