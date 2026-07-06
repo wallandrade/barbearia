@@ -11,7 +11,7 @@ type BulkDiscountTierInput = {
   minQty: number;
   maxQty: number | null;
   unitPrice: number;
-  label?: string | null;
+  label: string | null;
 };
 
 type ProductVariantGroupInput = {
