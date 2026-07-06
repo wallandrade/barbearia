@@ -19,12 +19,10 @@ interface ProductSuggestion {
 }
 
 function usePublicSiteSettings() {
-  const [settings, setSettings] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem("siteSettings") || "{}"); } catch { return {}; }
-  });
+  const [settings, setSettings] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    fetch(`${BASE}/api/settings`)
+    fetch(`${BASE}/api/settings`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data: Record<string, string>) => {
         localStorage.setItem("siteSettings", JSON.stringify(data));

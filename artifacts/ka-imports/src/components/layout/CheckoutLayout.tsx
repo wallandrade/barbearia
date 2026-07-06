@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import { Footer } from "./Footer";
@@ -6,12 +6,21 @@ import { Footer } from "./Footer";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function useSiteLogo() {
-  try {
-    const cached = JSON.parse(localStorage.getItem("siteSettings") || "{}");
-    return cached.logo ?? null;
-  } catch {
-    return null;
-  }
+  const [logo, setLogo] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE}/api/settings`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data: Record<string, string>) => {
+        localStorage.setItem("siteSettings", JSON.stringify(data));
+        setLogo(data?.logo ?? null);
+      })
+      .catch(() => {
+        setLogo(null);
+      });
+  }, []);
+
+  return logo;
 }
 
 export function CheckoutLayout({ children }: { children: ReactNode }) {
