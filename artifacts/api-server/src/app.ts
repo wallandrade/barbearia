@@ -8,6 +8,7 @@ import crypto from "crypto";
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://ka-imports.com",
   "https://www.ka-imports.com",
+  "https://barbearia-ka-imports.vercel.app",
 ];
 
 const SECURITY_ORIGIN_ENFORCE = String(process.env.SECURITY_ORIGIN_ENFORCE || "false").toLowerCase() === "true";
