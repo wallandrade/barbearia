@@ -1,4 +1,4 @@
-// KA Imports Service Worker — notifications only
+// Clayton Service Worker — notifications only
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
@@ -6,7 +6,7 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SHOW_NOTIFICATION") {
     const { title, body, icon } = event.data;
     event.waitUntil(
-      self.registration.showNotification(title || "KA Imports", {
+      self.registration.showNotification(title || "Clayton", {
         body: body || "",
         icon: icon || "/favicon.svg",
         badge: "/favicon.svg",

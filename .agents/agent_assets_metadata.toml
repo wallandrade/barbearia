@@ -5,10 +5,10 @@ generated = []
 id = "cc-glaMP-e_pMEAVxKq9d"
 uri = "file://ka-imports-site.zip"
 type = "unspecified"
-title = "KA Imports — Código-fonte completo (atualizado)"
+title = "Clayton — Código-fonte completo (atualizado)"
 
 [[outputs]]
 id = "uL3cNZ3wsh-wzU9xhwPBF"
 uri = "file://ka-imports-full.zip"
 type = "unspecified"
-title = "KA Imports — Projeto completo (51 MB, sem node_modules)"
+title = "Clayton — Projeto completo (51 MB, sem node_modules)"

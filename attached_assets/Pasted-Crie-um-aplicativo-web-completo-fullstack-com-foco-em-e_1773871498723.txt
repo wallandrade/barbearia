@@ -2,7 +2,7 @@ Crie um aplicativo web completo (fullstack) com foco em e-commerce, com design m
 
 🎨 IDENTIDADE VISUAL
 
-Usar a logo fornecida (KA Imports)
+Usar a logo fornecida (Clayton)
 
 Fundo: branco
 
@@ -259,7 +259,7 @@ Simples:
 
 Texto:
 
-© KA Imports - Todos os direitos reservados
+© Clayton - Todos os direitos reservados
 
 Botão:
 

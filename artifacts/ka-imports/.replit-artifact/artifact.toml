@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "KA Imports"
+title = "Clayton"
 version = "1.0.0"
 id = "artifacts/ka-imports"
 router = "path"
