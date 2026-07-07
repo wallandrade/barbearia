@@ -12136,12 +12136,14 @@ function ImageUploadCard({
       const img = new Image();
       img.onload = () => {
         const fallbackMaxWidth = settingKey === "logo" ? 400 : settingKey.includes("mobile") ? 800 : 1920;
-        const effectiveMode = showResizeModeSelector ? resizeMode : (targetWidth && targetHeight ? "cover" : "auto");
+        const selectedMode = showResizeModeSelector ? resizeMode : (targetWidth && targetHeight ? "cover" : "auto");
+        // In automatic mode we preserve the full image instead of cropping.
+        const effectiveMode = selectedMode === "auto" ? "contain" : selectedMode;
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) { onSave(settingKey, src); return; }
 
-        if (targetWidth && targetHeight && effectiveMode !== "auto") {
+        if (targetWidth && targetHeight) {
           canvas.width = targetWidth;
           canvas.height = targetHeight;
           ctx.fillStyle = "#ffffff";
