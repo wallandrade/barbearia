@@ -5,26 +5,32 @@ import { Footer } from "./Footer";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-function useSiteLogo() {
-  const [logo, setLogo] = useState<string | null>(null);
+function useSiteBranding() {
+  const [branding, setBranding] = useState<{ logo: string | null; siteName: string }>({
+    logo: null,
+    siteName: "Clayton",
+  });
 
   useEffect(() => {
     fetch(`${BASE}/api/settings`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data: Record<string, string>) => {
         localStorage.setItem("siteSettings", JSON.stringify(data));
-        setLogo(data?.logo ?? null);
+        setBranding({
+          logo: data?.logo ?? null,
+          siteName: String(data?.site_name ?? "Clayton").trim() || "Clayton",
+        });
       })
       .catch(() => {
-        setLogo(null);
+        setBranding({ logo: null, siteName: "Clayton" });
       });
   }, []);
 
-  return logo;
+  return branding;
 }
 
 export function CheckoutLayout({ children }: { children: ReactNode }) {
-  const logo = useSiteLogo();
+  const { logo, siteName } = useSiteBranding();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -38,10 +44,10 @@ export function CheckoutLayout({ children }: { children: ReactNode }) {
             <div className="flex-1 flex items-center justify-center gap-2">
               {logo && (
                 <div className="h-8 max-w-[140px] border border-primary/10 rounded-sm px-1 flex items-center justify-center">
-                  <img src={logo} alt="Clayton" className="h-full w-auto object-contain" />
+                  <img src={logo} alt={siteName} className="h-full w-auto object-contain" />
                 </div>
               )}
-              <span className="font-display font-bold text-lg tracking-tight text-primary">Clayton</span>
+              <span className="font-display font-bold text-lg tracking-tight text-primary">{siteName}</span>
             </div>
             <div className="w-16" />
           </div>

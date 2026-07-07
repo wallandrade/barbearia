@@ -12258,6 +12258,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const [showOutboundSecret, setShowOutboundSecret] = useState(false);
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
+  const [siteName, setSiteName] = useState(settings["site_name"] ?? "Clayton");
   const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
   const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
   const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
@@ -12273,6 +12274,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
+    setSiteName(settings["site_name"] ?? "Clayton");
     setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
     setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
     setPromoCountdownText(settings["promo_countdown_text"] ?? "");
@@ -12293,6 +12295,31 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         <p className="text-muted-foreground text-sm mb-5">
           Personalize o logo e os banners exibidos na loja. As imagens são aplicadas imediatamente após o upload.
         </p>
+        <div className="mb-5 bg-card border border-border/60 rounded-2xl p-4 shadow-sm">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            Nome exibido ao lado da logo
+          </label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              placeholder="Ex: Clayton"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              maxLength={60}
+              disabled={!!loading["site_name"]}
+            />
+            <Button
+              type="button"
+              onClick={() => onSave("site_name", siteName.trim() || "Clayton")}
+              disabled={!!loading["site_name"]}
+              className="sm:min-w-[132px]"
+            >
+              {loading["site_name"] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span className="ml-2">Salvar nome</span>
+            </Button>
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           <ImageUploadCard
             title="Logo do Site"

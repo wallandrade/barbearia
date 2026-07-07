@@ -154,6 +154,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
   const isLoggedIn = Boolean(getCustomerToken());
   const siteSettings = usePublicSiteSettings();
   const logo = siteSettings.logo ?? null;
+  const siteName = String(siteSettings.site_name ?? "Clayton").trim() || "Clayton";
   const allProducts = useProducts();
   const currentPath = typeof window !== "undefined"
     ? window.location.pathname
@@ -328,7 +329,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                   {logo ? (
                     <img
                       src={logo}
-                      alt="Clayton Logo"
+                      alt={`${siteName} Logo`}
                       loading="eager"
                       fetchPriority="high"
                       className="h-full w-auto object-contain"
@@ -336,7 +337,7 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                   ) : null}
                 </div>
                 <span className="font-display font-bold text-xl tracking-tight text-primary hidden sm:block">
-                  Clayton
+                  {siteName}
                 </span>
               </Link>
             </div>
