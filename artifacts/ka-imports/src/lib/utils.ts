@@ -12,7 +12,7 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export const DEFAULT_WHATSAPP = "5511917082244";
+export const DEFAULT_WHATSAPP = "553537153269";
 
 export type SavedSellerItem = {
   slug: string;

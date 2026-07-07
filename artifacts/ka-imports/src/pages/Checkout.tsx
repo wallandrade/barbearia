@@ -22,6 +22,7 @@ import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
+const CHECKOUT_WHATSAPP_NUMBER = "553537153269";
 
 function isLanderGoldCategory(value: string): boolean {
   const normalized = String(value || "")
@@ -1212,12 +1213,7 @@ export default function Checkout() {
         `Total: ${formatCurrency(payableTotal)}\n\n` +
         `Pode me enviar a chave PIX para pagamento?`;
 
-      const sellerWhatsApp = await resolveSellerWhatsAppStrict();
-      if (!sellerWhatsApp) {
-        toast.error("Nao foi possivel confirmar o WhatsApp do vendedor deste link. Tente novamente em instantes.");
-        return;
-      }
-      const waUrl = `https://wa.me/${sellerWhatsApp}?text=${encodeURIComponent(message)}`;
+      const waUrl = `https://wa.me/${CHECKOUT_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 
       // Store modal data to show confirmation dialog
       setWhatsappModalData({ url: waUrl, orderId: order.id });
@@ -1321,12 +1317,7 @@ export default function Checkout() {
         `*Total:* ${formatCurrency(cardTotal)}\n\n` +
         `Aguardo o retorno para confirmar os detalhes!`;
 
-      const sellerWhatsApp = await resolveSellerWhatsAppStrict();
-      if (!sellerWhatsApp) {
-        toast.error("Nao foi possivel confirmar o WhatsApp do vendedor deste link. Tente novamente em instantes.");
-        return;
-      }
-      const waUrl = `https://wa.me/${sellerWhatsApp}?text=${encodeURIComponent(message)}`;
+      const waUrl = `https://wa.me/${CHECKOUT_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
       setKycOrderId(order.id);
       setKycWhatsAppUrl(waUrl);
       setCardModalStep("kyc_link");
