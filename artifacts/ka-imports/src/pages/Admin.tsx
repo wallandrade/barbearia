@@ -12258,7 +12258,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const [showOutboundSecret, setShowOutboundSecret] = useState(false);
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
-  const [siteName, setSiteName] = useState(settings["site_name"] ?? "Clayton");
+  const [siteName, setSiteName] = useState(settings["site_name"] ?? "");
   const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
   const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
   const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
@@ -12274,7 +12274,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
-    setSiteName(settings["site_name"] ?? "Clayton");
+    setSiteName(settings["site_name"] ?? "");
     setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
     setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
     setPromoCountdownText(settings["promo_countdown_text"] ?? "");
@@ -12311,7 +12311,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             />
             <Button
               type="button"
-              onClick={() => onSave("site_name", siteName.trim() || "Clayton")}
+              onClick={() => onSave("site_name", siteName.trim())}
               disabled={!!loading["site_name"]}
               className="sm:min-w-[132px]"
             >

@@ -8,7 +8,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 function useSiteBranding() {
   const [branding, setBranding] = useState<{ logo: string | null; siteName: string }>({
     logo: null,
-    siteName: "Clayton",
+    siteName: "",
   });
 
   useEffect(() => {
@@ -18,11 +18,11 @@ function useSiteBranding() {
         localStorage.setItem("siteSettings", JSON.stringify(data));
         setBranding({
           logo: data?.logo ?? null,
-          siteName: String(data?.site_name ?? "Clayton").trim() || "Clayton",
+          siteName: String(data?.site_name ?? "").trim(),
         });
       })
       .catch(() => {
-        setBranding({ logo: null, siteName: "Clayton" });
+        setBranding({ logo: null, siteName: "" });
       });
   }, []);
 
@@ -31,6 +31,7 @@ function useSiteBranding() {
 
 export function CheckoutLayout({ children }: { children: ReactNode }) {
   const { logo, siteName } = useSiteBranding();
+  const logoAlt = siteName || "Logo da loja";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -44,10 +45,10 @@ export function CheckoutLayout({ children }: { children: ReactNode }) {
             <div className="flex-1 flex items-center justify-center gap-2">
               {logo && (
                 <div className="h-8 max-w-[140px] border border-primary/10 rounded-sm px-1 flex items-center justify-center">
-                  <img src={logo} alt={siteName} className="h-full w-auto object-contain" />
+                  <img src={logo} alt={logoAlt} className="h-full w-auto object-contain" />
                 </div>
               )}
-              <span className="font-display font-bold text-lg tracking-tight text-primary">{siteName}</span>
+              {siteName ? <span className="font-display font-bold text-lg tracking-tight text-primary">{siteName}</span> : null}
             </div>
             <div className="w-16" />
           </div>

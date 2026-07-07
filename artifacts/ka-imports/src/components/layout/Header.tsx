@@ -154,7 +154,8 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
   const isLoggedIn = Boolean(getCustomerToken());
   const siteSettings = usePublicSiteSettings();
   const logo = siteSettings.logo ?? null;
-  const siteName = String(siteSettings.site_name ?? "Clayton").trim() || "Clayton";
+  const siteName = String(siteSettings.site_name ?? "").trim();
+  const logoAlt = siteName ? `${siteName} Logo` : "Logo da loja";
   const allProducts = useProducts();
   const currentPath = typeof window !== "undefined"
     ? window.location.pathname
@@ -329,16 +330,18 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                   {logo ? (
                     <img
                       src={logo}
-                      alt={`${siteName} Logo`}
+                      alt={logoAlt}
                       loading="eager"
                       fetchPriority="high"
                       className="h-full w-auto object-contain"
                     />
                   ) : null}
                 </div>
-                <span className="font-display font-bold text-xl tracking-tight text-primary hidden sm:block">
-                  {siteName}
-                </span>
+                {siteName ? (
+                  <span className="font-display font-bold text-xl tracking-tight text-primary hidden sm:block">
+                    {siteName}
+                  </span>
+                ) : null}
               </Link>
             </div>
 
