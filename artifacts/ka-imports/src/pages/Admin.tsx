@@ -12162,8 +12162,19 @@ function ImageUploadCard({
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         }
 
-        const compressed = canvas.toDataURL("image/jpeg", 0.82);
-        onSave(settingKey, compressed);
+        const lowerFileType = String(file.type || "").toLowerCase();
+        const isLogo = settingKey === "logo";
+
+        // Preserve alpha and sharpness on logos instead of forcing JPEG.
+        const outputMime = isLogo && (lowerFileType === "image/png" || lowerFileType === "image/webp")
+          ? lowerFileType
+          : "image/jpeg";
+
+        const processed = outputMime === "image/jpeg"
+          ? canvas.toDataURL(outputMime, 0.9)
+          : canvas.toDataURL(outputMime);
+
+        onSave(settingKey, processed);
       };
       img.src = src;
     };
