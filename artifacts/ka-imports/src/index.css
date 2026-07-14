@@ -5,32 +5,32 @@
   --font-display: 'Outfit', sans-serif;
   --font-sans: 'Plus Jakarta Sans', sans-serif;
 
-  --color-background: hsl(210 40% 98%);
-  --color-foreground: hsl(222 47% 11%);
+  --color-background: hsl(42 30% 96%);
+  --color-foreground: hsl(0 0% 8%);
   
   --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(222 47% 11%);
+  --color-card-foreground: hsl(0 0% 8%);
   
-  /* Primary: Dark Blue #1a2b4a */
-  --color-primary: hsl(219 48% 20%);
-  --color-primary-foreground: hsl(0 0% 100%);
+  /* Primary: Dark yellow */
+  --color-primary: hsl(43 86% 38%);
+  --color-primary-foreground: hsl(0 0% 7%);
   
-  /* Secondary: Light Blue #2d7dd2 */
-  --color-secondary: hsl(211 65% 50%);
-  --color-secondary-foreground: hsl(0 0% 100%);
+  /* Secondary: Warm dark */
+  --color-secondary: hsl(0 0% 12%);
+  --color-secondary-foreground: hsl(45 80% 78%);
   
-  --color-muted: hsl(210 40% 96%);
-  --color-muted-foreground: hsl(215 16% 47%);
+  --color-muted: hsl(42 26% 92%);
+  --color-muted-foreground: hsl(30 8% 34%);
   
-  --color-accent: hsl(211 65% 50%);
-  --color-accent-foreground: hsl(0 0% 100%);
+  --color-accent: hsl(42 72% 46%);
+  --color-accent-foreground: hsl(0 0% 7%);
   
   --color-destructive: hsl(0 84% 60%);
   --color-destructive-foreground: hsl(210 40% 98%);
   
-  --color-border: hsl(214 32% 91%);
-  --color-input: hsl(214 32% 91%);
-  --color-ring: hsl(219 48% 20%);
+  --color-border: hsl(42 22% 84%);
+  --color-input: hsl(42 22% 84%);
+  --color-ring: hsl(43 86% 38%);
   
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
@@ -79,9 +79,9 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(214 32% 91%);
+  background: hsl(42 20% 76%);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(215 16% 47%);
+  background: hsl(43 70% 38%);
 }

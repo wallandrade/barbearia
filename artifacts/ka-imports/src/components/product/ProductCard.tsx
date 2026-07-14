@@ -104,7 +104,7 @@ export function ProductCard({ product, sellerSlug, priority = false }: ProductCa
             ESGOTADO
           </div>
         ) : isLaunch ? (
-          <div className="absolute top-3 right-3 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+          <div className="absolute top-3 right-3 bg-amber-700 text-amber-50 text-xs font-bold px-2 py-1 rounded-full shadow-lg">
             LANCAMENTO
           </div>
         ) : null}

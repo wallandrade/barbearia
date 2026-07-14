@@ -390,18 +390,18 @@ export default function Home() {
         {/* Offers Banner */}
         <Link
           href={offersHref}
-          className="group relative block overflow-hidden rounded-2xl border border-slate-800/10 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-5 sm:px-6 py-4 sm:py-5 shadow-sm transition-all hover:shadow-lg hover:-translate-y-0.5"
+          className="group relative block overflow-hidden rounded-2xl border border-amber-800/25 bg-gradient-to-r from-zinc-950 via-zinc-900 to-black px-5 sm:px-6 py-4 sm:py-5 shadow-sm transition-all hover:shadow-lg hover:-translate-y-0.5"
         >
-          <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-rose-500/20 blur-2xl" />
+          <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-500/25 blur-2xl" />
           <div className="relative flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="mb-1 inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/85">
+              <div className="mb-1 inline-flex items-center rounded-full bg-amber-400/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
                 Destaques da semana
               </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-1">🎉 Ofertas</h3>
-              <p className="text-sm sm:text-base text-slate-200/90">Confira os melhores descontos e ofertas com desconto progressivo</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-amber-200 mb-1">🎉 Ofertas</h3>
+              <p className="text-sm sm:text-base text-amber-100/85">Confira os melhores descontos e ofertas com desconto progressivo</p>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500/15 text-rose-300 transition-all group-hover:bg-rose-500/25 group-hover:text-rose-200 group-hover:translate-x-1">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400/15 text-amber-300 transition-all group-hover:bg-amber-400/25 group-hover:text-amber-200 group-hover:translate-x-1">
               <ArrowRight className="w-5 h-5" />
             </div>
           </div>
