@@ -8,6 +8,8 @@ import crypto from "crypto";
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://ka-imports.com",
   "https://www.ka-imports.com",
+  "https://yury-imports.com",
+  "https://www.yury-imports.com",
   "https://barbearia-ka-imports.vercel.app",
 ];
 
@@ -29,8 +31,7 @@ function getAllowedOrigins(): Set<string> {
     .map((item) => item.trim())
     .filter(Boolean)
     .map(normalizeOrigin);
-  const values = fromEnv.length > 0 ? fromEnv : DEFAULT_ALLOWED_ORIGINS;
-  return new Set(values);
+  return new Set([...DEFAULT_ALLOWED_ORIGINS, ...fromEnv]);
 }
 
 const allowedOrigins = getAllowedOrigins();
