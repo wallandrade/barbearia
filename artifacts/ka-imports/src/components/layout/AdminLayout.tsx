@@ -14,7 +14,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             <ShieldCheck className="w-4 h-4 text-white" />
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-foreground text-sm">Clayton</span>
+            <span className="font-bold text-foreground text-sm">Yury</span>
             <span className="text-muted-foreground text-xs">·</span>
             <span className="text-primary text-xs font-semibold">Painel Admin</span>
           </div>
@@ -36,7 +36,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       {/* Admin footer */}
       <footer className="bg-white border-t border-border/50 py-3">
         <div className="max-w-7xl mx-auto px-4 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Clayton &middot; Painel Administrativo &middot; Área restrita
+          © {new Date().getFullYear()} Yury &middot; Painel Administrativo &middot; Área restrita
         </div>
       </footer>
     </div>

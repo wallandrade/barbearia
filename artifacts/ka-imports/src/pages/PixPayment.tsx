@@ -220,7 +220,7 @@ export default function PixPayment() {
           .join("\n");
 
         msg =
-          `✅ *Pagamento PIX Realizado — Clayton*\n\n` +
+          `✅ *Pagamento PIX Realizado — Yury*\n\n` +
           `*Nº do Pedido:* ${order.orderId}\n` +
           `*Cliente:* ${order.clientName}\n` +
           `*CPF:* ${order.clientDocument}\n` +

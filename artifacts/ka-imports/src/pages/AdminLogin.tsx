@@ -65,7 +65,7 @@ export default function AdminLogin() {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-2xl shadow-2xl shadow-primary/20 mb-4 border border-border/10">
             <ShieldCheck className="w-10 h-10 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Clayton</h1>
+          <h1 className="text-3xl font-bold text-white">Yury</h1>
           <p className="text-slate-400 mt-1">Painel Administrativo</p>
         </div>
 

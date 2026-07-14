@@ -1,4 +1,4 @@
-# Clayton Product Catalog - Code Analysis Report
+# Yury Product Catalog - Code Analysis Report
 
 ## Overview
 This report documents the product catalog/listing system in the ka-imports codebase, including fetching logic, loading states, error handling, and potential issues.

@@ -2255,21 +2255,21 @@ export default function Admin() {
           fetchRecurringCustomers();
           fetchStatsData();
           fetchSellerData();
-          showPushNotification("Clayton — Nova Venda! 🛍️", message);
+          showPushNotification("Yury — Nova Venda! 🛍️", message);
         } else if (event.type === "new_charge") {
           const d = event.data as { clientName: string; amount: number };
           message = `Nova cobrança — ${d.clientName} — ${formatCurrency(d.amount)}`;
           fetchCharges(true);
           fetchStatsData();
           fetchSellerData();
-          showPushNotification("Clayton — Nova Cobrança! 💳", message);
+          showPushNotification("Yury — Nova Cobrança! 💳", message);
         } else if (event.type === "order_paid") {
           message = `Pagamento PIX confirmado!`;
           fetchOrders(true);
           fetchRecurringCustomers();
           fetchStatsData();
           fetchSellerData();
-          showPushNotification("Clayton — PIX Confirmado! ✅", message);
+          showPushNotification("Yury — PIX Confirmado! ✅", message);
         } else if (event.type === "order_status_updated") {
           message = `Pedido atualizado`;
           fetchOrders(true);
@@ -2282,7 +2282,7 @@ export default function Admin() {
           fetchOrders(true);
           fetchStatsData();
           fetchSellerData();
-          showPushNotification("Clayton — Cobrança Paga! ✅", message);
+          showPushNotification("Yury — Cobrança Paga! ✅", message);
         } else if (event.type === "order_updated") {
           fetchOrders(true);
           fetchRecurringCustomers();
@@ -2292,7 +2292,7 @@ export default function Admin() {
           const clientLabel = d.clientName ? ` - ${d.clientName}` : "";
           message = `Novo ticket de suporte (${orderLabel})${clientLabel}`;
           fetchSupportTickets();
-          showPushNotification("Clayton — Novo Ticket de Suporte", message);
+          showPushNotification("Yury — Novo Ticket de Suporte", message);
         } else if (event.type === "support_ticket_reshipment_authorized") {
           message = "Reenvio autorizado em chamado de suporte";
           fetchSupportTickets();
@@ -12455,7 +12455,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               type="text"
               value={siteName}
               onChange={(e) => setSiteName(e.target.value)}
-              placeholder="Ex: Clayton"
+              placeholder="Ex: Yury"
               className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
               maxLength={60}
               disabled={!!loading["site_name"]}

@@ -2,7 +2,7 @@ Crie um aplicativo web completo (fullstack) com foco em e-commerce, com design m
 
 🎨 IDENTIDADE VISUAL
 
-Usar a logo fornecida (Clayton)
+Usar a logo fornecida (Yury)
 
 Fundo: branco
 
@@ -259,7 +259,7 @@ Simples:
 
 Texto:
 
-© Clayton - Todos os direitos reservados
+© Yury - Todos os direitos reservados
 
 Botão:
 

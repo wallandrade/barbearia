@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Clayton e-commerce fullstack application.
+pnpm workspace monorepo using TypeScript. Yury e-commerce fullstack application.
 
 ## Stack
 
@@ -17,7 +17,7 @@ pnpm workspace monorepo using TypeScript. Clayton e-commerce fullstack applicati
 - **Build**: esbuild (CJS bundle)
 - **Frontend**: React + Vite, Tailwind CSS, Zustand, React Query, Framer Motion
 
-## Clayton E-commerce
+## Yury E-commerce
 
 ### Features
 - Home com grid de produtos por categoria (dados DB → Google Sheets → fallback estático)

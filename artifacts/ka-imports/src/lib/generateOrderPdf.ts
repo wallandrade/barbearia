@@ -109,7 +109,7 @@ export function generateOrderPdf(order: OrderForPdf): void {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.setTextColor(...WHITE);
-  doc.text("Clayton", 14, 12);
+  doc.text("Yury", 14, 12);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(180, 195, 215);
@@ -228,7 +228,7 @@ export function generateOrderPdf(order: OrderForPdf): void {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...MUTED);
-  doc.text("Clayton — Documento gerado automaticamente. Sujeito a confirmação de pagamento.", pageW / 2, pageH - 10, { align: "center" });
+  doc.text("Yury — Documento gerado automaticamente. Sujeito a confirmação de pagamento.", pageW / 2, pageH - 10, { align: "center" });
 
   const filename = `pedido-${order.id}-${order.clientName.split(" ")[0].toLowerCase()}.pdf`;
   doc.save(filename);
@@ -269,7 +269,7 @@ export function generateChargePdf(charge: ChargeForPdf): void {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.setTextColor(...WHITE);
-  doc.text("Clayton", 14, 12);
+  doc.text("Yury", 14, 12);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(180, 195, 215);
@@ -355,7 +355,7 @@ export function generateChargePdf(charge: ChargeForPdf): void {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...MUTED);
-  doc.text("Clayton — Documento gerado automaticamente. Sujeito a confirmação de pagamento.", pageW / 2, pageH - 10, { align: "center" });
+  doc.text("Yury — Documento gerado automaticamente. Sujeito a confirmação de pagamento.", pageW / 2, pageH - 10, { align: "center" });
 
   const filename = `cobranca-${charge.id}-${charge.clientName.split(" ")[0].toLowerCase()}.pdf`;
   doc.save(filename);

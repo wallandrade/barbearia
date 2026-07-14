@@ -29,7 +29,7 @@ export default function KYCPolicy() {
             <h2 className="font-bold text-lg text-foreground">Por que exigimos o KYC?</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
               A verificação KYC é uma exigência legal e de segurança para proteger tanto o cliente quanto
-              a Clayton de fraudes, chargebacks e uso indevido de cartões de crédito. Ao confirmar
+              a Yury de fraudes, chargebacks e uso indevido de cartões de crédito. Ao confirmar
               sua identidade, garantimos que apenas o titular legítimo autorize a compra.
             </p>
           </div>
@@ -85,7 +85,7 @@ export default function KYCPolicy() {
                 "Acesse o link de KYC enviado ou exibido ao final do pedido",
                 "Envie sua selfie com RG e a foto da frente do RG",
                 "Assine digitalmente a Declaração de Titular de Compra",
-                "Aguarde a confirmação da equipe Clayton via WhatsApp",
+                "Aguarde a confirmação da equipe Yury via WhatsApp",
               ].map((step, i) => (
                 <li key={i} className="flex gap-3 items-start text-sm text-muted-foreground">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-white text-xs font-bold shrink-0 mt-0.5">

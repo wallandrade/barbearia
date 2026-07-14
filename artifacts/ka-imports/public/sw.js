@@ -1,4 +1,4 @@
-// Clayton Service Worker — notifications only
+// Yury Service Worker — notifications only
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
@@ -6,7 +6,7 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SHOW_NOTIFICATION") {
     const { title, body, icon } = event.data;
     event.waitUntil(
-      self.registration.showNotification(title || "Clayton", {
+      self.registration.showNotification(title || "Yury", {
         body: body || "",
         icon: icon || "/favicon.svg",
         badge: "/favicon.svg",

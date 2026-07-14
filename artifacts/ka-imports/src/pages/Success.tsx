@@ -36,7 +36,7 @@ interface OrderInfo {
 function buildTrackingMessage(info: OrderInfo): string {
   const lines: string[] = [];
 
-  lines.push(`✅ *Pedido Confirmado — Clayton*`);
+  lines.push(`✅ *Pedido Confirmado — Yury*`);
   lines.push(``);
 
   if (info.orderId)  lines.push(`*Nº do Pedido:* ${info.orderId}`);
@@ -150,7 +150,7 @@ export default function Success() {
             Pagamento Recebido!
           </h1>
           <p className="text-muted-foreground text-lg mb-2 leading-relaxed">
-            Muito obrigado pela sua compra na Clayton.
+            Muito obrigado pela sua compra na Yury.
           </p>
           <p className="text-muted-foreground mb-8 leading-relaxed">
             Seu pedido já está sendo processado e em breve entraremos em contato.
