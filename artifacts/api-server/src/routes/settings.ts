@@ -8,6 +8,7 @@ const router: IRouter = Router();
 
 const PUBLIC_KEYS  = [
   "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile", "site_name", "site_protected", "payment_protected",
+  "logo_scale_pct",
   "checkout_enable_pix", "checkout_enable_card", "checkout_enable_whatsapp", "checkout_pix_gateway", "checkout_free_shipping_min_subtotal",
   "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text"
 ];
@@ -82,6 +83,15 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
       await db.delete(siteSettingsTable).where(eq(siteSettingsTable.key, key));
     } else {
       let storedValue = value;
+      if (key === "logo_scale_pct") {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+          res.status(400).json({ error: "INVALID_VALUE", message: "logo_scale_pct deve ser numérico." });
+          return;
+        }
+        const normalized = Math.min(180, Math.max(60, Math.round(parsed)));
+        storedValue = String(normalized);
+      }
       if (IMAGE_SETTING_KEYS.has(key) && value.startsWith("data:image/")) {
         if (isR2Configured()) {
           try {
