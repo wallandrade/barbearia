@@ -12207,14 +12207,30 @@ function ProductsPanel({
 // ===========================================================================
 type ImageResizeMode = "auto" | "contain" | "cover";
 
+const LOGO_SCALE_SETTING_KEY = "logo_scale_pct";
+
+function parseLogoScalePercent(raw: string | undefined): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 100;
+  return Math.min(180, Math.max(60, Math.round(parsed)));
+}
+
 function ImageUploadCard({
   title, description, settingKey, currentSrc, loading,
   targetWidth, targetHeight, showResizeModeSelector = false,
+  logoScalePercent,
+  logoScaleLoading = false,
+  onLogoScaleChange,
+  onLogoScaleCommit,
   onSave, onDelete,
 }: {
   title: string; description: string; settingKey: string;
   currentSrc?: string; loading: boolean;
   targetWidth?: number; targetHeight?: number; showResizeModeSelector?: boolean;
+  logoScalePercent?: number;
+  logoScaleLoading?: boolean;
+  onLogoScaleChange?: (next: number) => void;
+  onLogoScaleCommit?: (next: number) => void;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
 }) {
@@ -12303,6 +12319,36 @@ function ImageUploadCard({
         </div>
       )}
 
+      {settingKey === "logo" && typeof logoScalePercent === "number" && onLogoScaleChange && onLogoScaleCommit && (
+        <div className="mb-4 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tamanho da logo</p>
+            <span className="text-sm font-bold text-foreground">{logoScalePercent}%</span>
+          </div>
+          <input
+            type="range"
+            min={60}
+            max={180}
+            step={1}
+            value={logoScalePercent}
+            onChange={(e) => onLogoScaleChange(Number(e.target.value))}
+            onMouseUp={(e) => onLogoScaleCommit(Number((e.target as HTMLInputElement).value))}
+            onTouchEnd={(e) => onLogoScaleCommit(Number((e.target as HTMLInputElement).value))}
+            onKeyUp={(e) => {
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End" || e.key === "PageUp" || e.key === "PageDown") {
+                onLogoScaleCommit(Number((e.target as HTMLInputElement).value));
+              }
+            }}
+            disabled={logoScaleLoading}
+            className="w-full accent-primary"
+          />
+          <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>Menor</span>
+            <span>Maior</span>
+          </div>
+        </div>
+      )}
+
       {/* Preview */}
       {currentSrc ? (
         <div className="relative mb-4">
@@ -12359,6 +12405,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
   const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
   const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
+  const [logoScalePercent, setLogoScalePercent] = useState(parseLogoScalePercent(settings[LOGO_SCALE_SETTING_KEY]));
   const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
   const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
   const whatsappEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_whatsapp"] ?? "0").toLowerCase());
@@ -12375,7 +12422,14 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
     setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
     setPromoCountdownText(settings["promo_countdown_text"] ?? "");
+    setLogoScalePercent(parseLogoScalePercent(settings[LOGO_SCALE_SETTING_KEY]));
   }, [settings]);
+
+  const commitLogoScalePercent = useCallback((next: number) => {
+    const normalized = Math.min(180, Math.max(60, Math.round(next)));
+    if (normalized === parseLogoScalePercent(settings[LOGO_SCALE_SETTING_KEY])) return;
+    onSave(LOGO_SCALE_SETTING_KEY, String(normalized));
+  }, [onSave, settings]);
 
   const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp", enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
@@ -12424,6 +12478,10 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             settingKey="logo"
             currentSrc={settings["logo"]}
             loading={!!loading["logo"]}
+            logoScalePercent={logoScalePercent}
+            logoScaleLoading={!!loading[LOGO_SCALE_SETTING_KEY]}
+            onLogoScaleChange={(next) => setLogoScalePercent(Math.min(180, Math.max(60, Math.round(next))))}
+            onLogoScaleCommit={commitLogoScalePercent}
             onSave={onSave}
             onDelete={onDelete}
           />

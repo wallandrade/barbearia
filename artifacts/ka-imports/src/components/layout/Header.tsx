@@ -8,6 +8,12 @@ import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+function parseLogoScalePercent(raw: unknown): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 100;
+  return Math.min(180, Math.max(60, Math.round(parsed)));
+}
+
 interface ProductSuggestion {
   id: string;
   name: string;
@@ -156,6 +162,9 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
   const logo = siteSettings.logo ?? null;
   const siteName = String(siteSettings.site_name ?? "").trim();
   const logoAlt = siteName ? `${siteName} Logo` : "Logo da loja";
+  const logoScalePercent = parseLogoScalePercent(siteSettings.logo_scale_pct);
+  const logoBoxHeightPx = Math.round(36 * (logoScalePercent / 100));
+  const logoBoxMaxWidthPx = Math.round(160 * (logoScalePercent / 100));
   const allProducts = useProducts();
   const currentPath = typeof window !== "undefined"
     ? window.location.pathname
@@ -326,7 +335,10 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
                 </button>
               )}
               <Link href={sellerHomeHref} className="flex items-center gap-2 group cursor-pointer">
-                <div className="h-9 md:h-10 max-w-[160px] border border-primary/10 group-hover:border-primary/30 transition-colors bg-muted/30 flex items-center justify-center shrink-0 px-1 rounded-sm">
+                <div
+                  className="border border-primary/10 group-hover:border-primary/30 transition-colors bg-muted/30 flex items-center justify-center shrink-0 px-1 rounded-sm"
+                  style={{ height: `${logoBoxHeightPx}px`, maxWidth: `${logoBoxMaxWidthPx}px` }}
+                >
                   {logo ? (
                     <img
                       src={logo}

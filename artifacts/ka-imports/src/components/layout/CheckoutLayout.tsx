@@ -5,10 +5,17 @@ import { Footer } from "./Footer";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+function parseLogoScalePercent(raw: unknown): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 100;
+  return Math.min(180, Math.max(60, Math.round(parsed)));
+}
+
 function useSiteBranding() {
-  const [branding, setBranding] = useState<{ logo: string | null; siteName: string }>({
+  const [branding, setBranding] = useState<{ logo: string | null; siteName: string; logoScalePercent: number }>({
     logo: null,
     siteName: "",
+    logoScalePercent: 100,
   });
 
   useEffect(() => {
@@ -19,10 +26,11 @@ function useSiteBranding() {
         setBranding({
           logo: data?.logo ?? null,
           siteName: String(data?.site_name ?? "").trim(),
+          logoScalePercent: parseLogoScalePercent(data?.logo_scale_pct),
         });
       })
       .catch(() => {
-        setBranding({ logo: null, siteName: "" });
+        setBranding({ logo: null, siteName: "", logoScalePercent: 100 });
       });
   }, []);
 
@@ -30,8 +38,10 @@ function useSiteBranding() {
 }
 
 export function CheckoutLayout({ children }: { children: ReactNode }) {
-  const { logo, siteName } = useSiteBranding();
+  const { logo, siteName, logoScalePercent } = useSiteBranding();
   const logoAlt = siteName || "Logo da loja";
+  const logoBoxHeightPx = Math.round(32 * (logoScalePercent / 100));
+  const logoBoxMaxWidthPx = Math.round(140 * (logoScalePercent / 100));
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -44,7 +54,10 @@ export function CheckoutLayout({ children }: { children: ReactNode }) {
             </Link>
             <div className="flex-1 flex items-center justify-center gap-2">
               {logo && (
-                <div className="h-8 max-w-[140px] border border-primary/10 rounded-sm px-1 flex items-center justify-center">
+                <div
+                  className="border border-primary/10 rounded-sm px-1 flex items-center justify-center"
+                  style={{ height: `${logoBoxHeightPx}px`, maxWidth: `${logoBoxMaxWidthPx}px` }}
+                >
                   <img src={logo} alt={logoAlt} className="h-full w-auto object-contain" />
                 </div>
               )}
