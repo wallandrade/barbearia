@@ -390,18 +390,20 @@ export default function Home() {
         {/* Offers Banner */}
         <Link
           href={offersHref}
-          className="group relative block overflow-hidden rounded-2xl border border-amber-800/25 bg-gradient-to-r from-zinc-950 via-zinc-900 to-black px-5 sm:px-6 py-4 sm:py-5 shadow-sm transition-all hover:shadow-lg hover:-translate-y-0.5"
+          className="group relative block overflow-hidden rounded-3xl border border-amber-700/35 bg-[radial-gradient(circle_at_12%_18%,rgba(251,191,36,0.22),transparent_35%),linear-gradient(135deg,#0a0a0a_0%,#050505_62%,#1b1203_100%)] px-5 sm:px-7 py-5 sm:py-6 shadow-[0_10px_30px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_38px_rgba(0,0,0,0.38)]"
         >
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_25%,rgba(251,191,36,0.08)_48%,transparent_70%)] opacity-80 transition-transform duration-500 group-hover:translate-x-2" />
           <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-500/25 blur-2xl" />
+          <div className="pointer-events-none absolute -left-16 bottom-[-42px] h-24 w-52 rotate-6 rounded-full border border-amber-400/20 bg-amber-400/10 blur-md" />
           <div className="relative flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="mb-1 inline-flex items-center rounded-full bg-amber-400/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
+              <div className="mb-2 inline-flex items-center rounded-full border border-amber-400/35 bg-amber-300/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-100">
                 Destaques da semana
               </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-amber-200 mb-1">🎉 Ofertas</h3>
-              <p className="text-sm sm:text-base text-amber-100/85">Confira os melhores descontos e ofertas com desconto progressivo</p>
+              <h3 className="text-2xl sm:text-3xl font-extrabold text-amber-200 leading-tight mb-1">Ofertas</h3>
+              <p className="text-sm sm:text-base text-amber-100/90 max-w-2xl">Confira os melhores descontos e ofertas com desconto progressivo</p>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400/15 text-amber-300 transition-all group-hover:bg-amber-400/25 group-hover:text-amber-200 group-hover:translate-x-1">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-500/40 bg-amber-400/15 text-amber-300 transition-all duration-300 group-hover:bg-amber-400/25 group-hover:text-amber-100 group-hover:translate-x-1">
               <ArrowRight className="w-5 h-5" />
             </div>
           </div>
