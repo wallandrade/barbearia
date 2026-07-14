@@ -22,7 +22,7 @@ import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
-const CHECKOUT_WHATSAPP_NUMBER = "553537153269";
+const CHECKOUT_WHATSAPP_NUMBER = "5535999768759";
 
 function isLanderGoldCategory(value: string): boolean {
   const normalized = String(value || "")

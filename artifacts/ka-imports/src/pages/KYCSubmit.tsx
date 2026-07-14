@@ -7,7 +7,7 @@ import { ShieldCheck, Camera, IdCard, FileText, Upload, CheckCircle2, Loader2, A
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const DEFAULT_WHATSAPP = "5511917082244";
+const DEFAULT_WHATSAPP = "5535999768759";
 
 interface OrderInfo {
   id: string;
