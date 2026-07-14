@@ -11154,10 +11154,12 @@ function ProductsPanel({
   const currentVariantGroups = normalizeVariantGroups((productForm as any).variantGroups);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const restoreBackupRef = useRef<HTMLInputElement>(null);
   const [expandedLinks, setExpandedLinks] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productImageUploading, setProductImageUploading] = useState(false);
+  const [productBackupRestoring, setProductBackupRestoring] = useState(false);
   const [costHistoryProductId, setCostHistoryProductId] = useState<string | null>(null);
   const [costHistoryProductName, setCostHistoryProductName] = useState("");
   const [costHistory, setCostHistory] = useState<Array<{ id: number; costPrice: number; changedAt: string }>>([]);
@@ -11354,6 +11356,83 @@ function ProductsPanel({
     reader.readAsDataURL(file);
   };
 
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setProductBackupRestoring(true);
+      const text = await file.text();
+      const parsed = JSON.parse(text) as {
+        version?: number;
+        productCount?: number;
+        savedBrands?: string[];
+        products?: Array<{ id?: string; name?: string }>;
+      };
+
+      if (!parsed || !Array.isArray(parsed.products) || parsed.products.length === 0) {
+        toast.error("Arquivo de backup inválido ou sem produtos.");
+        return;
+      }
+
+      const backupCount = parsed.products.length;
+      const declaredCount = Number(parsed.productCount || backupCount);
+      const replaceAll = window.confirm(
+        `Backup encontrado com ${backupCount} produto(s).\n\n` +
+        `Clique em OK para SUBSTITUIR o catálogo atual por completo, apagando produtos que não estejam no backup.\n` +
+        `Clique em Cancelar para modo seguro: atualizar/criar produtos do backup sem apagar os demais.`,
+      );
+
+      const confirmed = window.confirm(
+        `Confirmar restauração do backup?\n\n` +
+        `Produtos no arquivo: ${backupCount}\n` +
+        `Contagem declarada no backup: ${declaredCount}\n` +
+        `Modo: ${replaceAll ? "substituir catálogo atual" : "atualizar sem apagar extras"}`,
+      );
+      if (!confirmed) return;
+
+      const res = await fetch(`${BASE}/api/admin/products/restore-backup`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ backup: parsed, deleteMissing: replaceAll }),
+      });
+
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        created?: number;
+        updated?: number;
+        deleted?: number;
+        restored?: number;
+      };
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Falha ao restaurar backup de produtos.");
+      }
+
+      if (Array.isArray(parsed.savedBrands) && parsed.savedBrands.length > 0) {
+        const normalizedBrands = normalizeOptions(parsed.savedBrands.map((item) => String(item || "")));
+        setSavedBrandOptions(normalizedBrands);
+        try {
+          await saveBrandsSetting(normalizedBrands);
+        } catch {
+          toast.error("Produtos restaurados, mas falhou ao restaurar a lista de marcas salvas.");
+        }
+      }
+
+      onRefreshProducts();
+      toast.success(
+        `Backup restaurado: ${data.restored ?? backupCount} produto(s). ` +
+        `Criados: ${data.created ?? 0}. Atualizados: ${data.updated ?? 0}. Removidos: ${data.deleted ?? 0}.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao restaurar backup de produtos.";
+      toast.error(message);
+    } finally {
+      setProductBackupRestoring(false);
+      e.target.value = "";
+    }
+  };
+
   const openCreate = () => {
     setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [], variantGroups: [] } as any);
     setNewCategoryInput("");
@@ -11483,6 +11562,22 @@ function ProductsPanel({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 justify-end">
+          <input
+            ref={restoreBackupRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleRestoreBackup}
+          />
+          <Button
+            variant="outline"
+            onClick={() => restoreBackupRef.current?.click()}
+            className="gap-2"
+            disabled={productBackupRestoring}
+          >
+            {productBackupRestoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Restaurar backup
+          </Button>
           <Button variant="outline" onClick={copyAllProductCosts} className="gap-2">
             <Copy className="w-4 h-4" />Copiar custo
           </Button>

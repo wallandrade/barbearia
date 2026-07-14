@@ -20,6 +20,37 @@ type ProductVariantGroupInput = {
   options: string[];
 };
 
+type ProductBackupRecord = {
+  id: string;
+  name: string;
+  description?: string | null;
+  category: string;
+  brand?: string | null;
+  unit?: string | null;
+  price: number;
+  costPrice?: number | null;
+  promoPrice?: number | null;
+  promoEndsAt?: string | null;
+  bulkDiscountEnabled?: boolean;
+  bulkDiscountTiers?: unknown;
+  variantGroups?: unknown;
+  image?: string | null;
+  isActive?: boolean;
+  isSoldOut?: boolean;
+  isLaunch?: boolean;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ProductBackupPayload = {
+  version?: number;
+  exportedAt?: string;
+  productCount?: number;
+  savedBrands?: string[];
+  products?: ProductBackupRecord[];
+};
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Resolve effective price respecting promo expiry */
@@ -109,6 +140,55 @@ function parseVariantGroups(raw: unknown): ProductVariantGroupInput[] {
   } catch {
     return [];
   }
+}
+
+function parseBackupDate(raw: unknown): Date {
+  if (typeof raw !== "string" || !raw.trim()) return new Date();
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function normalizeBackupProduct(raw: ProductBackupRecord): typeof productsTable.$inferInsert | null {
+  const id = String(raw.id ?? "").trim();
+  const name = String(raw.name ?? "").trim();
+  const category = String(raw.category ?? "").trim();
+  const price = Number(raw.price);
+  const costPrice = Number(raw.costPrice ?? 0);
+  const promoPrice = raw.promoPrice == null ? null : Number(raw.promoPrice);
+  const sortOrder = Number(raw.sortOrder ?? 0);
+
+  if (!id || !name || !category || !Number.isFinite(price) || price < 0) {
+    return null;
+  }
+
+  const normalizedTiers = parseBulkDiscountTiers(raw.bulkDiscountTiers);
+  const tierValidation = validateBulkDiscountTiers(normalizedTiers);
+  if (!tierValidation.ok) return null;
+
+  const normalizedVariantGroups = parseVariantGroups(raw.variantGroups);
+
+  return {
+    id,
+    name,
+    description: String(raw.description ?? "").trim() || null,
+    category,
+    brand: String(raw.brand ?? "").trim() || null,
+    unit: String(raw.unit ?? "unidade").trim() || "unidade",
+    price: String(price),
+    costPrice: String(Number.isFinite(costPrice) ? costPrice : 0),
+    promoPrice: promoPrice != null && Number.isFinite(promoPrice) ? String(promoPrice) : null,
+    promoEndsAt: raw.promoEndsAt ? parseBackupDate(raw.promoEndsAt) : null,
+    bulkDiscountEnabled: raw.bulkDiscountEnabled === true,
+    bulkDiscountTiers: normalizedTiers.length > 0 ? JSON.stringify(normalizedTiers) : null,
+    variantGroups: normalizedVariantGroups.length > 0 ? JSON.stringify(normalizedVariantGroups) : null,
+    image: typeof raw.image === "string" && raw.image.trim() ? raw.image : null,
+    isActive: raw.isActive !== false,
+    isSoldOut: raw.isSoldOut === true,
+    isLaunch: raw.isLaunch === true,
+    sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
+    createdAt: parseBackupDate(raw.createdAt),
+    updatedAt: parseBackupDate(raw.updatedAt),
+  };
 }
 
 function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = false) {
@@ -305,6 +385,79 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
     res.status(201).json(mapProduct(created!, true));
   } catch (err) {
     console.error("Create product error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
+/** POST /api/admin/products/restore-backup */
+router.post("/admin/products/restore-backup", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const { backup, deleteMissing } = req.body as {
+      backup?: ProductBackupPayload;
+      deleteMissing?: boolean;
+    };
+
+    if (!backup || !Array.isArray(backup.products)) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Backup inválido. Envie um arquivo JSON de produtos válido." });
+      return;
+    }
+
+    const normalizedProducts = backup.products
+      .map((item) => normalizeBackupProduct(item))
+      .filter((item): item is typeof productsTable.$inferInsert => Boolean(item));
+
+    if (normalizedProducts.length === 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Nenhum produto válido foi encontrado no backup." });
+      return;
+    }
+
+    const uniqueProducts = Array.from(
+      normalizedProducts.reduce((map, item) => {
+        map.set(item.id, item);
+        return map;
+      }, new Map<string, typeof productsTable.$inferInsert>()).values(),
+    );
+
+    const existingRows = await db.select({ id: productsTable.id }).from(productsTable);
+    const existingIds = new Set(existingRows.map((row) => row.id));
+
+    let created = 0;
+    let updated = 0;
+
+    for (const product of uniqueProducts) {
+      if (existingIds.has(product.id)) {
+        const { id, ...updates } = product;
+        await db.update(productsTable).set(updates).where(eq(productsTable.id, id));
+        updated += 1;
+      } else {
+        await db.insert(productsTable).values(product);
+        created += 1;
+      }
+    }
+
+    let deleted = 0;
+    if (deleteMissing === true) {
+      const backupIds = new Set(uniqueProducts.map((item) => item.id));
+      const idsToDelete = existingRows
+        .map((row) => row.id)
+        .filter((id) => !backupIds.has(id));
+
+      for (const id of idsToDelete) {
+        await db.delete(productsTable).where(eq(productsTable.id, id));
+        deleted += 1;
+      }
+    }
+
+    res.json({
+      ok: true,
+      created,
+      updated,
+      deleted,
+      restored: uniqueProducts.length,
+      deleteMissing: deleteMissing === true,
+    });
+  } catch (err) {
+    console.error("Restore products backup error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
   }
 });
