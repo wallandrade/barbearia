@@ -251,9 +251,9 @@ export default function Home() {
   return (
     <AppLayout>
       {shouldRenderHero && (
-        <section className="w-full relative overflow-hidden bg-muted/20 min-h-[180px] sm:min-h-[260px] md:min-h-[380px]">
+        <section className="w-full bg-muted/20">
           {hasHeroBanner ? (
-            <picture>
+            <picture className="block w-full">
               {banners["banner_mobile"] ? (
                 <source media="(max-width: 639px)" srcSet={banners["banner_mobile"]} />
               ) : null}
@@ -262,14 +262,14 @@ export default function Home() {
                   src={banners["banner_desktop"]}
                   alt="Yury Premium Banner"
                   fetchPriority="high"
-                  className="block w-full h-auto sm:h-[260px] md:h-[380px] object-contain md:object-cover object-center bg-muted/20"
+                  className="block w-full h-auto max-h-[220px] sm:max-h-[300px] md:max-h-[380px] object-contain object-center bg-muted/20"
                 />
               ) : banners["banner_mobile"] ? (
                 <img
                   src={banners["banner_mobile"]}
                   alt="Yury Banner"
                   fetchPriority="high"
-                  className="block w-full h-auto sm:h-[260px] md:h-[380px] object-contain md:object-cover object-center bg-muted/20"
+                  className="block w-full h-auto max-h-[220px] sm:max-h-[300px] md:max-h-[380px] object-contain object-center bg-muted/20"
                 />
               ) : null}
             </picture>
@@ -282,7 +282,7 @@ export default function Home() {
       {hasCatalogBanner && (
         <section className="w-full bg-background border-b border-border/40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
-            <picture>
+            <picture className="block w-full">
               {banners["catalog_banner_mobile"] ? (
                 <source media="(max-width: 639px)" srcSet={banners["catalog_banner_mobile"]} />
               ) : null}
@@ -291,14 +291,14 @@ export default function Home() {
                   src={banners["catalog_banner_desktop"]}
                   alt="Banner do catálogo"
                   fetchPriority="high"
-                  className="block w-full h-auto sm:h-[220px] md:h-[300px] rounded-3xl object-contain md:object-cover object-center bg-muted/20 shadow-sm border border-border/40"
+                  className="block w-full h-auto max-h-[220px] sm:max-h-[280px] md:max-h-[320px] rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
                 />
               ) : banners["catalog_banner_mobile"] ? (
                 <img
                   src={banners["catalog_banner_mobile"]}
                   alt="Banner do catálogo"
                   fetchPriority="high"
-                  className="block w-full h-auto sm:h-[220px] md:h-[300px] rounded-3xl object-contain md:object-cover object-center bg-muted/20 shadow-sm border border-border/40"
+                  className="block w-full h-auto max-h-[220px] sm:max-h-[280px] md:max-h-[320px] rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
                 />
               ) : null}
             </picture>
