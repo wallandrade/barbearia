@@ -253,28 +253,30 @@ export default function Home() {
       {shouldRenderHero && (
         <section className="w-full bg-muted/20">
           {hasHeroBanner ? (
-            <picture className="block w-full">
-              {banners["banner_mobile"] ? (
-                <source media="(max-width: 639px)" srcSet={banners["banner_mobile"]} />
-              ) : null}
-              {banners["banner_desktop"] ? (
-                <img
-                  src={banners["banner_desktop"]}
-                  alt="Yury Premium Banner"
-                  fetchPriority="high"
-                  className="block w-full h-auto object-contain object-center bg-muted/20"
-                />
-              ) : banners["banner_mobile"] ? (
-                <img
-                  src={banners["banner_mobile"]}
-                  alt="Yury Banner"
-                  fetchPriority="high"
-                  className="block w-full h-auto object-contain object-center bg-muted/20"
-                />
-              ) : null}
-            </picture>
+            <div className="relative w-full aspect-[1899/828] overflow-hidden bg-muted/20">
+              <picture className="block w-full h-full">
+                {banners["banner_mobile"] ? (
+                  <source media="(max-width: 639px)" srcSet={banners["banner_mobile"]} />
+                ) : null}
+                {banners["banner_desktop"] ? (
+                  <img
+                    src={banners["banner_desktop"]}
+                    alt="Yury Premium Banner"
+                    fetchPriority="high"
+                    className="absolute inset-0 h-full w-full object-contain object-center"
+                  />
+                ) : banners["banner_mobile"] ? (
+                  <img
+                    src={banners["banner_mobile"]}
+                    alt="Yury Banner"
+                    fetchPriority="high"
+                    className="absolute inset-0 h-full w-full object-contain object-center"
+                  />
+                ) : null}
+              </picture>
+            </div>
           ) : (
-            <div className="w-full h-[180px] sm:h-[260px] md:h-[380px] bg-muted/30 animate-pulse" aria-hidden="true" />
+            <div className="w-full aspect-[1899/828] bg-muted/30 animate-pulse" aria-hidden="true" />
           )}
         </section>
       )}
@@ -282,26 +284,28 @@ export default function Home() {
       {hasCatalogBanner && (
         <section className="w-full bg-background border-b border-border/40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
-            <picture className="block w-full">
-              {banners["catalog_banner_mobile"] ? (
-                <source media="(max-width: 639px)" srcSet={banners["catalog_banner_mobile"]} />
-              ) : null}
-              {banners["catalog_banner_desktop"] ? (
-                <img
-                  src={banners["catalog_banner_desktop"]}
-                  alt="Banner do catálogo"
-                  fetchPriority="high"
-                  className="block w-full h-auto rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
-                />
-              ) : banners["catalog_banner_mobile"] ? (
-                <img
-                  src={banners["catalog_banner_mobile"]}
-                  alt="Banner do catálogo"
-                  fetchPriority="high"
-                  className="block w-full h-auto rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
-                />
-              ) : null}
-            </picture>
+            <div className="relative w-full aspect-[1899/828] overflow-hidden rounded-3xl bg-muted/20 shadow-sm border border-border/40">
+              <picture className="block w-full h-full">
+                {banners["catalog_banner_mobile"] ? (
+                  <source media="(max-width: 639px)" srcSet={banners["catalog_banner_mobile"]} />
+                ) : null}
+                {banners["catalog_banner_desktop"] ? (
+                  <img
+                    src={banners["catalog_banner_desktop"]}
+                    alt="Banner do catálogo"
+                    fetchPriority="high"
+                    className="absolute inset-0 h-full w-full object-contain object-center"
+                  />
+                ) : banners["catalog_banner_mobile"] ? (
+                  <img
+                    src={banners["catalog_banner_mobile"]}
+                    alt="Banner do catálogo"
+                    fetchPriority="high"
+                    className="absolute inset-0 h-full w-full object-contain object-center"
+                  />
+                ) : null}
+              </picture>
+            </div>
           </div>
         </section>
       )}
