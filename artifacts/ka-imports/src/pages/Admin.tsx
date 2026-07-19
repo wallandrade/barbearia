@@ -66,6 +66,65 @@ function escapeHtml(value: string | number | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
+function isBannerSettingKey(settingKey: string): boolean {
+  return settingKey === "banner_desktop"
+    || settingKey === "banner_mobile"
+    || settingKey === "catalog_banner_desktop"
+    || settingKey === "catalog_banner_mobile";
+}
+
+function trimCanvasWhitespace(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = sourceCanvas.getContext("2d");
+  if (!ctx) return sourceCanvas;
+
+  const { width, height } = sourceCanvas;
+  const imageData = ctx.getImageData(0, 0, width, height).data;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const red = imageData[index];
+      const green = imageData[index + 1];
+      const blue = imageData[index + 2];
+      const alpha = imageData[index + 3];
+      const isEmptyPixel = alpha < 12 || (red > 248 && green > 248 && blue > 248);
+      if (isEmptyPixel) continue;
+
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return sourceCanvas;
+
+  const padding = Math.max(0, Math.round(Math.min(width, height) * 0.01));
+  const left = Math.max(0, minX - padding);
+  const top = Math.max(0, minY - padding);
+  const right = Math.min(width - 1, maxX + padding);
+  const bottom = Math.min(height - 1, maxY + padding);
+  const trimmedWidth = right - left + 1;
+  const trimmedHeight = bottom - top + 1;
+
+  if (trimmedWidth <= 0 || trimmedHeight <= 0 || (trimmedWidth === width && trimmedHeight === height)) {
+    return sourceCanvas;
+  }
+
+  const trimmedCanvas = document.createElement("canvas");
+  trimmedCanvas.width = trimmedWidth;
+  trimmedCanvas.height = trimmedHeight;
+  const trimmedCtx = trimmedCanvas.getContext("2d");
+  if (!trimmedCtx) return sourceCanvas;
+
+  trimmedCtx.drawImage(sourceCanvas, left, top, trimmedWidth, trimmedHeight, 0, 0, trimmedWidth, trimmedHeight);
+  return trimmedCanvas;
+}
+
 // Funções utilitárias de data
 function todayStr() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -12250,9 +12309,21 @@ function ImageUploadCard({
         const selectedMode = showResizeModeSelector ? resizeMode : (targetWidth && targetHeight ? "cover" : "auto");
         // In automatic mode we preserve the full image instead of cropping.
         const effectiveMode = selectedMode === "auto" ? "contain" : selectedMode;
+        const shouldTrimWhitespace = isBannerSettingKey(settingKey);
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) { onSave(settingKey, src); return; }
+
+        const sourceCanvas = document.createElement("canvas");
+        sourceCanvas.width = img.width;
+        sourceCanvas.height = img.height;
+        const sourceCtx = sourceCanvas.getContext("2d");
+        if (!sourceCtx) { onSave(settingKey, src); return; }
+        sourceCtx.drawImage(img, 0, 0);
+
+        const workingCanvas = shouldTrimWhitespace ? trimCanvasWhitespace(sourceCanvas) : sourceCanvas;
+        const workingWidth = workingCanvas.width;
+        const workingHeight = workingCanvas.height;
 
         if (targetWidth && targetHeight) {
           canvas.width = targetWidth;
@@ -12261,18 +12332,18 @@ function ImageUploadCard({
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           const scale = effectiveMode === "cover"
-            ? Math.max(targetWidth / img.width, targetHeight / img.height)
-            : Math.min(targetWidth / img.width, targetHeight / img.height);
-          const drawWidth = Math.round(img.width * scale);
-          const drawHeight = Math.round(img.height * scale);
+            ? Math.max(targetWidth / workingWidth, targetHeight / workingHeight)
+            : Math.min(targetWidth / workingWidth, targetHeight / workingHeight);
+          const drawWidth = Math.round(workingWidth * scale);
+          const drawHeight = Math.round(workingHeight * scale);
           const offsetX = Math.round((targetWidth - drawWidth) / 2);
           const offsetY = Math.round((targetHeight - drawHeight) / 2);
-          ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+          ctx.drawImage(workingCanvas, offsetX, offsetY, drawWidth, drawHeight);
         } else {
-          const scale = img.width > fallbackMaxWidth ? fallbackMaxWidth / img.width : 1;
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const scale = workingWidth > fallbackMaxWidth ? fallbackMaxWidth / workingWidth : 1;
+          canvas.width = Math.round(workingWidth * scale);
+          canvas.height = Math.round(workingHeight * scale);
+          ctx.drawImage(workingCanvas, 0, 0, canvas.width, canvas.height);
         }
 
         const lowerFileType = String(file.type || "").toLowerCase();
