@@ -253,7 +253,7 @@ export default function Home() {
       {shouldRenderHero && (
         <section className="w-full bg-muted/20">
           {hasHeroBanner ? (
-            <div className="relative w-full aspect-[1899/828] overflow-hidden bg-muted/20">
+            <div className="relative w-full aspect-[32/7] overflow-hidden bg-muted/20">
               <picture className="block w-full h-full">
                 {banners["banner_mobile"] ? (
                   <source media="(max-width: 639px)" srcSet={banners["banner_mobile"]} />
@@ -276,7 +276,7 @@ export default function Home() {
               </picture>
             </div>
           ) : (
-            <div className="w-full aspect-[1899/828] bg-muted/30 animate-pulse" aria-hidden="true" />
+            <div className="w-full aspect-[32/7] bg-muted/30 animate-pulse" aria-hidden="true" />
           )}
         </section>
       )}
@@ -284,7 +284,7 @@ export default function Home() {
       {hasCatalogBanner && (
         <section className="w-full bg-background border-b border-border/40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
-            <div className="relative w-full aspect-[1899/828] overflow-hidden rounded-3xl bg-muted/20 shadow-sm border border-border/40">
+            <div className="relative w-full aspect-[32/7] overflow-hidden rounded-3xl bg-muted/20 shadow-sm border border-border/40">
               <picture className="block w-full h-full">
                 {banners["catalog_banner_mobile"] ? (
                   <source media="(max-width: 639px)" srcSet={banners["catalog_banner_mobile"]} />
