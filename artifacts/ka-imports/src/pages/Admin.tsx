@@ -73,12 +73,56 @@ function isBannerSettingKey(settingKey: string): boolean {
     || settingKey === "catalog_banner_mobile";
 }
 
+function getPixelData(imageData: ImageData, x: number, y: number): [number, number, number, number] {
+  const { width, data } = imageData;
+  const index = (y * width + x) * 4;
+  return [data[index], data[index + 1], data[index + 2], data[index + 3]];
+}
+
+function isNearColor(pixel: [number, number, number, number], reference: [number, number, number, number], tolerance = 20): boolean {
+  const [red, green, blue, alpha] = pixel;
+  const [refRed, refGreen, refBlue, refAlpha] = reference;
+  if (alpha < 8 && refAlpha < 8) return true;
+  return Math.abs(red - refRed) <= tolerance
+    && Math.abs(green - refGreen) <= tolerance
+    && Math.abs(blue - refBlue) <= tolerance
+    && Math.abs(alpha - refAlpha) <= 32;
+}
+
+function getBackgroundReference(imageData: ImageData): [number, number, number, number] {
+  const corners = [
+    getPixelData(imageData, 0, 0),
+    getPixelData(imageData, imageData.width - 1, 0),
+    getPixelData(imageData, 0, imageData.height - 1),
+    getPixelData(imageData, imageData.width - 1, imageData.height - 1),
+  ];
+
+  const sums = corners.reduce(
+    (accumulator, pixel) => ({
+      red: accumulator.red + pixel[0],
+      green: accumulator.green + pixel[1],
+      blue: accumulator.blue + pixel[2],
+      alpha: accumulator.alpha + pixel[3],
+    }),
+    { red: 0, green: 0, blue: 0, alpha: 0 },
+  );
+
+  return [
+    Math.round(sums.red / corners.length),
+    Math.round(sums.green / corners.length),
+    Math.round(sums.blue / corners.length),
+    Math.round(sums.alpha / corners.length),
+  ];
+}
+
 function trimCanvasWhitespace(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
   const ctx = sourceCanvas.getContext("2d");
   if (!ctx) return sourceCanvas;
 
   const { width, height } = sourceCanvas;
-  const imageData = ctx.getImageData(0, 0, width, height).data;
+  const fullImageData = ctx.getImageData(0, 0, width, height);
+  const backgroundReference = getBackgroundReference(fullImageData);
+  const imageData = fullImageData.data;
   let minX = width;
   let minY = height;
   let maxX = -1;
@@ -87,11 +131,8 @@ function trimCanvasWhitespace(sourceCanvas: HTMLCanvasElement): HTMLCanvasElemen
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      const red = imageData[index];
-      const green = imageData[index + 1];
-      const blue = imageData[index + 2];
-      const alpha = imageData[index + 3];
-      const isEmptyPixel = alpha < 12 || (red > 248 && green > 248 && blue > 248);
+      const pixel: [number, number, number, number] = [imageData[index], imageData[index + 1], imageData[index + 2], imageData[index + 3]];
+      const isEmptyPixel = isNearColor(pixel, backgroundReference, 18);
       if (isEmptyPixel) continue;
 
       if (x < minX) minX = x;
