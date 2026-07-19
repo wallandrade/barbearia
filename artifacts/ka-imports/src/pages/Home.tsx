@@ -262,14 +262,14 @@ export default function Home() {
                   src={banners["banner_desktop"]}
                   alt="Yury Premium Banner"
                   fetchPriority="high"
-                  className="block w-full h-auto max-h-[220px] sm:max-h-[300px] md:max-h-[380px] object-contain object-center bg-muted/20"
+                  className="block w-full h-auto object-contain object-center bg-muted/20"
                 />
               ) : banners["banner_mobile"] ? (
                 <img
                   src={banners["banner_mobile"]}
                   alt="Yury Banner"
                   fetchPriority="high"
-                  className="block w-full h-auto max-h-[220px] sm:max-h-[300px] md:max-h-[380px] object-contain object-center bg-muted/20"
+                  className="block w-full h-auto object-contain object-center bg-muted/20"
                 />
               ) : null}
             </picture>
@@ -291,14 +291,14 @@ export default function Home() {
                   src={banners["catalog_banner_desktop"]}
                   alt="Banner do catálogo"
                   fetchPriority="high"
-                  className="block w-full h-auto max-h-[220px] sm:max-h-[280px] md:max-h-[320px] rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
+                  className="block w-full h-auto rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
                 />
               ) : banners["catalog_banner_mobile"] ? (
                 <img
                   src={banners["catalog_banner_mobile"]}
                   alt="Banner do catálogo"
                   fetchPriority="high"
-                  className="block w-full h-auto max-h-[220px] sm:max-h-[280px] md:max-h-[320px] rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
+                  className="block w-full h-auto rounded-3xl object-contain object-center bg-muted/20 shadow-sm border border-border/40"
                 />
               ) : null}
             </picture>
