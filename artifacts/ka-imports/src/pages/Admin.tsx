@@ -115,7 +115,7 @@ function getBackgroundReference(imageData: ImageData): [number, number, number, 
   ];
 }
 
-function trimCanvasWhitespace(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
+function drawContainWithTrimmedEdges(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
   const ctx = sourceCanvas.getContext("2d");
   if (!ctx) return sourceCanvas;
 
@@ -152,18 +152,18 @@ function trimCanvasWhitespace(sourceCanvas: HTMLCanvasElement): HTMLCanvasElemen
   const trimmedWidth = right - left + 1;
   const trimmedHeight = bottom - top + 1;
 
-  if (trimmedWidth <= 0 || trimmedHeight <= 0 || (trimmedWidth === width && trimmedHeight === height)) {
+  if (trimmedWidth <= 0 || trimmedHeight <= 0) {
     return sourceCanvas;
   }
 
-  const trimmedCanvas = document.createElement("canvas");
-  trimmedCanvas.width = trimmedWidth;
-  trimmedCanvas.height = trimmedHeight;
-  const trimmedCtx = trimmedCanvas.getContext("2d");
-  if (!trimmedCtx) return sourceCanvas;
+  const outputCanvas = document.createElement("canvas");
+  outputCanvas.width = trimmedWidth;
+  outputCanvas.height = trimmedHeight;
+  const outputCtx = outputCanvas.getContext("2d");
+  if (!outputCtx) return sourceCanvas;
 
-  trimmedCtx.drawImage(sourceCanvas, left, top, trimmedWidth, trimmedHeight, 0, 0, trimmedWidth, trimmedHeight);
-  return trimmedCanvas;
+  outputCtx.drawImage(sourceCanvas, left, top, trimmedWidth, trimmedHeight, 0, 0, trimmedWidth, trimmedHeight);
+  return outputCanvas;
 }
 
 // Funções utilitárias de data
@@ -12348,9 +12348,8 @@ function ImageUploadCard({
       img.onload = () => {
         const fallbackMaxWidth = settingKey === "logo" ? 400 : settingKey.includes("mobile") ? 800 : 1920;
         const selectedMode = showResizeModeSelector ? resizeMode : (targetWidth && targetHeight ? "cover" : "auto");
-        // In automatic mode we preserve the full image instead of cropping.
         const effectiveMode = selectedMode === "auto" ? "contain" : selectedMode;
-        const shouldTrimWhitespace = isBannerSettingKey(settingKey);
+        const shouldProcessAsBanner = isBannerSettingKey(settingKey);
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) { onSave(settingKey, src); return; }
@@ -12362,7 +12361,7 @@ function ImageUploadCard({
         if (!sourceCtx) { onSave(settingKey, src); return; }
         sourceCtx.drawImage(img, 0, 0);
 
-        const workingCanvas = shouldTrimWhitespace ? trimCanvasWhitespace(sourceCanvas) : sourceCanvas;
+        const workingCanvas = shouldProcessAsBanner ? drawContainWithTrimmedEdges(sourceCanvas) : sourceCanvas;
         const workingWidth = workingCanvas.width;
         const workingHeight = workingCanvas.height;
 
