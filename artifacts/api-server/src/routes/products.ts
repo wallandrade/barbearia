@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, productsTable, productCostHistoryTable, ordersTable } from "@workspace/db";
+import { db, productsTable, productCostHistoryTable, ordersTable, siteSettingsTable } from "@workspace/db";
 import { eq, asc, desc, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
@@ -188,6 +189,57 @@ function normalizeBackupProduct(raw: ProductBackupRecord): typeof productsTable.
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
     createdAt: parseBackupDate(raw.createdAt),
     updatedAt: parseBackupDate(raw.updatedAt),
+  };
+}
+
+function normalizeSavedBrands(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return Array.from(
+      parsed
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .reduce((map, brand) => {
+          const key = brand.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim();
+          if (!map.has(key)) map.set(key, brand);
+          return map;
+        }, new Map<string, string>())
+        .values(),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+  } catch {
+    return [];
+  }
+}
+
+function serializeProductBackup(p: typeof productsTable.$inferSelect): ProductBackupRecord {
+  const bulkDiscountTiers = parseBulkDiscountTiers(p.bulkDiscountTiers);
+  const variantGroups = parseVariantGroups(p.variantGroups);
+
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description ?? null,
+    category: p.category,
+    brand: p.brand ?? null,
+    unit: p.unit,
+    price: Number(p.price),
+    costPrice: Number(p.costPrice ?? 0),
+    promoPrice: p.promoPrice == null ? null : Number(p.promoPrice),
+    promoEndsAt: p.promoEndsAt?.toISOString() ?? null,
+    bulkDiscountEnabled: Boolean(p.bulkDiscountEnabled),
+    bulkDiscountTiers,
+    variantGroups,
+    image: p.image ?? null,
+    isActive: Boolean(p.isActive),
+    isSoldOut: Boolean(p.isSoldOut),
+    isLaunch: Boolean(p.isLaunch),
+    sortOrder: Number(p.sortOrder ?? 0),
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
   };
 }
 
@@ -385,6 +437,30 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
     res.status(201).json(mapProduct(created!, true));
   } catch (err) {
     console.error("Create product error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
+/** GET /api/admin/products/export-backup */
+router.get("/admin/products/export-backup", requirePrimaryAdmin, async (_req, res) => {
+  try {
+    const [productRows, savedBrandRows] = await Promise.all([
+      db.select().from(productsTable).orderBy(asc(productsTable.createdAt)),
+      db.select({ value: siteSettingsTable.value }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "admin_saved_brands")).limit(1),
+    ]);
+
+    const savedBrands = normalizeSavedBrands(savedBrandRows[0]?.value);
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      productCount: productRows.length,
+      savedBrands,
+      products: productRows.map((product) => serializeProductBackup(product)),
+    };
+
+    res.json(backup);
+  } catch (err) {
+    console.error("Export products backup error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
   }
 });

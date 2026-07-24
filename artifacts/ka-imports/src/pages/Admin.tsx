@@ -11259,6 +11259,7 @@ function ProductsPanel({
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productImageUploading, setProductImageUploading] = useState(false);
+  const [productBackupExporting, setProductBackupExporting] = useState(false);
   const [productBackupRestoring, setProductBackupRestoring] = useState(false);
   const [costHistoryProductId, setCostHistoryProductId] = useState<string | null>(null);
   const [costHistoryProductName, setCostHistoryProductName] = useState("");
@@ -11405,6 +11406,39 @@ function ProductsPanel({
       .join("\n");
     const copyMode = await copyText(text);
     toast.success(copyMode === "manual" ? "Lista aberta para copia manual." : "Lista de venda copiada!");
+  };
+
+  const handleExportBackup = async () => {
+    try {
+      setProductBackupExporting(true);
+      const res = await fetch(`${BASE}/api/admin/products/export-backup`, { headers: authHeaders() });
+      const data = await res.json().catch(() => ({})) as { message?: string; exportedAt?: string } & Record<string, unknown>;
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Falha ao exportar backup de produtos.");
+      }
+
+      const exportedAt = typeof data.exportedAt === "string" && data.exportedAt.trim()
+        ? data.exportedAt
+        : new Date().toISOString();
+      const fileName = `products-backup-${exportedAt.replace(/[:.]/g, "-")}.json`;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+
+      toast.success("Backup de produtos baixado com sucesso!");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao exportar backup de produtos.";
+      toast.error(message);
+    } finally {
+      setProductBackupExporting(false);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -11677,6 +11711,15 @@ function ProductsPanel({
           >
             {productBackupRestoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             Restaurar backup
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleExportBackup}
+            className="gap-2"
+            disabled={productBackupExporting}
+          >
+            {productBackupExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Salvar backup
           </Button>
           <Button variant="outline" onClick={copyAllProductCosts} className="gap-2">
             <Copy className="w-4 h-4" />Copiar custo
