@@ -2208,13 +2208,21 @@ export default function Admin() {
       )));
 
       toast.success("Reserva marcada como paga com sucesso.");
-      fetchRaffleRanking(raffleId);
+      try {
+        const rankingRes = await fetch(`${BASE}/api/admin/raffles/${raffleId}/ranking`, { headers: authHeaders() });
+        if (rankingRes.ok) {
+          const rankingData = await rankingRes.json() as { ranking?: AdminRaffleRankingEntry[] };
+          setRaffleRanking(rankingData.ranking ?? []);
+        }
+      } catch {
+        // Ignore ranking refresh errors after a successful manual payment.
+      }
     } catch {
       toast.error("Erro ao marcar reserva como paga.");
     } finally {
       setRaffleMarkingPaidReservationId(null);
     }
-  }, [fetchRaffleRanking, handleUnauthorized]);
+  }, [handleUnauthorized]);
 
   const fetchRafflePromotions = useCallback(async (raffleId: string) => {
     try {
