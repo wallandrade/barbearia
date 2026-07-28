@@ -789,6 +789,76 @@ router.patch("/admin/raffles/:id/reservations/:reservationId/cancel", requireAdm
 });
 
 // ---------------------------------------------------------------------------
+// ADMIN: PATCH /api/admin/raffles/:id/reservations/:reservationId/mark-paid
+// ---------------------------------------------------------------------------
+router.patch("/admin/raffles/:id/reservations/:reservationId/mark-paid", requireAdminAuth, async (req, res) => {
+  const { id: raffleId, reservationId } = req.params as { id: string; reservationId: string };
+
+  const [reservation] = await db
+    .select()
+    .from(raffleReservationsTable)
+    .where(and(
+      eq(raffleReservationsTable.id, reservationId),
+      eq(raffleReservationsTable.raffleId, raffleId),
+    ))
+    .limit(1);
+
+  if (!reservation) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Reserva não encontrada." });
+    return;
+  }
+
+  if (reservation.status === "paid") {
+    res.json({ ok: true, status: "paid", alreadyPaid: true });
+    return;
+  }
+
+  const reservationNumbers = parseNumbers(reservation.numbers);
+  if (reservationNumbers.length === 0) {
+    res.status(400).json({ error: "INVALID_RESERVATION", message: "Reserva sem números válidos para marcar como paga." });
+    return;
+  }
+
+  const now = new Date();
+  const competingRows = await db
+    .select({
+      id: raffleReservationsTable.id,
+      numbers: raffleReservationsTable.numbers,
+      status: raffleReservationsTable.status,
+      expiresAt: raffleReservationsTable.expiresAt,
+    })
+    .from(raffleReservationsTable)
+    .where(and(
+      eq(raffleReservationsTable.raffleId, reservation.raffleId),
+      inArray(raffleReservationsTable.status, ["reserved", "paid"]),
+    ));
+
+  const conflict = competingRows.find((row) => {
+    if (row.id === reservation.id) return false;
+    const rowExpired = row.status === "reserved" && row.expiresAt < now;
+    if (rowExpired) return false;
+    const rowNumbers = parseNumbers(row.numbers);
+    return rowNumbers.some((n) => reservationNumbers.includes(n));
+  });
+
+  if (conflict) {
+    res.status(409).json({
+      error: "NUMBER_ALREADY_ASSIGNED",
+      message: "Não foi possível marcar como pago porque os números já estão em outra reserva ativa/paga.",
+      conflictReservationId: conflict.id,
+    });
+    return;
+  }
+
+  await db
+    .update(raffleReservationsTable)
+    .set({ status: "paid", updatedAt: new Date() })
+    .where(eq(raffleReservationsTable.id, reservation.id));
+
+  res.json({ ok: true, status: "paid" });
+});
+
+// ---------------------------------------------------------------------------
 // ADMIN: GET /api/admin/raffles/:id/ranking — ranking for admin panel
 // ---------------------------------------------------------------------------
 router.get("/admin/raffles/:id/ranking", requireAdminAuth, async (req, res) => {

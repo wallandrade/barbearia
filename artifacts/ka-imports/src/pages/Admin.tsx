@@ -1349,6 +1349,7 @@ export default function Admin() {
   const [raffleReservations, setRaffleReservations] = useState<AdminRaffleReservation[]>([]);
   const [raffleReservationsLoading, setRaffleReservationsLoading] = useState(false);
   const [raffleCancelingReservationId, setRaffleCancelingReservationId] = useState<string | null>(null);
+  const [raffleMarkingPaidReservationId, setRaffleMarkingPaidReservationId] = useState<string | null>(null);
   const [rafflePromotions, setRafflePromotions] = useState<AdminRafflePromotion[]>([]);
   const [rafflePromotionForm, setRafflePromotionForm] = useState({ quantity: "", promoPrice: "", sortOrder: "0", isActive: true });
   const [rafflePromotionSaving, setRafflePromotionSaving] = useState(false);
@@ -2175,6 +2176,45 @@ export default function Admin() {
       setRaffleCancelingReservationId(null);
     }
   }, [handleUnauthorized]);
+
+  const markRaffleReservationPaid = useCallback(async (raffleId: string, reservation: AdminRaffleReservation) => {
+    if (reservation.status === "paid") {
+      toast.info("Esta reserva já está marcada como paga.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Marcar a reserva de ${reservation.clientName} como paga manualmente?`);
+    if (!confirmed) return;
+
+    setRaffleMarkingPaidReservationId(reservation.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/raffles/${raffleId}/reservations/${reservation.id}/mark-paid`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      });
+
+      if (res.status === 401) { handleUnauthorized(); return; }
+
+      const data = await res.json().catch(() => ({} as { message?: string }));
+      if (!res.ok) {
+        toast.error((data as { message?: string }).message || "Erro ao marcar reserva como paga.");
+        return;
+      }
+
+      setRaffleReservations((prev) => prev.map((rv) => (
+        rv.id === reservation.id
+          ? { ...rv, status: "paid", isExpired: false }
+          : rv
+      )));
+
+      toast.success("Reserva marcada como paga com sucesso.");
+      fetchRaffleRanking(raffleId);
+    } catch {
+      toast.error("Erro ao marcar reserva como paga.");
+    } finally {
+      setRaffleMarkingPaidReservationId(null);
+    }
+  }, [fetchRaffleRanking, handleUnauthorized]);
 
   const fetchRafflePromotions = useCallback(async (raffleId: string) => {
     try {
@@ -5521,20 +5561,36 @@ export default function Admin() {
                             </td>
                             <td className="py-2 text-muted-foreground text-xs">{new Date(rv.createdAt).toLocaleDateString("pt-BR")}</td>
                             <td className="py-2 text-right">
-                              {rv.status === "reserved" && !rv.isExpired ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 px-2.5 text-xs border-red-200 text-red-700 hover:bg-red-50"
-                                  onClick={() => raffleViewId && cancelRaffleReservation(raffleViewId, rv)}
-                                  disabled={raffleCancelingReservationId === rv.id}
-                                >
-                                  {raffleCancelingReservationId === rv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
-                                  <span className="ml-1">Cancelar</span>
-                                </Button>
-                              ) : (
+                              {rv.status === "paid" ? (
                                 <span className="text-xs text-muted-foreground">-</span>
+                              ) : (
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 px-2.5 text-xs border-green-200 text-green-700 hover:bg-green-50"
+                                    onClick={() => raffleViewId && markRaffleReservationPaid(raffleViewId, rv)}
+                                    disabled={raffleMarkingPaidReservationId === rv.id}
+                                  >
+                                    {raffleMarkingPaidReservationId === rv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                    <span className="ml-1">Marcar pago</span>
+                                  </Button>
+
+                                  {rv.status === "reserved" && !rv.isExpired && (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 px-2.5 text-xs border-red-200 text-red-700 hover:bg-red-50"
+                                      onClick={() => raffleViewId && cancelRaffleReservation(raffleViewId, rv)}
+                                      disabled={raffleCancelingReservationId === rv.id}
+                                    >
+                                      {raffleCancelingReservationId === rv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                                      <span className="ml-1">Cancelar</span>
+                                    </Button>
+                                  )}
+                                </div>
                               )}
                             </td>
                           </tr>
