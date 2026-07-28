@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, customChargesTable, ordersTable, siteSettingsTable } from "@workspace/db";
+import { db, customChargesTable, ordersTable } from "@workspace/db";
 import { desc, and, gte, lte, eq } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
@@ -8,21 +8,12 @@ import {
   createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
-  normalizePixGatewayProvider,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
+import { getChannelPixGateway } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
-
-async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
-  const row = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
-    .limit(1);
-  return normalizePixGatewayProvider(row[0]?.value);
-}
 
 function normalizeSellerCode(value: unknown): string | null {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -125,7 +116,7 @@ router.post("/custom-charges", async (req, res) => {
     console.log(`[CustomCharge:${requestId}] Validation OK — client=${client.name} amount=${amount} seller=${sellerCode || "none"}`);
 
     const id = crypto.randomBytes(8).toString("hex");
-    const gatewayProvider = await getActivePixGateway();
+    const gatewayProvider = await getChannelPixGateway("store");
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.
     // The generic handler matches transactions by transactionId in the body.

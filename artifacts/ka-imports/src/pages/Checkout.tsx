@@ -22,7 +22,6 @@ import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
-const CHECKOUT_WHATSAPP_NUMBER = "5535999768759";
 
 function isLanderGoldCategory(value: string): boolean {
   const normalized = String(value || "")
@@ -154,6 +153,7 @@ export default function Checkout() {
   const [affiliateCreditLoading, setAffiliateCreditLoading] = useState(false);
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true, whatsapp: false });
+  const [checkoutWhatsappNumber, setCheckoutWhatsappNumber] = useState("5535999768759");
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState<number | null>(null);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
   const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
@@ -438,11 +438,18 @@ export default function Checkout() {
           return parsed;
         };
         if (!cancelled) {
+          const storePix = data["checkout_store_enable_pix"] ?? data["checkout_enable_pix"];
+          const storeCard = data["checkout_store_enable_card"] ?? data["checkout_enable_card"];
+          const storeWhatsapp = data["checkout_store_enable_whatsapp"] ?? data["checkout_enable_whatsapp"];
+          const storeWhatsappNumber = String(data["checkout_store_whatsapp_number"] ?? "").replace(/\D/g, "");
           setPaymentMethods({
-            pix: parseEnabled(data["checkout_enable_pix"]),
-            card: parseEnabled(data["checkout_enable_card"]),
-            whatsapp: parseEnabled(data["checkout_enable_whatsapp"], false),
+            pix: parseEnabled(storePix),
+            card: parseEnabled(storeCard),
+            whatsapp: parseEnabled(storeWhatsapp, false),
           });
+          if (storeWhatsappNumber) {
+            setCheckoutWhatsappNumber(storeWhatsappNumber);
+          }
           setFreeShippingMinSubtotal(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
         }
       } catch {
@@ -1213,7 +1220,13 @@ export default function Checkout() {
         `Total: ${formatCurrency(payableTotal)}\n\n` +
         `Pode me enviar a chave PIX para pagamento?`;
 
-      const waUrl = `https://wa.me/${CHECKOUT_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+      const supportNumber = checkoutWhatsappNumber.replace(/\D/g, "");
+      if (!supportNumber) {
+        toast.error("Número de WhatsApp não configurado no admin.");
+        return;
+      }
+
+      const waUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
 
       // Store modal data to show confirmation dialog
       setWhatsappModalData({ url: waUrl, orderId: order.id });
@@ -1317,7 +1330,13 @@ export default function Checkout() {
         `*Total:* ${formatCurrency(cardTotal)}\n\n` +
         `Aguardo o retorno para confirmar os detalhes!`;
 
-      const waUrl = `https://wa.me/${CHECKOUT_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+      const supportNumber = checkoutWhatsappNumber.replace(/\D/g, "");
+      if (!supportNumber) {
+        toast.error("Número de WhatsApp não configurado no admin.");
+        return;
+      }
+
+      const waUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
       setKycOrderId(order.id);
       setKycWhatsAppUrl(waUrl);
       setCardModalStep("kyc_link");

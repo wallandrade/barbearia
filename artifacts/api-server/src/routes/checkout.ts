@@ -8,7 +8,6 @@ import {
   createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
-  normalizePixGatewayProvider,
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession } from "../middlewares/customer-auth";
@@ -16,6 +15,7 @@ import { applyAffiliateCreditToOrder, ensureOrderCommission, normalizeAffiliateC
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
+import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
 
@@ -158,22 +158,6 @@ function getPurchaseIp(req: { ip?: string; headers?: Record<string, unknown> }):
   return ip ? normalizeIp(ip) : null;
 }
 
-function parseEnabledSetting(value?: string | null): boolean {
-  if (value == null || value === "") return true;
-  const normalized = String(value).trim().toLowerCase();
-  return !["0", "false", "off", "no", "disabled"].includes(normalized);
-}
-
-async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card"): Promise<boolean> {
-  const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, key)).limit(1);
-  return parseEnabledSetting(rows[0]?.value ?? null);
-}
-
-async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
-  const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, "checkout_pix_gateway")).limit(1);
-  return normalizePixGatewayProvider(rows[0]?.value ?? null);
-}
-
 async function getFreeShippingMinSubtotal(): Promise<number | null> {
   const rows = await db
     .select({ value: siteSettingsTable.value })
@@ -211,7 +195,7 @@ router.post("/checkout/pix", async (req, res) => {
   }));
 
   try {
-    const pixEnabled = await isPaymentMethodEnabled("checkout_enable_pix");
+    const pixEnabled = await isChannelPaymentMethodEnabled("store", "pix");
     if (!pixEnabled) {
       res.status(403).json({
         error: "PAYMENT_METHOD_DISABLED",
@@ -536,7 +520,7 @@ router.post("/checkout/pix", async (req, res) => {
     }
 
     // ── Generate PIX charge ───────────────────────────────────────────────
-    const gatewayProvider = await getActivePixGateway();
+    const gatewayProvider = await getChannelPixGateway("store");
     const identifier  = genIdentifier();
     const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
     const callbackBase = buildCallbackUrl(req as never, "/webhook/pix");

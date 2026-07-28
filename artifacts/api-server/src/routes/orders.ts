@@ -9,7 +9,6 @@ import {
   createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
-  normalizePixGatewayProvider,
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
@@ -24,6 +23,7 @@ import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
+import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
 
@@ -207,15 +207,6 @@ async function loadOrderPriorityMap(orderIds: string[]): Promise<Map<string, boo
   }
 
   return map;
-}
-
-async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
-  const row = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
-    .limit(1);
-  return normalizePixGatewayProvider(row[0]?.value);
 }
 
 async function getFreeShippingMinSubtotal(): Promise<number | null> {
@@ -754,17 +745,6 @@ function resolveUnitPriceForQuantity(product: {
   return tier?.unitPrice ?? base;
 }
 
-function parseEnabledSetting(value?: string | null): boolean {
-  if (value == null || value === "") return true;
-  const normalized = String(value).trim().toLowerCase();
-  return !["0", "false", "off", "no", "disabled"].includes(normalized);
-}
-
-async function isPaymentMethodEnabled(key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp"): Promise<boolean> {
-  const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, key)).limit(1);
-  return parseEnabledSetting(rows[0]?.value ?? null);
-}
-
 function buildGuestAccessToken(): string {
   return crypto.randomBytes(24).toString("hex");
 }
@@ -1048,7 +1028,7 @@ router.post("/orders", async (req, res) => {
     const method = paymentMethod || "pix";
 
     if (method === "pix") {
-      const pixEnabled = await isPaymentMethodEnabled("checkout_enable_pix");
+      const pixEnabled = await isChannelPaymentMethodEnabled("store", "pix");
       if (!pixEnabled) {
         res.status(403).json({
           error: "PAYMENT_METHOD_DISABLED",
@@ -1059,7 +1039,7 @@ router.post("/orders", async (req, res) => {
     }
 
     if (method === "card_simulation") {
-      const cardEnabled = await isPaymentMethodEnabled("checkout_enable_card");
+      const cardEnabled = await isChannelPaymentMethodEnabled("store", "card");
       if (!cardEnabled) {
         res.status(403).json({
           error: "PAYMENT_METHOD_DISABLED",
@@ -1070,7 +1050,7 @@ router.post("/orders", async (req, res) => {
     }
 
     if (method === "whatsapp_pix") {
-      const whatsappEnabled = await isPaymentMethodEnabled("checkout_enable_whatsapp");
+      const whatsappEnabled = await isChannelPaymentMethodEnabled("store", "whatsapp");
       if (!whatsappEnabled) {
         res.status(403).json({
           error: "PAYMENT_METHOD_DISABLED",
@@ -1910,7 +1890,7 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
     const order = orders[0];
 
     const chargeId = crypto.randomBytes(8).toString("hex");
-    const gatewayProvider = await getActivePixGateway();
+    const gatewayProvider = await getChannelPixGateway("store");
     const identifier = genIdentifier();
     const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
     const callbackBase = buildCallbackUrl(req as never, "/webhook/pix");

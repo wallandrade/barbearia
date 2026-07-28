@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, rafflesTable, raffleReservationsTable, raffleResultsTable, rafflePromotionsTable, siteSettingsTable } from "@workspace/db";
+import { db, rafflesTable, raffleReservationsTable, raffleResultsTable, rafflePromotionsTable } from "@workspace/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { requireAdminAuth } from "./admin-auth";
@@ -7,21 +7,12 @@ import {
   createPixChargeWithProvider,
   buildCallbackUrl,
   genIdentifier,
-  normalizePixGatewayProvider,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
+import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
-
-async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
-  const row = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
-    .limit(1);
-  return normalizePixGatewayProvider(row[0]?.value);
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -225,6 +216,15 @@ router.get("/raffles/:id", async (req, res) => {
 // PUBLIC: POST /api/raffles/:id/reserve — create reservation + PIX
 // ---------------------------------------------------------------------------
 router.post("/raffles/:id/reserve", async (req, res) => {
+    const pixEnabled = await isChannelPaymentMethodEnabled("raffle", "pix");
+    if (!pixEnabled) {
+      res.status(403).json({
+        error: "PAYMENT_METHOD_DISABLED",
+        message: "Pagamento via PIX está temporariamente indisponível para rifas.",
+      });
+      return;
+    }
+
   const { id: reserveRaffleId } = req.params as { id: string };
   const { numbers, client } = req.body as {
     numbers: number[];
@@ -291,7 +291,7 @@ router.post("/raffles/:id/reserve", async (req, res) => {
   });
 
   // Generate PIX
-  const gatewayProvider = await getActivePixGateway();
+  const gatewayProvider = await getChannelPixGateway("raffle");
   const identifier = genIdentifier();
   const callbackUrl = buildCallbackUrl(req as never, "/webhook/raffle-pix");
 
@@ -458,6 +458,15 @@ router.get("/raffles/reservations/lookup", async (req, res) => {
 // PUBLIC: POST /api/raffles/reservations/:reservationId/refresh-pix — renew expired PIX
 // ---------------------------------------------------------------------------
 router.post("/raffles/reservations/:reservationId/refresh-pix", async (req, res) => {
+    const pixEnabled = await isChannelPaymentMethodEnabled("raffle", "pix");
+    if (!pixEnabled) {
+      res.status(403).json({
+        error: "PAYMENT_METHOD_DISABLED",
+        message: "Pagamento via PIX está temporariamente indisponível para rifas.",
+      });
+      return;
+    }
+
   const { reservationId } = req.params as { reservationId: string };
 
   const [reservation] = await db
@@ -500,7 +509,7 @@ router.post("/raffles/reservations/:reservationId/refresh-pix", async (req, res)
   }
 
   const identifier = genIdentifier();
-  const gatewayProvider = await getActivePixGateway();
+  const gatewayProvider = await getChannelPixGateway("raffle");
   const callbackUrl = buildCallbackUrl(req as never, "/webhook/raffle-pix");
   const totalAmount = Number(reservation.totalAmount);
 

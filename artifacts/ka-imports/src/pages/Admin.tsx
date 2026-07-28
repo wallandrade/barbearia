@@ -12555,15 +12555,23 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const [showOutboundSecret, setShowOutboundSecret] = useState(false);
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
+  const [storeWhatsappNumber, setStoreWhatsappNumber] = useState(settings["checkout_store_whatsapp_number"] ?? "");
+  const [raffleWhatsappNumber, setRaffleWhatsappNumber] = useState(settings["checkout_raffle_whatsapp_number"] ?? "");
   const [siteName, setSiteName] = useState(settings["site_name"] ?? "");
   const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
   const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
   const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
   const [logoScalePercent, setLogoScalePercent] = useState(parseLogoScalePercent(settings[LOGO_SCALE_SETTING_KEY]));
-  const pixEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_pix"] ?? "1").toLowerCase());
-  const cardEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_card"] ?? "1").toLowerCase());
-  const whatsappEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["checkout_enable_whatsapp"] ?? "0").toLowerCase());
-  const pixGateway = String(settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
+  const parseEnabled = (value: string | undefined, defaultValue = true) => {
+    if (value == null || value === "") return defaultValue;
+    return !["0", "false", "off", "no", "disabled"].includes(String(value).toLowerCase());
+  };
+  const storePixEnabled = parseEnabled(settings["checkout_store_enable_pix"] ?? settings["checkout_enable_pix"], true);
+  const storeCardEnabled = parseEnabled(settings["checkout_store_enable_card"] ?? settings["checkout_enable_card"], true);
+  const storeWhatsappEnabled = parseEnabled(settings["checkout_store_enable_whatsapp"] ?? settings["checkout_enable_whatsapp"], false);
+  const rafflePixEnabled = parseEnabled(settings["checkout_raffle_enable_pix"] ?? settings["checkout_enable_pix"], true);
+  const storePixGateway = String(settings["checkout_store_pix_gateway"] ?? settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
+  const rafflePixGateway = String(settings["checkout_raffle_pix_gateway"] ?? settings["checkout_pix_gateway"] ?? "appcnpay").toLowerCase() === "dentpeg" ? "dentpeg" : "appcnpay";
   const outboundEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_enabled"] ?? "0").toLowerCase());
   const outboundEventNewOrder = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_new_order"] ?? "1").toLowerCase());
   const outboundEventOrderPaid = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_order_paid"] ?? "1").toLowerCase());
@@ -12572,6 +12580,8 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
+    setStoreWhatsappNumber(settings["checkout_store_whatsapp_number"] ?? "");
+    setRaffleWhatsappNumber(settings["checkout_raffle_whatsapp_number"] ?? "");
     setSiteName(settings["site_name"] ?? "");
     setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
     setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
@@ -12585,7 +12595,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     onSave(LOGO_SCALE_SETTING_KEY, String(normalized));
   }, [onSave, settings]);
 
-  const togglePaymentMethod = (key: "checkout_enable_pix" | "checkout_enable_card" | "checkout_enable_whatsapp", enabled: boolean) => {
+  const togglePaymentMethod = (key: string, enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
   };
 
@@ -12880,116 +12890,223 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         </div>
       </div>
 
-      {/* ── Provedor PIX Ativo ───────────────────────────────────────────── */}
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
-          <QrCode className="w-5 h-5 text-primary" />
-          Provedor PIX Ativo
-        </h2>
-        <p className="text-muted-foreground text-sm mb-5">
-          Selecione qual gateway PIX será usado no checkout. APPCNPay continua como padrão.
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${pixGateway === "appcnpay" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold">APPCNPay</p>
-                <p className="text-xs text-muted-foreground">Fluxo atual do sistema (sem alterações).</p>
-              </div>
-              <input
-                type="radio"
-                name="pixGateway"
-                checked={pixGateway === "appcnpay"}
-                onChange={() => onSave("checkout_pix_gateway", "appcnpay")}
-                disabled={!!loading["checkout_pix_gateway"]}
-              />
-            </div>
-          </label>
-
-          <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${pixGateway === "dentpeg" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold">DentPeg</p>
-                <p className="text-xs text-muted-foreground">Alternativa de gateway PIX usando API key DentPeg.</p>
-              </div>
-              <input
-                type="radio"
-                name="pixGateway"
-                checked={pixGateway === "dentpeg"}
-                onChange={() => onSave("checkout_pix_gateway", "dentpeg")}
-                disabled={!!loading["checkout_pix_gateway"]}
-              />
-            </div>
-          </label>
-        </div>
-      </div>
-
-      {/* ── Métodos de Pagamento no Checkout ─────────────────────────────── */}
-      <div className="max-w-2xl">
+      {/* ── Pagamentos por Canal ─────────────────────────────────────────── */}
+      <div className="max-w-3xl space-y-6">
         <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
           <CreditCard className="w-5 h-5 text-primary" />
-          Métodos de Pagamento no Checkout
+          Pagamentos por Canal
         </h2>
-        <p className="text-muted-foreground text-sm mb-5">
-          Escolha quais botões ficam disponíveis para o cliente na página de checkout.
+        <p className="text-muted-foreground text-sm">
+          Configure separadamente os métodos e o gateway PIX da Loja e da Rifa.
         </p>
 
-        <div className="space-y-4">
+        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+          <h3 className="font-semibold flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-primary" />Loja</h3>
+          <p className="text-xs text-muted-foreground">Essas opções afetam o checkout da loja de produtos.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${storePixGateway === "appcnpay" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">APPCNPay</p>
+                  <p className="text-xs text-muted-foreground">Fluxo atual do sistema (sem alterações).</p>
+                </div>
+                <input
+                  type="radio"
+                  name="storePixGateway"
+                  checked={storePixGateway === "appcnpay"}
+                  onChange={() => onSave("checkout_store_pix_gateway", "appcnpay")}
+                  disabled={!!loading["checkout_store_pix_gateway"]}
+                />
+              </div>
+            </label>
+
+            <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${storePixGateway === "dentpeg" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">DentPeg</p>
+                  <p className="text-xs text-muted-foreground">Alternativa de gateway PIX usando API key DentPeg.</p>
+                </div>
+                <input
+                  type="radio"
+                  name="storePixGateway"
+                  checked={storePixGateway === "dentpeg"}
+                  onChange={() => onSave("checkout_store_pix_gateway", "dentpeg")}
+                  disabled={!!loading["checkout_store_pix_gateway"]}
+                />
+              </div>
+            </label>
+          </div>
+
+          <div className="space-y-4">
+            <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+              <label className="flex items-center justify-between gap-4 cursor-pointer">
+                <div>
+                  <p className="font-semibold flex items-center gap-2"><QrCode className="w-4 h-4 text-primary" />PIX</p>
+                  <p className="text-xs text-muted-foreground">Exibe o botão "Pagar com PIX" no checkout da loja.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storePixEnabled}
+                  onChange={(e) => togglePaymentMethod("checkout_store_enable_pix", e.target.checked)}
+                  disabled={!!loading["checkout_store_enable_pix"]}
+                  className="w-4 h-4"
+                />
+              </label>
+            </div>
+
+            <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+              <label className="flex items-center justify-between gap-4 cursor-pointer">
+                <div>
+                  <p className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" />Cartão</p>
+                  <p className="text-xs text-muted-foreground">Exibe o botão "Pagar com Cartão" no checkout da loja.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storeCardEnabled}
+                  onChange={(e) => togglePaymentMethod("checkout_store_enable_card", e.target.checked)}
+                  disabled={!!loading["checkout_store_enable_card"]}
+                  className="w-4 h-4"
+                />
+              </label>
+            </div>
+
+            <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+              <label className="flex items-center justify-between gap-4 cursor-pointer">
+                <div>
+                  <p className="font-semibold flex items-center gap-2"><MessageCircle className="w-4 h-4 text-primary" />WhatsApp</p>
+                  <p className="text-xs text-muted-foreground">Exibe o botão "Finalizar via WhatsApp" no checkout da loja.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storeWhatsappEnabled}
+                  onChange={(e) => togglePaymentMethod("checkout_store_enable_whatsapp", e.target.checked)}
+                  disabled={!!loading["checkout_store_enable_whatsapp"]}
+                  className="w-4 h-4"
+                />
+              </label>
+            </div>
+
+            <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-2">
+              <label className="block text-xs font-medium">Número do WhatsApp da Loja</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={storeWhatsappNumber}
+                  onChange={(e) => setStoreWhatsappNumber(e.target.value)}
+                  placeholder="Ex: 5535999999999"
+                  className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                  disabled={!!loading["checkout_store_whatsapp_number"]}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const digits = storeWhatsappNumber.replace(/\D/g, "").trim();
+                    if (!digits) {
+                      onDelete("checkout_store_whatsapp_number");
+                      return;
+                    }
+                    onSave("checkout_store_whatsapp_number", digits);
+                  }}
+                  disabled={!!loading["checkout_store_whatsapp_number"]}
+                >
+                  {loading["checkout_store_whatsapp_number"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Use DDI+DDD+número, somente dígitos. Exemplo: 5535999999999.</p>
+            </div>
+          </div>
+
+          {!storePixEnabled && !storeCardEnabled && !storeWhatsappEnabled && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800">
+              Todos os métodos da loja estão desativados. O checkout da loja ficará sem opção de pagamento.
+            </div>
+          )}
+        </div>
+
+        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+          <h3 className="font-semibold flex items-center gap-2"><Ticket className="w-4 h-4 text-primary" />Rifa</h3>
+          <p className="text-xs text-muted-foreground">Essas opções afetam apenas o pagamento das reservas de rifa.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${rafflePixGateway === "appcnpay" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">APPCNPay</p>
+                  <p className="text-xs text-muted-foreground">Gateway principal para cobranças PIX da rifa.</p>
+                </div>
+                <input
+                  type="radio"
+                  name="rafflePixGateway"
+                  checked={rafflePixGateway === "appcnpay"}
+                  onChange={() => onSave("checkout_raffle_pix_gateway", "appcnpay")}
+                  disabled={!!loading["checkout_raffle_pix_gateway"]}
+                />
+              </div>
+            </label>
+
+            <label className={`border rounded-2xl p-4 cursor-pointer transition-colors ${rafflePixGateway === "dentpeg" ? "border-primary bg-primary/5" : "border-border/60 bg-card"}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">DentPeg</p>
+                  <p className="text-xs text-muted-foreground">Alternativa de gateway PIX para rifa.</p>
+                </div>
+                <input
+                  type="radio"
+                  name="rafflePixGateway"
+                  checked={rafflePixGateway === "dentpeg"}
+                  onChange={() => onSave("checkout_raffle_pix_gateway", "dentpeg")}
+                  disabled={!!loading["checkout_raffle_pix_gateway"]}
+                />
+              </div>
+            </label>
+          </div>
+
           <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
             <label className="flex items-center justify-between gap-4 cursor-pointer">
               <div>
                 <p className="font-semibold flex items-center gap-2"><QrCode className="w-4 h-4 text-primary" />PIX</p>
-                <p className="text-xs text-muted-foreground">Exibe o botão "Pagar com PIX" no checkout.</p>
+                <p className="text-xs text-muted-foreground">Ativa ou desativa a geração de PIX na reserva da rifa.</p>
               </div>
               <input
                 type="checkbox"
-                checked={pixEnabled}
-                onChange={(e) => togglePaymentMethod("checkout_enable_pix", e.target.checked)}
-                disabled={!!loading["checkout_enable_pix"]}
+                checked={rafflePixEnabled}
+                onChange={(e) => togglePaymentMethod("checkout_raffle_enable_pix", e.target.checked)}
+                disabled={!!loading["checkout_raffle_enable_pix"]}
                 className="w-4 h-4"
               />
             </label>
           </div>
 
-          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
-            <label className="flex items-center justify-between gap-4 cursor-pointer">
-              <div>
-                <p className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" />Cartão</p>
-                <p className="text-xs text-muted-foreground">Exibe o botão "Pagar com Cartão" no checkout.</p>
-              </div>
+          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-2">
+            <label className="block text-xs font-medium">Número do WhatsApp da Rifa</label>
+            <div className="flex gap-2">
               <input
-                type="checkbox"
-                checked={cardEnabled}
-                onChange={(e) => togglePaymentMethod("checkout_enable_card", e.target.checked)}
-                disabled={!!loading["checkout_enable_card"]}
-                className="w-4 h-4"
+                type="text"
+                value={raffleWhatsappNumber}
+                onChange={(e) => setRaffleWhatsappNumber(e.target.value)}
+                placeholder="Ex: 5535999999999"
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                disabled={!!loading["checkout_raffle_whatsapp_number"]}
               />
-            </label>
-          </div>
-
-          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
-            <label className="flex items-center justify-between gap-4 cursor-pointer">
-              <div>
-                <p className="font-semibold flex items-center gap-2"><MessageCircle className="w-4 h-4 text-primary" />WhatsApp</p>
-                <p className="text-xs text-muted-foreground">Exibe o botão "Finalizar via WhatsApp" no checkout.</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={whatsappEnabled}
-                onChange={(e) => togglePaymentMethod("checkout_enable_whatsapp", e.target.checked)}
-                disabled={!!loading["checkout_enable_whatsapp"]}
-                className="w-4 h-4"
-              />
-            </label>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const digits = raffleWhatsappNumber.replace(/\D/g, "").trim();
+                  if (!digits) {
+                    onDelete("checkout_raffle_whatsapp_number");
+                    return;
+                  }
+                  onSave("checkout_raffle_whatsapp_number", digits);
+                }}
+                disabled={!!loading["checkout_raffle_whatsapp_number"]}
+              >
+                {loading["checkout_raffle_whatsapp_number"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Use DDI+DDD+número, somente dígitos. Exemplo: 5535999999999.</p>
           </div>
         </div>
-
-        {!pixEnabled && !cardEnabled && !whatsappEnabled && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800 mt-4">
-            Todos os métodos estão desativados. Nesse estado, o checkout ficará sem opção de pagamento.
-          </div>
-        )}
       </div>
 
       {/* ── Regra de Frete Grátis ────────────────────────────────────────── */}

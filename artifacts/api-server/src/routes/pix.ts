@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
-import { db, ordersTable, siteSettingsTable } from "@workspace/db";
+import { db, ordersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { broadcastNotification } from "./notifications";
 import {
@@ -8,12 +8,12 @@ import {
   buildCallbackUrl,
   fetchDentpegDepositStatus,
   genIdentifier,
-  normalizePixGatewayProvider,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { getChannelPixGateway } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
 
@@ -27,15 +27,6 @@ function safeTokenEquals(expected: string, provided: string): boolean {
   const b = Buffer.from(provided);
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
-}
-
-async function getActivePixGateway(): Promise<"appcnpay" | "dentpeg"> {
-  const row = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, "checkout_pix_gateway"))
-    .limit(1);
-  return normalizePixGatewayProvider(row[0]?.value);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +53,7 @@ router.post("/pix/generate", async (req, res) => {
       return;
     }
 
-    const gatewayProvider = await getActivePixGateway();
+    const gatewayProvider = await getChannelPixGateway("store");
     const identifier = genIdentifier();
     // Single fixed callback URL — avoids the gateway's 20-webhook registration limit.
     // The generic handler matches transactions by transactionId in the body.
