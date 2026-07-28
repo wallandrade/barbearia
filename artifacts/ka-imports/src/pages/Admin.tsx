@@ -468,7 +468,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
