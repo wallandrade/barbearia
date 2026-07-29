@@ -3,19 +3,19 @@ import { startReconciliationJob } from "./reconciliation";
 import { ensureRuntimeSchema } from "./runtime-schema";
 import { startRaffleExpiryJob } from "./raffle-expiry";
 
-const rawPort = process.env["PORT"];
+function resolvePort(): number {
+  const rawPort = process.env["PORT"];
+  const parsed = Number(rawPort);
+  if (rawPort && Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
+  const fallbackPort = 3000;
+  console.warn(`[Server] Invalid or missing PORT (received: ${rawPort ?? "undefined"}). Using fallback ${fallbackPort}.`);
+  return fallbackPort;
 }
 
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
+const port = resolvePort();
 
 // Prevent unhandled promise rejections from crashing the server
 process.on("unhandledRejection", (reason, promise) => {
@@ -29,7 +29,7 @@ process.on("uncaughtException", (err) => {
 });
 
 async function bootstrap(): Promise<void> {
-  app.listen(port, "0.0.0.0", () => {
+  const server = app.listen(port, "0.0.0.0", () => {
     console.log(`Server listening on port ${port}`);
     startReconciliationJob();
     startRaffleExpiryJob();
@@ -37,6 +37,12 @@ async function bootstrap(): Promise<void> {
     // Run schema sync in background to avoid blocking boot/health checks.
     void ensureRuntimeSchema();
   });
+
+  server.on("error", (err) => {
+    console.error("[Server] Failed to listen:", err);
+  });
 }
 
-void bootstrap();
+void bootstrap().catch((err) => {
+  console.error("[Server] Bootstrap failed:", err);
+});
