@@ -48,12 +48,60 @@ async function indexExists(tableName: string, indexName: string, databaseName: s
   return Array.isArray(rows) && rows.length > 0;
 }
 
+async function hasUniqueIndexOnColumn(tableName: string, columnName: string, databaseName: string): Promise<boolean> {
+  const [rows] = await pool.query(
+    `
+      SELECT 1
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? AND NON_UNIQUE = 0
+      LIMIT 1
+    `,
+    [databaseName, tableName, columnName],
+  );
+
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function isAutoIncrementColumn(tableName: string, columnName: string, databaseName: string): Promise<boolean> {
+  const [rows] = await pool.query(
+    `
+      SELECT EXTRA
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
+      LIMIT 1
+    `,
+    [databaseName, tableName, columnName],
+  );
+
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+  const extra = String((rows[0] as { EXTRA?: unknown }).EXTRA ?? "").toLowerCase();
+  return extra.includes("auto_increment");
+}
+
+async function ensureOrderNumberColumn(databaseName: string): Promise<void> {
+  const exists = await columnExists("orders", "order_number", databaseName);
+  if (!exists) {
+    await pool.query("ALTER TABLE orders ADD COLUMN order_number BIGINT UNSIGNED NULL");
+  }
+
+  await pool.query("SET @ka_order_seq := (SELECT COALESCE(MAX(order_number), 0) FROM orders)");
+  await pool.query(
+    "UPDATE orders SET order_number = (@ka_order_seq := @ka_order_seq + 1) WHERE order_number IS NULL ORDER BY created_at, id",
+  );
+
+  if (!(await hasUniqueIndexOnColumn("orders", "order_number", databaseName))) {
+    await pool.query("ALTER TABLE orders ADD UNIQUE KEY orders_order_number_unique (order_number)");
+  }
+
+  if (!(await isAutoIncrementColumn("orders", "order_number", databaseName))) {
+    await pool.query("ALTER TABLE orders MODIFY COLUMN order_number BIGINT UNSIGNED NOT NULL AUTO_INCREMENT");
+  }
+}
+
 async function ensureOrdersColumns(databaseName: string): Promise<void> {
+  await ensureOrderNumberColumn(databaseName);
+
   const definitions = [
-    {
-      name: "order_number",
-      sql: "ALTER TABLE orders ADD COLUMN order_number BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE",
-    },
     { name: "user_id", sql: "ALTER TABLE orders ADD COLUMN user_id VARCHAR(255) NULL" },
     { name: "guest_access_token", sql: "ALTER TABLE orders ADD COLUMN guest_access_token VARCHAR(255) NULL" },
     { name: "affiliate_user_id", sql: "ALTER TABLE orders ADD COLUMN affiliate_user_id VARCHAR(255) NULL" },
