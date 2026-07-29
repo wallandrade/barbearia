@@ -29,12 +29,13 @@ process.on("uncaughtException", (err) => {
 });
 
 async function bootstrap(): Promise<void> {
-  await ensureRuntimeSchema();
-
   app.listen(port, "0.0.0.0", () => {
     console.log(`Server listening on port ${port}`);
     startReconciliationJob();
     startRaffleExpiryJob();
+
+    // Run schema sync in background to avoid blocking boot/health checks.
+    void ensureRuntimeSchema();
   });
 }
 
