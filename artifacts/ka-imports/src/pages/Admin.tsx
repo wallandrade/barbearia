@@ -381,6 +381,23 @@ export function orderToFullText(order: any): string {
     .join("\n");
 }
 
+export function orderToPostPaymentText(order: any): string {
+  const summary = orderToText(order);
+  const guidance = [
+    "",
+    "Parabéns pela sua compra. Já confirmamos o seu pagamento.",
+    "",
+    "Seu pedido foi registrado com sucesso e está em preparação.",
+    "Pedimos, por favor, que aguarde 48 horas úteis antes de solicitar o código de rastreio.",
+    "Assim evitamos acúmulo de mensagens no suporte e conseguimos te atender com mais agilidade.",
+    "",
+    "Após esse prazo, seu rastreio já estará disponível.",
+    "Importante: sábados e domingos não são considerados dias úteis de envio.",
+  ].join("\n");
+
+  return `${summary}\n${guidance}`;
+}
+
 export function chargeToText(charge: any): string {
   const address = [
     charge?.addressStreet,
@@ -7683,6 +7700,21 @@ function OrdersPanel({
     }
   };
 
+  const copyOrderPostPayment = async (order: AdminOrder) => {
+    try {
+      const mode = await copyText(orderToPostPaymentText({ ...order, isPrioridade: resolveOrderPriority(order) }));
+      setCopiedOrderId(order.id + "-post");
+      if (mode === "auto") {
+        toast.success("Pós-pagamento copiado!");
+      } else {
+        toast.info("Abra o prompt e copie manualmente.");
+      }
+      setTimeout(() => setCopiedOrderId(null), 2500);
+    } catch {
+      toast.error("Não foi possível copiar o pós-pagamento.");
+    }
+  };
+
   const toggleOrderPriority = async (order: AdminOrder) => {
     const id = String(order.id || "").trim();
     if (!id) return;
@@ -8556,6 +8588,8 @@ function OrdersPanel({
         .map((order) => {
           const isPrioridade = resolveOrderPriority(order);
           const isCard     = order.paymentMethod === "card_simulation";
+          const normalizedOrderStatus = normalizeOrderStatus(order.status);
+          const isPaidOrCompleted = normalizedOrderStatus === "paid" || normalizedOrderStatus === "completed";
           const isExpanded = expandedOrder === order.id;
           const orderStockCheck = enviados[order.id] || !globalInventorySnapshotReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
@@ -8910,6 +8944,13 @@ function OrdersPanel({
                   {copiedOrderId === order.id + "-full" ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
                   {copiedOrderId === order.id + "-full" ? "Completo copiado!" : "Copiar Completo"}
                 </Button>
+                {isPaidOrCompleted && (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                    onClick={() => copyOrderPostPayment(order)}>
+                    {copiedOrderId === order.id + "-post" ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedOrderId === order.id + "-post" ? "Pós-pagamento copiado!" : "Copiar pós-pagamento"}
+                  </Button>
+                )}
                 {isPrimary && (
                   <Button size="sm" variant="outline" className="gap-1.5 text-violet-600 border-violet-200 hover:bg-violet-50"
                     onClick={() => onEditOrder(order)}>
