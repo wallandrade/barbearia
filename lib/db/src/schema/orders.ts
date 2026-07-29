@@ -1,9 +1,10 @@
-import { mysqlTable, varchar, text, mediumtext, decimal, boolean, timestamp, json, int } from "drizzle-orm/mysql-core";
+import { mysqlTable, varchar, text, mediumtext, decimal, boolean, timestamp, json, int, bigint } from "drizzle-orm/mysql-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const ordersTable = mysqlTable("orders", {
   id: varchar("id", { length: 255 }).primaryKey(),
+  orderNumber: bigint("order_number", { mode: "number", unsigned: true }).autoincrement().notNull().unique(),
   userId: varchar("user_id", { length: 255 }),
   guestAccessToken: varchar("guest_access_token", { length: 255 }).unique(),
   affiliateUserId: varchar("affiliate_user_id", { length: 255 }),
@@ -60,6 +61,6 @@ export const ordersTable = mysqlTable("orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertOrderSchema = createInsertSchema(ordersTable).omit({ createdAt: true, updatedAt: true });
+export const insertOrderSchema = createInsertSchema(ordersTable).omit({ createdAt: true, updatedAt: true, orderNumber: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;

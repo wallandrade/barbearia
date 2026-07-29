@@ -11,6 +11,7 @@ const DEFAULT_WHATSAPP = "5535999768759";
 
 interface OrderInfo {
   id: string;
+  orderNumber?: number | null;
   clientName: string;
   clientDocument: string;
   address: string;
@@ -387,6 +388,7 @@ export default function KYCSubmit() {
   const [cardNumber, setCardNumber]     = useState("");
   const [cardHolderName, setCardHolderName] = useState("");
   const [declarationProduct, setDeclarationProduct] = useState("");
+  const orderRef = order?.orderNumber != null ? String(order.orderNumber) : (order?.id ?? "-");
 
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value.replace(/\D/g, "");
@@ -487,7 +489,7 @@ export default function KYCSubmit() {
             <ShieldCheck className="w-7 h-7 text-primary" />
           </div>
           <h1 className="text-2xl font-bold">Verificação KYC</h1>
-          <p className="text-muted-foreground text-sm mt-1">Pedido #{order.id} — {order.clientName}</p>
+          <p className="text-muted-foreground text-sm mt-1">Pedido #{orderRef} — {order.clientName}</p>
         </div>
 
         {step === "done" ? (
@@ -522,7 +524,7 @@ export default function KYCSubmit() {
               </>
             )}
             <a
-              href={`https://wa.me/${order.sellerWhatsapp?.replace(/\D/g, "") || DEFAULT_WHATSAPP}?text=${encodeURIComponent(kyc?.status === "approved" ? `Olá! Meu KYC já foi aprovado (pedido #${order.id}). Como prosseguir?` : `Olá! Acabei de enviar meus documentos KYC para o pedido #${order.id}. Aguardo seu contato para concluir a compra!`)}`}
+              href={`https://wa.me/${order.sellerWhatsapp?.replace(/\D/g, "") || DEFAULT_WHATSAPP}?text=${encodeURIComponent(kyc?.status === "approved" ? `Olá! Meu KYC já foi aprovado (pedido #${orderRef}). Como prosseguir?` : `Olá! Acabei de enviar meus documentos KYC para o pedido #${orderRef}. Aguardo seu contato para concluir a compra!`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-3.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-semibold text-sm transition-colors shadow-sm"
@@ -770,7 +772,7 @@ export default function KYCSubmit() {
             {/* WhatsApp support link at the bottom of the form */}
             <div className="text-center pt-2">
               <a
-                href={`https://wa.me/${order.sellerWhatsapp?.replace(/\D/g, "") || DEFAULT_WHATSAPP}?text=${encodeURIComponent(`Olá! Preciso de ajuda com o KYC do pedido #${order.id}.`)}`}
+                href={`https://wa.me/${order.sellerWhatsapp?.replace(/\D/g, "") || DEFAULT_WHATSAPP}?text=${encodeURIComponent(`Olá! Preciso de ajuda com o KYC do pedido #${orderRef}.`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-green-600 transition-colors"

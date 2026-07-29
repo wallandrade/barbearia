@@ -181,6 +181,11 @@ function isoToSPDate(iso: string) {
 
 type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null };
 
+function getOrderReference(order: any): string {
+  if (order?.orderNumber != null) return String(order.orderNumber);
+  return String(order?.id || "-");
+}
+
 function getOrderProducts(raw: unknown): OrderProductLite[] {
   if (Array.isArray(raw)) return raw as OrderProductLite[];
   if (typeof raw === "string") {
@@ -224,7 +229,7 @@ export function orderToText(order: any): string {
       trackingCodeInformado ? `Numero rastreio informado: ${trackingCodeInformado}` : "",
       order?.reshipment?.ticketDescription ? `Motivo do reenvio: ${order.reshipment.ticketDescription}` : "",
       "",
-      `Pedido numero: ${order?.id || "-"}`,
+      `Pedido numero: ${getOrderReference(order)}`,
       "",
       `Nome: ${order?.clientName || "-"}`,
       `Rua: ${rua}`,
@@ -245,7 +250,7 @@ export function orderToText(order: any): string {
 
   return [
     prioridadeLine,
-    `Pedido numero: ${order?.id || "-"}`,
+    `Pedido numero: ${getOrderReference(order)}`,
     "",
     `Nome: ${order?.clientName || "-"}`,
     `Rua: ${rua}`,
@@ -356,7 +361,7 @@ export function orderToFullText(order: any): string {
 
   return [
     prioridadeLine,
-    `Pedido #${order?.id || "-"}`,
+    `Pedido #${getOrderReference(order)}`,
     `Data: ${formatDateBR(order?.createdAt) || "-"}`,
     `Cliente: ${order?.clientName || "-"}`,
     `Contato: ${contato}`,
@@ -6198,7 +6203,7 @@ export default function Admin() {
               <motion.div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col"
                 initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
                 <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-                  <h3 className="text-lg font-bold">Editar Pedido #{editOrderModal.id}</h3>
+                  <h3 className="text-lg font-bold">Editar Pedido #{getOrderReference(editOrderModal)}</h3>
                   <Button size="icon" variant="ghost" onClick={() => setEditOrderModal(null)}><X className="w-5 h-5" /></Button>
                 </div>
                 <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
@@ -6399,13 +6404,13 @@ export default function Admin() {
                     <div className="p-4 rounded-xl bg-orange-50 border border-orange-200 text-center">
                       <p className="text-sm text-orange-700 mb-1">Diferença a cobrar</p>
                       <p className="text-3xl font-bold text-orange-800">{formatCurrency(diffOrder.diff)}</p>
-                      <p className="text-xs text-orange-600 mt-1">Pedido #{diffOrder.order.id} · {diffOrder.order.clientName}</p>
+                      <p className="text-xs text-orange-600 mt-1">Pedido #{getOrderReference(diffOrder.order)} · {diffOrder.order.clientName}</p>
                     </div>
                   ) : (
                     <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-center">
                       <p className="text-sm text-blue-700 mb-1">Novo total a cobrar via PIX</p>
                       <p className="text-3xl font-bold text-blue-800">{formatCurrency(diffOrder.diff)}</p>
-                      <p className="text-xs text-blue-600 mt-1">Pedido #{diffOrder.order.id} · {diffOrder.order.clientName}</p>
+                      <p className="text-xs text-blue-600 mt-1">Pedido #{getOrderReference(diffOrder.order)} · {diffOrder.order.clientName}</p>
                       <p className="text-xs text-blue-500 mt-1">O PIX anterior (valor antigo) deve ser desconsiderado</p>
                     </div>
                   )}
@@ -6450,7 +6455,7 @@ export default function Admin() {
                   <div className="flex items-center gap-3">
                     <ShieldCheck className="w-7 h-7 opacity-90" />
                     <div>
-                      <h3 className="text-lg font-bold">KYC — Pedido #{kycModal}</h3>
+                      <h3 className="text-lg font-bold">KYC — Pedido #{getOrderReference(orders.find((o) => o.id === kycModal) || { id: kycModal })}</h3>
                       <p className="text-white/80 text-xs">Verificação de identidade do cliente</p>
                     </div>
                   </div>
@@ -8661,7 +8666,7 @@ function OrdersPanel({
                             PRIORIDADE URGENTE
                           </span>
                         )}
-                        <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">#{order.id}</span>
+                        <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">#{getOrderReference(order)}</span>
                         {/* Badge de status de envio */}
                         {enviados[order.id] ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Enviado</span>
@@ -9146,7 +9151,7 @@ function OrdersPanel({
               <div className="p-4 sm:p-6 border-b border-border/70 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Revisar Etiqueta</p>
-                  <h3 className="text-lg sm:text-xl font-bold">Pedido #{trackingReview.order.id}</h3>
+                  <h3 className="text-lg sm:text-xl font-bold">Pedido #{getOrderReference(trackingReview.order)}</h3>
                 </div>
                 <div className="flex flex-wrap gap-2 items-center justify-end">
                   {trackingBatchFiles.length > 0 && (
@@ -9288,7 +9293,7 @@ function OrdersPanel({
                           .sort((a, b) => (a.id === trackingReview.order.id ? -1 : b.id === trackingReview.order.id ? 1 : 0))
                           .map((order) => (
                             <option key={order.id} value={order.id}>
-                              #{order.id} · {order.clientName} · {order.addressCity}/{order.addressState}
+                              #{getOrderReference(order)} · {order.clientName} · {order.addressCity}/{order.addressState}
                             </option>
                           ))}
                       </select>
@@ -10695,7 +10700,7 @@ function RecurringCustomersPanel({
                             {customer.purchases.map((purchase) => (
                               <div key={purchase.id} className="rounded-lg border border-border bg-slate-50 px-3 py-2">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
-                                  <p className="text-xs font-semibold text-foreground">Pedido #{purchase.id}</p>
+                                  <p className="text-xs font-semibold text-foreground">Pedido #{getOrderReference(purchase)}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {purchase.createdAt ? formatDateBR(purchase.createdAt) : "Data indisponível"} · {formatCurrency(Number(purchase.total || 0))}
                                   </p>

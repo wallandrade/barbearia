@@ -74,6 +74,7 @@ router.get("/kyc/:orderId", async (req, res) => {
     const orderRows = await db
       .select({
         id: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
         clientName: ordersTable.clientName,
         clientDocument: ordersTable.clientDocument,
         clientPhone: ordersTable.clientPhone,
@@ -127,6 +128,7 @@ router.get("/kyc/:orderId", async (req, res) => {
     res.json({
       order: {
         id: order.id,
+        orderNumber: order.orderNumber ?? null,
         clientName: order.clientName,
         clientDocument: order.clientDocument,
         address: [

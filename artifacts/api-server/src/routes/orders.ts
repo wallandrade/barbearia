@@ -1256,7 +1256,15 @@ router.post("/orders", async (req, res) => {
       createdAt: new Date().toISOString(),
     });
 
+    const [createdOrderRow] = await db
+      .select({ orderNumber: ordersTable.orderNumber })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, id))
+      .limit(1);
+    const orderNumber = createdOrderRow?.orderNumber ?? null;
+
     res.status(201).json({
+      orderNumber,
       id, client, address: address || null, products: orderProducts, shippingType,
       includeInsurance: Boolean(includeInsurance),
       subtotal: computedSubtotal,
@@ -2070,6 +2078,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
 
   return {
     id:                  o.id,
+    orderNumber:         o.orderNumber ?? null,
     clientName:          o.clientName,
     clientEmail:         o.clientEmail,
     clientPhone:         o.clientPhone,

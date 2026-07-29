@@ -50,6 +50,10 @@ async function indexExists(tableName: string, indexName: string, databaseName: s
 
 async function ensureOrdersColumns(databaseName: string): Promise<void> {
   const definitions = [
+    {
+      name: "order_number",
+      sql: "ALTER TABLE orders ADD COLUMN order_number BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE",
+    },
     { name: "user_id", sql: "ALTER TABLE orders ADD COLUMN user_id VARCHAR(255) NULL" },
     { name: "guest_access_token", sql: "ALTER TABLE orders ADD COLUMN guest_access_token VARCHAR(255) NULL" },
     { name: "affiliate_user_id", sql: "ALTER TABLE orders ADD COLUMN affiliate_user_id VARCHAR(255) NULL" },

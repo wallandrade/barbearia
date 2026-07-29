@@ -132,11 +132,12 @@ export default function Checkout() {
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
-  const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string } | null>(null);
+  const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string; orderRef: string } | null>(null);
   const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
   const [cardModalStep, setCardModalStep] = useState<"card_pricing" | "kyc_notice" | "installments" | "kyc_link">("card_pricing");
   const [installments, setInstallments] = useState(1);
   const [kycOrderId, setKycOrderId] = useState("");
+  const [kycOrderRef, setKycOrderRef] = useState("");
   const [kycWhatsAppUrl, setKycWhatsAppUrl] = useState("");
   const [kycVerified, setKycVerified] = useState(false);
   const [cpfDisplay, setCpfDisplay] = useState("");
@@ -413,7 +414,7 @@ export default function Checkout() {
         throw error;
       }
 
-      return result as { id: string };
+      return result as { id: string; orderNumber?: number | null };
     } finally {
       setIsCreatingOrder(false);
     }
@@ -858,7 +859,7 @@ export default function Checkout() {
                   <CheckCircle2 className="w-8 h-8 text-green-600" />
                 </div>
 
-                <h2 className="text-2xl font-bold mb-2">Pedido #{whatsappModalData.orderId} criado!</h2>
+                <h2 className="text-2xl font-bold mb-2">Pedido #{whatsappModalData.orderRef} criado!</h2>
                 <p className="text-muted-foreground mb-6">
                   Seu pedido foi criado com sucesso. Agora, clique no botão abaixo para solicitar a chave PIX ao vendedor.
                 </p>
@@ -963,6 +964,7 @@ export default function Checkout() {
       const result = await resp.json() as {
         error?: string;
         orderId?: string;
+        orderNumber?: number | null;
         transactionId?: string;
         status?: string;
         pixCode?: string;
@@ -988,10 +990,13 @@ export default function Checkout() {
 
       if (result.coveredByAffiliateCredit) {
         const coveredOrderId = result.orderId || genId();
+        const coveredOrderRef = result.orderNumber != null ? String(result.orderNumber) : coveredOrderId;
         localStorage.setItem(
           "successOrder",
           JSON.stringify({
             orderId: coveredOrderId,
+            orderNumber: result.orderNumber ?? null,
+            orderRef: coveredOrderRef,
             clientName:     data.name,
             clientPhone:    data.phone,
             clientEmail:    data.email,
@@ -1028,6 +1033,7 @@ export default function Checkout() {
       }
 
       const orderId = result.orderId!;
+      const orderRef = result.orderNumber != null ? String(result.orderNumber) : orderId;
 
       localStorage.setItem(
         "currentPix",
@@ -1038,6 +1044,8 @@ export default function Checkout() {
           pixBase64:     result.pixBase64,
           pixImage:      result.pixImage,
           orderId,
+          orderNumber: result.orderNumber ?? null,
+          orderRef,
         })
       );
       localStorage.setItem(
@@ -1049,12 +1057,16 @@ export default function Checkout() {
           shippingType: selectedShipping?.name ?? "Frete",
           includeInsurance,
           orderId,
+          orderNumber: result.orderNumber ?? null,
+          orderRef,
         })
       );
       localStorage.setItem(
         "successOrder",
         JSON.stringify({
           orderId,
+          orderNumber: result.orderNumber ?? null,
+          orderRef,
           clientName:     data.name,
           clientPhone:    data.phone,
           clientEmail:    data.email,
@@ -1107,6 +1119,7 @@ export default function Checkout() {
       if (!cartAvailable) return;
 
       setKycOrderId("");
+      setKycOrderRef("");
       setKycWhatsAppUrl("");
       setKycVerified(false);
       // Check if this CPF already has an approved KYC
@@ -1204,7 +1217,7 @@ export default function Checkout() {
 
       const message =
         `Olá! Quero finalizar meu pedido.\n\n` +
-        `Pedido: #${order.id}\n` +
+        `Pedido: #${order.orderNumber != null ? String(order.orderNumber) : order.id}\n` +
         `Cliente: ${data.name}\n` +
         `Telefone: ${data.phone}\n` +
         `CPF: ${data.document}\n` +
@@ -1227,10 +1240,11 @@ export default function Checkout() {
       }
 
       const waUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
+      const orderRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
 
       // Store modal data to show confirmation dialog
-      setWhatsappModalData({ url: waUrl, orderId: order.id });
-      toast.success(`Pedido #${order.id} criado com sucesso!`);
+      setWhatsappModalData({ url: waUrl, orderId: order.id, orderRef });
+      toast.success(`Pedido #${orderRef} criado com sucesso!`);
       clearCart();
       setIsOpen(false);
     } catch (error) {
@@ -1312,7 +1326,7 @@ export default function Checkout() {
 
       const message =
         `💳 *Pedido via Cartão — Yury*\n\n` +
-        `*Nº do Pedido:* ${order.id}\n` +
+        `*Nº do Pedido:* ${order.orderNumber != null ? String(order.orderNumber) : order.id}\n` +
         `*Cliente:* ${data.name}\n` +
         `*CPF:* ${data.document}\n` +
         `*Telefone:* ${data.phone}\n` +
@@ -1338,6 +1352,7 @@ export default function Checkout() {
 
       const waUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
       setKycOrderId(order.id);
+      setKycOrderRef(order.orderNumber != null ? String(order.orderNumber) : order.id);
       setKycWhatsAppUrl(waUrl);
       setCardModalStep("kyc_link");
     } catch (error) {
@@ -2395,7 +2410,7 @@ export default function Checkout() {
                 {cardModalStep === "kyc_link" && kycVerified && (
                   <>
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center space-y-1">
-                      <p className="text-sm font-bold text-green-800">✅ Pedido #{kycOrderId} registrado!</p>
+                      <p className="text-sm font-bold text-green-800">✅ Pedido #{kycOrderRef || kycOrderId} registrado!</p>
                       <p className="text-sm text-green-700 leading-relaxed">
                         Sua identidade já foi verificada. A vendedora vai entrar em contato pelo WhatsApp para concluir sua compra.
                       </p>
@@ -2418,7 +2433,7 @@ export default function Checkout() {
                 {cardModalStep === "kyc_link" && !kycVerified && (
                   <>
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                      <p className="text-sm font-bold text-green-800 mb-1">✅ Pedido #{kycOrderId} criado!</p>
+                      <p className="text-sm font-bold text-green-800 mb-1">✅ Pedido #{kycOrderRef || kycOrderId} criado!</p>
                       <p className="text-sm text-green-700">
                         Agora você precisa completar o KYC para que seu pedido seja processado.
                       </p>
@@ -2489,7 +2504,7 @@ export default function Checkout() {
               <CheckCircle2 className="w-8 h-8 text-green-600" />
             </div>
             
-            <h2 className="text-2xl font-bold mb-2">Pedido #{whatsappModalData.orderId} criado!</h2>
+            <h2 className="text-2xl font-bold mb-2">Pedido #{whatsappModalData.orderRef} criado!</h2>
             <p className="text-muted-foreground mb-6">
               Seu pedido foi criado com sucesso. Agora, clique no botão abaixo para solicitar a chave PIX ao vendedor.
             </p>

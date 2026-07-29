@@ -169,6 +169,7 @@ router.post("/support/orders-by-cpf", async (req, res) => {
     const rows = await db
       .select({
         id: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
         clientName: ordersTable.clientName,
         total: ordersTable.total,
         status: ordersTable.status,
@@ -187,6 +188,7 @@ router.post("/support/orders-by-cpf", async (req, res) => {
 
     const orders = rows.map((row) => ({
       id: row.id,
+      orderNumber: row.orderNumber ?? null,
       clientName: maskName(row.clientName),
       total: Number(row.total),
       status: row.status,

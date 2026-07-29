@@ -430,6 +430,13 @@ router.post("/checkout/pix", async (req, res) => {
       discountAmount:      computedDiscountAmount > 0 ? String(computedDiscountAmount) : null,
     });
 
+    const [createdOrderRow] = await db
+      .select({ orderNumber: ordersTable.orderNumber })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, orderId))
+      .limit(1);
+    const orderNumber = createdOrderRow?.orderNumber ?? null;
+
     let affiliateCreditUsed = 0;
     if (useAffiliateCredit === true && customerSession?.userId) {
       affiliateCreditUsed = await applyAffiliateCreditToOrder({
@@ -508,6 +515,7 @@ router.post("/checkout/pix", async (req, res) => {
       });
       res.json({
         orderId,
+        orderNumber,
         affiliateCode: affiliateUserId ? normalizedAffiliateCode : null,
         guestAccessToken,
         isGuestOrder: !customerSession,
@@ -575,6 +583,7 @@ router.post("/checkout/pix", async (req, res) => {
 
     res.json({
       orderId,
+      orderNumber,
       affiliateCode: affiliateUserId ? normalizedAffiliateCode : null,
       guestAccessToken,
       isGuestOrder: !customerSession,

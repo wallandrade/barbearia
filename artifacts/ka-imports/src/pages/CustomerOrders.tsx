@@ -10,6 +10,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type CustomerOrder = {
   id: string;
+  orderNumber?: number | null;
   total: number;
   status: string;
   enviado?: boolean;
@@ -384,6 +385,7 @@ export default function CustomerOrders() {
                   ) : (
                     <div className="space-y-3">
                       {orders.map((order) => {
+                        const orderRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
                         const displayStatus = order.enviado ? "enviado" : order.status;
                         const displaySituation = displayStatus === "completed"
                           ? "Entregue"
@@ -400,8 +402,8 @@ export default function CustomerOrders() {
                                 {getStatusIcon(displayStatus)}
                               </div>
                               <div>
-                                <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Pedido ID</p>
-                                <p className="text-lg font-bold text-foreground">#{order.id}</p>
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Pedido</p>
+                                <p className="text-lg font-bold text-foreground">#{orderRef}</p>
                               </div>
                             </div>
                             <div className="flex flex-col sm:items-end gap-2">
@@ -442,7 +444,7 @@ export default function CustomerOrders() {
                               onClick={() => {
                                 const phone = getActiveWhatsApp();
                                 window.open(
-                                  `https://wa.me/${phone}?text=${encodeURIComponent(`Olá! Gostaria de informações sobre o pedido #${order.id}`)}`,
+                                  `https://wa.me/${phone}?text=${encodeURIComponent(`Olá! Gostaria de informações sobre o pedido #${orderRef}`)}`,
                                   "_blank",
                                   "noopener,noreferrer"
                                 );
