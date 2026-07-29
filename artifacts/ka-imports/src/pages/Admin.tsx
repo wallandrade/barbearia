@@ -382,20 +382,46 @@ export function orderToFullText(order: any): string {
 }
 
 export function orderToPostPaymentText(order: any): string {
-  const summary = orderToText(order);
-  const guidance = [
-    "",
-    "Parabéns pela sua compra. Já confirmamos o seu pagamento.",
-    "",
-    "Seu pedido foi registrado com sucesso e está em preparação.",
-    "Pedimos, por favor, que aguarde 48 horas úteis antes de solicitar o código de rastreio.",
-    "Assim evitamos acúmulo de mensagens no suporte e conseguimos te atender com mais agilidade.",
-    "",
-    "Após esse prazo, seu rastreio já estará disponível.",
-    "Importante: sábados e domingos não são considerados dias úteis de envio.",
-  ].join("\n");
+  const products = getOrderProducts(order?.products);
+  const firstName = String(order?.clientName || "Cliente").trim().split(/\s+/)[0] || "Cliente";
 
-  return `${summary}\n${guidance}`;
+  const productsText = products.length > 0
+    ? products
+      .map((p) => {
+        const qty = Number(p?.quantity) || 0;
+        const name = String(p?.name || "Produto").trim();
+        return `💊 ${qty}x ${name}`;
+      })
+      .join("\n")
+    : "💊 1x Produto";
+
+  const addressLines = [
+    [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", "),
+    order?.addressNeighborhood ? `Bairro: ${order.addressNeighborhood}` : "",
+    order?.addressComplement ? `Complemento: ${order.addressComplement}` : "",
+    [order?.addressCity, order?.addressState].filter(Boolean).join("/"),
+    order?.addressCep ? `CEP: ${order.addressCep}` : "",
+  ].filter(Boolean);
+
+  return [
+    `🎉 **Parabéns, ${firstName}! Sua compra foi confirmada com sucesso!** ✅📦`,
+    "",
+    "Seu pagamento já foi aprovado e o seu pedido foi registrado em nosso sistema. Agora ele segue para a etapa de preparação e envio. 🚀",
+    "",
+    "📋 **Resumo do pedido:**",
+    productsText,
+    "",
+    "📍 **Entrega:**",
+    ...addressLines,
+    "",
+    "⏳ Pedimos que aguarde até **48 horas úteis** para a liberação do código de rastreio. Esse prazo é necessário para organização do envio e para conseguirmos manter um atendimento mais rápido e eficiente para todos os clientes. 🙏",
+    "",
+    "Assim que o rastreio estiver disponível, você poderá acompanhar a movimentação do seu pedido. 📲",
+    "",
+    "⚠️ **Importante:** sábados, domingos e feriados não são considerados dias úteis para processamento de envio.",
+    "",
+    "Obrigado pela confiança! 💙📦",
+  ].join("\n");
 }
 
 export function chargeToText(charge: any): string {
