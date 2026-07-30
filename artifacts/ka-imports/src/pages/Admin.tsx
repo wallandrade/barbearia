@@ -11388,6 +11388,28 @@ function ProductsPanel({
   };
 
   const currentVariantGroups = normalizeVariantGroups((productForm as any).variantGroups);
+  const currentCostPrice = Math.max(0, Number((productForm as any).costPrice || 0));
+
+  const getProfitInfo = (salePrice: number | null | undefined, quantity = 1) => {
+    const resolvedSale = Math.max(0, Number(salePrice || 0));
+    const profitUnit = resolvedSale - currentCostPrice;
+    const profitTotal = profitUnit * Math.max(1, quantity);
+    const profitPercent = resolvedSale > 0 ? (profitUnit / resolvedSale) * 100 : 0;
+    return { profitUnit, profitTotal, profitPercent };
+  };
+
+  const bestBulkProfit = normalizeBulkDiscountTiers((productForm as any).bulkDiscountTiers)
+    .map((tier) => {
+      const quantity = tier.minQty >= 4 ? 4 : tier.minQty;
+      const profitInfo = getProfitInfo(tier.unitPrice, quantity);
+      return {
+        quantity,
+        label: tier.minQty >= 4 ? "4cx+" : `${tier.minQty}cx`,
+        ...profitInfo,
+      };
+    })
+    .filter((item) => Number.isFinite(item.profitTotal))
+    .sort((a, b) => b.profitTotal - a.profitTotal)[0] ?? null;
 
   const fileRef = useRef<HTMLInputElement>(null);
   const restoreBackupRef = useRef<HTMLInputElement>(null);
@@ -12039,6 +12061,11 @@ function ProductsPanel({
                         className={`${inp2} pl-9`}
                       />
                     </div>
+                    <p className={`mt-1 text-xs font-medium ${getProfitInfo(productForm.price).profitUnit >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {getProfitInfo(productForm.price).profitUnit >= 0
+                        ? `Lucro unitário: ${formatCurrency(getProfitInfo(productForm.price).profitUnit)} (${getProfitInfo(productForm.price).profitPercent.toFixed(1)}%)`
+                        : `Abaixo do custo: ${formatCurrency(Math.abs(getProfitInfo(productForm.price).profitUnit))} por unidade`}
+                    </p>
                   </div>
 
                   {/* Cost price */}
@@ -12065,6 +12092,9 @@ function ProductsPanel({
                         className={`${inp2} pl-9`}
                       />
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Base de lucro: {formatCurrency(currentCostPrice)}
+                    </p>
                   </div>
 
                   {/* Promo price */}
@@ -12079,6 +12109,13 @@ function ProductsPanel({
                         className={`${inp2} pl-9`}
                       />
                     </div>
+                    {productForm.promoPrice != null && Number(productForm.promoPrice) > 0 && (
+                      <p className={`mt-1 text-xs font-medium ${getProfitInfo(productForm.promoPrice).profitUnit >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                        {getProfitInfo(productForm.promoPrice).profitUnit >= 0
+                          ? `Lucro unitário: ${formatCurrency(getProfitInfo(productForm.promoPrice).profitUnit)} (${getProfitInfo(productForm.promoPrice).profitPercent.toFixed(1)}%)`
+                          : `Abaixo do custo: ${formatCurrency(Math.abs(getProfitInfo(productForm.promoPrice).profitUnit))} por unidade`}
+                      </p>
+                    )}
                   </div>
 
                   {/* Promo ends */}
@@ -12100,6 +12137,14 @@ function ProductsPanel({
                       <p className="text-xs text-muted-foreground mt-1">Configure os preços unitários para 1cx, 2cx, 3cx e 4cx+.</p>
                     </div>
 
+                    {bestBulkProfit && (
+                      <div className={`rounded-full border px-3 py-2 text-xs font-semibold ${bestBulkProfit.profitTotal >= 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+                        {bestBulkProfit.profitTotal >= 0
+                          ? `Melhor faixa de lucro total: ${bestBulkProfit.label} (min. ${bestBulkProfit.quantity}) · Lucro total ${formatCurrency(bestBulkProfit.profitTotal)} (${bestBulkProfit.profitPercent.toFixed(1)}% unit.)`
+                          : `Melhor faixa ainda abaixo do custo: ${bestBulkProfit.label} (min. ${bestBulkProfit.quantity}) · Prejuízo total ${formatCurrency(Math.abs(bestBulkProfit.profitTotal))}`}
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-3">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ativar estratégia</label>
                       <button
@@ -12116,6 +12161,7 @@ function ProductsPanel({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {[1, 2, 3, 4].map((qty) => {
                         const value = getFixedTierPrice(currentTiers, qty);
+                        const profitInfo = getProfitInfo(value, qty >= 4 ? 4 : qty);
                         return (
                           <div key={qty}>
                             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">
@@ -12133,6 +12179,20 @@ function ProductsPanel({
                                 className={`${inp2} pl-9`}
                               />
                             </div>
+                            {value != null && value > 0 && (
+                              <div className="mt-1 text-xs font-medium space-y-0.5">
+                                <p className={profitInfo.profitUnit >= 0 ? "text-emerald-700" : "text-red-600"}>
+                                  {profitInfo.profitUnit >= 0
+                                    ? `Lucro unitário: ${formatCurrency(profitInfo.profitUnit)} (${profitInfo.profitPercent.toFixed(1)}%)`
+                                    : `Abaixo do custo: ${formatCurrency(Math.abs(profitInfo.profitUnit))} por unidade`}
+                                </p>
+                                <p className={profitInfo.profitTotal >= 0 ? "text-emerald-700" : "text-red-600"}>
+                                  {profitInfo.profitTotal >= 0
+                                    ? `Lucro total ${qty >= 4 ? "4cx+" : `${qty}cx`}: ${formatCurrency(profitInfo.profitTotal)}`
+                                    : `Prejuízo total ${qty >= 4 ? "4cx+" : `${qty}cx`}: ${formatCurrency(Math.abs(profitInfo.profitTotal))}`}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
