@@ -564,6 +564,20 @@ export default function Checkout() {
     return null;
   }, [sellerCode]);
 
+  const resolveCheckoutWhatsAppNumber = useCallback(async (): Promise<string | null> => {
+    const sellerWhatsapp = await resolveSellerWhatsAppStrict();
+
+    // On seller checkout links, only allow the seller-bound WhatsApp.
+    if (normalizedSellerCode) return sellerWhatsapp;
+
+    if (sellerWhatsapp) return sellerWhatsapp;
+    const configuredStoreWhatsapp = checkoutWhatsappNumber.replace(/\D/g, "");
+    if (configuredStoreWhatsapp) return configuredStoreWhatsapp;
+
+    const activeWhatsapp = getActiveWhatsApp().replace(/\D/g, "");
+    return activeWhatsapp || null;
+  }, [checkoutWhatsappNumber, normalizedSellerCode, resolveSellerWhatsAppStrict]);
+
   // Load shipping options from API
   useEffect(() => {
     setShippingLoading(true);
@@ -1233,9 +1247,13 @@ export default function Checkout() {
         `Total: ${formatCurrency(payableTotal)}\n\n` +
         `Pode me enviar a chave PIX para pagamento?`;
 
-      const supportNumber = checkoutWhatsappNumber.replace(/\D/g, "");
+      const supportNumber = await resolveCheckoutWhatsAppNumber();
       if (!supportNumber) {
-        toast.error("Número de WhatsApp não configurado no admin.");
+        if (normalizedSellerCode) {
+          toast.error("Não foi possível encontrar o WhatsApp deste vendedor. Tente novamente em instantes.");
+        } else {
+          toast.error("Número de WhatsApp não configurado no admin.");
+        }
         return;
       }
 
@@ -1344,9 +1362,13 @@ export default function Checkout() {
         `*Total:* ${formatCurrency(cardTotal)}\n\n` +
         `Aguardo o retorno para confirmar os detalhes!`;
 
-      const supportNumber = checkoutWhatsappNumber.replace(/\D/g, "");
+      const supportNumber = await resolveCheckoutWhatsAppNumber();
       if (!supportNumber) {
-        toast.error("Número de WhatsApp não configurado no admin.");
+        if (normalizedSellerCode) {
+          toast.error("Não foi possível encontrar o WhatsApp deste vendedor. Tente novamente em instantes.");
+        } else {
+          toast.error("Número de WhatsApp não configurado no admin.");
+        }
         return;
       }
 
