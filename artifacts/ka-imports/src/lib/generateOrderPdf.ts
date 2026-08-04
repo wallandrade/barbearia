@@ -68,7 +68,6 @@ function row(doc: jsPDF, y: number, label: string, value: string, bold = false):
 // ─────────────────────────────────────────────────────────────────
 export interface OrderForPdf {
   id: string;
-  orderNumber?: number | null;
   clientName: string;
   clientEmail: string;
   clientPhone: string;
@@ -99,11 +98,10 @@ export interface OrderForPdf {
   createdAt: string;
 }
 
-export function generateOrderPdf(order: OrderForPdf, outputMode: "download" | "open" = "download"): void {
+export function generateOrderPdf(order: OrderForPdf): void {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const isCard = order.paymentMethod === "card_simulation";
   const pageW = 210;
-  const orderLabel = order.orderNumber != null ? `#${String(order.orderNumber)}` : `#${order.id}`;
 
   // ── Header bar ──────────────────────────────────────────────
   doc.setFillColor(...BG_HEADER);
@@ -133,7 +131,7 @@ export function generateOrderPdf(order: OrderForPdf, outputMode: "download" | "o
   // ── Order info ───────────────────────────────────────────────
   let y = 38;
   y = sectionTitle(doc, y, "Informações do Pedido");
-  y = row(doc, y, "Número do Pedido", orderLabel);
+  y = row(doc, y, "Número do Pedido", `#${order.id}`);
   y = row(doc, y, "Data / Hora", formatDateBR(order.createdAt));
   y = row(doc, y, "Status", sLabel, true);
   y = row(doc, y, "Forma de Pagamento", isCard ? `Cartão${order.cardInstallments ? ` – ${order.cardInstallments}x` : ""}` : "PIX");
@@ -232,20 +230,7 @@ export function generateOrderPdf(order: OrderForPdf, outputMode: "download" | "o
   doc.setTextColor(...MUTED);
   doc.text("Yury — Documento gerado automaticamente. Sujeito a confirmação de pagamento.", pageW / 2, pageH - 10, { align: "center" });
 
-  const fileRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
-  const filename = `pedido-${fileRef}-${order.clientName.split(" ")[0].toLowerCase()}.pdf`;
-
-  if (outputMode === "open") {
-    const blob = doc.output("blob");
-    const blobUrl = URL.createObjectURL(blob);
-    const opened = window.open(blobUrl, "_blank", "noopener,noreferrer");
-    if (!opened) {
-      doc.save(filename);
-    }
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-    return;
-  }
-
+  const filename = `pedido-${order.id}-${order.clientName.split(" ")[0].toLowerCase()}.pdf`;
   doc.save(filename);
 }
 

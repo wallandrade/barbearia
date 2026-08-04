@@ -3930,35 +3930,9 @@ export default function Admin() {
                       <p className="text-sm font-medium text-amber-900 truncate">{o.clientName}</p>
                       <p className="text-xs text-amber-700/80">#{o.id} · {formatDateBR(o.createdAt)}</p>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full whitespace-nowrap">
-                        {formatCurrency(Number(o.total))}
-                      </span>
-                      <button
-                        type="button"
-                        title="Abrir PDF do pedido"
-                        className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white/90 p-1.5 text-amber-800 hover:bg-white"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          openOrderPdf(o as AdminOrder);
-                        }}
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Baixar PDF do pedido"
-                        className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white/90 p-1.5 text-amber-800 hover:bg-white"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          downloadOrder(o as AdminOrder);
-                        }}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      {formatCurrency(Number(o.total))}
+                    </span>
                   </div>
                 ))}
                 {ordersParaEnviar.length > 5 && (
@@ -7829,19 +7803,6 @@ function OrdersPanel({
     }
   };
 
-  const openOrderPdf = (order: AdminOrder) => {
-    try {
-      const normalizedProducts = getOrderProducts(order.products).map((p) => ({
-        name: p.name,
-        quantity: Number(p.quantity) || 0,
-        price: Number(p.price) || 0,
-      }));
-      generateOrderPdf({ ...order, products: normalizedProducts }, "open");
-    } catch {
-      toast.error("Não foi possível abrir o PDF do pedido.");
-    }
-  };
-
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
   const [adminPasswordModalOpen, setAdminPasswordModalOpen] = useState(false);
   const [adminPasswordModalTitle, setAdminPasswordModalTitle] = useState("Confirmar ação sensível");
@@ -8999,10 +8960,6 @@ function OrdersPanel({
                   onClick={() => setExpandedOrder(isExpanded ? null : order.id)}>
                   {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   Detalhes
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-slate-700 border-slate-200 hover:bg-slate-50"
-                  onClick={() => openOrderPdf(order)}>
-                  <Eye className="w-3.5 h-3.5" />Abrir PDF
                 </Button>
                 <Button size="sm" variant="outline" className="gap-1.5 text-slate-700 border-slate-200 hover:bg-slate-50"
                   onClick={() => downloadOrder(order)}>
