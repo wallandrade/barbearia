@@ -2106,6 +2106,8 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     transactionId:       o.transactionId,
     sellerCode:             o.sellerCode,
     sellerCommissionRateSnapshot: o.sellerCommissionRateSnapshot ? Number(o.sellerCommissionRateSnapshot) : null,
+    sellerCommissionBatchId: o.sellerCommissionBatchId ?? null,
+    sellerCommissionPaidAt: o.sellerCommissionPaidAt?.toISOString?.() ?? null,
     couponCode:             o.couponCode,
     discountAmount:         o.discountAmount ? Number(o.discountAmount) : null,
     affiliateCreditUsed:    o.affiliateCreditUsed ? Number(o.affiliateCreditUsed) : null,

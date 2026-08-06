@@ -113,6 +113,14 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
       sql: "ALTER TABLE orders ADD COLUMN seller_commission_rate_snapshot DECIMAL(5,2) NULL",
     },
     {
+      name: "seller_commission_batch_id",
+      sql: "ALTER TABLE orders ADD COLUMN seller_commission_batch_id VARCHAR(255) NULL",
+    },
+    {
+      name: "seller_commission_paid_at",
+      sql: "ALTER TABLE orders ADD COLUMN seller_commission_paid_at TIMESTAMP NULL",
+    },
+    {
       name: "whatsapp_group",
       sql: "ALTER TABLE orders ADD COLUMN whatsapp_group VARCHAR(64) NULL",
     },
@@ -149,6 +157,102 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
       await pool.query("ALTER TABLE orders ADD UNIQUE KEY orders_guest_access_token_unique (guest_access_token)");
     } catch {
       // Ignore duplicate or unsupported index creation issues.
+    }
+  }
+
+  const indexes = [
+    { name: "orders_seller_code_idx", sql: "ALTER TABLE orders ADD KEY orders_seller_code_idx (seller_code)" },
+    { name: "orders_status_idx", sql: "ALTER TABLE orders ADD KEY orders_status_idx (status)" },
+    { name: "orders_created_at_idx", sql: "ALTER TABLE orders ADD KEY orders_created_at_idx (created_at)" },
+    {
+      name: "orders_seller_commission_batch_id_idx",
+      sql: "ALTER TABLE orders ADD KEY orders_seller_commission_batch_id_idx (seller_commission_batch_id)",
+    },
+    {
+      name: "orders_seller_commission_paid_at_idx",
+      sql: "ALTER TABLE orders ADD KEY orders_seller_commission_paid_at_idx (seller_commission_paid_at)",
+    },
+  ];
+
+  for (const index of indexes) {
+    if (!(await indexExists("orders", index.name, databaseName))) {
+      try {
+        await pool.query(index.sql);
+      } catch {
+        // Ignore index creation races in startup.
+      }
+    }
+  }
+}
+
+async function ensureSellerCommissionBatchesTable(databaseName: string): Promise<void> {
+  if (!(await tableExists("seller_commission_batches", databaseName))) {
+    await pool.query(`
+      CREATE TABLE seller_commission_batches (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        seller_code VARCHAR(255) NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'open',
+        date_from TIMESTAMP NOT NULL,
+        date_to TIMESTAMP NOT NULL,
+        order_ids JSON NOT NULL,
+        order_count INT NOT NULL,
+        total_amount DECIMAL(10,2) NOT NULL,
+        payment_method VARCHAR(64) NOT NULL,
+        notes TEXT NULL,
+        paid_at TIMESTAMP NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY seller_commission_batches_seller_code_idx (seller_code),
+        KEY seller_commission_batches_status_idx (status),
+        KEY seller_commission_batches_created_at_idx (created_at)
+      )
+    `);
+    return;
+  }
+
+  const definitions = [
+    { name: "seller_code", sql: "ALTER TABLE seller_commission_batches ADD COLUMN seller_code VARCHAR(255) NOT NULL" },
+    { name: "status", sql: "ALTER TABLE seller_commission_batches ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'open'" },
+    { name: "date_from", sql: "ALTER TABLE seller_commission_batches ADD COLUMN date_from TIMESTAMP NOT NULL" },
+    { name: "date_to", sql: "ALTER TABLE seller_commission_batches ADD COLUMN date_to TIMESTAMP NOT NULL" },
+    { name: "order_ids", sql: "ALTER TABLE seller_commission_batches ADD COLUMN order_ids JSON NOT NULL" },
+    { name: "order_count", sql: "ALTER TABLE seller_commission_batches ADD COLUMN order_count INT NOT NULL DEFAULT 0" },
+    { name: "total_amount", sql: "ALTER TABLE seller_commission_batches ADD COLUMN total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00" },
+    { name: "payment_method", sql: "ALTER TABLE seller_commission_batches ADD COLUMN payment_method VARCHAR(64) NOT NULL DEFAULT 'pix'" },
+    { name: "notes", sql: "ALTER TABLE seller_commission_batches ADD COLUMN notes TEXT NULL" },
+    { name: "paid_at", sql: "ALTER TABLE seller_commission_batches ADD COLUMN paid_at TIMESTAMP NULL" },
+    { name: "created_at", sql: "ALTER TABLE seller_commission_batches ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+    { name: "updated_at", sql: "ALTER TABLE seller_commission_batches ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+  ];
+
+  for (const definition of definitions) {
+    if (!(await columnExists("seller_commission_batches", definition.name, databaseName))) {
+      await pool.query(definition.sql);
+    }
+  }
+
+  const indexes = [
+    {
+      name: "seller_commission_batches_seller_code_idx",
+      sql: "ALTER TABLE seller_commission_batches ADD KEY seller_commission_batches_seller_code_idx (seller_code)",
+    },
+    {
+      name: "seller_commission_batches_status_idx",
+      sql: "ALTER TABLE seller_commission_batches ADD KEY seller_commission_batches_status_idx (status)",
+    },
+    {
+      name: "seller_commission_batches_created_at_idx",
+      sql: "ALTER TABLE seller_commission_batches ADD KEY seller_commission_batches_created_at_idx (created_at)",
+    },
+  ];
+
+  for (const index of indexes) {
+    if (!(await indexExists("seller_commission_batches", index.name, databaseName))) {
+      try {
+        await pool.query(index.sql);
+      } catch {
+        // Ignore index creation races in startup.
+      }
     }
   }
 }
@@ -779,6 +883,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureProductCostHistoryTable(databaseName);
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);
+    await ensureSellerCommissionBatchesTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

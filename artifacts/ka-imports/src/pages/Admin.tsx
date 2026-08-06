@@ -986,7 +986,41 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
   );
 }
 
-type TabType = "orders" | "charges" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
+type TabType = "orders" | "charges" | "commissions" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
+
+interface CommissionPendingOrder {
+  id: string;
+  orderNumber: number | null;
+  clientName: string;
+  sellerCode: string;
+  createdAt: string;
+  total: number;
+  commissionRateSnapshot: number;
+  commissionAmount: number;
+}
+
+interface CommissionBatch {
+  id: string;
+  sellerCode: string;
+  status: "open" | "paid";
+  dateFrom: string;
+  dateTo: string;
+  orderIds: string[];
+  orderCount: number;
+  totalAmount: number;
+  paymentMethod: string;
+  notes: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CommissionSummary {
+  pendingCount: number;
+  pendingTotalAmount: number;
+  openBatchesCount: number;
+  paidBatchesCount: number;
+}
 
 const PRIMARY_ONLY_TABS = new Set<TabType>([
   "users",
@@ -1284,6 +1318,23 @@ export default function Admin() {
   const [groupFilter, setGroupFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState(todayStr());
   const [dateTo, setDateTo] = useState(todayStr());
+  const [commissionSellerFilter, setCommissionSellerFilter] = useState("all");
+  const [commissionDateFrom, setCommissionDateFrom] = useState(todayStr());
+  const [commissionDateTo, setCommissionDateTo] = useState(todayStr());
+  const [commissionPaymentMethod, setCommissionPaymentMethod] = useState("pix");
+  const [commissionNotes, setCommissionNotes] = useState("");
+  const [commissionLoading, setCommissionLoading] = useState(false);
+  const [commissionCreatingBatch, setCommissionCreatingBatch] = useState(false);
+  const [commissionMarkingBatchId, setCommissionMarkingBatchId] = useState<string | null>(null);
+  const [commissionSelectedOrderIds, setCommissionSelectedOrderIds] = useState<string[]>([]);
+  const [commissionPendingOrders, setCommissionPendingOrders] = useState<CommissionPendingOrder[]>([]);
+  const [commissionBatches, setCommissionBatches] = useState<CommissionBatch[]>([]);
+  const [commissionSummary, setCommissionSummary] = useState<CommissionSummary>({
+    pendingCount: 0,
+    pendingTotalAmount: 0,
+    openBatchesCount: 0,
+    paidBatchesCount: 0,
+  });
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
@@ -1649,6 +1700,119 @@ export default function Admin() {
       setChargesReady(true);
     } catch { /* silent */ }
   }, [dateFrom, dateTo, statusFilter, sellerFilter, handleUnauthorized]);
+
+  const fetchCommissions = useCallback(async () => {
+    setCommissionLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (commissionDateFrom) params.set("dateFrom", commissionDateFrom);
+      if (commissionDateTo) params.set("dateTo", commissionDateTo);
+      if (commissionSellerFilter !== "all") params.set("sellerCode", commissionSellerFilter);
+
+      const res = await fetch(`${BASE}/api/admin/commissions?${params.toString()}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      if (res.status === 401) { handleUnauthorized(); return; }
+
+      const data = await res.json().catch(() => ({})) as {
+        summary?: CommissionSummary;
+        pendingOrders?: CommissionPendingOrder[];
+        batches?: CommissionBatch[];
+      };
+
+      setCommissionSummary(data.summary || {
+        pendingCount: 0,
+        pendingTotalAmount: 0,
+        openBatchesCount: 0,
+        paidBatchesCount: 0,
+      });
+      setCommissionPendingOrders(Array.isArray(data.pendingOrders) ? data.pendingOrders : []);
+      setCommissionBatches(Array.isArray(data.batches) ? data.batches : []);
+      setCommissionSelectedOrderIds((prev) => {
+        const allowed = new Set((data.pendingOrders || []).map((order) => order.id));
+        return prev.filter((id) => allowed.has(id));
+      });
+    } catch {
+      toast.error("Erro ao carregar comissões.");
+    } finally {
+      setCommissionLoading(false);
+    }
+  }, [commissionDateFrom, commissionDateTo, commissionSellerFilter, handleUnauthorized]);
+
+  const createCommissionBatch = useCallback(async () => {
+    if (commissionSellerFilter === "all") {
+      toast.error("Selecione um vendedor para criar o lote.");
+      return;
+    }
+    if (!commissionDateFrom || !commissionDateTo) {
+      toast.error("Preencha o período do lote.");
+      return;
+    }
+    if (!commissionPaymentMethod.trim()) {
+      toast.error("Informe a forma de pagamento.");
+      return;
+    }
+    if (commissionSelectedOrderIds.length === 0) {
+      toast.error("Selecione pelo menos um pedido.");
+      return;
+    }
+
+    setCommissionCreatingBatch(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/commissions/batches`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          sellerCode: commissionSellerFilter,
+          dateFrom: commissionDateFrom,
+          dateTo: commissionDateTo,
+          orderIds: commissionSelectedOrderIds,
+          paymentMethod: commissionPaymentMethod,
+          notes: commissionNotes,
+        }),
+      });
+
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = await res.json().catch(() => ({})) as { message?: string; linkedOrders?: number };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao criar lote de comissão.");
+        return;
+      }
+
+      toast.success(`Lote criado com ${Number(data.linkedOrders || 0)} pedido(s).`);
+      setCommissionSelectedOrderIds([]);
+      setCommissionNotes("");
+      await fetchCommissions();
+    } catch {
+      toast.error("Erro ao criar lote de comissão.");
+    } finally {
+      setCommissionCreatingBatch(false);
+    }
+  }, [commissionSellerFilter, commissionDateFrom, commissionDateTo, commissionSelectedOrderIds, commissionPaymentMethod, commissionNotes, fetchCommissions, handleUnauthorized]);
+
+  const markCommissionBatchPaid = useCallback(async (batchId: string) => {
+    setCommissionMarkingBatchId(batchId);
+    try {
+      const res = await fetch(`${BASE}/api/admin/commissions/batches/${batchId}/mark-paid`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = await res.json().catch(() => ({})) as { message?: string; updatedOrders?: number };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao marcar lote como pago.");
+        return;
+      }
+      toast.success(`Lote marcado como pago (${Number(data.updatedOrders || 0)} pedido(s)).`);
+      await fetchCommissions();
+    } catch {
+      toast.error("Erro ao marcar lote como pago.");
+    } finally {
+      setCommissionMarkingBatchId(null);
+    }
+  }, [fetchCommissions, handleUnauthorized]);
 
   const fetchSellerData = useCallback(async () => {
     try {
@@ -2407,13 +2571,14 @@ export default function Admin() {
     else if (tab === "products")   fetchProducts();
     else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); fetchBrevoStatus(); }
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
+    else if (tab === "commissions") fetchCommissions();
     else if (tab === "fretes")     fetchShippingOptions();
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
     else setLoading(false);
-  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
+  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
   // -------------------------------------------------------------------------
   // SSE
@@ -2609,6 +2774,11 @@ export default function Admin() {
     if (authChecked) fetchAll();
   }, [dateFrom, dateTo, statusFilter, methodFilter, sellerFilter, tab, fetchAll, authChecked]);
 
+  useEffect(() => {
+    if (!authChecked || tab !== "commissions") return;
+    fetchCommissions();
+  }, [authChecked, tab, commissionDateFrom, commissionDateTo, commissionSellerFilter, fetchCommissions]);
+
   // Stats panel: independent fetch triggered by its own filters
   useEffect(() => {
     if (authChecked) fetchStatsData();
@@ -2625,9 +2795,10 @@ export default function Admin() {
       fetchCharges(true);
       fetchStatsData();
       if (tab === "recurringCustomers") fetchRecurringCustomers();
+      if (tab === "commissions") fetchCommissions();
     }, 20000);
     return () => clearInterval(id);
-  }, [authChecked, tab, fetchOrders, fetchCharges, fetchStatsData, fetchRecurringCustomers]);
+  }, [authChecked, tab, fetchOrders, fetchCharges, fetchStatsData, fetchRecurringCustomers, fetchCommissions]);
 
   useEffect(() => {
     if (authChecked && tab === "users") fetchUsers();
@@ -3639,6 +3810,27 @@ export default function Admin() {
 
   // All registered sellers for dropdowns — use sellers state (always loaded on mount)
   const allSellers = sellers.map((s) => s.slug);
+  const commissionSellerOptions = Array.from(new Set([
+    ...commissionPendingOrders.map((order) => String(order.sellerCode || "").trim().toLowerCase()),
+    ...commissionBatches.map((batch) => String(batch.sellerCode || "").trim().toLowerCase()),
+  ].filter(Boolean))).sort();
+  const commissionSelectedSet = new Set(commissionSelectedOrderIds);
+  const commissionSelectedTotal = Math.round(commissionPendingOrders
+    .filter((order) => commissionSelectedSet.has(order.id))
+    .reduce((sum, order) => sum + Number(order.commissionAmount || 0), 0) * 100) / 100;
+  const toggleCommissionOrderSelection = (orderId: string) => {
+    setCommissionSelectedOrderIds((prev) => {
+      if (prev.includes(orderId)) return prev.filter((id) => id !== orderId);
+      return [...prev, orderId];
+    });
+  };
+  const toggleCommissionSelectAll = () => {
+    const allIds = commissionPendingOrders.map((order) => order.id);
+    setCommissionSelectedOrderIds((prev) => {
+      if (allIds.length > 0 && prev.length === allIds.length) return [];
+      return allIds;
+    });
+  };
   const orderGroups = Array.from(new Set(
     orders
       .map((o) => String((o as { whatsappGroup?: string | null }).whatsappGroup || "").trim())
@@ -3974,6 +4166,7 @@ export default function Admin() {
           {([
             { key: "orders",        label: "Pedidos",          icon: "QrCode",      count: orders.length },
             { key: "charges",       label: "Links Pagamento",  icon: "LinkIcon",    count: charges.length },
+            { key: "commissions",   label: "Comissões",        icon: "DollarSign",  count: commissionSummary.pendingCount || undefined },
             { key: "sellers",       label: "Vendedores",       icon: "Tag" },
             { key: "kyc",           label: "KYC",              icon: "ShieldCheck", count: kycList.length > 0 ? kycList.filter((k) => k.status === "submitted").length : undefined },
             { key: "customers",     label: "Clientes",         icon: "UserPlus",    count: customerUsers.length || undefined },
@@ -4197,6 +4390,176 @@ export default function Admin() {
               finally { setCreateChargeSubmitting(false); }
             }}
           />
+        ) : tab === "commissions" ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Controle de comissões</h2>
+                <p className="text-sm text-muted-foreground">Selecione pedidos elegíveis, crie lotes e marque pagamentos.</p>
+              </div>
+              <Button variant="outline" onClick={fetchCommissions} disabled={commissionLoading}>
+                {commissionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                Atualizar
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pendências</p>
+                <p className="text-2xl font-bold mt-1">{commissionSummary.pendingCount}</p>
+              </div>
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total pendente</p>
+                <p className="text-2xl font-bold mt-1 text-orange-700">{formatCurrency(Number(commissionSummary.pendingTotalAmount || 0))}</p>
+              </div>
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lotes abertos</p>
+                <p className="text-2xl font-bold mt-1 text-blue-700">{commissionSummary.openBatchesCount}</p>
+              </div>
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lotes pagos</p>
+                <p className="text-2xl font-bold mt-1 text-emerald-700">{commissionSummary.paidBatchesCount}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <select
+                  value={commissionSellerFilter}
+                  onChange={(e) => {
+                    setCommissionSellerFilter(e.target.value);
+                    setCommissionSelectedOrderIds([]);
+                  }}
+                  className="h-10 px-3 rounded-lg border border-border bg-white text-sm"
+                >
+                  <option value="all">Todos os vendedores</option>
+                  {commissionSellerOptions.map((seller) => (
+                    <option key={seller} value={seller}>{seller}</option>
+                  ))}
+                </select>
+                <input type="date" value={commissionDateFrom} onChange={(e) => setCommissionDateFrom(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <input type="date" value={commissionDateTo} onChange={(e) => setCommissionDateTo(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <Button variant="outline" onClick={fetchCommissions} disabled={commissionLoading}>
+                  Aplicar filtros
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2">
+                <select value={commissionPaymentMethod} onChange={(e) => setCommissionPaymentMethod(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
+                  <option value="pix">PIX</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="outro">Outro</option>
+                </select>
+                <input
+                  value={commissionNotes}
+                  onChange={(e) => setCommissionNotes(e.target.value)}
+                  placeholder="Observação do lote"
+                  className="h-10 px-3 rounded-lg border border-border bg-white text-sm"
+                />
+                <Button
+                  onClick={createCommissionBatch}
+                  disabled={commissionCreatingBatch || commissionSelectedOrderIds.length === 0 || commissionSellerFilter === "all"}
+                  className="h-10"
+                >
+                  {commissionCreatingBatch ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
+                  Criar lote
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2">
+                <span>Selecionados: {commissionSelectedOrderIds.length}</span>
+                <span>Total selecionado: {formatCurrency(commissionSelectedTotal)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-border bg-white">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <div>
+                    <p className="font-semibold">Pedidos elegíveis</p>
+                    <p className="text-xs text-muted-foreground">Pedidos pagos ainda sem lote/pagamento de comissão.</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={toggleCommissionSelectAll}>
+                    {commissionPendingOrders.length > 0 && commissionSelectedOrderIds.length === commissionPendingOrders.length ? "Limpar seleção" : "Selecionar todos"}
+                  </Button>
+                </div>
+                {commissionLoading ? (
+                  <div className="p-6 text-sm text-muted-foreground">Carregando pedidos...</div>
+                ) : commissionPendingOrders.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">Nenhuma comissão pendente encontrada.</div>
+                ) : (
+                  <div className="max-h-[540px] overflow-auto divide-y divide-border">
+                    {commissionPendingOrders.map((order) => (
+                      <label key={order.id} className="flex items-start gap-3 p-3 hover:bg-muted/30 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={commissionSelectedSet.has(order.id)}
+                          onChange={() => toggleCommissionOrderSelection(order.id)}
+                          className="mt-1"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground">{order.clientName}</p>
+                          <p className="text-xs text-muted-foreground">Pedido #{order.orderNumber ?? order.id} · {order.sellerCode} · {formatDateOnlyBR(order.createdAt)}</p>
+                          <div className="mt-1 flex items-center gap-2 text-xs">
+                            <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">{Number(order.commissionRateSnapshot || 0)}%</span>
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{formatCurrency(Number(order.commissionAmount || 0))}</span>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-border bg-white">
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="font-semibold">Lotes de comissão</p>
+                  <p className="text-xs text-muted-foreground">Histórico completo de repasses abertos e pagos.</p>
+                </div>
+                {commissionLoading ? (
+                  <div className="p-6 text-sm text-muted-foreground">Carregando lotes...</div>
+                ) : commissionBatches.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">Nenhum lote encontrado para o filtro atual.</div>
+                ) : (
+                  <div className="max-h-[540px] overflow-auto divide-y divide-border">
+                    {commissionBatches.map((batch) => {
+                      const isOpen = batch.status === "open";
+                      return (
+                        <div key={batch.id} className={`p-3 ${isOpen ? "bg-white" : "bg-emerald-50/40"}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold">{batch.sellerCode}</p>
+                              <p className="text-xs text-muted-foreground">{batch.orderCount} pedido(s) · {formatCurrency(Number(batch.totalAmount || 0))}</p>
+                              <p className="text-xs text-muted-foreground">De {batch.dateFrom || "-"} até {batch.dateTo || "-"}</p>
+                              <p className="text-xs text-muted-foreground">Criado em {formatDateBR(batch.createdAt)}</p>
+                              {batch.paidAt && <p className="text-xs text-emerald-700">Pago em {formatDateBR(batch.paidAt)}</p>}
+                              {batch.notes && <p className="text-xs text-muted-foreground mt-1">Obs: {batch.notes}</p>}
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${isOpen ? "bg-yellow-100 text-yellow-800 border-yellow-200" : "bg-emerald-100 text-emerald-800 border-emerald-200"}`}>
+                                {isOpen ? "Aberto" : "Pago"}
+                              </span>
+                              {isOpen && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => markCommissionBatchPaid(batch.id)}
+                                  disabled={commissionMarkingBatchId === batch.id}
+                                >
+                                  {commissionMarkingBatchId === batch.id ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
+                                  Marcar pago
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         ) : tab === "coupons" ? (
           <CouponsPanel
             coupons={coupons}

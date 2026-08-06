@@ -41,6 +41,8 @@ export const ordersTable = mysqlTable("orders", {
   sellerCode: varchar("seller_code", { length: 255 }),
   whatsappGroup: varchar("whatsapp_group", { length: 64 }),
   sellerCommissionRateSnapshot: decimal("seller_commission_rate_snapshot", { precision: 5, scale: 2 }),
+  sellerCommissionBatchId: varchar("seller_commission_batch_id", { length: 255 }),
+  sellerCommissionPaidAt: timestamp("seller_commission_paid_at"),
   couponCode: varchar("coupon_code", { length: 255 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   affiliateCreditUsed: decimal("affiliate_credit_used", { precision: 10, scale: 2 }),
