@@ -461,6 +461,8 @@ export function chargeToText(charge: any): string {
 
 function supplierOrderBlock(order: any, sequence: number): string {
   const products = getOrderProducts(order?.products);
+  const normalizedOrderStatus = normalizeOrderStatus(order?.status);
+  const isCancelledOrder = normalizedOrderStatus === "cancelled";
   const prioridadeLine = order?.isPrioridade ? "🚨 PRIORIDADE URGENTE" : "";
   const atrasoDias = Math.max(0, daysSince(order?.createdAt));
   const prioridadeAtrasoLine = order?.isPrioridade
@@ -476,7 +478,9 @@ function supplierOrderBlock(order: any, sequence: number): string {
     : "- Sem itens";
 
   const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-  const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
+  const isReshipment = !isCancelledOrder
+    && Boolean(order?.reshipment?.id)
+    && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
   const firstOrderDate = formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-";
   const reshipmentReason = String(order?.reshipment?.ticketDescription || "").trim();
   const reshipmentReasonText = reshipmentReason || "Nao informado no chamado";
@@ -3739,6 +3743,8 @@ export default function Admin() {
   const revenue         = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
   const isActiveReshipmentOrder = (order: AdminOrder): boolean => {
+    const normalizedStatus = normalizeOrderStatus(order.status);
+    if (normalizedStatus === "cancelled") return false;
     return Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
       && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
   };
@@ -3779,8 +3785,7 @@ export default function Admin() {
 
     const totals = new Map<string, { label: string; productId: string | null; qtyNormal: number; qtyReshipment: number }>();
     for (const order of ordersParaEnviar) {
-      const isReshipment = Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
-        && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
+      const isReshipment = isActiveReshipmentOrder(order);
       for (const p of getOrderProducts(order.products)) {
         const name = (p.name || "Produto").trim();
         const productId = String((p as { id?: string })?.id || "").trim() || null;
