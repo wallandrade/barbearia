@@ -461,8 +461,7 @@ export function chargeToText(charge: any): string {
 
 function supplierOrderBlock(order: any, sequence: number): string {
   const products = getOrderProducts(order?.products);
-  const normalizedOrderStatus = normalizeOrderStatus(order?.status);
-  const isCancelledOrder = normalizedOrderStatus === "cancelled";
+  const isCancelledOrder = isCancelledOrderStatus(order?.status);
   const prioridadeLine = order?.isPrioridade ? "🚨 PRIORIDADE URGENTE" : "";
   const atrasoDias = Math.max(0, daysSince(order?.createdAt));
   const prioridadeAtrasoLine = order?.isPrioridade
@@ -559,6 +558,12 @@ function statusBadge(status: string) {
 function normalizeOrderStatus(value: unknown): string {
   return String(value || "").trim().toLowerCase();
 }
+
+function isCancelledOrderStatus(value: unknown): boolean {
+  const status = normalizeOrderStatus(value);
+  return status === "cancelled" || status === "cancelado" || status === "canceled";
+}
+
 async function copyText(text: string): Promise<"auto" | "manual"> {
   // First try async clipboard API (works in secure contexts and with permission).
   if (navigator.clipboard?.writeText) {
@@ -3743,8 +3748,7 @@ export default function Admin() {
   const revenue         = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
   const isActiveReshipmentOrder = (order: AdminOrder): boolean => {
-    const normalizedStatus = normalizeOrderStatus(order.status);
-    if (normalizedStatus === "cancelled") return false;
+    if (isCancelledOrderStatus(order.status)) return false;
     return Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
       && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
   };
@@ -4426,7 +4430,7 @@ export default function Admin() {
           <OrdersPanel
             allOrders={orders}
             orders={filteredOrders}
-            trackingCandidates={orders.filter((order) => !order.enviado && order.status !== "cancelled")}
+            trackingCandidates={orders.filter((order) => !order.enviado && !isCancelledOrderStatus(order.status))}
             productImageById={Object.fromEntries(
               (products as Array<{ id?: string; image?: string | null }>)
                 .map((p) => [String(p?.id || "").trim(), String(p?.image || "").trim()] as const)
@@ -9531,7 +9535,7 @@ function OrdersPanel({
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
                     type="button"
-                    disabled={statusUpdating === order.id || normalizeOrderStatus(order.status) === "cancelled"}
+                    disabled={statusUpdating === order.id || isCancelledOrderStatus(order.status)}
                     onClick={() => {
                       const currentStatus = normalizeOrderStatus(order.status);
                       if (currentStatus === "paid" || currentStatus === "completed") {
@@ -9974,7 +9978,7 @@ function OrdersPanel({
                           ...(ordersLookup.filter((item) => item.id !== trackingReview.order.id)),
                         ]
                           .filter((order, index, list) => list.findIndex((item) => item.id === order.id) === index)
-                          .filter((order) => !order.enviado && order.status !== "cancelled")
+                          .filter((order) => !order.enviado && !isCancelledOrderStatus(order.status))
                           .sort((a, b) => (a.id === trackingReview.order.id ? -1 : b.id === trackingReview.order.id ? 1 : 0))
                           .map((order) => (
                             <option key={order.id} value={order.id}>
