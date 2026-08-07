@@ -1552,6 +1552,20 @@ export default function Admin() {
   // -------------------- FIM DOS useState --------------------
 
   // Agora sim, pode declarar os useCallback, useEffect, etc, que dependem dos states acima
+  const handleUnauthorized = useCallback(() => {
+    if (sseReconnectTimerRef.current !== null) {
+      window.clearTimeout(sseReconnectTimerRef.current);
+      sseReconnectTimerRef.current = null;
+    }
+    sseRef.current?.close();
+    sseUnauthorizedRef.current = true;
+    sessionStorage.removeItem("adminToken");
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminIsPrimary");
+    localStorage.removeItem("adminUsername");
+    setLocation("/admin/login");
+  }, [setLocation]);
+
   const fetchFinancialSummary = React.useCallback(async () => {
     setFinancialSummaryLoading(true);
     try {
@@ -1789,23 +1803,6 @@ export default function Admin() {
         .catch(() => { /* SW not critical */ });
     }
   }, []);
-
-  // -------------------------------------------------------------------------
-  // Auth check
-  // -------------------------------------------------------------------------
-  const handleUnauthorized = useCallback(() => {
-    if (sseReconnectTimerRef.current !== null) {
-      window.clearTimeout(sseReconnectTimerRef.current);
-      sseReconnectTimerRef.current = null;
-    }
-    sseRef.current?.close();
-    sseUnauthorizedRef.current = true;
-    sessionStorage.removeItem("adminToken");
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("adminIsPrimary");
-    localStorage.removeItem("adminUsername");
-    setLocation("/admin/login");
-  }, [setLocation]);
 
   // -------------------------------------------------------------------------
   // Fetch helpers
