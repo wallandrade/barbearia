@@ -462,6 +462,10 @@ export function chargeToText(charge: any): string {
 function supplierOrderBlock(order: any, sequence: number): string {
   const products = getOrderProducts(order?.products);
   const prioridadeLine = order?.isPrioridade ? "🚨 PRIORIDADE URGENTE" : "";
+  const atrasoDias = Math.max(0, daysSince(order?.createdAt));
+  const prioridadeAtrasoLine = order?.isPrioridade
+    ? `⏰ Atrasado: ${atrasoDias} dia${atrasoDias === 1 ? "" : "s"}`
+    : "";
   const resumoPedido = products.length
     ? products
         .map((p) => {
@@ -479,6 +483,7 @@ function supplierOrderBlock(order: any, sequence: number): string {
 
   return [
     prioridadeLine,
+    prioridadeAtrasoLine,
     isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
     isReshipment ? `Data do pedido original: ${firstOrderDate}` : "",
     isReshipment ? `Motivo do reenvio: ${reshipmentReasonText}` : "",
@@ -986,7 +991,7 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
   );
 }
 
-type TabType = "orders" | "charges" | "commissions" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1020,6 +1025,23 @@ interface CommissionSummary {
   pendingTotalAmount: number;
   openBatchesCount: number;
   paidBatchesCount: number;
+}
+
+interface ExpenseEntry {
+  id: string;
+  sellerCode: string | null;
+  expenseType: string;
+  status: "open" | "paid" | "reversed";
+  referenceOrderId: string | null;
+  referenceReshipmentId: string | null;
+  expenseDate: string;
+  expenseStartDate: string;
+  expenseEndDate: string;
+  channel: string;
+  amount: number;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const PRIMARY_ONLY_TABS = new Set<TabType>([
@@ -1258,6 +1280,26 @@ export default function Admin() {
   });
   const [marketingExpensesSubmitting, setMarketingExpensesSubmitting] = useState(false);
   const [marketingExpenseDeletingId, setMarketingExpenseDeletingId] = useState<string | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
+  const [expensesSubmitting, setExpensesSubmitting] = useState(false);
+  const [expenseDeletingId, setExpenseDeletingId] = useState<string | null>(null);
+  const [expenseTypeFilter, setExpenseTypeFilter] = useState("all");
+  const [expenseStatusFilter, setExpenseStatusFilter] = useState("all");
+  const [expenseDateFrom, setExpenseDateFrom] = useState(todayStr());
+  const [expenseDateTo, setExpenseDateTo] = useState(todayStr());
+  const [expenseForm, setExpenseForm] = useState({
+    expenseStartDate: todayStr(),
+    expenseEndDate: todayStr(),
+    sellerCode: "",
+    expenseType: "reenvio_mercadoria",
+    status: "open",
+    amount: "",
+    note: "",
+    referenceOrderId: "",
+    referenceReshipmentId: "",
+    channel: "",
+  });
   const [pendingReshipments, setPendingReshipments] = useState<ReshipmentRecord[]>([]);
   const [activeManualReturnItemId, setActiveManualReturnItemId] = useState<string | null>(null);
   const [inventoryEntryForm, setInventoryEntryForm] = useState({
@@ -1595,6 +1637,104 @@ export default function Admin() {
       setMarketingExpenseDeletingId(null);
     }
   }, [BASE, fetchFinancialSummary]);
+
+  const fetchExpenses = useCallback(async () => {
+    setExpensesLoading(true);
+    try {
+      const params = new URLSearchParams({ dateFrom: expenseDateFrom, dateTo: expenseDateTo });
+      if (expenseTypeFilter !== "all") params.set("expenseType", expenseTypeFilter);
+      if (expenseStatusFilter !== "all") params.set("status", expenseStatusFilter);
+      const res = await fetch(`${BASE}/api/admin/expenses?${params.toString()}`, { headers: authHeaders() });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = await res.json().catch(() => ({})) as { items?: ExpenseEntry[] };
+      setExpenses(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      toast.error("Erro ao carregar despesas.");
+    } finally {
+      setExpensesLoading(false);
+    }
+  }, [expenseDateFrom, expenseDateTo, expenseTypeFilter, expenseStatusFilter, handleUnauthorized]);
+
+  const handleCreateExpense = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const amount = Number(String(expenseForm.amount).replace(",", "."));
+    if (!expenseForm.expenseStartDate || !expenseForm.expenseEndDate || !Number.isFinite(amount) || amount <= 0) {
+      toast.error("Preencha data inicial/final e valor da despesa.");
+      return;
+    }
+    if (expenseForm.expenseEndDate < expenseForm.expenseStartDate) {
+      toast.error("A data final deve ser igual ou posterior à data inicial.");
+      return;
+    }
+
+    setExpensesSubmitting(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/expenses`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          expenseStartDate: expenseForm.expenseStartDate,
+          expenseEndDate: expenseForm.expenseEndDate,
+          expenseType: expenseForm.expenseType,
+          status: expenseForm.status,
+          sellerCode: expenseForm.sellerCode.trim() || null,
+          amount,
+          note: expenseForm.note.trim(),
+          referenceOrderId: expenseForm.referenceOrderId.trim() || null,
+          referenceReshipmentId: expenseForm.referenceReshipmentId.trim() || null,
+          channel: expenseForm.channel.trim() || null,
+        }),
+      });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = await res.json().catch(() => ({})) as { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao registrar despesa.");
+        return;
+      }
+
+      setExpenseForm((current) => ({
+        ...current,
+        amount: "",
+        note: "",
+        referenceOrderId: "",
+        referenceReshipmentId: "",
+        channel: "",
+      }));
+      toast.success("Despesa lançada com sucesso.");
+      fetchExpenses();
+      fetchFinancialSummary();
+    } catch {
+      toast.error("Erro ao registrar despesa.");
+    } finally {
+      setExpensesSubmitting(false);
+    }
+  }, [expenseForm, fetchExpenses, fetchFinancialSummary, handleUnauthorized]);
+
+  const handleDeleteExpense = useCallback(async (expenseId: string) => {
+    if (!expenseId) return;
+    if (!window.confirm("Remover este lançamento de despesa?")) return;
+
+    setExpenseDeletingId(expenseId);
+    try {
+      const res = await fetch(`${BASE}/api/admin/expenses/${expenseId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = await res.json().catch(() => ({})) as { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao remover despesa.");
+        return;
+      }
+      toast.success("Despesa removida com sucesso.");
+      fetchExpenses();
+      fetchFinancialSummary();
+    } catch {
+      toast.error("Erro ao remover despesa.");
+    } finally {
+      setExpenseDeletingId(null);
+    }
+  }, [fetchExpenses, fetchFinancialSummary, handleUnauthorized]);
 
   useEffect(() => {
     if (!authChecked || !getToken()) return;
@@ -2572,13 +2712,14 @@ export default function Admin() {
     else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); fetchBrevoStatus(); }
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
+    else if (tab === "expenses")   fetchExpenses();
     else if (tab === "fretes")     fetchShippingOptions();
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
     else setLoading(false);
-  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
+  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchExpenses, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
   // -------------------------------------------------------------------------
   // SSE
@@ -2779,6 +2920,11 @@ export default function Admin() {
     fetchCommissions();
   }, [authChecked, tab, commissionDateFrom, commissionDateTo, commissionSellerFilter, fetchCommissions]);
 
+  useEffect(() => {
+    if (!authChecked || tab !== "expenses") return;
+    fetchExpenses();
+  }, [authChecked, tab, expenseDateFrom, expenseDateTo, expenseTypeFilter, expenseStatusFilter, fetchExpenses]);
+
   // Stats panel: independent fetch triggered by its own filters
   useEffect(() => {
     if (authChecked) fetchStatsData();
@@ -2796,9 +2942,10 @@ export default function Admin() {
       fetchStatsData();
       if (tab === "recurringCustomers") fetchRecurringCustomers();
       if (tab === "commissions") fetchCommissions();
+      if (tab === "expenses") fetchExpenses();
     }, 20000);
     return () => clearInterval(id);
-  }, [authChecked, tab, fetchOrders, fetchCharges, fetchStatsData, fetchRecurringCustomers, fetchCommissions]);
+  }, [authChecked, tab, fetchOrders, fetchCharges, fetchStatsData, fetchRecurringCustomers, fetchCommissions, fetchExpenses]);
 
   useEffect(() => {
     if (authChecked && tab === "users") fetchUsers();
@@ -3594,12 +3741,35 @@ export default function Admin() {
   const paidOrders      = orders.filter((o) => o.status === "paid" || o.status === "completed");
   const revenue         = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
-  const ordersParaEnviar = orders.filter((o) => {
-    const isActiveReshipment = Boolean((o as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
-      && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((o as { reshipment?: { status?: string } }).reshipment?.status || ""));
-    const isPendingNormalShipment = (o.status === "paid" || o.status === "completed") && !o.enviado;
-    return isPendingNormalShipment || isActiveReshipment;
-  });
+  const isActiveReshipmentOrder = (order: AdminOrder): boolean => {
+    return Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
+      && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
+  };
+  const priorityDelayDays = (order: AdminOrder): number => Math.max(0, daysSince(order.createdAt));
+
+  const ordersParaEnviar = orders
+    .filter((o) => {
+      const isActiveReshipment = isActiveReshipmentOrder(o);
+      const isPendingNormalShipment = (o.status === "paid" || o.status === "completed") && !o.enviado;
+      return isPendingNormalShipment || isActiveReshipment;
+    })
+    .sort((a, b) => {
+      const aPriority = !!a.isPrioridade;
+      const bPriority = !!b.isPrioridade;
+      if (aPriority !== bPriority) return bPriority ? 1 : -1;
+
+      const aDelay = priorityDelayDays(a);
+      const bDelay = priorityDelayDays(b);
+      if (aDelay !== bDelay) return bDelay - aDelay;
+
+      const aReshipment = isActiveReshipmentOrder(a);
+      const bReshipment = isActiveReshipmentOrder(b);
+      if (aReshipment !== bReshipment) return bReshipment ? 1 : -1;
+
+      const aCreated = new Date(a.createdAt || 0).getTime();
+      const bCreated = new Date(b.createdAt || 0).getTime();
+      return aCreated - bCreated;
+    });
 
   const copyShoppingList = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     event?.preventDefault();
@@ -4167,6 +4337,7 @@ export default function Admin() {
             { key: "orders",        label: "Pedidos",          icon: "QrCode",      count: orders.length },
             { key: "charges",       label: "Links Pagamento",  icon: "LinkIcon",    count: charges.length },
             { key: "commissions",   label: "Comissões",        icon: "DollarSign",  count: commissionSummary.pendingCount || undefined },
+            { key: "expenses",      label: "Despesas",         icon: "AlertTriangle", count: expenses.length || undefined },
             { key: "sellers",       label: "Vendedores",       icon: "Tag" },
             { key: "kyc",           label: "KYC",              icon: "ShieldCheck", count: kycList.length > 0 ? kycList.filter((k) => k.status === "submitted").length : undefined },
             { key: "customers",     label: "Clientes",         icon: "UserPlus",    count: customerUsers.length || undefined },
@@ -4558,6 +4729,134 @@ export default function Admin() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        ) : tab === "expenses" ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Despesas operacionais</h2>
+                <p className="text-sm text-muted-foreground">Lance extravio, reenvio, avaria e demais custos para refletir no financeiro.</p>
+              </div>
+              <Button variant="outline" onClick={fetchExpenses} disabled={expensesLoading}>
+                {expensesLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                Atualizar
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lançamentos</p>
+                <p className="text-2xl font-bold mt-1">{expenses.length}</p>
+              </div>
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total do filtro</p>
+                <p className="text-2xl font-bold mt-1 text-rose-700">{formatCurrency(expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</p>
+              </div>
+              <div className="rounded-xl border p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Extravio + Reenvio</p>
+                <p className="text-2xl font-bold mt-1 text-orange-700">
+                  {formatCurrency(expenses
+                    .filter((item) => ["extravio", "reenvio_mercadoria", "reenvio_frete"].includes(String(item.expenseType || "")))
+                    .reduce((sum, item) => sum + Number(item.amount || 0), 0))}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
+              <p className="text-sm font-semibold">Novo lançamento</p>
+              <form onSubmit={handleCreateExpense} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input type="date" value={expenseForm.expenseStartDate} onChange={(e) => setExpenseForm((c) => ({ ...c, expenseStartDate: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <input type="date" value={expenseForm.expenseEndDate} onChange={(e) => setExpenseForm((c) => ({ ...c, expenseEndDate: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <select value={expenseForm.expenseType} onChange={(e) => setExpenseForm((c) => ({ ...c, expenseType: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
+                  <option value="extravio">Extravio</option>
+                  <option value="reenvio_mercadoria">Reenvio mercadoria</option>
+                  <option value="reenvio_frete">Reenvio frete</option>
+                  <option value="avaria">Avaria</option>
+                  <option value="operacional">Operacional</option>
+                  <option value="marketing">Marketing</option>
+                  <option value="outros">Outros</option>
+                </select>
+                <select value={expenseForm.status} onChange={(e) => setExpenseForm((c) => ({ ...c, status: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
+                  <option value="open">Aberta</option>
+                  <option value="paid">Paga</option>
+                  <option value="reversed">Estornada</option>
+                </select>
+                <input type="number" min="0" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((c) => ({ ...c, amount: e.target.value }))} placeholder="Valor" className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <input value={expenseForm.referenceOrderId} onChange={(e) => setExpenseForm((c) => ({ ...c, referenceOrderId: e.target.value }))} placeholder="ID pedido (opcional)" className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <input value={expenseForm.referenceReshipmentId} onChange={(e) => setExpenseForm((c) => ({ ...c, referenceReshipmentId: e.target.value }))} placeholder="ID reenvio (opcional)" className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <select value={expenseForm.sellerCode} onChange={(e) => setExpenseForm((c) => ({ ...c, sellerCode: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
+                  <option value="">Sem vendedor (global)</option>
+                  {allSellers.map((seller) => (
+                    <option key={`expense-seller-${seller}`} value={seller}>{seller}</option>
+                  ))}
+                </select>
+                <input value={expenseForm.channel} onChange={(e) => setExpenseForm((c) => ({ ...c, channel: e.target.value }))} placeholder="Canal/Origem (opcional)" className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <input value={expenseForm.note} onChange={(e) => setExpenseForm((c) => ({ ...c, note: e.target.value }))} placeholder="Observação" className="h-10 px-3 rounded-lg border border-border bg-white text-sm md:col-span-2" />
+                <Button type="submit" disabled={expensesSubmitting} className="h-10">
+                  {expensesSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  Lançar despesa
+                </Button>
+              </form>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <input type="date" value={expenseDateFrom} onChange={(e) => setExpenseDateFrom(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <input type="date" value={expenseDateTo} onChange={(e) => setExpenseDateTo(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
+                <select value={expenseTypeFilter} onChange={(e) => setExpenseTypeFilter(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
+                  <option value="all">Todos os tipos</option>
+                  <option value="extravio">Extravio</option>
+                  <option value="reenvio_mercadoria">Reenvio mercadoria</option>
+                  <option value="reenvio_frete">Reenvio frete</option>
+                  <option value="avaria">Avaria</option>
+                  <option value="operacional">Operacional</option>
+                  <option value="marketing">Marketing</option>
+                  <option value="outros">Outros</option>
+                </select>
+                <select value={expenseStatusFilter} onChange={(e) => setExpenseStatusFilter(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
+                  <option value="all">Todos os status</option>
+                  <option value="open">Aberta</option>
+                  <option value="paid">Paga</option>
+                  <option value="reversed">Estornada</option>
+                </select>
+              </div>
+
+              {expensesLoading ? (
+                <div className="py-8 text-center text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />Carregando despesas...</div>
+              ) : expenses.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">Nenhuma despesa encontrada para o filtro atual.</div>
+              ) : (
+                <div className="space-y-2 max-h-[520px] overflow-auto pr-1">
+                  {expenses.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-border bg-white p-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{String(item.expenseType || "outros").replace(/_/g, " ")}</p>
+                        <p className="text-xs text-muted-foreground">{formatDateBR(item.expenseStartDate || item.expenseDate)} até {formatDateBR(item.expenseEndDate || item.expenseDate)}</p>
+                        <p className="text-xs text-muted-foreground">Status: {item.status} · Canal: {item.channel || "-"}</p>
+                        {(item.referenceOrderId || item.referenceReshipmentId) && (
+                          <p className="text-xs text-muted-foreground">Pedido: {item.referenceOrderId || "-"} · Reenvio: {item.referenceReshipmentId || "-"}</p>
+                        )}
+                        {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2"
+                          disabled={expenseDeletingId === item.id}
+                          onClick={() => handleDeleteExpense(item.id)}
+                        >
+                          {expenseDeletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          <span className="ml-1">Remover</span>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : tab === "coupons" ? (

@@ -827,6 +827,10 @@ async function ensureMarketingExpensesTable(databaseName: string): Promise<void>
     CREATE TABLE marketing_expenses (
       id VARCHAR(255) NOT NULL PRIMARY KEY,
       seller_code VARCHAR(255) NULL,
+      expense_type VARCHAR(64) NOT NULL DEFAULT 'marketing',
+      status VARCHAR(32) NOT NULL DEFAULT 'open',
+      reference_order_id VARCHAR(255) NULL,
+      reference_reshipment_id VARCHAR(255) NULL,
       expense_date TIMESTAMP NOT NULL,
       expense_start_date TIMESTAMP NULL,
       expense_end_date TIMESTAMP NULL,
@@ -834,10 +838,15 @@ async function ensureMarketingExpensesTable(databaseName: string): Promise<void>
       amount DECIMAL(10,2) NOT NULL,
       note TEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY marketing_expenses_expense_date_idx (expense_date),
       KEY marketing_expenses_expense_start_date_idx (expense_start_date),
       KEY marketing_expenses_expense_end_date_idx (expense_end_date),
-      KEY marketing_expenses_seller_code_idx (seller_code)
+      KEY marketing_expenses_seller_code_idx (seller_code),
+      KEY marketing_expenses_expense_type_idx (expense_type),
+      KEY marketing_expenses_status_idx (status),
+      KEY marketing_expenses_reference_order_id_idx (reference_order_id),
+      KEY marketing_expenses_reference_reshipment_id_idx (reference_reshipment_id)
     )
   `);
 
@@ -850,11 +859,33 @@ async function ensureMarketingExpensesColumns(databaseName: string): Promise<voi
   const definitions = [
     { name: "expense_start_date", sql: "ALTER TABLE marketing_expenses ADD COLUMN expense_start_date TIMESTAMP NULL AFTER expense_date" },
     { name: "expense_end_date", sql: "ALTER TABLE marketing_expenses ADD COLUMN expense_end_date TIMESTAMP NULL AFTER expense_start_date" },
+    { name: "expense_type", sql: "ALTER TABLE marketing_expenses ADD COLUMN expense_type VARCHAR(64) NOT NULL DEFAULT 'marketing' AFTER seller_code" },
+    { name: "status", sql: "ALTER TABLE marketing_expenses ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'open' AFTER expense_type" },
+    { name: "reference_order_id", sql: "ALTER TABLE marketing_expenses ADD COLUMN reference_order_id VARCHAR(255) NULL AFTER status" },
+    { name: "reference_reshipment_id", sql: "ALTER TABLE marketing_expenses ADD COLUMN reference_reshipment_id VARCHAR(255) NULL AFTER reference_order_id" },
+    { name: "updated_at", sql: "ALTER TABLE marketing_expenses ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER created_at" },
   ];
 
   for (const definition of definitions) {
     if (!(await columnExists("marketing_expenses", definition.name, databaseName))) {
       await pool.query(definition.sql);
+    }
+  }
+
+  const indexes = [
+    { name: "marketing_expenses_expense_type_idx", sql: "ALTER TABLE marketing_expenses ADD KEY marketing_expenses_expense_type_idx (expense_type)" },
+    { name: "marketing_expenses_status_idx", sql: "ALTER TABLE marketing_expenses ADD KEY marketing_expenses_status_idx (status)" },
+    { name: "marketing_expenses_reference_order_id_idx", sql: "ALTER TABLE marketing_expenses ADD KEY marketing_expenses_reference_order_id_idx (reference_order_id)" },
+    { name: "marketing_expenses_reference_reshipment_id_idx", sql: "ALTER TABLE marketing_expenses ADD KEY marketing_expenses_reference_reshipment_id_idx (reference_reshipment_id)" },
+  ];
+
+  for (const index of indexes) {
+    if (!(await indexExists("marketing_expenses", index.name, databaseName))) {
+      try {
+        await pool.query(index.sql);
+      } catch {
+        // Ignore index creation races in startup.
+      }
     }
   }
 }
