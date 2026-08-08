@@ -1,8 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db, motoboyNeighborhoodsTable } from "@workspace/db";
-import { eq, asc, or, sql } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
+
+// Removes diacritics so "Brasilândia" === "Brasilia", "Butantã" === "Butanta", etc.
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 
 const router: IRouter = Router();
 
@@ -19,16 +24,16 @@ router.get("/motoboy-neighborhoods/lookup", async (req, res) => {
       return;
     }
 
-    const normalized = bairro.toLowerCase();
+    const normalizedQuery = stripAccents(bairro);
 
     const rows = await db
       .select()
       .from(motoboyNeighborhoodsTable)
       .where(eq(motoboyNeighborhoodsTable.isActive, true));
 
-    // case-insensitive match
+    // accent-insensitive + case-insensitive match
     const match = rows.find(
-      (r) => r.neighborhoodName.toLowerCase() === normalized
+      (r) => stripAccents(r.neighborhoodName) === normalizedQuery
     ) ?? null;
 
     res.json({ neighborhood: match });
