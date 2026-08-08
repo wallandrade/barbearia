@@ -1965,11 +1965,14 @@ export default function Checkout() {
                         })()}
                         value={motoboySlotDate}
                         onChange={async (e) => {
-                          const date = e.target.value;
-                          // Block Sundays
+                          let date = e.target.value;
                           if (date) {
-                            const dow = new Date(date + "T12:00:00").getDay();
-                            if (dow === 0) { return; }
+                            const d = new Date(date + "T12:00:00");
+                            // Auto-advance Sunday to Monday
+                            if (d.getDay() === 0) {
+                              d.setDate(d.getDate() + 1);
+                              date = d.toISOString().split("T")[0];
+                            }
                           }
                           setMotoboySlotDate(date);
                           setMotoboySlotTime("");
@@ -1986,12 +1989,12 @@ export default function Checkout() {
                         className="w-full h-10 px-3 rounded-xl border-2 border-orange-200 outline-none focus:border-orange-400 text-sm bg-white"
                       />
                       {motoboySlotDate && new Date(motoboySlotDate + "T12:00:00").getDay() === 0 && (
-                        <p className="text-xs text-red-600 mt-1">Não realizamos entregas aos domingos. Escolha outra data.</p>
+                        <p className="text-xs text-orange-700 mt-1">⚠️ Domingos sem entrega — data ajustada para segunda-feira.</p>
                       )}
                     </div>
 
                     {/* Time slot picker */}
-                    {motoboySlotDate && new Date(motoboySlotDate + "T12:00:00").getDay() !== 0 && (
+                    {motoboySlotDate && (
                       <div>
                         <label className="block text-xs font-medium text-orange-800 mb-2">Escolha o horário</label>
                         {motoboySlotLoading ? (
