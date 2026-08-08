@@ -21,3 +21,4 @@ export * from "./product-cost-history";
 export * from "./manual-return-items";
 export * from "./marketing-expenses";
 export * from "./seller-commission-batches";
+export * from "./motoboy-neighborhoods";

@@ -1000,6 +1000,9 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
   );
 }
 
+interface ShippingOption { id: string; name: string; description: string | null; price: number; sortOrder: number; isActive: boolean; }
+interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
+
 type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
 
 interface CommissionPendingOrder {
@@ -1518,6 +1521,13 @@ export default function Admin() {
   const [shippingDeleting, setShippingDeleting] = useState<string | null>(null);
   const [shippingEditing, setShippingEditing] = useState<ShippingOption | null>(null);
   const [shippingUpdating, setShippingUpdating] = useState<string | null>(null);
+  // Motoboy neighborhoods
+  const [motoboyNeighborhoods, setMotoboyNeighborhoods] = useState<MotoboyNeighborhood[]>([]);
+  const [motoboyForm, setMotoboyForm] = useState({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" });
+  const [motoboyCreating, setMotoboyCreating] = useState(false);
+  const [motoboyDeleting, setMotoboyDeleting] = useState<string | null>(null);
+  const [motoboyEditing, setMotoboyEditing] = useState<MotoboyNeighborhood | null>(null);
+  const [motoboyUpdating, setMotoboyUpdating] = useState<string | null>(null);
   // Order Bumps
   const [orderBumps, setOrderBumps] = useState<OrderBump[]>([]);
   const [bumpForm, setBumpForm] = useState<BumpFormType>(EMPTY_BUMP_FORM);
@@ -2435,6 +2445,14 @@ export default function Admin() {
     finally { setLoading(false); }
   }, []);
 
+  const fetchMotoboyNeighborhoods = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/motoboy-neighborhoods`, { headers: authHeaders() });
+      const data = await res.json() as { neighborhoods: MotoboyNeighborhood[] };
+      setMotoboyNeighborhoods(data.neighborhoods || []);
+    } catch { /* ignore */ }
+  }, []);
+
   const fetchOrderBumpsData = useCallback(async () => {
     try {
       const res = await fetch(`${BASE}/api/admin/order-bumps`, { headers: authHeaders() });
@@ -2719,13 +2737,13 @@ export default function Admin() {
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
     else if (tab === "expenses")   fetchExpenses();
-    else if (tab === "fretes")     fetchShippingOptions();
+    else if (tab === "fretes")     { fetchShippingOptions(); fetchMotoboyNeighborhoods(); }
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
     else setLoading(false);
-  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchExpenses, fetchShippingOptions, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
+  }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchExpenses, fetchShippingOptions, fetchMotoboyNeighborhoods, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
   // -------------------------------------------------------------------------
   // SSE
@@ -5258,6 +5276,49 @@ export default function Admin() {
                 fetchShippingOptions();
               } catch { toast.error("Erro ao excluir."); }
               finally { setShippingDeleting(null); }
+            }}
+            motoboyNeighborhoods={motoboyNeighborhoods}
+            motoboyForm={motoboyForm}
+            setMotoboyForm={setMotoboyForm}
+            motoboyCreating={motoboyCreating}
+            motoboyDeleting={motoboyDeleting}
+            motoboyEditing={motoboyEditing}
+            setMotoboyEditing={setMotoboyEditing}
+            motoboyUpdating={motoboyUpdating}
+            onMotoboyCreate={async () => {
+              if (!motoboyForm.neighborhoodName.trim()) { toast.error("Nome do bairro é obrigatório."); return; }
+              if (motoboyForm.price === "" || Number(motoboyForm.price) < 0) { toast.error("Preço inválido."); return; }
+              setMotoboyCreating(true);
+              try {
+                const res = await fetch(`${BASE}/api/admin/motoboy-neighborhoods`, {
+                  method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                  body: JSON.stringify({ neighborhoodName: motoboyForm.neighborhoodName, city: motoboyForm.city, price: Number(motoboyForm.price), sortOrder: Number(motoboyForm.sortOrder), notes: motoboyForm.notes }),
+                });
+                if (!res.ok) { const e = await res.json() as { message?: string }; toast.error(e.message || "Erro ao criar bairro."); }
+                else { toast.success("Bairro adicionado!"); setMotoboyForm({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" }); fetchMotoboyNeighborhoods(); }
+              } catch { toast.error("Erro ao criar bairro."); }
+              finally { setMotoboyCreating(false); }
+            }}
+            onMotoboyUpdate={async (id: string, patch: Partial<MotoboyNeighborhood>) => {
+              setMotoboyUpdating(id);
+              try {
+                const res = await fetch(`${BASE}/api/admin/motoboy-neighborhoods/${id}`, {
+                  method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                  body: JSON.stringify(patch),
+                });
+                if (!res.ok) { const e = await res.json() as { message?: string }; toast.error(e.message || "Erro ao atualizar."); }
+                else { toast.success("Bairro atualizado!"); setMotoboyEditing(null); fetchMotoboyNeighborhoods(); }
+              } catch { toast.error("Erro ao atualizar."); }
+              finally { setMotoboyUpdating(null); }
+            }}
+            onMotoboyDelete={async (id: string) => {
+              setMotoboyDeleting(id);
+              try {
+                await fetch(`${BASE}/api/admin/motoboy-neighborhoods/${id}`, { method: "DELETE", headers: authHeaders() });
+                toast.success("Bairro excluído!");
+                fetchMotoboyNeighborhoods();
+              } catch { toast.error("Erro ao excluir."); }
+              finally { setMotoboyDeleting(null); }
             }}
           />
         ) : tab === "orderBumps" ? (
@@ -14347,14 +14408,32 @@ interface FretePanelProps {
   onCreate: () => void;
   onUpdate: (id: string, patch: Partial<ShippingOption>) => void;
   onDelete: (id: string) => void;
+  // Motoboy
+  motoboyNeighborhoods: MotoboyNeighborhood[];
+  motoboyForm: { neighborhoodName: string; city: string; price: string; sortOrder: string; notes: string };
+  setMotoboyForm: (f: { neighborhoodName: string; city: string; price: string; sortOrder: string; notes: string }) => void;
+  motoboyCreating: boolean;
+  motoboyDeleting: string | null;
+  motoboyEditing: MotoboyNeighborhood | null;
+  setMotoboyEditing: (o: MotoboyNeighborhood | null) => void;
+  motoboyUpdating: string | null;
+  onMotoboyCreate: () => void;
+  onMotoboyUpdate: (id: string, patch: Partial<MotoboyNeighborhood>) => void;
+  onMotoboyDelete: (id: string) => void;
 }
 
-function FretePanel({ options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete }: FretePanelProps) {
+function FretePanel({ options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete, motoboyNeighborhoods, motoboyForm, setMotoboyForm, motoboyCreating, motoboyDeleting, motoboyEditing, setMotoboyEditing, motoboyUpdating, onMotoboyCreate, onMotoboyUpdate, onMotoboyDelete }: FretePanelProps) {
   const [editForm, setEditForm] = useState({ name: "", description: "", price: "", sortOrder: "0" });
+  const [mbEditForm, setMbEditForm] = useState({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" });
 
   const startEdit = (o: ShippingOption) => {
     setEditing(o);
     setEditForm({ name: o.name, description: o.description ?? "", price: String(o.price), sortOrder: String(o.sortOrder) });
+  };
+
+  const startMbEdit = (o: MotoboyNeighborhood) => {
+    setMotoboyEditing(o);
+    setMbEditForm({ neighborhoodName: o.neighborhoodName, city: o.city ?? "", price: String(o.price), sortOrder: String(o.sortOrder), notes: o.notes ?? "" });
   };
 
   return (
@@ -14511,6 +14590,191 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
           <li>Apenas fretes <strong>ativos</strong> são exibidos no checkout.</li>
           <li>Use a ordem de exibição para controlar qual frete aparece primeiro.</li>
           <li>O valor do frete é somado ao total do pedido e exibido no QR Code PIX.</li>
+        </ul>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Motoboy por bairro                                                  */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="bg-white rounded-2xl shadow-sm border border-border p-6">
+        <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
+          <IconLucide name="Bike" className="w-4 h-4 text-primary" />
+          Entrega por Motoboy — Bairros Atendidos
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">Cadastre os bairros que o motoboy atende e o valor cobrado. Quando o cliente digitar o CEP no checkout, o bairro será identificado automaticamente e a opção de motoboy será exibida com o valor correto.</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">Bairro *</label>
+            <input
+              value={motoboyForm.neighborhoodName}
+              onChange={(e) => setMotoboyForm({ ...motoboyForm, neighborhoodName: e.target.value })}
+              placeholder="Ex: Centro, Vila Nova, Jardim..."
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Cidade (opcional)</label>
+            <input
+              value={motoboyForm.city}
+              onChange={(e) => setMotoboyForm({ ...motoboyForm, city: e.target.value })}
+              placeholder="Ex: São Paulo"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Valor da entrega (R$) *</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={motoboyForm.price}
+              onChange={(e) => setMotoboyForm({ ...motoboyForm, price: e.target.value })}
+              placeholder="Ex: 15.00"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Ordem de exibição</label>
+            <input
+              type="number" min="0"
+              value={motoboyForm.sortOrder}
+              onChange={(e) => setMotoboyForm({ ...motoboyForm, sortOrder: e.target.value })}
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium mb-1">Observação (opcional)</label>
+            <input
+              value={motoboyForm.notes}
+              onChange={(e) => setMotoboyForm({ ...motoboyForm, notes: e.target.value })}
+              placeholder="Ex: Entrega em até 2h"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+          </div>
+        </div>
+        <Button className="mt-4" onClick={onMotoboyCreate} disabled={motoboyCreating}>
+          {motoboyCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+          Adicionar Bairro
+        </Button>
+      </div>
+
+      {/* Motoboy list */}
+      <div className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b">
+          <h3 className="font-semibold text-base flex items-center gap-2">
+            <IconLucide name="MapPin" className="w-4 h-4 text-primary" />
+            Bairros Cadastrados ({motoboyNeighborhoods.length})
+          </h3>
+        </div>
+        {motoboyNeighborhoods.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground text-sm">
+            Nenhum bairro cadastrado ainda. Adicione o primeiro acima.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {motoboyNeighborhoods.map((nb) => (
+              <div key={nb.id} className="px-6 py-4">
+                {motoboyEditing?.id === nb.id ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Bairro *</label>
+                        <input
+                          value={mbEditForm.neighborhoodName}
+                          onChange={(e) => setMbEditForm({ ...mbEditForm, neighborhoodName: e.target.value })}
+                          className="w-full h-9 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Cidade</label>
+                        <input
+                          value={mbEditForm.city}
+                          onChange={(e) => setMbEditForm({ ...mbEditForm, city: e.target.value })}
+                          className="w-full h-9 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Valor (R$)</label>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={mbEditForm.price}
+                          onChange={(e) => setMbEditForm({ ...mbEditForm, price: e.target.value })}
+                          className="w-full h-9 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Ordem</label>
+                        <input
+                          type="number" min="0"
+                          value={mbEditForm.sortOrder}
+                          onChange={(e) => setMbEditForm({ ...mbEditForm, sortOrder: e.target.value })}
+                          className="w-full h-9 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium mb-1">Observação</label>
+                        <input
+                          value={mbEditForm.notes}
+                          onChange={(e) => setMbEditForm({ ...mbEditForm, notes: e.target.value })}
+                          className="w-full h-9 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => onMotoboyUpdate(nb.id, { neighborhoodName: mbEditForm.neighborhoodName, city: mbEditForm.city || null, price: Number(mbEditForm.price), sortOrder: Number(mbEditForm.sortOrder), notes: mbEditForm.notes || null })} disabled={motoboyUpdating === nb.id}>
+                        {motoboyUpdating === nb.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle className="w-3 h-3 mr-1" />}
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setMotoboyEditing(null)}>Cancelar</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{nb.neighborhoodName}</span>
+                        {nb.city && <span className="text-xs text-muted-foreground">{nb.city}</span>}
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${nb.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                          {nb.isActive ? "Ativo" : "Inativo"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">Ordem: {nb.sortOrder}</span>
+                      </div>
+                      {nb.notes && <p className="text-xs text-muted-foreground mt-0.5">{nb.notes}</p>}
+                      <p className="text-lg font-bold text-primary mt-1">{formatCurrency(Number(nb.price))}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => onMotoboyUpdate(nb.id, { isActive: !nb.isActive })}
+                        disabled={motoboyUpdating === nb.id}
+                        className="text-muted-foreground hover:text-primary transition-colors p-1.5"
+                        title={nb.isActive ? "Desativar" : "Ativar"}
+                      >
+                        {nb.isActive ? <IconLucide name="ToggleRight" className="w-5 h-5 text-green-600" /> : <ToggleLeft className="w-5 h-5" />}
+                      </button>
+                      <button onClick={() => startMbEdit(nb)} className="text-muted-foreground hover:text-primary transition-colors p-1.5" title="Editar">
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onMotoboyDelete(nb.id)} disabled={motoboyDeleting === nb.id}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Excluir"
+                      >
+                        {motoboyDeleting === nb.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-orange-50 border border-orange-100 rounded-2xl px-6 py-4 text-xs text-orange-700 space-y-1">
+        <p className="font-semibold flex items-center gap-1"><IconLucide name="Bike" className="w-3.5 h-3.5" />Como funciona o Motoboy</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li>Quando o cliente informa o CEP no checkout, o sistema consulta a ViaCEP para identificar o bairro.</li>
+          <li>Se o bairro estiver cadastrado aqui e <strong>ativo</strong>, a opção "Motoboy" aparecerá automaticamente com o valor correto.</li>
+          <li>O nome do bairro deve ser <strong>exatamente igual</strong> ao que a ViaCEP retorna (incluindo acentos).</li>
+          <li>CEPs de logradouros específicos podem não retornar bairro — nesses casos o motoboy não será exibido.</li>
         </ul>
       </div>
     </div>

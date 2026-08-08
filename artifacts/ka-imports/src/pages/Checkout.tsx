@@ -127,7 +127,8 @@ export default function Checkout() {
   useLiveTracking("checkout");
 
   const [pendingCheck, setPendingCheck] = useState(() => !!sessionStorage.getItem("ka_pending_product"));
-  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
+  const [baseShippingOptions, setBaseShippingOptions] = useState<ShippingOption[]>([]);
+  const [motoboyShippingOption, setMotoboyShippingOption] = useState<ShippingOption | null>(null);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
@@ -585,7 +586,7 @@ export default function Checkout() {
       .then((r) => r.json())
       .then((data: { options?: ShippingOption[] }) => {
         const opts = data.options ?? [];
-        setShippingOptions(opts);
+        setBaseShippingOptions(opts);
         if (opts.length > 0) setSelectedShippingId(opts[0].id);
       })
       .catch(() => {})
@@ -669,6 +670,11 @@ export default function Checkout() {
       eligibleSet.has(p.id) ? acc + p.regularPrice * p.quantity : acc
     ), 0);
   }, [appliedCoupon, couponProductsPayload]);
+  // Merge regular options with motoboy option when available
+  const shippingOptions: ShippingOption[] = motoboyShippingOption
+    ? [...baseShippingOptions, motoboyShippingOption]
+    : baseShippingOptions;
+
   const selectedShipping = shippingOptions.find((o) => o.id === selectedShippingId) ?? null;
   const shippingBaseCost = selectedShipping ? Number(selectedShipping.price) : 0;
   const isFreeShippingEligible = freeShippingMinSubtotal != null && subtotal >= freeShippingMinSubtotal;
@@ -805,6 +811,9 @@ export default function Checkout() {
     setValue("cep", formatted, { shouldValidate: false });
 
     const rawCep = formatted.replace(/\D/g, "");
+    if (rawCep.length < 8) {
+      setMotoboyShippingOption(null);
+    }
     if (rawCep.length === 8) {
       setCepLoading(true);
       try {
@@ -824,7 +833,32 @@ export default function Checkout() {
           if (!data.logradouro) {
             toast.info("CEP encontrado, mas sem rua cadastrada. Preencha o endereço manualmente.");
           }
+          // Check if motoboy delivers to this neighborhood
+          if (data.bairro) {
+            try {
+              const mbRes = await fetch(`${BASE}/api/motoboy-neighborhoods/lookup?bairro=${encodeURIComponent(data.bairro)}`);
+              const mbData = await mbRes.json() as { neighborhood?: { id: string; neighborhoodName: string; price: string | number; notes?: string | null } | null };
+              if (mbData.neighborhood) {
+                const mb = mbData.neighborhood;
+                setMotoboyShippingOption({
+                  id: `motoboy_${mb.id}`,
+                  name: "Motoboy",
+                  description: mb.notes ?? `Entrega em ${data.bairro}`,
+                  price: Number(mb.price),
+                  sortOrder: 999,
+                  isActive: true,
+                });
+              } else {
+                setMotoboyShippingOption(null);
+              }
+            } catch {
+              setMotoboyShippingOption(null);
+            }
+          } else {
+            setMotoboyShippingOption(null);
+          }
         } else {
+          setMotoboyShippingOption(null);
           toast.error("CEP não encontrado. Preencha o endereço manualmente.");
         }
       } catch {
@@ -1816,8 +1850,9 @@ export default function Checkout() {
                         </div>
                         <div>
                           <p className="font-bold text-foreground flex items-center gap-2">
-                            <Truck className="w-4 h-4" />
+                            {opt.id.startsWith("motoboy_") ? <span className="text-base">🏍️</span> : <Truck className="w-4 h-4" />}
                             {opt.name}
+                            {opt.id.startsWith("motoboy_") && <span className="text-xs font-normal px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full">Seu bairro</span>}
                           </p>
                           {opt.description && (
                             <p className="text-sm text-muted-foreground mt-1">{opt.description}</p>
