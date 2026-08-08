@@ -7,6 +7,7 @@ export const motoboyNeighborhoodsTable = mysqlTable("motoboy_neighborhoods", {
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   sortOrder: int("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
+  intervalHours: int("interval_hours").notNull().default(1), // 1=perto, 2=longe
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

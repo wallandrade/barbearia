@@ -26,6 +26,7 @@ import reshipmentsRouter from "./reshipments";
 import clientErrorsRouter from "./client-errors";
 import commissionsRouter from "./commissions";
 import motoboyNeighborhoodsRouter from "./motoboy-neighborhoods";
+import motoboySlots from "./motoboy-slots";
 
 import brevoRouter from "./brevo";
 const router: IRouter = Router();
@@ -57,6 +58,7 @@ router.use(reshipmentsRouter);
 router.use(clientErrorsRouter);
 router.use(commissionsRouter);
 router.use(motoboyNeighborhoodsRouter);
+router.use(motoboySlots);
 router.use(brevoRouter);
 
 export default router;

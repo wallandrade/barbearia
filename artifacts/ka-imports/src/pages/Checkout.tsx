@@ -129,6 +129,12 @@ export default function Checkout() {
   const [pendingCheck, setPendingCheck] = useState(() => !!sessionStorage.getItem("ka_pending_product"));
   const [baseShippingOptions, setBaseShippingOptions] = useState<ShippingOption[]>([]);
   const [motoboyShippingOption, setMotoboyShippingOption] = useState<ShippingOption | null>(null);
+  const [motoboyNeighborhoodId, setMotoboyNeighborhoodId] = useState<string | null>(null);
+  // Motoboy scheduling
+  const [motoboySlotDate, setMotoboySlotDate] = useState<string>("");
+  const [motoboySlotTime, setMotoboySlotTime] = useState<string>("");
+  const [motoboyAvailableSlots, setMotoboyAvailableSlots] = useState<string[]>([]);
+  const [motoboySlotLoading, setMotoboySlotLoading] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
@@ -840,6 +846,7 @@ export default function Checkout() {
               const mbData = await mbRes.json() as { neighborhood?: { id: string; neighborhoodName: string; price: string | number; notes?: string | null } | null };
               if (mbData.neighborhood) {
                 const mb = mbData.neighborhood;
+                setMotoboyNeighborhoodId(mb.id);
                 setMotoboyShippingOption({
                   id: `motoboy_${mb.id}`,
                   name: "Motoboy",
@@ -849,6 +856,7 @@ export default function Checkout() {
                   isActive: true,
                 });
               } else {
+                setMotoboyNeighborhoodId(null);
                 setMotoboyShippingOption(null);
               }
             } catch {
@@ -1202,6 +1210,12 @@ export default function Checkout() {
       return;
     }
 
+    // Require motoboy slot selection
+    if (selectedShippingId?.startsWith("motoboy_")) {
+      if (!motoboySlotDate) { toast.error("Escolha uma data para a entrega por Motoboy."); return; }
+      if (!motoboySlotTime) { toast.error("Escolha um horário para a entrega por Motoboy."); return; }
+    }
+
     if (!validateLanderGoldRule()) return;
 
     const cartAvailable = await validateCartAvailability();
@@ -1279,8 +1293,11 @@ export default function Checkout() {
           `👤 *Cliente:* ${data.name}\n` +
           `📍 *Endereço:* ${data.street}, ${data.number}${data.complement ? ` — ${data.complement}` : ""}\n` +
           `🏘️ *Bairro:* ${data.neighborhood}\n` +
-          `📮 *CEP:* ${data.cep}\n\n` +
-          `📦 *Itens:*\n${motoboyItemsText}\n\n` +
+          `📮 *CEP:* ${data.cep}\n` +
+          (motoboySlotDate && motoboySlotTime
+            ? `🗓️ *Agendado:* ${new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} às ${motoboySlotTime}\n`
+            : "") +
+          `\n📦 *Itens:*\n${motoboyItemsText}\n\n` +
           `💰 *Subtotal:* ${formatCurrency(subtotal)}\n` +
           (discountAmount > 0 ? `🏷️ *Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(discountAmount)}\n` : "") +
           `🏍️ *Motoboy:* ${formatCurrency(shippingCost)}\n` +
@@ -1315,6 +1332,32 @@ export default function Checkout() {
 
       const waUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
       const orderRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
+
+      // Book motoboy slot after order creation
+      if (isMotoboy && motoboySlotDate && motoboySlotTime && motoboyNeighborhoodId) {
+        try {
+          const bookRes = await fetch(`${BASE}/api/motoboy-slots/book`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: order.id,
+              neighborhoodId: motoboyNeighborhoodId,
+              neighborhoodName: data.neighborhood,
+              city: data.city,
+              slotDate: motoboySlotDate,
+              slotTime: motoboySlotTime,
+              clientName: data.name,
+            }),
+          });
+          if (!bookRes.ok) {
+            const bookErr = await bookRes.json() as { message?: string };
+            toast.error(bookErr.message || "Horário do motoboy não disponível. Escolha outro.");
+            return;
+          }
+        } catch {
+          toast.warning("Pedido criado, mas não foi possível registrar o agendamento. Entre em contato.");
+        }
+      }
 
       // Store modal data to show confirmation dialog
       setWhatsappModalData({ url: waUrl, orderId: order.id, orderRef });
@@ -1864,7 +1907,14 @@ export default function Checkout() {
                     {shippingOptions.map((opt) => (
                       <div
                         key={opt.id}
-                        onClick={() => setSelectedShippingId(opt.id)}
+                        onClick={() => {
+                          setSelectedShippingId(opt.id);
+                          if (!opt.id.startsWith("motoboy_")) {
+                            setMotoboySlotDate("");
+                            setMotoboySlotTime("");
+                            setMotoboyAvailableSlots([]);
+                          }
+                        }}
                         className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex items-start gap-4 ${selectedShippingId === opt.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}
                       >
                         <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedShippingId === opt.id ? "border-primary" : "border-muted-foreground"}`}>
@@ -1887,6 +1937,91 @@ export default function Checkout() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Motoboy scheduling calendar */}
+                {selectedShippingId?.startsWith("motoboy_") && motoboyNeighborhoodId && (
+                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-4">
+                    <p className="font-semibold text-sm text-orange-900 flex items-center gap-2">
+                      <span>🗓️</span> Agendar entrega Motoboy
+                    </p>
+
+                    {/* Date picker */}
+                    <div>
+                      <label className="block text-xs font-medium text-orange-800 mb-1">Escolha a data</label>
+                      <input
+                        type="date"
+                        min={(() => {
+                          const d = new Date();
+                          // If past 18:00 offer next day, else today
+                          if (d.getHours() >= 18) d.setDate(d.getDate() + 1);
+                          return d.toISOString().split("T")[0];
+                        })()}
+                        max={(() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + 14);
+                          return d.toISOString().split("T")[0];
+                        })()}
+                        value={motoboySlotDate}
+                        onChange={async (e) => {
+                          const date = e.target.value;
+                          // Block Sundays
+                          if (date) {
+                            const dow = new Date(date + "T12:00:00").getDay();
+                            if (dow === 0) { return; }
+                          }
+                          setMotoboySlotDate(date);
+                          setMotoboySlotTime("");
+                          setMotoboyAvailableSlots([]);
+                          if (!date || !motoboyNeighborhoodId) return;
+                          setMotoboySlotLoading(true);
+                          try {
+                            const res = await fetch(`${BASE}/api/motoboy-slots/available?date=${date}&neighborhood_id=${motoboyNeighborhoodId}`);
+                            const data = await res.json() as { slots: string[] };
+                            setMotoboyAvailableSlots(data.slots ?? []);
+                          } catch { setMotoboyAvailableSlots([]); }
+                          finally { setMotoboySlotLoading(false); }
+                        }}
+                        className="w-full h-10 px-3 rounded-xl border-2 border-orange-200 outline-none focus:border-orange-400 text-sm bg-white"
+                      />
+                      {motoboySlotDate && new Date(motoboySlotDate + "T12:00:00").getDay() === 0 && (
+                        <p className="text-xs text-red-600 mt-1">Não realizamos entregas aos domingos. Escolha outra data.</p>
+                      )}
+                    </div>
+
+                    {/* Time slot picker */}
+                    {motoboySlotDate && new Date(motoboySlotDate + "T12:00:00").getDay() !== 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-orange-800 mb-2">Escolha o horário</label>
+                        {motoboySlotLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-orange-700">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Carregando horários...
+                          </div>
+                        ) : motoboyAvailableSlots.length === 0 ? (
+                          <p className="text-sm text-red-600">Nenhum horário disponível nesta data. Escolha outro dia.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {motoboyAvailableSlots.map((slot) => (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => setMotoboySlotTime(slot)}
+                                className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${motoboySlotTime === slot ? "border-orange-500 bg-orange-500 text-white" : "border-orange-200 bg-white text-orange-800 hover:border-orange-400"}`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {motoboySlotDate && motoboySlotTime && (
+                      <p className="text-sm font-semibold text-green-700 flex items-center gap-1">
+                        ✅ Agendado para {new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} às {motoboySlotTime}
+                      </p>
+                    )}
                   </div>
                 )}
                 {freeShippingMinSubtotal != null && (

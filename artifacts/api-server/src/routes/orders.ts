@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, motoboyBookingsTable } from "@workspace/db";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth, verifyCurrentAdminPassword } from "./admin-auth";
@@ -2337,6 +2337,14 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     await db.update(ordersTable)
       .set({ enviado, updatedAt: new Date() })
       .where(buildAdminOrderWhere(id, adminScope));
+
+    // Release motoboy slot when order is marked as shipped
+    if (enviado) {
+      await db.update(motoboyBookingsTable)
+        .set({ isReleased: true })
+        .where(eq(motoboyBookingsTable.orderId, id));
+    }
+
     broadcastNotification({ type: "order_enviado_updated", data: { id, enviado } });
     res.json({ ok: true, id, enviado });
   } catch (err) {
