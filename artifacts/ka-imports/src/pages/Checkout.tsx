@@ -1263,23 +1263,45 @@ export default function Checkout() {
         .filter(Boolean)
         .join(", ");
 
-      const message =
-        `Olá! Quero finalizar meu pedido.\n\n` +
-        `Pedido: #${order.orderNumber != null ? String(order.orderNumber) : order.id}\n` +
-        `Cliente: ${data.name}\n` +
-        `Telefone: ${data.phone}\n` +
-        `CPF: ${data.document}\n` +
-        `E-mail: ${data.email}\n\n` +
-        `Endereço: ${addressFull}\n\n` +
-        `Itens:\n${itemsText}\n\n` +
-        `Subtotal: ${formatCurrency(subtotal)}\n` +
-        `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-        (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
-        (discountAmount > 0
-          ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
-          : "") +
-        `Total: ${formatCurrency(payableTotal)}\n\n` +
-        `Pode me enviar a chave PIX para pagamento?`;
+      const isMotoboy = selectedShippingId?.startsWith("motoboy_") ?? false;
+
+      const motoboyItemsText = productsPayload
+        .map((item) => {
+          const variant = item.variantLabel ? ` (${item.variantLabel})` : "";
+          return `• ${item.quantity}x ${item.name}${variant}`;
+        })
+        .join("\n");
+
+      const message = isMotoboy
+        ? `🛵 *ENTREGAS DE HOJE*\n` +
+          `━━━━━━━━━━━━━━━━━━\n\n` +
+          `📦 *ENTREGA #${order.orderNumber != null ? String(order.orderNumber) : order.id}*\n` +
+          `👤 *Cliente:* ${data.name}\n` +
+          `📍 *Endereço:* ${data.street}, ${data.number}${data.complement ? ` — ${data.complement}` : ""}\n` +
+          `🏘️ *Bairro:* ${data.neighborhood}\n` +
+          `📮 *CEP:* ${data.cep}\n\n` +
+          `📦 *Itens:*\n${motoboyItemsText}\n\n` +
+          `💰 *Subtotal:* ${formatCurrency(subtotal)}\n` +
+          (discountAmount > 0 ? `🏷️ *Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(discountAmount)}\n` : "") +
+          `🏍️ *Motoboy:* ${formatCurrency(shippingCost)}\n` +
+          `💵 *TOTAL: ${formatCurrency(payableTotal)}*\n\n` +
+          `━━━━━━━━━━━━━━━━━━`
+        : `Olá! Quero finalizar meu pedido.\n\n` +
+          `Pedido: #${order.orderNumber != null ? String(order.orderNumber) : order.id}\n` +
+          `Cliente: ${data.name}\n` +
+          `Telefone: ${data.phone}\n` +
+          `CPF: ${data.document}\n` +
+          `E-mail: ${data.email}\n\n` +
+          `Endereço: ${addressFull}\n\n` +
+          `Itens:\n${itemsText}\n\n` +
+          `Subtotal: ${formatCurrency(subtotal)}\n` +
+          `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
+          (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+          (discountAmount > 0
+            ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
+            : "") +
+          `Total: ${formatCurrency(payableTotal)}\n\n` +
+          `Pode me enviar a chave PIX para pagamento?`;
 
       const supportNumber = await resolveCheckoutWhatsAppNumber();
       if (!supportNumber) {
