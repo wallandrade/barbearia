@@ -4341,28 +4341,75 @@ export default function Admin() {
                 </button>
                 {/* Copy buttons per queue deadline */}
                 {(() => {
-                  const groups: Record<number, typeof ordersParaEnviar> = {};
+                  const groups: Record<number, { orders: typeof ordersParaEnviar; queueDate: string }> = {};
                   const noQueue: typeof ordersParaEnviar = [];
                   ordersParaEnviar.forEach((o) => {
                     const q = shippingQueueMap[o.id];
-                    if (q) { (groups[q.deadlineHours] = groups[q.deadlineHours] || []).push(o); }
-                    else { noQueue.push(o); }
+                    if (q) {
+                      if (!groups[q.deadlineHours]) groups[q.deadlineHours] = { orders: [], queueDate: q.queueDate };
+                      groups[q.deadlineHours].orders.push(o);
+                    } else { noQueue.push(o); }
                   });
                   const sortedHours = Object.keys(groups).map(Number).sort((a, b) => a - b);
+
+                  const buildBatchText = (list: typeof ordersParaEnviar, deadlineHours: number, queueDate: string) => {
+                    const dateFormatted = queueDate
+                      ? new Date(queueDate + "T12:00:00").toLocaleDateString("pt-BR")
+                      : "-";
+                    const header = [
+                      `🚨 POSTAR ATÉ: ${dateFormatted} às 18:00`,
+                      `Lote de expedição: ${list.length} pedidos de 20 vagas`,
+                      `Prazo de postagem: até ${deadlineHours} horas`,
+                      "",
+                    ].join("\n");
+
+                    const orderBlocks = list.map((order) => {
+                      const products = getOrderProducts(order?.products);
+                      const ref = getOrderReference(order);
+                      const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+                      const isReshipment = Boolean(order?.reshipment?.id)
+                        && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
+                      const resumo = products.length
+                        ? products.map((p) => `- ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n")
+                        : "- Sem itens";
+                      return [
+                        isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
+                        isReshipment ? `Data do pedido original: ${formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-"}` : "",
+                        isReshipment ? `Motivo do reenvio: ${String(order?.reshipment?.ticketDescription || "Nao informado").trim()}` : "",
+                        isReshipment ? "" : "",
+                        `PEDIDO #${ref}`,
+                        "",
+                        `Nome: ${order?.clientName || "-"}`,
+                        `Rua: ${rua}`,
+                        `Bairro: ${order?.addressNeighborhood || "-"}`,
+                        `Complemento: ${order?.addressComplement || "-"}`,
+                        `Cidade: ${order?.addressCity || "-"}`,
+                        `Estado: ${order?.addressState || "-"}`,
+                        `CEP: ${order?.addressCep || "-"}`,
+                        "",
+                        "Resumo pedido:",
+                        resumo,
+                        "_______________________________",
+                      ].filter((line, i, arr) => !(line === "" && i < 5 && arr[i - 1] === "")).join("\n");
+                    });
+
+                    return header + orderBlocks.join("\n\n");
+                  };
+
                   return (
                     <>
                       {sortedHours.map((hours) => (
                         <button key={hours} type="button"
                           onClick={async (e) => {
                             e.preventDefault(); e.stopPropagation();
-                            const list = groups[hours];
-                            const text = list.map((order, i) => supplierOrderBlock(order, i + 1)).join("\n\n");
+                            const { orders: list, queueDate } = groups[hours];
+                            const text = buildBatchText(list, hours, queueDate);
                             try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `${hours}h copiado (${list.length} pedidos).`); }
                             catch { toast.error("Erro ao copiar."); }
                           }}
                           className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white whitespace-nowrap"
                         >
-                          <Copy className="w-3.5 h-3.5" /> {hours}h ({groups[hours].length})
+                          <Copy className="w-3.5 h-3.5" /> {hours}h ({groups[hours].orders.length})
                         </button>
                       ))}
                       {noQueue.length > 0 && (
