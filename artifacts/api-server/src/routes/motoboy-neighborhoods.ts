@@ -12,29 +12,35 @@ function stripAccents(s: string): string {
 const router: IRouter = Router();
 
 // ---------------------------------------------------------------------------
-// GET /api/motoboy-neighborhoods/lookup?bairro=X  (public)
-// Returns the active motoboy neighborhood matching the given bairro name.
-// Used by checkout after CEP lookup to detect if motoboy delivery is available.
+// GET /api/motoboy-neighborhoods/lookup?bairro=X&cidade=Y  (public)
+// Returns the active motoboy neighborhood matching bairro AND city.
+// City filter prevents false positives for common names like "Centro" in other states.
 // ---------------------------------------------------------------------------
 router.get("/motoboy-neighborhoods/lookup", async (req, res) => {
   try {
     const bairro = String(req.query.bairro ?? "").trim();
+    const cidade = String(req.query.cidade ?? "").trim();
     if (!bairro) {
       res.json({ neighborhood: null });
       return;
     }
 
-    const normalizedQuery = stripAccents(bairro);
+    const normalizedBairro = stripAccents(bairro);
+    const normalizedCidade = stripAccents(cidade);
 
     const rows = await db
       .select()
       .from(motoboyNeighborhoodsTable)
       .where(eq(motoboyNeighborhoodsTable.isActive, true));
 
-    // accent-insensitive + case-insensitive match
-    const match = rows.find(
-      (r) => stripAccents(r.neighborhoodName) === normalizedQuery
-    ) ?? null;
+    // Match by neighborhood name (accent-insensitive).
+    // If city is provided, also require city match to avoid cross-city false positives.
+    const match = rows.find((r) => {
+      const nameMatch = stripAccents(r.neighborhoodName) === normalizedBairro;
+      if (!nameMatch) return false;
+      if (!normalizedCidade || !r.city) return true; // no city info — allow match
+      return stripAccents(r.city) === normalizedCidade;
+    }) ?? null;
 
     res.json({ neighborhood: match });
   } catch (err) {

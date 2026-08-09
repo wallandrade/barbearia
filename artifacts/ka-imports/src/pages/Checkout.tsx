@@ -842,7 +842,7 @@ export default function Checkout() {
           // Check if motoboy delivers to this neighborhood
           if (data.bairro) {
             try {
-              const mbRes = await fetch(`${BASE}/api/motoboy-neighborhoods/lookup?bairro=${encodeURIComponent(data.bairro)}`);
+              const mbRes = await fetch(`${BASE}/api/motoboy-neighborhoods/lookup?bairro=${encodeURIComponent(data.bairro)}&cidade=${encodeURIComponent(data.localidade ?? "")}`);
               const mbData = await mbRes.json() as { neighborhood?: { id: string; neighborhoodName: string; price: string | number; notes?: string | null } | null };
               if (mbData.neighborhood) {
                 const mb = mbData.neighborhood;
