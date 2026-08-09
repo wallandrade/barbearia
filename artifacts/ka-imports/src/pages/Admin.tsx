@@ -386,7 +386,7 @@ export function orderToFullText(order: any): string {
     .join("\n");
 }
 
-export function orderToPostPaymentText(order: any): string {
+export function orderToPostPaymentText(order: any, deadlineHours: number = 48): string {
   const products = getOrderProducts(order?.products);
   const firstName = String(order?.clientName || "Cliente").trim().split(/\s+/)[0] || "Cliente";
 
@@ -419,7 +419,7 @@ export function orderToPostPaymentText(order: any): string {
     "📍 **Entrega:**",
     ...addressLines,
     "",
-    "⏳ Pedimos que aguarde até **48 horas úteis** para a liberação do código de rastreio. Esse prazo é necessário para organização do envio e para conseguirmos manter um atendimento mais rápido e eficiente para todos os clientes. 🙏",
+    `⏳ Pedimos que aguarde até **${deadlineHours} horas úteis** para a liberação do código de rastreio. Esse prazo é necessário para organização do envio e para conseguirmos manter um atendimento mais rápido e eficiente para todos os clientes. 🙏`,
     "",
     "Assim que o rastreio estiver disponível, você poderá acompanhar a movimentação do seu pedido. 📲",
     "",
@@ -8741,7 +8741,8 @@ function OrdersPanel({
 
   const copyOrderPostPayment = async (order: AdminOrder) => {
     try {
-      const mode = await copyText(orderToPostPaymentText({ ...order, isPrioridade: resolveOrderPriority(order) }));
+      const deadlineHours = shippingQueueMap[order.id]?.deadlineHours || 48;
+      const mode = await copyText(orderToPostPaymentText({ ...order, isPrioridade: resolveOrderPriority(order) }, deadlineHours));
       setCopiedOrderId(order.id + "-post");
       if (mode === "auto") {
         toast.success("Pós-pagamento copiado!");
