@@ -3784,9 +3784,18 @@ export default function Admin() {
   }
 
   const filteredOrders  = orders.filter((o) => {
-    const q = search.toLowerCase();
-    return !q || o.id.toLowerCase().includes(q) || o.clientName.toLowerCase().includes(q) ||
-      o.clientPhone.includes(q) || o.clientEmail.toLowerCase().includes(q);
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    if (o.id.toLowerCase().includes(q)) return true;
+    if (String(o.orderNumber ?? "").toLowerCase().includes(q)) return true;
+    if (o.clientName.toLowerCase().includes(q)) return true;
+    if (o.clientPhone.includes(q)) return true;
+    if (o.clientEmail.toLowerCase().includes(q)) return true;
+    if (String(o.addressCep ?? "").replace(/\D/g, "").includes(q.replace(/\D/g, ""))) return true;
+    // Search by product name
+    const products = getOrderProducts(o.products);
+    if (products.some((p) => String(p?.name ?? "").toLowerCase().includes(q))) return true;
+    return false;
   });
   const filteredCharges = charges.filter((c) => {
     const q = search.toLowerCase();
@@ -4560,7 +4569,7 @@ export default function Admin() {
             <div className="relative flex-1">
               <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nome, e-mail, telefone ou ID..."
+                placeholder="Buscar por nome, e-mail, telefone, CEP, nº pedido ou produto..."
                 className="w-full h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
             </div>
             <div className="flex gap-2 flex-wrap">
