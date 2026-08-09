@@ -2107,8 +2107,15 @@ export default function Checkout() {
 
                 {/* Shipping queue preview — shown for standard (non-motoboy) shipping */}
                 {selectedShippingId && !selectedShippingId.startsWith("motoboy_") && queuePreview && (
-                  <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                    📦 Postagem em até <strong>{queuePreview.deadlineHours}h</strong>. Restam <strong>{queuePreview.availableSlots} de 20</strong> vagas neste prazo.
+                  <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+                    <p className="font-semibold text-sm text-orange-900 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-orange-600" />
+                      Postagem em até {queuePreview.deadlineHours} horas
+                    </p>
+                    <p className="text-sm text-orange-800 mt-1">
+                      Restam <strong>{queuePreview.availableSlots} de 20 vagas</strong> neste prazo. Finalize sua compra para aproveitar.
+                    </p>
+                    <p className="text-xs text-orange-700 mt-1">A vaga é confirmada após a aprovação do pagamento. O prazo de transporte começa depois da postagem.</p>
                   </div>
                 )}
 
