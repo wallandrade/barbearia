@@ -4342,8 +4342,11 @@ export default function Admin() {
                 {/* Copy buttons per queue deadline */}
                 {(() => {
                   const groups: Record<number, { orders: typeof ordersParaEnviar; queueDate: string }> = {};
+                  const motoboyOrders: typeof ordersParaEnviar = [];
                   const noQueue: typeof ordersParaEnviar = [];
                   ordersParaEnviar.forEach((o) => {
+                    const shippingType = String((o as any).shippingType || "").toLowerCase();
+                    if (shippingType === "motoboy") { motoboyOrders.push(o); return; }
                     const q = shippingQueueMap[o.id];
                     if (q) {
                       if (!groups[q.deadlineHours]) groups[q.deadlineHours] = { orders: [], queueDate: q.queueDate };
@@ -4423,6 +4426,36 @@ export default function Admin() {
                           className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white whitespace-nowrap"
                         >
                           <Copy className="w-3.5 h-3.5" /> Outros ({noQueue.length})
+                        </button>
+                      )}
+                      {motoboyOrders.length > 0 && (
+                        <button type="button"
+                          onClick={async (e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            const lines = motoboyOrders.map((order, i) => {
+                              const products = getOrderProducts(order?.products);
+                              const ref = getOrderReference(order);
+                              const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+                              const resumo = products.map((p) => `• ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n");
+                              return [
+                                `📦 ENTREGA #${ref}`,
+                                `👤 Cliente: ${order?.clientName || "-"}`,
+                                `📍 Endereço: ${rua}`,
+                                `🏘️ Bairro: ${order?.addressNeighborhood || "-"}`,
+                                `📮 CEP: ${order?.addressCep || "-"}`,
+                                ``,
+                                `📦 Itens:`,
+                                resumo,
+                                `━━━━━━━━━━━━━━━━━━`,
+                              ].join("\n");
+                            });
+                            const text = `🛵 ENTREGAS DE HOJE — MOTOBOY\n━━━━━━━━━━━━━━━━━━\n\n` + lines.join("\n\n");
+                            try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `Motoboy copiado (${motoboyOrders.length} pedidos).`); }
+                            catch { toast.error("Erro ao copiar."); }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-800 hover:bg-orange-100 whitespace-nowrap"
+                        >
+                          🏍️ Motoboy ({motoboyOrders.length})
                         </button>
                       )}
                     </>
