@@ -42,4 +42,19 @@ router.get("/admin/shipping-queue/:orderId", requireAdminAuth, async (req, res) 
   }
 });
 
+// ---------------------------------------------------------------------------
+// POST /api/admin/shipping-queue/bootstrap  (admin)
+// Manually triggers the bootstrap to allocate queue slots for existing orders.
+// ---------------------------------------------------------------------------
+router.post("/admin/shipping-queue/bootstrap", requireAdminAuth, async (_req, res) => {
+  try {
+    const { bootstrapShippingQueue } = await import("../lib/shipping-queue-allocator");
+    void bootstrapShippingQueue();
+    res.json({ ok: true, message: "Bootstrap iniciado em background." });
+  } catch (err) {
+    console.error("[ShippingQueue] manual bootstrap error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
 export default router;

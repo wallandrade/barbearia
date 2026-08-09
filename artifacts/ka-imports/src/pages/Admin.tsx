@@ -4324,6 +4324,21 @@ export default function Admin() {
                 >
                   <ShoppingBag className="w-3.5 h-3.5" /> Lista de Compra
                 </button>
+                <button
+                  type="button"
+                  title="Reprocessar fila de expedição"
+                  onClick={async (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    try {
+                      await fetch(`${BASE}/api/admin/shipping-queue/bootstrap`, { method: "POST", headers: authHeaders() });
+                      toast.success("Fila reprocessada! Recarregue os pedidos em instantes.");
+                      setTimeout(() => fetchOrders(true), 3000);
+                    } catch { toast.error("Erro ao reprocessar fila."); }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white"
+                >
+                  <IconLucide name="RefreshCw" className="w-3.5 h-3.5" /> Fila
+                </button>
                 {/* Copy buttons per queue deadline */}
                 {(() => {
                   const groups: Record<number, typeof ordersParaEnviar> = {};
