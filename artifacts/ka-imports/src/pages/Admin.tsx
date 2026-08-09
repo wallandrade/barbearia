@@ -4345,19 +4345,14 @@ export default function Admin() {
                   const noQueue: typeof ordersParaEnviar = [];
                   ordersParaEnviar.forEach((o) => {
                     const q = shippingQueueMap[o.id];
-                    if (q) {
-                      (groups[q.deadlineHours] = groups[q.deadlineHours] || []).push(o);
-                    } else {
-                      noQueue.push(o);
-                    }
+                    if (q) { (groups[q.deadlineHours] = groups[q.deadlineHours] || []).push(o); }
+                    else { noQueue.push(o); }
                   });
                   const sortedHours = Object.keys(groups).map(Number).sort((a, b) => a - b);
                   return (
                     <>
                       {sortedHours.map((hours) => (
-                        <button
-                          key={hours}
-                          type="button"
+                        <button key={hours} type="button"
                           onClick={async (e) => {
                             e.preventDefault(); e.stopPropagation();
                             const list = groups[hours];
@@ -4365,33 +4360,28 @@ export default function Admin() {
                             try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `${hours}h copiado (${list.length} pedidos).`); }
                             catch { toast.error("Erro ao copiar."); }
                           }}
-                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white"
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white whitespace-nowrap"
                         >
-                          <Copy className="w-3.5 h-3.5" /> {hours}h
-                          <span className="bg-amber-200 text-amber-900 rounded-full px-1">{groups[hours].length}</span>
+                          <Copy className="w-3.5 h-3.5" /> {hours}h ({groups[hours].length})
                         </button>
                       ))}
                       {noQueue.length > 0 && (
-                        <button
-                          type="button"
+                        <button type="button"
                           onClick={async (e) => {
                             e.preventDefault(); e.stopPropagation();
                             const text = noQueue.map((order, i) => supplierOrderBlock(order, i + 1)).join("\n\n");
-                            try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `Copiado (${noQueue.length} pedidos sem fila).`); }
+                            try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `Outros copiado (${noQueue.length} pedidos).`); }
                             catch { toast.error("Erro ao copiar."); }
                           }}
-                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white"
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white whitespace-nowrap"
                         >
-                          <Copy className="w-3.5 h-3.5" /> Outros
-                          <span className="bg-amber-200 text-amber-900 rounded-full px-1">{noQueue.length}</span>
+                          <Copy className="w-3.5 h-3.5" /> Outros ({noQueue.length})
                         </button>
                       )}
                     </>
                   );
                 })()}
-                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
-                  {ordersParaEnviar.length}
-                </span>
+                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">{ordersParaEnviar.length}</span>
               </div>
             </div>
             {ordersParaEnviar.length === 0 ? (
