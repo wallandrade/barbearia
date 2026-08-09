@@ -127,6 +127,12 @@ export default function Checkout() {
   useLiveTracking("checkout");
 
   const [pendingCheck, setPendingCheck] = useState(() => !!sessionStorage.getItem("ka_pending_product"));
+  // "standard" | "fast"
+  const [checkoutMode, setCheckoutMode] = useState<"standard" | "fast">("standard");
+  // Fast mode state: "initial" | "checking" | "motoboy" | "nomotoboy"
+  const [fastModeStep, setFastModeStep] = useState<"initial" | "checking" | "motoboy" | "nomotoboy">("initial");
+  const [fastName, setFastName] = useState("");
+  const [fastCep, setFastCep] = useState("");
   const [baseShippingOptions, setBaseShippingOptions] = useState<ShippingOption[]>([]);
   const [motoboyShippingOption, setMotoboyShippingOption] = useState<ShippingOption | null>(null);
   const [motoboyNeighborhoodId, setMotoboyNeighborhoodId] = useState<string | null>(null);
@@ -459,6 +465,7 @@ export default function Checkout() {
             setCheckoutWhatsappNumber(storeWhatsappNumber);
           }
           setFreeShippingMinSubtotal(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
+          if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
         }
       } catch {
         // Keep defaults enabled on network errors.
@@ -1500,7 +1507,124 @@ export default function Checkout() {
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-          {/* Left Column */}
+          {/* Fast mode — show simplified form unless motoboy was found */}
+          {checkoutMode === "fast" && fastModeStep !== "motoboy" ? (
+            <>
+              <div className="lg:col-span-7 space-y-6">
+                <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50">
+                  <h2 className="text-2xl font-bold mb-6">Finalizar Pedido</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Nome Completo *</label>
+                      <input
+                        value={fastName}
+                        onChange={(e) => setFastName(e.target.value)}
+                        placeholder="João da Silva"
+                        className="w-full h-11 px-4 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CEP *</label>
+                      <input
+                        value={fastCep}
+                        onChange={async (e) => {
+                          const raw = e.target.value.replace(/\D/g, "").slice(0, 8);
+                          const formatted = raw.length > 5 ? `${raw.slice(0, 5)}-${raw.slice(5)}` : raw;
+                          setFastCep(formatted);
+                          if (raw.length === 8) {
+                            setFastModeStep("checking");
+                            try {
+                              const viaRes = await fetch(`https://viacep.com.br/ws/${raw}/json/`);
+                              const viaData = await viaRes.json() as { erro?: boolean; bairro?: string; localidade?: string; logradouro?: string; uf?: string };
+                              if (viaData.erro) { setFastModeStep("nomotoboy"); return; }
+                              const mbRes = await fetch(`${BASE}/api/motoboy-neighborhoods/lookup?bairro=${encodeURIComponent(viaData.bairro ?? "")}&cidade=${encodeURIComponent(viaData.localidade ?? "")}`);
+                              const mbData = await mbRes.json() as { neighborhood?: { id: string; neighborhoodName: string; price: string | number; notes?: string | null } | null };
+                              if (mbData.neighborhood) {
+                                const mb = mbData.neighborhood;
+                                setMotoboyNeighborhoodId(mb.id);
+                                setMotoboyShippingOption({ id: `motoboy_${mb.id}`, name: "Motoboy", description: mb.notes ?? `Entrega em ${viaData.bairro}`, price: Number(mb.price), sortOrder: 999, isActive: true });
+                                // Pre-fill form fields for motoboy flow
+                                setValue("name", fastName, { shouldValidate: false });
+                                if (viaData.logradouro) setValue("street", viaData.logradouro, { shouldValidate: false });
+                                if (viaData.bairro) setValue("neighborhood", viaData.bairro, { shouldValidate: false });
+                                if (viaData.localidade) setValue("city", viaData.localidade, { shouldValidate: false });
+                                if (viaData.uf) setValue("state", viaData.uf, { shouldValidate: false });
+                                setValue("cep", formatted, { shouldValidate: false });
+                                setCepDisplay(formatted);
+                                setFastModeStep("motoboy");
+                              } else {
+                                setFastModeStep("nomotoboy");
+                              }
+                            } catch { setFastModeStep("nomotoboy"); }
+                          } else {
+                            setFastModeStep("initial");
+                          }
+                        }}
+                        placeholder="00000-000"
+                        className="w-full h-11 px-4 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+                      />
+                      {fastModeStep === "checking" && (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verificando entrega...</p>
+                      )}
+                      {fastModeStep === "nomotoboy" && (
+                        <p className="text-xs text-amber-700 mt-1">⚠️ Entrega por motoboy não disponível neste CEP. Finalize via WhatsApp.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* No-motoboy WhatsApp button */}
+                  {fastModeStep === "nomotoboy" && (
+                    <button
+                      type="button"
+                      disabled={!fastName.trim()}
+                      onClick={async () => {
+                        if (!fastName.trim()) { toast.error("Informe seu nome completo."); return; }
+                        const supportNumber = await resolveCheckoutWhatsAppNumber();
+                        if (!supportNumber) { toast.error("WhatsApp não configurado."); return; }
+                        const itemsText = items.map((item) => `• ${item.quantity}x ${item.name} — ${formatCurrency(item.price * item.quantity)}`).join("\n");
+                        const message =
+                          `🛒 *Novo Pedido*\n\n` +
+                          `👤 *Cliente:* ${fastName.trim()}\n` +
+                          `📮 *CEP:* ${fastCep}\n\n` +
+                          `📦 *Itens:*\n${itemsText}\n\n` +
+                          `💵 *TOTAL: ${formatCurrency(total)}*\n\n` +
+                          `Pode me enviar a chave PIX para pagamento?`;
+                        window.open(`https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`, "_blank");
+                      }}
+                      className="mt-6 w-full h-12 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <MessageCircle className="w-5 h-5" /> Finalizar via WhatsApp
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Order summary column */}
+              <div className="lg:col-span-5">
+                <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50 sticky top-6">
+                  <h3 className="font-bold text-lg mb-4">Resumo do Pedido</h3>
+                  <div className="space-y-3">
+                    {items.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3">
+                        {item.image && <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.quantity}x {formatCurrency(item.price)}</p>
+                        </div>
+                        <p className="text-sm font-semibold shrink-0">{formatCurrency(item.price * item.quantity)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <div className="flex justify-between font-bold text-lg">
+                      <span>Total</span>
+                      <span className="text-primary">{formatCurrency(total)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
           <div className="lg:col-span-7 space-y-8">
 
             {/* Personal Data */}
@@ -2398,6 +2522,7 @@ export default function Checkout() {
             </div>
           </div>
         </div>
+          )}
       </div>
 
       {/* Card Payment Modal */}

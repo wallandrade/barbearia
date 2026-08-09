@@ -1003,7 +1003,7 @@ function OrderBumpsPanel({ bumps, products, form, setForm, creating, toggling, d
 interface ShippingOption { id: string; name: string; description: string | null; price: number; sortOrder: number; isActive: boolean; }
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
 
 interface CommissionPendingOrder {
   id: string;
@@ -4376,6 +4376,7 @@ export default function Admin() {
               { key: "users",         label: "Usuários",         icon: "User" },
               { key: "socialProof",   label: "Prova Social",     icon: "ShoppingBag" },
               { key: "raffles",       label: "Rifas",            icon: "Ticket",      count: rafflesList.length || undefined },
+              { key: "checkout",      label: "Checkout",         icon: "ShoppingCart" },
               { key: "configuracoes", label: "Configurações",    icon: "Settings" },
             ] : []),
             { key: "webhook",       label: "Webhook",          icon: "Link" },
@@ -6658,6 +6659,58 @@ export default function Admin() {
               setTimeout(() => setWebhookCopied(false), 2000);
             }}
           />
+        ) : tab === "checkout" ? (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-border p-6">
+              <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
+                <IconLucide name="ShoppingCart" className="w-4 h-4 text-primary" />
+                Modo do Checkout
+              </h3>
+              <p className="text-xs text-muted-foreground mb-6">Escolha como o cliente finaliza a compra. A alteração é aplicada imediatamente.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Padrão */}
+                <button
+                  onClick={() => saveSetting("checkout_mode", "standard")}
+                  className={`text-left p-5 rounded-2xl border-2 transition-all ${(settings["checkout_mode"] ?? "standard") === "standard" ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${(settings["checkout_mode"] ?? "standard") === "standard" ? "border-primary" : "border-muted-foreground"}`}>
+                      {(settings["checkout_mode"] ?? "standard") === "standard" && <div className="w-2.5 h-2.5 bg-primary rounded-full" />}
+                    </div>
+                    <span className="font-semibold text-sm">Checkout Padrão</span>
+                    {(settings["checkout_mode"] ?? "standard") === "standard" && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Ativo</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Cliente preenche nome, e-mail, CPF, telefone e endereço completo. Suporta PIX, Cartão e WhatsApp.</p>
+                </button>
+
+                {/* Rápido */}
+                <button
+                  onClick={() => saveSetting("checkout_mode", "fast")}
+                  className={`text-left p-5 rounded-2xl border-2 transition-all ${settings["checkout_mode"] === "fast" ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${settings["checkout_mode"] === "fast" ? "border-primary" : "border-muted-foreground"}`}>
+                      {settings["checkout_mode"] === "fast" && <div className="w-2.5 h-2.5 bg-primary rounded-full" />}
+                    </div>
+                    <span className="font-semibold text-sm">Checkout Rápido</span>
+                    {settings["checkout_mode"] === "fast" && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Ativo</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">Cliente preenche só nome e CEP.</p>
+                  <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                    <li><strong>Bairro Motoboy:</strong> abre formulário completo e segue fluxo normal</li>
+                    <li><strong>Outros bairros:</strong> mostra só botão "Finalizar via WhatsApp"</li>
+                  </ul>
+                </button>
+              </div>
+
+              {settings["checkout_mode"] === "fast" && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
+                  <strong>⚠️ Atenção:</strong> No modo Rápido, clientes fora da área Motoboy só podem finalizar via WhatsApp. Certifique-se de que o WhatsApp está ativado nas configurações.
+                </div>
+              )}
+            </div>
+          </div>
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
             <div className="rounded-xl border bg-gradient-to-br from-rose-50 to-orange-50/60 border-rose-200 p-5">
