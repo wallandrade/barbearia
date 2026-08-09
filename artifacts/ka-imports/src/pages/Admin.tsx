@@ -4584,6 +4584,7 @@ export default function Admin() {
             onRemoveOrder={(id) => {
               setOrders((prev) => prev.filter((o) => o.id !== id));
             }}
+            shippingQueueMap={shippingQueueMap}
           />
         ) : tab === "charges" ? (
           <ChargesPanel
@@ -8345,6 +8346,7 @@ function OrdersPanel({
   updateOrderStatus, setProofModal, setProofViewer, openWhatsApp,
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
   onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups, onSetReshipmentStatus, onRemoveOrder,
+  shippingQueueMap,
 }: {
   allOrders: AdminOrder[];
   productImageById: Record<string, string>;
@@ -8379,6 +8381,7 @@ function OrdersPanel({
   availableWhatsappGroups: string[];
   onSetReshipmentStatus: (reshipmentId: string, status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado") => void;
   onRemoveOrder: (id: string) => void;
+  shippingQueueMap: Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }>;
 }) {
 
   const normalizeIp = (ip?: string | null) => String(ip || "").trim().replace(/^::ffff:/, "") || "-";
