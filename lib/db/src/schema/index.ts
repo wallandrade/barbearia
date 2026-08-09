@@ -24,3 +24,4 @@ export * from "./seller-commission-batches";
 export * from "./motoboy-neighborhoods";
 export * from "./motoboy-bookings";
 export * from "./motoboy-cep-ranges";
+export * from "./shipping-queue";

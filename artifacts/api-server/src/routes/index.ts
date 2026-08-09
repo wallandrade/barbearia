@@ -28,6 +28,7 @@ import commissionsRouter from "./commissions";
 import motoboyNeighborhoodsRouter from "./motoboy-neighborhoods";
 import motoboySlots from "./motoboy-slots";
 import motoboyCepRangesRouter from "./motoboy-cep-ranges";
+import shippingQueueRouter from "./shipping-queue";
 
 import brevoRouter from "./brevo";
 const router: IRouter = Router();
@@ -61,6 +62,7 @@ router.use(commissionsRouter);
 router.use(motoboyNeighborhoodsRouter);
 router.use(motoboySlots);
 router.use(motoboyCepRangesRouter);
+router.use(shippingQueueRouter);
 router.use(brevoRouter);
 
 export default router;

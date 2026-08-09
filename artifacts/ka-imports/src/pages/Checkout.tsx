@@ -142,6 +142,7 @@ export default function Checkout() {
   const [motoboyAvailableSlots, setMotoboyAvailableSlots] = useState<string[]>([]);
   const [motoboySlotLoading, setMotoboySlotLoading] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(true);
+  const [queuePreview, setQueuePreview] = useState<{ availableSlots: number; deadlineHours: number } | null>(null);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
@@ -604,6 +605,14 @@ export default function Checkout() {
       })
       .catch(() => {})
       .finally(() => setShippingLoading(false));
+
+    // Load queue preview for standard shipping
+    fetch(`${BASE}/api/shipping-queue/preview`)
+      .then((r) => r.json())
+      .then((data: { availableSlots: number; deadlineHours: number }) => {
+        if (data.availableSlots > 0) setQueuePreview(data);
+      })
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2093,6 +2102,13 @@ export default function Checkout() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Shipping queue preview — shown for standard (non-motoboy) shipping */}
+                {selectedShippingId && !selectedShippingId.startsWith("motoboy_") && queuePreview && (
+                  <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                    📦 Postagem em até <strong>{queuePreview.deadlineHours}h</strong>. Restam <strong>{queuePreview.availableSlots} de 20</strong> vagas neste prazo.
                   </div>
                 )}
 

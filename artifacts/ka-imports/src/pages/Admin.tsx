@@ -1362,6 +1362,8 @@ export default function Admin() {
   // Once set to true, the spinner never appears again for orders/charges —
   // background refreshes and filter changes update data silently in-place.
   const [ordersReady, setOrdersReady] = useState(false);
+  // Shipping queue allocations keyed by orderId
+  const [shippingQueueMap, setShippingQueueMap] = useState<Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }>>({});
   const [chargesReady, setChargesReady] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [isPrimary, setIsPrimary] = useState(getIsPrimary);
@@ -1848,6 +1850,21 @@ export default function Admin() {
       const data = await res.json() as { orders: AdminOrder[] };
       setOrders(data.orders || []);
       setOrdersReady(true);
+      // Load shipping queue allocations for paid orders
+      const paidIds = (data.orders || []).filter((o) => o.status === "paid" || o.status === "completed").map((o) => o.id);
+      if (paidIds.length > 0) {
+        const queueMap: Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }> = {};
+        await Promise.all(paidIds.map(async (oid) => {
+          try {
+            const qRes = await fetch(`${BASE}/api/admin/shipping-queue/${oid}`, { headers: authHeaders() });
+            if (qRes.ok) {
+              const qData = await qRes.json() as { allocation?: { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string } | null };
+              if (qData.allocation) queueMap[oid] = qData.allocation;
+            }
+          } catch { /* ignore */ }
+        }));
+        setShippingQueueMap(queueMap);
+      }
     } catch { /* silent — don't show toast for background refreshes */ }
   }, [dateFrom, dateTo, statusFilter, methodFilter, sellerFilter, groupFilter, handleUnauthorized]);
 
@@ -9503,6 +9520,22 @@ function OrdersPanel({
           };
           return (
             <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${isPrioridade ? "ring-2 ring-red-400" : ""}`}>
+            {/* Shipping queue block */}
+            {shippingQueueMap[order.id] && !enviados[order.id] && (() => {
+              const q = shippingQueueMap[order.id];
+              const deadlineDate = new Date(q.postingDeadlineAt);
+              const now = new Date();
+              const isOverdue = now > deadlineDate;
+              const deadlineFmt = deadlineDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+              const timeFmt = deadlineDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+              return (
+                <div className={`px-5 py-2 text-xs font-semibold flex flex-wrap items-center gap-x-4 gap-y-0.5 ${isOverdue ? "bg-red-600 text-white" : "bg-amber-50 text-amber-900 border-b border-amber-200"}`}>
+                  <span>{isOverdue ? "🚨" : "📦"} POSTAR ATÉ: {deadlineFmt} às {timeFmt}</span>
+                  <span>Fila de expedição: posição {q.queueSlot} de 20</span>
+                  <span>Prazo de postagem: até {q.deadlineHours}h</span>
+                </div>
+              );
+            })()}
             <div className="p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex-1 min-w-0">

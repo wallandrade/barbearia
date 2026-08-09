@@ -14,6 +14,7 @@ import {
 import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
+import { allocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 
 const router: IRouter = Router();
 
@@ -139,6 +140,7 @@ router.get("/pix/status/:transactionId", async (req, res) => {
       .select({
         id: ordersTable.id,
         status: ordersTable.status,
+        shippingType: ordersTable.shippingType,
         updatedAt: ordersTable.updatedAt,
       })
       .from(ordersTable)
@@ -164,6 +166,7 @@ router.get("/pix/status/:transactionId", async (req, res) => {
 
           if (nextOrderStatus === "paid") {
             await ensureOrderCommission(row.id);
+            if (isStandardShipping(row.shippingType)) void allocateShippingSlot(row.id);
           }
         }
 
@@ -220,7 +223,7 @@ router.post("/pix/callback/:token", async (req, res) => {
 
     if (body.transactionId && isPaymentConfirmed(body.status || "")) {
       const existing = await db
-        .select({ id: ordersTable.id, status: ordersTable.status })
+        .select({ id: ordersTable.id, status: ordersTable.status, shippingType: ordersTable.shippingType })
         .from(ordersTable)
         .where(eq(ordersTable.transactionId, body.transactionId))
         .limit(1);
@@ -232,6 +235,7 @@ router.post("/pix/callback/:token", async (req, res) => {
 
       if (existing[0] && existing[0].status !== "paid" && existing[0].status !== "completed") {
         await ensureOrderCommission(existing[0].id);
+        if (isStandardShipping(existing[0].shippingType)) void allocateShippingSlot(existing[0].id);
       }
 
       broadcastNotification({

@@ -2,6 +2,7 @@ import app from "./app";
 import { startReconciliationJob } from "./reconciliation";
 import { ensureRuntimeSchema } from "./runtime-schema";
 import { startRaffleExpiryJob } from "./raffle-expiry";
+import { bootstrapShippingQueue } from "./lib/shipping-queue-allocator";
 
 function resolvePort(): number {
   const rawPort = process.env["PORT"];
@@ -33,6 +34,7 @@ async function bootstrap(): Promise<void> {
     console.log(`Server listening on port ${port}`);
     startReconciliationJob();
     startRaffleExpiryJob();
+    void bootstrapShippingQueue();
 
     // Run schema sync in background to avoid blocking boot/health checks.
     void ensureRuntimeSchema();

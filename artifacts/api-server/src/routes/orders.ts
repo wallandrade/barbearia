@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, motoboyBookingsTable } from "@workspace/db";
+import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth, verifyCurrentAdminPassword } from "./admin-auth";
@@ -1617,6 +1618,17 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
 
     if (isBeingPaid) {
       await ensureOrderCommission(id);
+      // Allocate shipping queue slot for standard freight orders
+      const orderShippingType = String(existing[0]?.shippingType ?? "");
+      if (!wasAlreadyPaid && isStandardShipping(orderShippingType)) {
+        void allocateShippingSlot(id);
+      }
+    }
+
+    // Release queue slot when order is cancelled or unpaid
+    const isBeingCancelled = nextStatus === "cancelled" || nextStatus === "cancelado";
+    if (isBeingCancelled && wasAlreadyPaid) {
+      void releaseShippingSlot(id);
     }
 
     broadcastNotification({ type: "order_status_updated", data: { id, status } });
@@ -2343,6 +2355,16 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       await db.update(motoboyBookingsTable)
         .set({ isReleased: true })
         .where(eq(motoboyBookingsTable.orderId, id));
+    }
+
+    // Shipping queue: re-allocate if un-shipping (enviado → false), release if shipped
+    const orderRow = await db.select({ shippingType: ordersTable.shippingType })
+      .from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+    const shippingType = String(orderRow[0]?.shippingType ?? "");
+    if (isStandardShipping(shippingType)) {
+      if (!enviado) {
+        void reallocateShippingSlot(id);
+      }
     }
 
     broadcastNotification({ type: "order_enviado_updated", data: { id, enviado } });
