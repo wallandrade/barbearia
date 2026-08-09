@@ -1625,6 +1625,7 @@ export default function Checkout() {
               </div>
             </>
           ) : (
+          <>
           <div className="lg:col-span-7 space-y-8">
 
             {/* Personal Data */}
@@ -2522,6 +2523,7 @@ export default function Checkout() {
             </div>
           </div>
         </div>
+          </>
           )}
       </div>
 
