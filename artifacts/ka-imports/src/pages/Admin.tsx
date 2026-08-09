@@ -4376,7 +4376,7 @@ export default function Admin() {
               { key: "users",         label: "Usuários",         icon: "User" },
               { key: "socialProof",   label: "Prova Social",     icon: "ShoppingBag" },
               { key: "raffles",       label: "Rifas",            icon: "Ticket",      count: rafflesList.length || undefined },
-              { key: "checkout",      label: "Checkout",         icon: "ShoppingCart" },
+              { key: "checkout",      label: "Checkout",         icon: "ShoppingBag" },
               { key: "configuracoes", label: "Configurações",    icon: "Settings" },
             ] : []),
             { key: "webhook",       label: "Webhook",          icon: "Link" },
