@@ -27,6 +27,7 @@ import clientErrorsRouter from "./client-errors";
 import commissionsRouter from "./commissions";
 import motoboyNeighborhoodsRouter from "./motoboy-neighborhoods";
 import motoboySlots from "./motoboy-slots";
+import motoboyCepRangesRouter from "./motoboy-cep-ranges";
 
 import brevoRouter from "./brevo";
 const router: IRouter = Router();
@@ -59,6 +60,7 @@ router.use(clientErrorsRouter);
 router.use(commissionsRouter);
 router.use(motoboyNeighborhoodsRouter);
 router.use(motoboySlots);
+router.use(motoboyCepRangesRouter);
 router.use(brevoRouter);
 
 export default router;

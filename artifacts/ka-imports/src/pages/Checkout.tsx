@@ -863,8 +863,22 @@ export default function Checkout() {
                   isActive: true,
                 });
               } else {
-                setMotoboyNeighborhoodId(null);
-                setMotoboyShippingOption(null);
+                // Fallback: busca por faixa de CEP
+                try {
+                  const crRes = await fetch(`${BASE}/api/motoboy-cep-ranges/lookup?cep=${rawCep}`);
+                  const crData = await crRes.json() as { range?: { id: string; label: string; price: string | number; notes?: string | null } | null };
+                  if (crData.range) {
+                    const cr = crData.range;
+                    setMotoboyNeighborhoodId(`range_${cr.id}`);
+                    setMotoboyShippingOption({ id: `motoboy_range_${cr.id}`, name: "Motoboy", description: cr.notes ?? `Entrega — ${cr.label}`, price: Number(cr.price), sortOrder: 999, isActive: true });
+                  } else {
+                    setMotoboyNeighborhoodId(null);
+                    setMotoboyShippingOption(null);
+                  }
+                } catch {
+                  setMotoboyNeighborhoodId(null);
+                  setMotoboyShippingOption(null);
+                }
               }
             } catch {
               setMotoboyShippingOption(null);
@@ -1553,7 +1567,24 @@ export default function Checkout() {
                                 setCepDisplay(formatted);
                                 setFastModeStep("motoboy");
                               } else {
-                                setFastModeStep("nomotoboy");
+                                // Fallback: faixa de CEP
+                                const crRes = await fetch(`${BASE}/api/motoboy-cep-ranges/lookup?cep=${raw}`);
+                                const crData = await crRes.json() as { range?: { id: string; label: string; price: string | number; notes?: string | null } | null };
+                                if (crData.range) {
+                                  const cr = crData.range;
+                                  setMotoboyNeighborhoodId(`range_${cr.id}`);
+                                  setMotoboyShippingOption({ id: `motoboy_range_${cr.id}`, name: "Motoboy", description: cr.notes ?? `Entrega — ${cr.label}`, price: Number(cr.price), sortOrder: 999, isActive: true });
+                                  setValue("name", fastName, { shouldValidate: false });
+                                  if (viaData.logradouro) setValue("street", viaData.logradouro, { shouldValidate: false });
+                                  if (viaData.bairro) setValue("neighborhood", viaData.bairro, { shouldValidate: false });
+                                  if (viaData.localidade) setValue("city", viaData.localidade, { shouldValidate: false });
+                                  if (viaData.uf) setValue("state", viaData.uf, { shouldValidate: false });
+                                  setValue("cep", formatted, { shouldValidate: false });
+                                  setCepDisplay(formatted);
+                                  setFastModeStep("motoboy");
+                                } else {
+                                  setFastModeStep("nomotoboy");
+                                }
                               }
                             } catch { setFastModeStep("nomotoboy"); }
                           } else {

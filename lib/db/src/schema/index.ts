@@ -23,3 +23,4 @@ export * from "./marketing-expenses";
 export * from "./seller-commission-batches";
 export * from "./motoboy-neighborhoods";
 export * from "./motoboy-bookings";
+export * from "./motoboy-cep-ranges";
