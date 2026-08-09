@@ -33,6 +33,12 @@ router.get("/motoboy-slots/available", async (req, res) => {
       return;
     }
 
+    // Block Sundays
+    if (new Date(date + "T12:00:00").getDay() === 0) {
+      res.json({ slots: [], intervalHours: 0 });
+      return;
+    }
+
     // Load neighborhood to get intervalHours
     const nbRows = await db
       .select()

@@ -2122,8 +2122,9 @@ export default function Checkout() {
                         type="date"
                         min={(() => {
                           const d = new Date();
-                          // If past 18:00 offer next day, else today
                           if (d.getHours() >= 18) d.setDate(d.getDate() + 1);
+                          // Skip Sunday (0)
+                          if (d.getDay() === 0) d.setDate(d.getDate() + 1);
                           return d.toISOString().split("T")[0];
                         })()}
                         max={(() => {
