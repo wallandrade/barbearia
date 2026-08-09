@@ -2045,17 +2045,6 @@ export default function Checkout() {
             <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50 space-y-6">
               <h2 className="text-2xl font-bold">Entrega e Opções</h2>
 
-              {/* Tracking deadline notice */}
-              <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
-                <Clock className="w-5 h-5 text-orange-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold text-orange-900">Prazo para Rastreio</p>
-                  <p className="text-sm text-orange-800 mt-1">
-                    Enviamos o código de rastreio em até <span className="font-bold">48 horas</span> após a confirmação do pagamento. Acompanhe seu pedido em tempo real!
-                  </p>
-                </div>
-              </div>
-
               <div>
                 <label className="text-sm font-medium text-foreground mb-3 block">Tipo de Frete</label>
                 {shippingLoading ? (
