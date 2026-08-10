@@ -3791,7 +3791,9 @@ export default function Admin() {
     if (o.clientName.toLowerCase().includes(q)) return true;
     if (o.clientPhone.includes(q)) return true;
     if (o.clientEmail.toLowerCase().includes(q)) return true;
-    if (String(o.addressCep ?? "").replace(/\D/g, "").includes(q.replace(/\D/g, ""))) return true;
+    // CEP: só compara dígitos quando a busca contém ao menos um dígito
+    const qDigits = q.replace(/\D/g, "");
+    if (qDigits && String(o.addressCep ?? "").replace(/\D/g, "").includes(qDigits)) return true;
     // Search by product name
     const products = getOrderProducts(o.products);
     if (products.some((p) => String(p?.name ?? "").toLowerCase().includes(q))) return true;
