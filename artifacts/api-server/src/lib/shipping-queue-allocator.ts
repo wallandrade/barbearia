@@ -1,5 +1,5 @@
 import { db, shippingQueueTable, ordersTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, lt, gte } from "drizzle-orm";
 import crypto from "crypto";
 
 const MAX_PER_DAY = 20;
@@ -144,6 +144,13 @@ export async function getQueuePreview(): Promise<{
   queueDate: string;
 }> {
   const now = new Date();
+  const todayStr = toSPDateStr(now);
+
+  // Find the next available slot (standard logic)
+  let nextSlotDateStr = "";
+  let nextSlotOffset = 0;
+  let nextSlotAvailable = 0;
+
   for (let bdOffset = 2; bdOffset <= 20; bdOffset++) {
     const postingDate = addBusinessDays(now, bdOffset);
     const dateStr = toSPDateStr(postingDate);
@@ -156,10 +163,37 @@ export async function getQueuePreview(): Promise<{
     const count = Number(countRows[0]?.cnt ?? 0);
 
     if (count < MAX_PER_DAY) {
-      return { availableSlots: MAX_PER_DAY - count, deadlineHours: bdOffset * 24, queueDate: dateStr };
+      nextSlotDateStr = dateStr;
+      nextSlotOffset = bdOffset;
+      nextSlotAvailable = MAX_PER_DAY - count;
+      break;
     }
   }
-  return { availableSlots: 0, deadlineHours: 0, queueDate: "" };
+
+  if (!nextSlotDateStr) {
+    return { availableSlots: 0, deadlineHours: 0, queueDate: "" };
+  }
+
+  // Count pending backlog: distinct queueDates between today and the next slot date
+  // that still have unshipped active orders — each represents +1 day of real delay
+  const backlogRows = await db
+    .select({ queueDate: shippingQueueTable.queueDate })
+    .from(shippingQueueTable)
+    .innerJoin(ordersTable, eq(shippingQueueTable.orderId, ordersTable.id))
+    .where(
+      and(
+        eq(shippingQueueTable.isActive, true),
+        eq(ordersTable.enviado, false),
+        gte(shippingQueueTable.queueDate, todayStr),
+        lt(shippingQueueTable.queueDate, nextSlotDateStr),
+      )
+    )
+    .groupBy(shippingQueueTable.queueDate);
+
+  const backlogDays = backlogRows.length;
+  const realDeadlineHours = (nextSlotOffset + backlogDays) * 24;
+
+  return { availableSlots: nextSlotAvailable, deadlineHours: realDeadlineHours, queueDate: nextSlotDateStr };
 }
 
 /**
