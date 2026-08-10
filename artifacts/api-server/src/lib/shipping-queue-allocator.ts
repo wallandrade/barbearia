@@ -38,7 +38,7 @@ function buildPostingDeadlineAt(queueDateStr: string): string {
 
 /** Check whether a shippingType should participate in the queue */
 export function isStandardShipping(shippingType: string | null | undefined): boolean {
-  if (!shippingType) return false;
+  if (!shippingType) return true; // null = frete padrão
   const lower = shippingType.toLowerCase().trim();
   return !["motoboy", "retirada", "pickup"].includes(lower);
 }

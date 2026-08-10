@@ -4356,6 +4356,7 @@ export default function Admin() {
                   ordersParaEnviar.forEach((o) => {
                     const shippingType = String((o as any).shippingType || "").toLowerCase();
                     if (shippingType === "motoboy") { motoboyOrders.push(o); return; }
+                    if (shippingType === "retirada" || shippingType === "pickup") return; // retirada não entra na fila de envio
                     const q = shippingQueueMap[o.id];
                     if (q) {
                       if (!groups[q.deadlineHours]) groups[q.deadlineHours] = { orders: [], queueDate: q.queueDate };
