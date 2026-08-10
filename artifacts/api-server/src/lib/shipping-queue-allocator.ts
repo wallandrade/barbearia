@@ -1,5 +1,5 @@
 import { db, shippingQueueTable, ordersTable } from "@workspace/db";
-import { eq, and, sql, lt, gte } from "drizzle-orm";
+import { eq, and, sql, lt } from "drizzle-orm";
 import crypto from "crypto";
 
 const MAX_PER_DAY = 20;
@@ -174,8 +174,7 @@ export async function getQueuePreview(): Promise<{
     return { availableSlots: 0, deadlineHours: 0, queueDate: "" };
   }
 
-  // Count pending backlog: distinct queueDates between today and the next slot date
-  // that still have unshipped active orders — each represents +1 day of real delay
+  // Count backlog: dates STRICTLY BEFORE today with unshipped active orders (overdue lotes only)
   const backlogRows = await db
     .select({ queueDate: shippingQueueTable.queueDate })
     .from(shippingQueueTable)
@@ -184,8 +183,7 @@ export async function getQueuePreview(): Promise<{
       and(
         eq(shippingQueueTable.isActive, true),
         eq(ordersTable.enviado, false),
-        gte(shippingQueueTable.queueDate, todayStr),
-        lt(shippingQueueTable.queueDate, nextSlotDateStr),
+        lt(shippingQueueTable.queueDate, todayStr),
       )
     )
     .groupBy(shippingQueueTable.queueDate);
