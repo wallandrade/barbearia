@@ -4570,8 +4570,8 @@ export default function Admin() {
             <div className="relative flex-1">
               <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nome, e-mail, telefone, CEP, nº pedido ou produto..."
-                className="w-full h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
+                placeholder="Buscar por nome, e-mail, celular, CEP, nº pedido ou produto..."
+                className="w-full min-w-[320px] h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
             </div>
             <div className="flex gap-2 flex-wrap">
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
