@@ -1,0 +1,12 @@
+---
+description: OpenAPI Orval codegen
+alwaysApply: false
+globs: lib/api-spec/**/*.{ts,yaml,yml,json}
+---
+
+# Codegen
+
+- Fonte: `lib/api-spec/openapi.yaml` + `orval.config.ts`.
+- Saídas: `lib/api-zod`, `lib/api-client-react` — não editar gerados à mão sem necessidade; regenere via Orval.
+- Contrato novo/alterado: atualizar spec primeiro, depois código de rota/FE.
+- Não abrir dumps gerados em tarefas que não sejam de API/contrato.

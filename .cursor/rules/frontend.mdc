@@ -1,0 +1,14 @@
+---
+description: Convenções do frontend React/Vite (ka-imports legado)
+alwaysApply: false
+globs: artifacts/ka-imports/**/*.{ts,tsx,css,html}
+---
+
+# Frontend
+
+- App em `artifacts/ka-imports` (package legado `@workspace/ka-imports`).
+- Wouter, Zustand (carrinho), TanStack Query, Tailwind 4, componentes em `src/components`, páginas em `src/pages`.
+- SW `public/sw.js` = notificações only.
+- Preferir client gerado (`@workspace/api-client-react`) quando o endpoint estiver no OpenAPI.
+- `Admin.tsx` é enorme: edite por busca/seção, não releia o arquivo inteiro sem necessidade.
+- Após mudança relevante de UX/fluxo: atualizar `.contexto-yuri-imports/` (regras/padrões).

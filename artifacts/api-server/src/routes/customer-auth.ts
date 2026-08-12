@@ -394,6 +394,78 @@ router.get("/admin/customers/recurring", requireAdminAuth, async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
+// POST /api/admin/customers/:id/set-password — redefine senha do cliente (admin)
+// Senhas ficam apenas como hash; a original NÃO pode ser recuperada.
+// Este endpoint gera/define uma nova senha e devolve o plaintext uma única vez.
+// --------------------------------------------------------------------------
+router.post("/admin/customers/:id/set-password", requireAdminAuth, async (req, res) => {
+  try {
+    const customerId = String(req.params.id || "").trim();
+    if (!customerId || customerId.startsWith("guest:")) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Cliente inválido ou sem conta cadastrada." });
+      return;
+    }
+
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Sessão inválida." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Apenas administrador principal pode redefinir senha de cliente." });
+      return;
+    }
+
+    const requested = typeof req.body?.password === "string" ? req.body.password.trim() : "";
+    if (requested && requested.length < 8) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "A senha deve ter pelo menos 8 caracteres." });
+      return;
+    }
+
+    const users = await db
+      .select({ id: customerUsersTable.id, name: customerUsersTable.name, email: customerUsersTable.email })
+      .from(customerUsersTable)
+      .where(eq(customerUsersTable.id, customerId))
+      .limit(1);
+
+    const user = users[0];
+    if (!user) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Cliente não encontrado." });
+      return;
+    }
+
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const generated = Array.from(crypto.randomBytes(10))
+      .map((b) => alphabet[b % alphabet.length])
+      .join("");
+    const plainPassword = requested || generated;
+    const salt = generateSalt();
+
+    await db
+      .update(customerUsersTable)
+      .set({
+        passwordHash: hashPassword(plainPassword, salt),
+        salt,
+        updatedAt: new Date(),
+      })
+      .where(eq(customerUsersTable.id, user.id));
+
+    console.warn(`[Admin] customer password reset by admin for user=${user.id}`);
+
+    res.json({
+      ok: true,
+      password: plainPassword,
+      generated: !requested,
+      user: { id: user.id, name: user.name, email: user.email },
+      message: "Nova senha definida. A senha anterior não pode ser recuperada (somente hash).",
+    });
+  } catch (err) {
+    console.error("[Admin] set customer password error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao redefinir senha do cliente." });
+  }
+});
+
+// --------------------------------------------------------------------------
 // POST /api/admin/customers/:id/impersonate — create customer session (admin)
 // --------------------------------------------------------------------------
 router.post("/admin/customers/:id/impersonate", requireAdminAuth, async (req, res) => {

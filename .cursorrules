@@ -1,0 +1,38 @@
+# Yuri Import — regras do projeto (Cursor)
+
+Idioma: **pt-BR**. Produto comercial: **Yuri Import** (no código/UI frequentemente **Yury** / `yury-imports.com`).
+
+## Stack real (não inventar)
+
+Monorepo pnpm em `Clayton/`: React 19 + Vite 7 + Tailwind (`artifacts/ka-imports`, nome de package legado), Express 5 (`artifacts/api-server`), **MySQL + Drizzle** (`lib/db`), OpenAPI/Orval (`lib/api-spec`). Deploy: Vercel (FE) + Railway (API). **Não** assumir Next/Nest/Prisma/Postgres.
+
+## Precedência
+
+1. Código-fonte atual  
+2. Memória viva `.contexto-yuri-imports/`  
+3. Tipagens/gerados e suposições  
+
+Memória ≠ código → seguir o código e **atualizar a memória**.
+
+## Memória viva (obrigatório incrementar)
+
+Consultar `.contexto-yuri-imports/` (regras-negocio, arquitetura, padroes-codigo, auth-permissoes, integracoes, seguranca-performance).
+
+Após mudança **relevante** no código: atualizar os `.md` certos (data + Changelog + corpo).  
+Exceção tipográfica/sem impacto: declarar `memória viva: sem update (sem impacto)`.
+
+## Proibições
+
+- Não inventar domínio **barbearia**/agendamento de salão — a pasta `barbearia` é só nome de repo.
+- Não misturar “Yuri Import” com termos de outro produto sem evidência.
+- Não reintroduzir Postgres/Sheets como fonte da verdade (`replit.md` está desatualizado).
+- Não tratar SW como offline sync completo.
+- **Nunca** commit sem pedido explícito.
+
+## Leitura seletiva (não abrir em toda tarefa)
+
+`node_modules/`, `dist/`, zips/backups (`ka-imports-frontend-backup.zip`, `attached_assets/`), `Admin.tsx` inteiro, docs gigantes de análise na raiz, gerados (`lib/api-zod`, `lib/api-client-react`) salvo se a tarefa for nisso.
+
+## Rules por área
+
+Ver `.cursor/rules/*.mdc` — três alwaysApply + globs FE/BE/DB/codegen.

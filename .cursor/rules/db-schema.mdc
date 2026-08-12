@@ -1,0 +1,12 @@
+---
+description: Schema Drizzle/MySQL
+alwaysApply: false
+globs: lib/db/**/*.{ts,sql}
+---
+
+# DB / schema
+
+- **MySQL** + Drizzle (`mysqlTable`, `drizzle-orm/mysql2`). Nunca “corrigir” para Postgres sem evidência nova.
+- Schemas em `lib/db/src/schema/`; barrel `schema/index.ts`; client `lib/db/src/index.ts`.
+- Configs: `drizzle.config.ts`, `lib/db/drizzle.config.ts`.
+- Mudança de tabela/coluna relevante → atualizar `.contexto-yuri-imports/arquitetura.md` e `regras-negocio.md` se afetar fluxo.

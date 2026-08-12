@@ -1,0 +1,20 @@
+---
+description: Stack real e anti-padrões do monorepo Yuri Import
+alwaysApply: true
+---
+
+# Stack e padrões
+
+- Monorepo **pnpm** + TS: `artifacts/api-server` (Express 5), `artifacts/ka-imports` (React 19 + Vite 7 + Tailwind 4 + Zustand + React Query + Wouter), `lib/db` (**MySQL** + Drizzle), Orval em `lib/api-spec`.
+- Deploy: Vercel FE → API `api.yury-imports.com`; Railway API.
+- Detalhes: `.contexto-yuri-imports/arquitetura.md` e `padroes-codigo.md`.
+
+## Anti-padrões
+
+- Inventar Next/Nest/Prisma/Postgres.
+- Confiar em `replit.md` (Postgres/Sheets) contra o código.
+- Domínio barbearia/agendamento.
+- Polling APPCNPay para confirmar PIX (usar webhook + BD).
+- Ler zips, `node_modules`, `Admin.tsx` inteiro, dumps sem necessidade.
+
+Convenções FE/BE: seguir o que já existe nas pastas do pacote; estender, não reinventar.

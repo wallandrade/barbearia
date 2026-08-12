@@ -1,0 +1,21 @@
+---
+description: Nomenclatura e termos do domínio Yuri Import (não confundir)
+alwaysApply: true
+---
+
+# Domínio e nomenclatura
+
+| Termo | Significado |
+|-------|-------------|
+| **Yuri Import** | Nome comercial na memória / produto |
+| **Yury** / `yury-imports.com` | Grafia usada no código, UI e API pública |
+| **ka-imports** / `@workspace/ka-imports` | Nome **legado** do package FE — não é outro produto |
+| **barbearia** | Só nome de pasta/repo GitHub — **não** é o domínio de negócio |
+| **oficialkaimports** | Nome legado de DB/remoto — não reintroduzir como marca |
+| **sellerCode** | Isolamento de vendedor (não há `tenant_id`) |
+| **PIX** | APPCNPay / DentPeg + webhooks |
+| **KYC** | Docs de identidade para fluxo cartão |
+
+Não misturar: barbearia ↔ e-commerce; Postgres ↔ MySQL; Sheets ↔ catálogo DB; PWA offline ↔ SW de notificação.
+
+Incerteza de grafia Yuri vs Yury: marcar TODO se for texto voltado ao cliente final.

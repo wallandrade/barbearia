@@ -1,0 +1,14 @@
+---
+description: Convenções da API Express (api-server)
+alwaysApply: false
+globs: artifacts/api-server/**/*.{ts,js}
+---
+
+# Backend
+
+- Express 5 em `artifacts/api-server`: rotas por domínio em `src/routes/`, libs em `src/lib/`, app/CORS/rate-limit/checkout-token em `src/app.ts`.
+- Erros JSON `{ error, message }`; timezone `America/Sao_Paulo`.
+- Auth admin: `routes/admin-auth.ts` (`requireAdminAuth`, `requirePrimaryAdmin`, `ADMIN_SELLER_SCOPE_MAP`).
+- PIX: `gateway.ts` + webhooks; não inventar polling de confirmação no APPCNPay.
+- Ao mudar contrato público: alinhar `lib/api-spec/openapi.yaml` / codegen.
+- Após mudança relevante: incrementar `.contexto-yuri-imports/` (negócio/arquitetura/integrações/segurança/auth).

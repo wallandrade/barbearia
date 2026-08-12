@@ -524,7 +524,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -1345,6 +1345,7 @@ export default function Admin() {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [recurringCustomersLoading, setRecurringCustomersLoading] = useState(false);
   const [customerImpersonatingId, setCustomerImpersonatingId] = useState<string | null>(null);
+  const [customerPasswordResettingId, setCustomerPasswordResettingId] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [recurringCustomerSearch, setRecurringCustomerSearch] = useState("");
   const [exportingCustomersCSV, setExportingCustomersCSV] = useState(false);
@@ -2101,6 +2102,47 @@ export default function Admin() {
       toast.error("Erro ao entrar na conta do cliente.");
     } finally {
       setCustomerImpersonatingId(null);
+    }
+  }, [isPrimary]);
+
+  const resetCustomerLoginPassword = useCallback(async (
+    customer: CustomerUserRecord,
+    password?: string,
+  ): Promise<{ password: string; generated: boolean } | null> => {
+    if (!isPrimary) {
+      toast.error("Apenas administrador principal pode redefinir senha do cliente.");
+      return null;
+    }
+    if (!customer.hasAccount) {
+      toast.error("Este comprador não possui conta cadastrada (compra como convidado).");
+      return null;
+    }
+
+    setCustomerPasswordResettingId(customer.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/customers/${customer.id}/set-password`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(password ? { password } : {}),
+      });
+      const data = await res.json() as {
+        password?: string;
+        generated?: boolean;
+        message?: string;
+      };
+
+      if (!res.ok || !data.password) {
+        toast.error(data.message || "Não foi possível redefinir a senha.");
+        return null;
+      }
+
+      toast.success("Nova senha definida. Copie e envie ao cliente.");
+      return { password: data.password, generated: !!data.generated };
+    } catch {
+      toast.error("Erro ao redefinir senha do cliente.");
+      return null;
+    } finally {
+      setCustomerPasswordResettingId(null);
     }
   }, [isPrimary]);
 
@@ -5114,6 +5156,9 @@ export default function Admin() {
             onImpersonate={impersonateCustomerAccount}
             impersonatingId={customerImpersonatingId}
             canImpersonate={isPrimary}
+            onResetPassword={resetCustomerLoginPassword}
+            passwordResettingId={customerPasswordResettingId}
+            canResetPassword={isPrimary}
             onExportCSV={handleExportCustomersCSV}
             onSyncBrevo={handleSyncCustomersBrevo}
             exportingCSV={exportingCustomersCSV}
@@ -11240,7 +11285,9 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 // CustomersPanel
 // ---------------------------------------------------------------------------
 function CustomersPanel({
-  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate, onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo, exportModalOpen, setExportModalOpen, exportColumns, setExportColumns,
+  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate,
+  onResetPassword, passwordResettingId, canResetPassword,
+  onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo, exportModalOpen, setExportModalOpen, exportColumns, setExportColumns,
 }: {
   customers: CustomerUserRecord[];
   loading: boolean;
@@ -11250,6 +11297,9 @@ function CustomersPanel({
   onImpersonate: (customer: CustomerUserRecord) => void;
   impersonatingId: string | null;
   canImpersonate: boolean;
+  onResetPassword: (customer: CustomerUserRecord, password?: string) => Promise<{ password: string; generated: boolean } | null>;
+  passwordResettingId: string | null;
+  canResetPassword: boolean;
   onExportCSV: () => void;
   onSyncBrevo: () => void;
   exportingCSV: boolean;
@@ -11259,6 +11309,12 @@ function CustomersPanel({
   exportColumns: Record<string, boolean>;
   setExportColumns: (v: Record<string, boolean>) => void;
 }) {
+  const [passwordModalCustomer, setPasswordModalCustomer] = useState<CustomerUserRecord | null>(null);
+  const [customPasswordDraft, setCustomPasswordDraft] = useState("");
+  const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
+  const [passwordVisible, setPasswordVisible] = useState(true);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+
   const filtered = customers.filter((c) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -11268,6 +11324,46 @@ function CustomersPanel({
       (c.affiliateCode || "").toLowerCase().includes(q)
     );
   });
+
+  const openPasswordModal = (customer: CustomerUserRecord) => {
+    setPasswordModalCustomer(customer);
+    setCustomPasswordDraft("");
+    setRevealedPassword(null);
+    setPasswordVisible(true);
+    setPasswordCopied(false);
+  };
+
+  const closePasswordModal = () => {
+    setPasswordModalCustomer(null);
+    setCustomPasswordDraft("");
+    setRevealedPassword(null);
+    setPasswordCopied(false);
+  };
+
+  const handleGenerateOrSetPassword = async (useCustom: boolean) => {
+    if (!passwordModalCustomer) return;
+    const custom = customPasswordDraft.trim();
+    if (useCustom && custom.length < 8) {
+      toast.error("A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+    const result = await onResetPassword(passwordModalCustomer, useCustom ? custom : undefined);
+    if (!result) return;
+    setRevealedPassword(result.password);
+    setPasswordVisible(true);
+    setPasswordCopied(false);
+  };
+
+  const copyRevealedPassword = async () => {
+    if (!revealedPassword) return;
+    try {
+      await navigator.clipboard.writeText(revealedPassword);
+      setPasswordCopied(true);
+      toast.success("Senha copiada.");
+    } catch {
+      toast.error("Não foi possível copiar a senha.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -11366,25 +11462,52 @@ function CustomersPanel({
                   </td>
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateBR(c.createdAt)}</td>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => onImpersonate(c)}
-                      disabled={!canImpersonate || !c.hasAccount || impersonatingId === c.id}
-                      className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border bg-white hover:bg-muted text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-                      title={!canImpersonate ? "Apenas administrador principal pode entrar na conta" : !c.hasAccount ? "Comprador sem cadastro (convidado)" : "Entrar na conta do cliente"}
-                    >
-                      {impersonatingId === c.id ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          Entrando...
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="w-3.5 h-3.5" />
-                          Entrar na conta
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => openPasswordModal(c)}
+                        disabled={!canResetPassword || !c.hasAccount || passwordResettingId === c.id}
+                        className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border bg-white hover:bg-muted text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                        title={
+                          !canResetPassword
+                            ? "Apenas administrador principal pode ver/redefinir senha"
+                            : !c.hasAccount
+                              ? "Comprador sem cadastro (convidado)"
+                              : "Ver / redefinir senha de login"
+                        }
+                      >
+                        {passwordResettingId === c.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Senha...
+                          </>
+                        ) : (
+                          <>
+                            <KeyRound className="w-3.5 h-3.5" />
+                            Senha
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onImpersonate(c)}
+                        disabled={!canImpersonate || !c.hasAccount || impersonatingId === c.id}
+                        className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border bg-white hover:bg-muted text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                        title={!canImpersonate ? "Apenas administrador principal pode entrar na conta" : !c.hasAccount ? "Comprador sem cadastro (convidado)" : "Entrar na conta do cliente"}
+                      >
+                        {impersonatingId === c.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Entrando...
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-3.5 h-3.5" />
+                            Entrar na conta
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -11532,6 +11655,117 @@ function CustomersPanel({
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {passwordModalCustomer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Senha de login</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {passwordModalCustomer.name} · {passwordModalCustomer.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"
+                aria-label="Fechar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              A senha original <strong>não pode ser recuperada</strong> (fica só o hash). Gere ou defina uma <strong>nova</strong> senha e envie ao cliente.
+            </div>
+
+            {revealedPassword ? (
+              <div className="space-y-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Nova senha (copie agora)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type={passwordVisible ? "text" : "password"}
+                    readOnly
+                    value={revealedPassword}
+                    className="flex-1 h-11 px-3 rounded-xl border-2 border-border bg-muted/30 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPasswordVisible((v) => !v)}
+                    className="h-11 w-11 inline-flex items-center justify-center rounded-xl border border-border hover:bg-muted"
+                    aria-label={passwordVisible ? "Ocultar senha" : "Mostrar senha"}
+                  >
+                    {passwordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copyRevealedPassword}
+                    className="h-11 px-3 inline-flex items-center gap-1.5 rounded-xl border border-border hover:bg-muted text-xs font-semibold"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {passwordCopied ? "Copiado" : "Copiar"}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePasswordModal}
+                  className="w-full h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                >
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Definir senha manual (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customPasswordDraft}
+                    onChange={(e) => setCustomPasswordDraft(e.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    className="mt-1.5 w-full h-11 px-3 rounded-xl border-2 border-border focus:border-primary outline-none text-sm"
+                  />
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateOrSetPassword(false)}
+                    disabled={passwordResettingId === passwordModalCustomer.id}
+                    className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                  >
+                    {passwordResettingId === passwordModalCustomer.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-4 h-4" />
+                    )}
+                    Gerar senha temporária
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateOrSetPassword(true)}
+                    disabled={passwordResettingId === passwordModalCustomer.id || customPasswordDraft.trim().length < 8}
+                    className="flex-1 h-10 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm font-semibold disabled:opacity-60"
+                  >
+                    Usar senha digitada
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePasswordModal}
+                  className="w-full h-10 rounded-xl border border-border text-sm font-semibold hover:bg-muted"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

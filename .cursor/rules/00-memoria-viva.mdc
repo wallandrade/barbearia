@@ -1,0 +1,30 @@
+---
+description: Memória viva Yuri Import — consultar e incrementar após mudanças relevantes
+alwaysApply: true
+---
+
+# Memória viva
+
+Pasta: `.contexto-yuri-imports/`
+
+Antes de implementar ou explicar domínio/stack: consulte os `.md` relevantes.
+Produto: **Yuri Import** (código pode dizer Yury / ka-imports legado). Pasta `barbearia` ≠ domínio.
+
+## Precedência
+
+código atual > memória viva > tipagens/suposições
+
+## Manutenção obrigatória
+
+Após mudança **relevante** (feature, regra, auth, integração, schema, deploy, anti-padrão):
+
+1. Atualizar `> Última atualização:`
+2. Linha no Changelog
+3. Ajustar o corpo com fatos do código
+
+Exceção sem impacto de contexto (typo/formatação): **não** atualizar e declarar  
+`memória viva: sem update (sem impacto)`.
+
+Commits: **nunca** sem pedido explícito do humano.
+
+Nesta missão de app: se só memória/rules forem pedidas, não altere código de negócio.
