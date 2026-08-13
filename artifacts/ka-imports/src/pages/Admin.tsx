@@ -8873,8 +8873,12 @@ function OrdersPanel({
           trackingLabelUrl: data.labelUrl,
           enviado: true,
         });
-        window.open(data.labelUrl, "_blank", "noopener,noreferrer");
-        toast.success("Etiqueta gerada.");
+        const opened = window.open(data.labelUrl, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          toast.success("Etiqueta gerada. Clique em Ver PDF (pop-up bloqueado).");
+        } else {
+          toast.success("Etiqueta gerada — abriu em nova aba.");
+        }
         return;
       }
       if (data.pdfBase64) {
@@ -10336,6 +10340,21 @@ function OrdersPanel({
                       >
                         Etiqueta EE
                       </Button>
+                      {((order as any).envioecomLabelUrl || (order as any).trackingLabelUrl) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                          onClick={() => {
+                            const url = String(
+                              (order as any).envioecomLabelUrl || (order as any).trackingLabelUrl || "",
+                            ).trim();
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          Ver PDF
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
