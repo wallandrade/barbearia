@@ -3825,22 +3825,34 @@ export default function Admin() {
     );
   }
 
-  const filteredOrders  = orders.filter((o) => {
+  const filteredOrders = (() => {
     const q = search.toLowerCase().trim();
-    if (!q) return true;
-    if (o.id.toLowerCase().includes(q)) return true;
-    if (String(o.orderNumber ?? "").toLowerCase().includes(q)) return true;
-    if (o.clientName.toLowerCase().includes(q)) return true;
-    if (o.clientPhone.includes(q)) return true;
-    if (o.clientEmail.toLowerCase().includes(q)) return true;
-    // CEP: só compara dígitos quando a busca contém ao menos um dígito
-    const qDigits = q.replace(/\D/g, "");
-    if (qDigits && String(o.addressCep ?? "").replace(/\D/g, "").includes(qDigits)) return true;
-    // Search by product name
-    const products = getOrderProducts(o.products);
-    if (products.some((p) => String(p?.name ?? "").toLowerCase().includes(q))) return true;
-    return false;
-  });
+    if (!q) return orders;
+
+    // Digits-only query: exact orderNumber first. If found, return only that/those.
+    // Avoids "255" matching phones like 99255-xxxx or partial order numbers.
+    const digitsOnly = /^\d+$/.test(q);
+    if (digitsOnly) {
+      const asNumber = Number(q);
+      const exactOrderMatches = orders.filter(
+        (o) => o.orderNumber != null && Number(o.orderNumber) === asNumber,
+      );
+      if (exactOrderMatches.length > 0) return exactOrderMatches;
+    }
+
+    return orders.filter((o) => {
+      if (o.id.toLowerCase().includes(q)) return true;
+      if (String(o.orderNumber ?? "").toLowerCase().includes(q)) return true;
+      if (o.clientName.toLowerCase().includes(q)) return true;
+      if (o.clientPhone.includes(q)) return true;
+      if (o.clientEmail.toLowerCase().includes(q)) return true;
+      const qDigits = q.replace(/\D/g, "");
+      if (qDigits && String(o.addressCep ?? "").replace(/\D/g, "").includes(qDigits)) return true;
+      const products = getOrderProducts(o.products);
+      if (products.some((p) => String(p?.name ?? "").toLowerCase().includes(q))) return true;
+      return false;
+    });
+  })();
   const filteredCharges = charges.filter((c) => {
     const q = search.toLowerCase();
     return !q || c.id.toLowerCase().includes(q) || c.clientName.toLowerCase().includes(q) ||
