@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Sync/etiqueta resolvem barcode definitivo (EC…→8880…) via CPF/`shipping_id` | Corrige etiqueta quando painel tem rastreio e admin ainda tem EC | Cotação igual |
 | 2026-08-13 | Etiqueta: prefere `shipping_id`/`ids`; recupera via listagem; mensagem se frete não pago | Corrige 403 barcode não encontrado / etiqueta antes do pagamento | Cotação igual |
 | 2026-08-13 | Create exige `cep_origem` (body / `ENVIOECOM_ORIGIN_CEP` / `origin_zipcode` da cotação) | Corrige VALIDATION_FAILED blank cep_origem | Quote/webhook iguais |
 | 2026-08-13 | Create: sanitiza CPF/telefone/endereço/dims, orderId único e erro com details | Reduz VALIDATION_FAILED genérico | Cotação/webhook iguais |

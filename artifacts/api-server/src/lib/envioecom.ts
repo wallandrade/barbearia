@@ -428,6 +428,90 @@ export async function listShipments(params?: {
   return envioecomJson(`/shipments?${qs.toString()}`);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function flattenShipmentRow(row: Record<string, unknown>): Record<string, unknown> {
+  const nested = asRecord(row.data) || {};
+  return { ...row, ...nested };
+}
+
+/** Prefer barcode definitivo (ex. J&T 8880...) a códigos provisórios (EC...). */
+export function pickBestBarcode(candidates: Array<string | null | undefined>): string | null {
+  const list = candidates
+    .map((c) => String(c || "").trim())
+    .filter(Boolean);
+  if (!list.length) return null;
+
+  const score = (code: string): number => {
+    if (/^\d{12,}$/.test(code)) return 100; // J&T / numérico transportadora
+    if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(code)) return 90; // Correios
+    if (/^EC/i.test(code)) return 10; // provisório EnvioEcom
+    return 40;
+  };
+
+  return [...list].sort((a, b) => score(b) - score(a))[0] || null;
+}
+
+export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
+  barcode: string | null;
+  shipmentId: string | null;
+  trackingKey: string | null;
+  status: string | null;
+  externalOrderNumber: string | null;
+  destinationCep: string | null;
+} {
+  const row = flattenShipmentRow(rowInput);
+  const finalStatus = asRecord(row.final_status);
+
+  const barcode = pickBestBarcode([
+    row.barcode as string,
+    row.tracking_code as string,
+    row.trackingCode as string,
+    row.tracking_number as string,
+  ]);
+
+  const shipmentIdRaw = row.shipping_id ?? row.shipment_id ?? row.id;
+  const shipmentId =
+    shipmentIdRaw != null && String(shipmentIdRaw).trim() !== ""
+      ? String(shipmentIdRaw).trim()
+      : null;
+
+  const trackingKey =
+    String(row.tracking_key || row.trackingKey || "").trim() || null;
+
+  const status =
+    String(
+      row.status ||
+        finalStatus?.status ||
+        "",
+    ).trim() || null;
+
+  const externalOrderNumber =
+    String(
+      row.external_order_number ||
+        row.externalOrderNumber ||
+        row.orderId ||
+        row.order_id ||
+        "",
+    ).trim() || null;
+
+  const destinationCep = digitsOnly(
+    String(row.cep_destino || row.destination_zipcode || row.postal_code_destination || ""),
+  );
+
+  return {
+    barcode,
+    shipmentId,
+    trackingKey,
+    status,
+    externalOrderNumber,
+    destinationCep: destinationCep.length === 8 ? destinationCep : null,
+  };
+}
+
 /** Extrai barcode/shipping_id/status do retorno de POST /shipping/create */
 export function extractCreatedShipment(created: {
   shipping_create?: {
@@ -440,6 +524,7 @@ export function extractCreatedShipment(created: {
 }): {
   barcode: string | null;
   shipmentId: string | null;
+  trackingKey: string | null;
   status: string;
   paymentProcessing: unknown;
   rawFirst: Record<string, unknown>;
@@ -448,41 +533,125 @@ export function extractCreatedShipment(created: {
     ? created.shipping_create!.results!
     : [];
   const first = (results[0] || {}) as Record<string, unknown>;
-  const nested =
-    first.data && typeof first.data === "object" && !Array.isArray(first.data)
-      ? (first.data as Record<string, unknown>)
-      : {};
-  const row: Record<string, unknown> = { ...first, ...nested };
+  const picked = pickShipmentIdentifiers(first);
 
-  const barcode =
-    String(
-      row.barcode ||
-        row.tracking_code ||
-        row.trackingCode ||
-        created.processed_barcodes?.[0] ||
-        "",
-    ).trim() || null;
-
-  const shipmentIdRaw =
-    row.shipping_id ?? row.shipment_id ?? row.id ?? nested.shipping_id ?? nested.id;
-  const shipmentId =
-    shipmentIdRaw != null && String(shipmentIdRaw).trim() !== ""
-      ? String(shipmentIdRaw).trim()
-      : null;
-
-  const statusFromFinal =
-    row.final_status && typeof row.final_status === "object"
-      ? String((row.final_status as { status?: string }).status || "").trim()
-      : "";
-  const status =
-    String(row.status || statusFromFinal || "").trim() || "Aguardando expedição";
+  const barcode = pickBestBarcode([
+    picked.barcode,
+    ...(Array.isArray(created.processed_barcodes) ? created.processed_barcodes : []),
+  ]);
 
   return {
     barcode,
-    shipmentId,
-    status,
+    shipmentId: picked.shipmentId,
+    trackingKey: picked.trackingKey,
+    status: picked.status || "Aguardando expedição",
     paymentProcessing: created.payment_processing ?? null,
-    rawFirst: row,
+    rawFirst: flattenShipmentRow(first),
+  };
+}
+
+/**
+ * Resolve shipping_id + barcode atual na EnvioEcom.
+ * Importante: após pagamento o barcode pode mudar (EC... → 8880... da transportadora).
+ */
+export async function resolveLiveShipmentRefs(input: {
+  shipmentId?: string | null;
+  barcode?: string | null;
+  trackingKey?: string | null;
+  externalOrderNumber?: string | null;
+  cpf?: string | null;
+  destinationCep?: string | null;
+}): Promise<{
+  barcode: string | null;
+  shipmentId: string | null;
+  trackingKey: string | null;
+  status: string | null;
+  raw?: Record<string, unknown> | null;
+}> {
+  const tryGet = async (id: string) => {
+    try {
+      const detail = await getShipment(id);
+      const data = asRecord(detail.data) || asRecord(detail);
+      if (!data) return null;
+      const picked = pickShipmentIdentifiers(data);
+      return { ...picked, raw: data };
+    } catch {
+      return null;
+    }
+  };
+
+  const shipmentId = String(input.shipmentId || "").trim();
+  const barcode = String(input.barcode || "").trim();
+  const trackingKey = String(input.trackingKey || "").trim();
+
+  let found =
+    (shipmentId ? await tryGet(shipmentId) : null) ||
+    (barcode ? await tryGet(barcode) : null) ||
+    (trackingKey ? await tryGet(trackingKey) : null);
+
+  if (!found) {
+    const cpf = digitsOnly(input.cpf);
+    const lists: unknown[] = [];
+    if (cpf.length >= 11) {
+      try {
+        const byCpf = await listShipments({ cpf, limit: 50 });
+        if (Array.isArray(byCpf.data)) lists.push(...byCpf.data);
+      } catch (err) {
+        console.warn("[EnvioEcom] list by cpf failed:", err);
+      }
+    }
+    if (barcode) {
+      try {
+        const byBarcode = await listShipments({ barcode, limit: 20 });
+        if (Array.isArray(byBarcode.data)) lists.push(...byBarcode.data);
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      const recent = await listShipments({ page: 1, limit: 50 });
+      if (Array.isArray(recent.data)) lists.push(...recent.data);
+    } catch (err) {
+      console.warn("[EnvioEcom] list recent failed:", err);
+    }
+
+    const destCep = digitsOnly(input.destinationCep);
+    const external = String(input.externalOrderNumber || "").trim().toLowerCase();
+
+    for (const row of lists) {
+      const rec = asRecord(row);
+      if (!rec) continue;
+      const picked = pickShipmentIdentifiers(rec);
+      const externalMatch =
+        external &&
+        picked.externalOrderNumber &&
+        picked.externalOrderNumber.toLowerCase().includes(external.split("-")[0] || external);
+      const cepMatch = destCep.length === 8 && picked.destinationCep === destCep;
+      const barcodeMatch =
+        (barcode && picked.barcode === barcode) ||
+        (barcode && String(rec.tracking_key || "") === barcode) ||
+        (trackingKey && picked.trackingKey === trackingKey);
+
+      if (externalMatch || (cepMatch && (barcodeMatch || !barcode || /^EC/i.test(barcode))) || barcodeMatch) {
+        found = { ...picked, raw: flattenShipmentRow(rec) };
+        // Prefer exact external match
+        if (externalMatch) break;
+      }
+    }
+  }
+
+  // Se achou shipping_id, busca detalhe fresco (barcode definitivo pós-pagamento)
+  if (found?.shipmentId) {
+    const fresh = await tryGet(found.shipmentId);
+    if (fresh) found = fresh;
+  }
+
+  return {
+    barcode: found?.barcode || barcode || null,
+    shipmentId: found?.shipmentId || shipmentId || null,
+    trackingKey: found?.trackingKey || trackingKey || null,
+    status: found?.status || null,
+    raw: found?.raw || null,
   };
 }
 

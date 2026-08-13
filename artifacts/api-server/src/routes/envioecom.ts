@@ -14,7 +14,6 @@ import {
   generateLabels,
   getDefaultCarriersFromEnv,
   getDefaultPackageDims,
-  getShipment,
   getWebhookConfig,
   consolidateOrderIntoSinglePackage,
   clampEnvioEcomDim,
@@ -24,10 +23,11 @@ import {
   isDeliveredStatus,
   isEnvioEcomConfigured,
   isInTransitStatus,
-  listShipments,
   parseCarriersInput,
+  pickBestBarcode,
   quoteFreight,
   registerWebhook,
+  resolveLiveShipmentRefs,
   type EnvioEcomCreateShipmentInput,
   type StatusHistoryEntry,
 } from "../lib/envioecom";
@@ -247,7 +247,8 @@ async function applyShipmentStatusToOrder(params: {
 
   if (params.barcode) {
     patch.envioecomBarcode = String(params.barcode);
-    if (!order.trackingCode) patch.trackingCode = String(params.barcode);
+    // Atualiza sempre: barcode pode mudar após pagamento (EC... → código da transportadora)
+    patch.trackingCode = String(params.barcode);
   }
   if (params.shipmentId != null && String(params.shipmentId)) {
     patch.envioecomShipmentId = String(params.shipmentId);
@@ -492,6 +493,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     const barcode = extracted.barcode;
     const shipmentId = extracted.shipmentId;
     const status = extracted.status;
+    const trackingKey = extracted.trackingKey;
 
     if (!barcode && !shipmentId) {
       res.status(502).json({
@@ -517,6 +519,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       .set({
         envioecomShipmentId: shipmentId,
         envioecomBarcode: barcode,
+        envioecomTrackingKey: trackingKey,
         envioecomDeliveryMode: shippingCompany,
         envioecomStatus: status,
         envioecomStatusUpdatedAt: new Date(),
@@ -533,6 +536,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       orderId: order.id,
       barcode,
       shipmentId,
+      trackingKey,
       status,
       paymentProcessing: extracted.paymentProcessing,
       awaitingPayment: isAwaitingPaymentStatus(status),
@@ -566,103 +570,103 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     const { order } = loaded;
     let barcode = String(order.envioecomBarcode || order.trackingCode || "").trim();
     let shipmentId = String(order.envioecomShipmentId || "").trim();
+    let trackingKey = String(order.envioecomTrackingKey || "").trim();
 
-    if (!barcode && !shipmentId) {
+    if (!barcode && !shipmentId && !trackingKey) {
       res.status(400).json({ error: "NO_BARCODE", message: "Pedido sem barcode/shipping_id EnvioEcom. Crie o envio antes." });
       return;
     }
 
-    if (isAwaitingPaymentStatus(order.envioecomStatus)) {
-      res.status(409).json({
-        error: "AWAITING_PAYMENT",
-        message:
-          "Envio ainda em 'Aguardando pagamento'. Pague no painel EnvioEcom (saldo/frete) e depois clique em Etiqueta EE. Etiqueta só libera após o pagamento.",
-        status: order.envioecomStatus,
-        barcode: barcode || null,
-        shipmentId: shipmentId || null,
+    // Após pagamento o barcode pode mudar (EC... → 8880... da transportadora)
+    try {
+      const live = await resolveLiveShipmentRefs({
+        shipmentId,
+        barcode,
+        trackingKey,
+        externalOrderNumber: order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
+        cpf: order.clientDocument,
+        destinationCep: order.addressCep,
       });
-      return;
-    }
+      if (live.shipmentId) shipmentId = live.shipmentId;
+      if (live.barcode) barcode = live.barcode;
+      if (live.trackingKey) trackingKey = live.trackingKey;
 
-    // Recupera shipping_id se faltou no create (doc: preferir ids na etiqueta)
-    if (!shipmentId && barcode) {
-      try {
-        const listed = await listShipments({ barcode, limit: 10 });
-        const rows = Array.isArray(listed.data) ? listed.data : [];
-        const match = rows.find((row) => {
-          if (!row || typeof row !== "object") return false;
-          const r = row as Record<string, unknown>;
-          return String(r.barcode || "").trim() === barcode;
-        }) as Record<string, unknown> | undefined;
-        if (match) {
-          const recovered = match.shipping_id ?? match.shipment_id ?? match.id;
-          if (recovered != null) shipmentId = String(recovered).trim();
-          if (match.status) {
-            // atualiza status local se veio da listagem
-            await applyShipmentStatusToOrder({
-              orderId: order.id,
-              status: String(match.status),
-              barcode,
-              shipmentId,
-              description: "IDs recuperados via listagem EnvioEcom",
-              updatedAt: new Date().toISOString(),
-              source: "labels-recover",
-            });
-            if (isAwaitingPaymentStatus(String(match.status))) {
-              res.status(409).json({
-                error: "AWAITING_PAYMENT",
-                message:
-                  "Envio ainda em 'Aguardando pagamento'. Pague no painel EnvioEcom e tente Etiqueta EE de novo.",
-                status: String(match.status),
-                barcode,
-                shipmentId: shipmentId || null,
-              });
-              return;
-            }
-          }
-        }
-      } catch (recoverErr) {
-        console.warn("[EnvioEcom] listShipments recover failed:", recoverErr);
+      if (live.status || live.shipmentId || live.barcode) {
+        await applyShipmentStatusToOrder({
+          orderId: order.id,
+          status: live.status || order.envioecomStatus || "Pronto para envio",
+          barcode: live.barcode || barcode,
+          shipmentId: live.shipmentId || shipmentId,
+          trackingKey: live.trackingKey || trackingKey,
+          description: "IDs/barcode sincronizados antes de gerar etiqueta",
+          updatedAt: new Date().toISOString(),
+          source: "labels-resolve",
+        });
       }
+
+      if (isAwaitingPaymentStatus(live.status || order.envioecomStatus)) {
+        res.status(409).json({
+          error: "AWAITING_PAYMENT",
+          message:
+            "Envio ainda em 'Aguardando pagamento'. Pague no painel EnvioEcom e depois clique em Etiqueta EE.",
+          status: live.status || order.envioecomStatus,
+          barcode: barcode || null,
+          shipmentId: shipmentId || null,
+        });
+        return;
+      }
+    } catch (resolveErr) {
+      console.warn("[EnvioEcom] resolve before labels failed:", resolveErr);
     }
 
     const mergeDce = Boolean(req.body?.merge_dce);
     const numericId = shipmentId && /^\d+$/.test(shipmentId) ? Number(shipmentId) : null;
+    const labelBarcode = pickBestBarcode([barcode, trackingKey]);
 
     let label: Awaited<ReturnType<typeof generateLabels>>;
     try {
       if (numericId != null) {
         console.log("[EnvioEcom] generate-labels by id", numericId);
         label = await generateLabels({ ids: [numericId], merge_dce: mergeDce });
-      } else if (barcode) {
-        console.log("[EnvioEcom] generate-labels by barcode", barcode);
-        label = await generateLabels({ barcodes: [barcode], merge_dce: mergeDce });
+      } else if (labelBarcode) {
+        console.log("[EnvioEcom] generate-labels by barcode", labelBarcode);
+        label = await generateLabels({ barcodes: [labelBarcode], merge_dce: mergeDce });
       } else {
         res.status(400).json({
           error: "NO_BARCODE",
-          message: "Sem shipping_id numérico nem barcode para gerar etiqueta.",
+          message: "Sem shipping_id numérico nem barcode para gerar etiqueta. Confira o envio no painel EnvioEcom.",
         });
         return;
       }
     } catch (labelErr) {
-      // Fallback: se falhou por id, tenta barcode (e vice-versa)
-      if (labelErr instanceof EnvioEcomApiError && numericId != null && barcode) {
+      if (labelErr instanceof EnvioEcomApiError && numericId != null && labelBarcode) {
         console.warn("[EnvioEcom] labels by id failed, retry barcode:", labelErr.message);
-        label = await generateLabels({ barcodes: [barcode], merge_dce: mergeDce });
-      } else if (labelErr instanceof EnvioEcomApiError) {
-        const msg = String(labelErr.message || "");
-        if (/aguardando pagamento/i.test(msg) || /barcodes fornecidos/i.test(msg)) {
-          res.status(labelErr.status || 400).json({
-            error: labelErr.code || "LABEL_FAILED",
-            message:
-              "Etiqueta indisponível. Confira no painel EnvioEcom se o frete foi pago (status deve ser 'Aguardando expedição', não 'Aguardando pagamento') e se o envio EC ainda existe.",
-            details: labelErr.details,
-            barcode: barcode || null,
-            shipmentId: shipmentId || null,
-          });
-          return;
+        try {
+          label = await generateLabels({ barcodes: [labelBarcode], merge_dce: mergeDce });
+        } catch (retryErr) {
+          if (retryErr instanceof EnvioEcomApiError) {
+            res.status(retryErr.status || 400).json({
+              error: retryErr.code || "LABEL_FAILED",
+              message:
+                "Etiqueta indisponível. No painel o envio existe; tente Sync status e Etiqueta EE de novo. Se persistir, use o ID do envio no painel.",
+              details: retryErr.details,
+              barcode: labelBarcode,
+              shipmentId: shipmentId || null,
+            });
+            return;
+          }
+          throw retryErr;
         }
-        throw labelErr;
+      } else if (labelErr instanceof EnvioEcomApiError) {
+        res.status(labelErr.status || 400).json({
+          error: labelErr.code || "LABEL_FAILED",
+          message:
+            "Etiqueta indisponível. Sincronize o status (Sync status) para atualizar o código definitivo da transportadora e tente novamente.",
+          details: labelErr.details,
+          barcode: labelBarcode,
+          shipmentId: shipmentId || null,
+        });
+        return;
       } else {
         throw labelErr;
       }
@@ -684,7 +688,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         buffer: label.buffer,
         contentType: "application/pdf",
         folder: "envioecom-labels",
-        fileName: `${order.id}-${barcode || shipmentId || "label"}.pdf`,
+        fileName: `${order.id}-${labelBarcode || shipmentId || "label"}.pdf`,
       });
       labelUrl = uploaded.url;
     } catch (uploadErr) {
@@ -697,6 +701,8 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         envioecomLabelUrl: labelUrl,
         ...(shipmentId ? { envioecomShipmentId: shipmentId } : {}),
         ...(barcode ? { envioecomBarcode: barcode } : {}),
+        ...(trackingKey ? { envioecomTrackingKey: trackingKey } : {}),
+        ...(barcode ? { trackingCode: barcode } : {}),
         ...(labelUrl ? { trackingLabelUrl: labelUrl } : {}),
         enviado: true,
         updatedAt: new Date(),
@@ -737,60 +743,63 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     }
 
     const { order } = loaded;
-    let identifier = String(order.envioecomShipmentId || order.envioecomBarcode || "").trim();
-    if (!identifier) {
+    if (!order.envioecomShipmentId && !order.envioecomBarcode && !order.envioecomTrackingKey) {
       res.status(400).json({ error: "NO_SHIPMENT", message: "Pedido sem envio EnvioEcom." });
       return;
     }
 
-    let detail: Awaited<ReturnType<typeof getShipment>>;
-    try {
-      // Preferir shipping_id numérico (mais estável que barcode)
-      detail = await getShipment(identifier);
-    } catch (err) {
-      if (
-        err instanceof EnvioEcomApiError &&
-        order.envioecomBarcode &&
-        identifier !== order.envioecomBarcode
-      ) {
-        detail = await getShipment(String(order.envioecomBarcode));
-      } else if (err instanceof EnvioEcomApiError && order.envioecomBarcode) {
-        // Última tentativa: listar por barcode e pegar id
-        const listed = await listShipments({ barcode: String(order.envioecomBarcode), limit: 10 });
-        const rows = Array.isArray(listed.data) ? listed.data : [];
-        const match = rows[0] as Record<string, unknown> | undefined;
-        const recoveredId = match?.shipping_id ?? match?.shipment_id ?? match?.id;
-        if (recoveredId == null) throw err;
-        detail = await getShipment(String(recoveredId));
-      } else {
-        throw err;
-      }
-    }
-    const data = (detail.data || {}) as Record<string, unknown>;
-    const status = String(
-      (data.final_status as { status?: string } | undefined)?.status ||
-        data.status ||
-        "",
-    ).trim();
+    const live = await resolveLiveShipmentRefs({
+      shipmentId: order.envioecomShipmentId,
+      barcode: order.envioecomBarcode || order.trackingCode,
+      trackingKey: order.envioecomTrackingKey,
+      externalOrderNumber: order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
+      cpf: order.clientDocument,
+      destinationCep: order.addressCep,
+    });
 
+    if (!live.shipmentId && !live.barcode) {
+      res.status(404).json({
+        error: "SHIPMENT_NOT_FOUND",
+        message:
+          "Envio não encontrado na API. No painel existe, mas o código local pode estar desatualizado — confira CPF/CEP do pedido.",
+      });
+      return;
+    }
+
+    const status = String(live.status || "").trim();
     if (status) {
       await applyShipmentStatusToOrder({
         orderId: order.id,
         status,
-        barcode: data.barcode ? String(data.barcode) : order.envioecomBarcode,
-        shipmentId: data.id != null ? String(data.id) : order.envioecomShipmentId,
-        deliveryMode: data.delivery_mode ? String(data.delivery_mode) : order.envioecomDeliveryMode,
+        barcode: live.barcode,
+        shipmentId: live.shipmentId,
+        trackingKey: live.trackingKey,
         description: "Status sincronizado manualmente",
         updatedAt: new Date().toISOString(),
         source: "sync",
       });
+    } else if (live.barcode || live.shipmentId) {
+      await db
+        .update(ordersTable)
+        .set({
+          ...(live.barcode ? { envioecomBarcode: live.barcode, trackingCode: live.barcode } : {}),
+          ...(live.shipmentId ? { envioecomShipmentId: live.shipmentId } : {}),
+          ...(live.trackingKey ? { envioecomTrackingKey: live.trackingKey } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(ordersTable.id, order.id));
     }
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
     res.json({
       ok: true,
       tracking: publicTrackingPayload(refreshed[0]!),
-      raw: detail,
+      resolved: {
+        barcode: live.barcode,
+        shipmentId: live.shipmentId,
+        status: live.status,
+      },
+      raw: live.raw,
     });
   } catch (err) {
     mapApiError(err, res);
