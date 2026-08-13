@@ -8613,6 +8613,7 @@ function OrdersPanel({
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
   const [envioecomBusy, setEnvioecomBusy] = useState<Record<string, boolean>>({});
+  const [envioecomSelectedCarriers, setEnvioecomSelectedCarriers] = useState<string[]>([]);
   const [envioecomQuoteModal, setEnvioecomQuoteModal] = useState<null | {
     order: AdminOrder;
     quotes: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
@@ -8666,12 +8667,24 @@ function OrdersPanel({
     onSetOrderPatched({ ...current, ...patch } as AdminOrder);
   };
 
-  const quoteEnvioEcom = async (order: AdminOrder) => {
+  const ENVIOECOM_CARRIER_OPTIONS = [
+    "Correios Sedex",
+    "Correios Pac",
+    "Correios Mini Envios",
+    "J&T Express envioEcom",
+    "Jadlog envioEcom",
+    "Ponto Loggi envioEcom",
+    "BUSLOG envioEcom",
+  ] as const;
+
+  const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[]) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
+      const selected = (carriers ?? envioecomSelectedCarriers).filter(Boolean);
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/quote`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(selected.length ? { carriers: selected } : {}),
       });
       const data = await res.json() as {
         quotes?: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
@@ -8818,6 +8831,45 @@ function OrdersPanel({
       toast.success(data.tracking?.status ? `Status: ${data.tracking.status}` : "Status sincronizado.");
     } catch {
       toast.error("Erro ao sincronizar EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const cancelEnvioEcomShipment = async (order: AdminOrder) => {
+    const reasonRaw = window.prompt("Motivo do cancelamento (opcional):", "Cancelado pelo admin");
+    if (reasonRaw === null) return;
+    const reason = reasonRaw.trim() || undefined;
+    if (!window.confirm("Cancelar o envio EnvioEcom deste pedido?")) return;
+
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/cancel`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(reason ? { reason } : {}),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        status?: string;
+        auto_cancelled?: boolean;
+        message?: string;
+        tracking?: { status?: string | null };
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao cancelar envio.");
+        return;
+      }
+      patchOrderLocal(order.id, {
+        envioecomStatus: data.tracking?.status || data.status,
+      });
+      toast.success(
+        data.auto_cancelled
+          ? "Envio cancelado automaticamente."
+          : (data.message || "Solicitação de cancelamento aberta."),
+      );
+    } catch {
+      toast.error("Erro ao cancelar EnvioEcom.");
     } finally {
       setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
     }
@@ -10190,6 +10242,15 @@ function OrdersPanel({
                       >
                         Sync status
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50"
+                        disabled={!!envioecomBusy[order.id]}
+                        onClick={() => { void cancelEnvioEcomShipment(order); }}
+                      >
+                        Cancelar EE
+                      </Button>
                     </>
                   )}
                   {(order as any).envioecomStatus && (
@@ -10653,7 +10714,57 @@ function OrdersPanel({
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+              <div className="px-5 py-3 border-b border-border space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Filtrar transportadoras (opcional)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {ENVIOECOM_CARRIER_OPTIONS.map((carrier) => {
+                    const checked = envioecomSelectedCarriers.includes(carrier);
+                    return (
+                      <button
+                        key={carrier}
+                        type="button"
+                        onClick={() => {
+                          setEnvioecomSelectedCarriers((prev) =>
+                            checked ? prev.filter((c) => c !== carrier) : [...prev, carrier],
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition ${
+                          checked
+                            ? "bg-teal-600 text-white border-teal-600"
+                            : "bg-white text-muted-foreground border-border hover:border-teal-300"
+                        }`}
+                      >
+                        {carrier}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!!envioecomBusy[envioecomQuoteModal.order.id]}
+                    onClick={() => { void quoteEnvioEcom(envioecomQuoteModal.order); }}
+                  >
+                    {envioecomBusy[envioecomQuoteModal.order.id] ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                    ) : null}
+                    Atualizar cotação
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEnvioecomSelectedCarriers([])}
+                  >
+                    Limpar filtro
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
                 {envioecomQuoteModal.quotes.map((quote, idx) => (
                   <button
                     key={`${quote.carrier || "carrier"}-${idx}`}

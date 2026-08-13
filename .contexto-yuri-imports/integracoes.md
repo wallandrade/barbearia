@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | EnvioEcom: cancelamento, `items` no create, filtro `carriers` na cotação | Operação admin mais completa | Webhook/rastreio cliente iguais |
 | 2026-08-13 | Integração EnvioEcom (cotação, create, etiqueta, webhook, rastreio cliente) | Frete/rastreio automatizável via API | OCR/upload de etiqueta manual permanece como fallback |
 | 2026-08-11 | Baseline de integrações | Mapa de providers | Sem mudança de código |
 
@@ -28,7 +29,9 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Pacote padrão se produto sem medidas: `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH`
 - Origem opcional no create: `ENVIOECOM_ORIGIN_CEP`
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
-- Admin: quote/create/labels/sync + registrar webhook (`PUBLIC_API_URL`)
+- Admin: quote/create/labels/sync/cancel + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`)
+- Create envia `items` (produtos do pedido: name/quantity/unit_cost)
+- Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: `GET /api/me/orders/:id/tracking` + modal em `CustomerOrders.tsx`
 - Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
 

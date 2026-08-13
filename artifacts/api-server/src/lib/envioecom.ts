@@ -66,6 +66,7 @@ export type EnvioEcomCreateShipmentInput = {
   localidade: string;
   uf: string;
   complemento?: string;
+  items?: Array<{ name: string; quantity: number; unit_cost: number }>;
 };
 
 type CachedToken = {
@@ -289,6 +290,40 @@ export async function getShipment(identifier: string): Promise<{
 }> {
   const id = encodeURIComponent(String(identifier || "").trim());
   return envioecomJson(`/shipments/${id}`);
+}
+
+export async function cancelShipment(
+  identifier: string,
+  reason?: string,
+): Promise<{
+  success?: boolean;
+  auto_cancelled?: boolean;
+  status?: string;
+  message?: string;
+}> {
+  const id = encodeURIComponent(String(identifier || "").trim());
+  return envioecomJson(`/shipments/${id}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...(reason ? { reason } : {}),
+    }),
+  });
+}
+
+export function parseCarriersInput(raw: unknown): string[] | undefined {
+  if (Array.isArray(raw)) {
+    const list = raw.map((item) => String(item || "").trim()).filter(Boolean);
+    return list.length ? list : undefined;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const list = raw.split(",").map((item) => item.trim()).filter(Boolean);
+    return list.length ? list : undefined;
+  }
+  return undefined;
+}
+
+export function getDefaultCarriersFromEnv(): string[] | undefined {
+  return parseCarriersInput(process.env.ENVIOECOM_CARRIERS || "");
 }
 
 export async function registerWebhook(url: string, enabled = true): Promise<{

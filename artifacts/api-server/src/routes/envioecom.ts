@@ -7,15 +7,18 @@ import { uploadBufferToR2 } from "../lib/r2";
 import {
   EnvioEcomApiError,
   appendStatusHistory,
+  cancelShipment,
   createShipments,
   digitsOnly,
   generateLabels,
+  getDefaultCarriersFromEnv,
   getDefaultPackageDims,
   getShipment,
   getWebhookConfig,
   isDeliveredStatus,
   isEnvioEcomConfigured,
   isInTransitStatus,
+  parseCarriersInput,
   quoteFreight,
   registerWebhook,
   type EnvioEcomCreateShipmentInput,
@@ -60,6 +63,24 @@ function mapApiError(err: unknown, res: import("express").Response): void {
   }
   console.error("[EnvioEcom]", err);
   res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro na integração EnvioEcom." });
+}
+
+function buildShipmentItemsFromOrder(order: typeof ordersTable.$inferSelect) {
+  const products = parseProducts(order.products);
+  if (!products.length) {
+    return [
+      {
+        name: "Pedido",
+        quantity: 1,
+        unit_cost: Number(order.subtotal || order.total || 0),
+      },
+    ];
+  }
+  return products.map((p) => ({
+    name: String(p.name || "Produto").slice(0, 120),
+    quantity: Math.max(1, Number(p.quantity) || 1),
+    unit_cost: Number(p.price) || 0,
+  }));
 }
 
 function buildQuoteProductsFromOrder(order: typeof ordersTable.$inferSelect) {
@@ -240,9 +261,12 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
     }
 
     const products = buildQuoteProductsFromOrder(order);
+    const carriers =
+      parseCarriersInput(req.body?.carriers) || getDefaultCarriersFromEnv();
     const quote = await quoteFreight({
       postal_code_destination: cep,
       products,
+      ...(carriers ? { carriers } : {}),
     });
 
     res.json({
@@ -250,6 +274,7 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
       orderNumber: order.orderNumber,
       destinationCep: cep,
       products,
+      carriers: carriers || null,
       quotes: quote.quotes || [],
       unavailable_carriers: quote.unavailable_carriers || [],
       origin_zipcode: quote.origin_zipcode || null,
@@ -322,6 +347,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       localidade: String(order.addressCity || ""),
       uf: String(order.addressState || "").toUpperCase().slice(0, 2),
       ...(order.addressComplement ? { complemento: String(order.addressComplement) } : {}),
+      items: buildShipmentItemsFromOrder(order),
     };
 
     const created = await createShipments({
@@ -510,6 +536,63 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
       ok: true,
       tracking: publicTrackingPayload(refreshed[0]!),
       raw: detail,
+    });
+  } catch (err) {
+    mapApiError(err, res);
+  }
+});
+
+// --------------------------------------------------------------------------
+// POST /api/admin/envioecom/orders/:id/cancel
+// body: { reason? }
+// --------------------------------------------------------------------------
+router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, res) => {
+  try {
+    if (!isEnvioEcomConfigured()) {
+      res.status(503).json({ error: "NOT_CONFIGURED", message: "EnvioEcom não configurado." });
+      return;
+    }
+
+    const orderId = String(req.params.id || "").trim();
+    const loaded = await loadOrderForAdmin(req, orderId);
+    if ("error" in loaded) {
+      res.status(loaded.error === "NOT_FOUND" ? 404 : loaded.error === "UNAUTHORIZED" ? 401 : 403).json({
+        error: loaded.error,
+        message: "Pedido não encontrado ou sem permissão.",
+      });
+      return;
+    }
+
+    const { order } = loaded;
+    const identifier = String(order.envioecomBarcode || order.envioecomShipmentId || "").trim();
+    if (!identifier) {
+      res.status(400).json({ error: "NO_SHIPMENT", message: "Pedido sem envio EnvioEcom para cancelar." });
+      return;
+    }
+
+    const reason = String(req.body?.reason || "").trim() || undefined;
+    const result = await cancelShipment(identifier, reason);
+    const status = String(result.status || (result.auto_cancelled ? "Cancelado" : "Aguardando cancelamento"));
+
+    await applyShipmentStatusToOrder({
+      orderId: order.id,
+      status,
+      barcode: order.envioecomBarcode,
+      shipmentId: order.envioecomShipmentId,
+      deliveryMode: order.envioecomDeliveryMode,
+      description: reason || (result.message || "Cancelamento solicitado via admin"),
+      updatedAt: new Date().toISOString(),
+      source: "cancel",
+    });
+
+    const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
+    res.json({
+      ok: true,
+      auto_cancelled: Boolean(result.auto_cancelled),
+      status,
+      message: result.message || null,
+      tracking: publicTrackingPayload(refreshed[0]!),
+      raw: result,
     });
   } catch (err) {
     mapApiError(err, res);
