@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Admin: botão **Vincular EE** + modal (ID/rastreio, sem `prompt`) | Liga envio criado no painel EnvioEcom ao pedido e sync status | API sync/labels iguais |
 | 2026-08-13 | Card admin: borda verde + badge com status EnvioEcom (etiqueta/pronto/etc.) | Operação vê frete no card | Sync/webhook iguais |
 | 2026-08-13 | `enviado=true` também em Etiqueta emitida / Pronto para envio / DC-e (webhook+sync) | Pedido marca enviado sem depender só do botão Etiqueta EE | Cotação/create iguais |
 | 2026-08-13 | Aba Admin **Rastreios**: board de todos envios + sync lote/individual | Visão operacional de status EnvioEcom | Cotação/create iguais |
@@ -41,7 +42,8 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; gerar etiqueta ou status de etiqueta pronta marca `enviado`
 - Origem no create: **obrigatória** — `cep_origem` no body, senão `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
-- Admin: quote/create/labels/sync/cancel + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`)
+- Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`)
+- Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
 - Create envia `items` (produtos do pedido: name/quantity/unit_cost)
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: card com Situação/EnvioEcom + `GET /api/me/orders/:id/tracking` (soft-sync) + modal em `CustomerOrders.tsx`

@@ -8659,6 +8659,12 @@ function OrdersPanel({
     quotes: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
     originZipcode?: string | null;
   }>(null);
+  const [envioecomLinkModal, setEnvioecomLinkModal] = useState<null | {
+    order: AdminOrder;
+    /** Após vincular, tenta gerar etiqueta PDF */
+    continueToLabel?: boolean;
+  }>(null);
+  const [envioecomLinkDraft, setEnvioecomLinkDraft] = useState("");
   const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [trackingReview, setTrackingReview] = useState<null | {
     order: AdminOrder;
@@ -8817,6 +8823,91 @@ function OrdersPanel({
     }
   };
 
+  const parseEnvioEcomLinkRef = (raw: string): { shipment_id?: string; barcode?: string } | null => {
+    const value = String(raw || "").trim();
+    if (!value) return null;
+    const digits = value.replace(/\D/g, "");
+    // ID do painel EnvioEcom costuma ser numérico curto (ex.: 726270)
+    if (/^\d{4,}$/.test(digits) && digits.length <= 10 && !/[a-zA-Z]/.test(value.replace(/\s+/g, ""))) {
+      return { shipment_id: digits };
+    }
+    return { barcode: value.replace(/\s+/g, "") };
+  };
+
+  const openEnvioEcomLinkModal = (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string }) => {
+    const prefill =
+      opts?.prefill ??
+      String((order as any).envioecomShipmentId || (order as any).envioecomBarcode || (order as any).trackingCode || "");
+    setEnvioecomLinkDraft(prefill);
+    setEnvioecomLinkModal({ order, continueToLabel: !!opts?.continueToLabel });
+  };
+
+  const linkEnvioEcomShipment = async (order: AdminOrder, rawRef: string, opts?: { continueToLabel?: boolean }) => {
+    const parsed = parseEnvioEcomLinkRef(rawRef);
+    if (!parsed) {
+      toast.error("Informe o ID do envio (ex.: 726270) ou o código de rastreio.");
+      return;
+    }
+
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        tracking?: {
+          status?: string | null;
+          barcode?: string | null;
+          deliveryMode?: string | null;
+        };
+        resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Não foi possível vincular o envio EnvioEcom.");
+        return;
+      }
+
+      const shipmentId = data.resolved?.shipmentId || parsed.shipment_id || (order as any).envioecomShipmentId;
+      const barcode = data.resolved?.barcode || data.tracking?.barcode || parsed.barcode || (order as any).envioecomBarcode;
+      const status = data.resolved?.status || data.tracking?.status;
+
+      patchOrderLocal(order.id, {
+        envioecomStatus: status,
+        envioecomBarcode: barcode,
+        envioecomShipmentId: shipmentId,
+        envioecomDeliveryMode: data.tracking?.deliveryMode,
+        trackingCode: barcode || (order as any).trackingCode,
+      });
+      setEnvioecomLinkModal(null);
+      setEnvioecomLinkDraft("");
+      toast.success(
+        status
+          ? `Envio vinculado · ${status}${barcode ? ` · ${barcode}` : ""}`
+          : "Envio EnvioEcom vinculado ao pedido.",
+      );
+
+      if (opts?.continueToLabel) {
+        const linkedOrder = {
+          ...order,
+          envioecomShipmentId: shipmentId,
+          envioecomBarcode: barcode,
+          envioecomStatus: status,
+          trackingCode: barcode || (order as any).trackingCode,
+        } as AdminOrder;
+        await generateEnvioEcomLabel(linkedOrder);
+      }
+    } catch {
+      toast.error("Erro ao vincular EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
   const generateEnvioEcomLabel = async (order: AdminOrder) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
@@ -8848,18 +8939,12 @@ function OrdersPanel({
         // segue para labels
       }
 
-      // Só pede ID se ainda não temos shipping_id salvo (caso raro / pedido antigo)
+      // Sem shipping_id e só EC provisório → modal de vínculo (sem window.prompt)
       let shipmentIdOverride = knownShipmentId;
       if (!shipmentIdOverride && /^EC/i.test(knownBarcode)) {
-        const typed = window.prompt(
-          "Cole o ID do envio do painel EnvioEcom (só desta vez; será salvo no pedido):",
-          "",
-        );
-        shipmentIdOverride = String(typed || "").replace(/\D/g, "");
-        if (!shipmentIdOverride) {
-          toast.error("Informe o ID do envio para gerar a etiqueta.");
-          return;
-        }
+        openEnvioEcomLinkModal(order, { continueToLabel: true, prefill: "" });
+        toast.info("Vincule o ID do painel EnvioEcom para gerar a etiqueta.");
+        return;
       }
 
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
@@ -8897,44 +8982,12 @@ function OrdersPanel({
 
       if (!res.ok) {
         if (data.needsShipmentId) {
-          const typed = window.prompt(
-            "Cole o ID do envio do painel EnvioEcom (ex.: 726384) — será salvo e não pediremos de novo:",
-            shipmentIdOverride || "",
-          );
-          const value = String(typed || "").trim();
-          if (!value) {
-            toast.error(data.message || "Falha ao gerar etiqueta.");
-            return;
-          }
-          const digits = value.replace(/\D/g, "");
-          const retryBody =
-            /^\d{5,}$/.test(digits) && digits.length <= 10
-              ? { shipment_id: digits }
-              : { barcode: value.replace(/\s+/g, "") };
-          const retry = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
-            method: "POST",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify(retryBody),
+          openEnvioEcomLinkModal(order, {
+            continueToLabel: true,
+            prefill: shipmentIdOverride || "",
           });
-          const retryData = await retry.json() as typeof data;
-          if (!retry.ok) {
-            toast.error(retryData.message || "Falha ao gerar etiqueta.");
-            return;
-          }
-          if (retryData.labelUrl) {
-            applyLabelSuccess(retryData);
-            return;
-          }
-          if (retryData.pdfBase64) {
-            const blob = new Blob(
-              [Uint8Array.from(atob(retryData.pdfBase64), (c) => c.charCodeAt(0))],
-              { type: "application/pdf" },
-            );
-            const url = URL.createObjectURL(blob);
-            window.open(url, "_blank", "noopener,noreferrer");
-            toast.success("Etiqueta gerada (download local).");
-            return;
-          }
+          toast.info(data.message || "Informe o ID/código do envio EnvioEcom.");
+          return;
         }
         toast.error(data.message || "Falha ao gerar etiqueta.");
         return;
@@ -8966,10 +9019,17 @@ function OrdersPanel({
   };
 
   const syncEnvioEcomStatus = async (order: AdminOrder) => {
+    const knownId = String((order as any).envioecomShipmentId || "").trim();
+    const knownBarcode = String((order as any).envioecomBarcode || (order as any).trackingCode || "").trim();
+    if (!knownId && !knownBarcode) {
+      openEnvioEcomLinkModal(order);
+      toast.info("Cole o ID ou código do envio criado no painel EnvioEcom.");
+      return;
+    }
+
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
-      const knownId = String((order as any).envioecomShipmentId || "").trim();
-      const body: Record<string, string> = knownId ? { shipment_id: knownId } : {};
+      const body: Record<string, string> = knownId ? { shipment_id: knownId } : { barcode: knownBarcode };
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -8984,8 +9044,14 @@ function OrdersPanel({
         };
         resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
         message?: string;
+        error?: string;
       };
       if (!res.ok) {
+        if (data.error === "NO_SHIPMENT" || data.error === "SHIPMENT_NOT_FOUND") {
+          openEnvioEcomLinkModal(order, { prefill: knownId || knownBarcode });
+          toast.info(data.message || "Informe o ID/código do envio EnvioEcom.");
+          return;
+        }
         toast.error(data.message || "Falha ao sincronizar status.");
         return;
       }
@@ -10419,6 +10485,17 @@ function OrdersPanel({
                     {envioecomBusy[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
                     EnvioEcom
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-teal-800 border-teal-300 hover:bg-teal-50"
+                    disabled={!!envioecomBusy[order.id]}
+                    onClick={() => openEnvioEcomLinkModal(order)}
+                    title="Vincular envio criado manualmente no painel EnvioEcom (ID ou rastreio)"
+                  >
+                    <LinkIcon className="w-3.5 h-3.5" />
+                    Vincular EE
+                  </Button>
                   {((order as any).envioecomBarcode || (order as any).envioecomShipmentId) && (
                     <>
                       <Button
@@ -10999,6 +11076,90 @@ function OrdersPanel({
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {envioecomLinkModal && (
+          <div className="fixed inset-0 z-[130] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Vincular envio EnvioEcom</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pedido #{getOrderReference(envioecomLinkModal.order)} · {envioecomLinkModal.order.clientName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="p-1.5 rounded-lg hover:bg-muted"
+                  onClick={() => {
+                    setEnvioecomLinkModal(null);
+                    setEnvioecomLinkDraft("");
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form
+                className="p-5 space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void linkEnvioEcomShipment(
+                    envioecomLinkModal.order,
+                    envioecomLinkDraft,
+                    { continueToLabel: envioecomLinkModal.continueToLabel },
+                  );
+                }}
+              >
+                <div className="space-y-1.5">
+                  <label htmlFor="envioecom-link-ref" className="text-sm font-medium text-foreground">
+                    ID do envio ou código de rastreio
+                  </label>
+                  <input
+                    id="envioecom-link-ref"
+                    autoFocus
+                    value={envioecomLinkDraft}
+                    onChange={(e) => setEnvioecomLinkDraft(e.target.value)}
+                    placeholder="Ex.: 726270 ou 888030877622416"
+                    className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    disabled={!!envioecomBusy[envioecomLinkModal.order.id]}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use o ID do painel EnvioEcom (número do envio) ou o rastreio. Salva no pedido e sincroniza o status.
+                    {envioecomLinkModal.continueToLabel
+                      ? " Em seguida tenta gerar a etiqueta PDF."
+                      : ""}
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!!envioecomBusy[envioecomLinkModal.order.id]}
+                    onClick={() => {
+                      setEnvioecomLinkModal(null);
+                      setEnvioecomLinkDraft("");
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="gap-1.5 bg-teal-600 hover:bg-teal-700 text-white"
+                    disabled={!!envioecomBusy[envioecomLinkModal.order.id] || !envioecomLinkDraft.trim()}
+                  >
+                    {envioecomBusy[envioecomLinkModal.order.id] ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <LinkIcon className="w-3.5 h-3.5" />
+                    )}
+                    {envioecomLinkModal.continueToLabel ? "Vincular e gerar etiqueta" : "Vincular e sincronizar"}
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         )}
