@@ -99,21 +99,95 @@ const statusLabel: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "enviado":
-      return "bg-blue-100 text-blue-800 border border-blue-300";
-    case "paid":
-    case "completed":
+function normalizeShippingStatus(raw: string | null | undefined): string {
+  return String(raw || "").trim();
+}
+
+function isShippingDelivered(status: string): boolean {
+  const s = status.toLowerCase();
+  return s.includes("entregue") || s.includes("objeto entregue");
+}
+
+function isShippingInTransit(status: string): boolean {
+  const s = status.toLowerCase();
+  return (
+    s.includes("trânsito") ||
+    s.includes("transito") ||
+    s.includes("postado") ||
+    s.includes("expedido") ||
+    s.includes("saiu para entrega") ||
+    s.includes("em rota") ||
+    s.includes("pronto para envio") ||
+    s.includes("processando envio") ||
+    s.includes("etiqueta emitida") ||
+    s.includes("aguardando expedição") ||
+    s.includes("aguardando expedicao")
+  );
+}
+
+/** Situação visível ao cliente: prioriza status EnvioEcom quando houver envio. */
+function getCustomerSituation(order: CustomerOrder): {
+  label: string;
+  kind: "paid" | "processing" | "shipping" | "delivered" | "cancelled" | "pending";
+} {
+  if (order.status === "cancelled") {
+    return { label: "Cancelado", kind: "cancelled" };
+  }
+
+  const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
+  if (shippingStatus) {
+    if (isShippingDelivered(shippingStatus) || order.status === "completed") {
+      return { label: shippingStatus, kind: "delivered" };
+    }
+    if (/cancelad/i.test(shippingStatus)) {
+      return { label: shippingStatus, kind: "cancelled" };
+    }
+    if (/aguardando pagamento/i.test(shippingStatus)) {
+      return { label: "Preparando envio", kind: "processing" };
+    }
+    return { label: shippingStatus, kind: isShippingInTransit(shippingStatus) ? "shipping" : "processing" };
+  }
+
+  if (order.status === "completed") {
+    return { label: "Entregue", kind: "delivered" };
+  }
+  if (order.enviado) {
+    return { label: "Enviado", kind: "shipping" };
+  }
+  if (order.status === "paid") {
+    return { label: "Processando", kind: "processing" };
+  }
+  if (order.status === "awaiting_payment" || order.status === "pending") {
+    return { label: statusLabel[order.status] || order.status, kind: "pending" };
+  }
+  return { label: statusLabel[order.status] || order.status, kind: "processing" };
+}
+
+function getSituationBadgeClass(kind: ReturnType<typeof getCustomerSituation>["kind"]): string {
+  switch (kind) {
+    case "delivered":
       return "bg-green-100 text-green-800 border border-green-300";
-    case "awaiting_payment":
-    case "pending":
-      return "bg-yellow-100 text-yellow-800 border border-yellow-300";
+    case "shipping":
+      return "bg-blue-100 text-blue-800 border border-blue-300";
     case "cancelled":
       return "bg-red-100 text-red-800 border border-red-300";
+    case "pending":
+      return "bg-yellow-100 text-yellow-800 border border-yellow-300";
+    case "paid":
+    case "processing":
     default:
-      return "bg-gray-100 text-gray-800 border border-gray-300";
+      return "bg-amber-100 text-amber-900 border border-amber-300";
   }
+}
+
+function hasTrackableShipment(order: CustomerOrder): boolean {
+  return Boolean(
+    order.envioecomBarcode ||
+      order.envioecomStatus ||
+      order.trackingCode ||
+      order.enviado ||
+      order.status === "completed",
+  );
 }
 
 function getStatusIcon(status: string) {
@@ -163,7 +237,24 @@ export default function CustomerOrders() {
         setTrackingModalOrder(null);
         return;
       }
-      setTrackingInfo(data.tracking || null);
+      const tracking = data.tracking || null;
+      setTrackingInfo(tracking);
+      if (tracking) {
+        setOrders((prev) =>
+          prev.map((item) =>
+            item.id === order.id
+              ? {
+                  ...item,
+                  enviado: tracking.enviado ?? item.enviado,
+                  trackingCode: tracking.trackingCode || tracking.barcode || item.trackingCode,
+                  envioecomBarcode: tracking.barcode || item.envioecomBarcode,
+                  envioecomStatus: tracking.status || item.envioecomStatus,
+                  envioecomDeliveryMode: tracking.deliveryMode || item.envioecomDeliveryMode,
+                }
+              : item,
+          ),
+        );
+      }
     } catch {
       toast.error("Erro ao carregar rastreio.");
       setTrackingModalOrder(null);
@@ -436,20 +527,30 @@ export default function CustomerOrders() {
                     <div className="space-y-3">
                       {orders.map((order) => {
                         const orderRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
+                        const situation = getCustomerSituation(order);
                         const displayStatus = order.enviado ? "enviado" : order.status;
-                        const displaySituation = displayStatus === "completed"
-                          ? "Entregue"
-                          : displayStatus === "paid"
-                            ? "Processando"
-                            : (statusLabel[displayStatus] || displayStatus);
+                        const trackingCode = order.envioecomBarcode || order.trackingCode || null;
+                        const canTrack = hasTrackableShipment(order);
 
                         return (
                         <div key={order.id} className="border border-border rounded-2xl p-5 bg-white hover:shadow-md transition-shadow">
                           {/* Header: ID, Status Badge, Data */}
                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
                             <div className="flex items-start gap-3">
-                              <div className={`mt-0.5 p-2.5 rounded-xl ${displayStatus === "completed" || displayStatus === "paid" ? "bg-green-100" : displayStatus === "enviado" ? "bg-blue-100" : displayStatus === "cancelled" ? "bg-red-100" : "bg-yellow-100"}`}>
-                                {getStatusIcon(displayStatus)}
+                              <div className={`mt-0.5 p-2.5 rounded-xl ${
+                                situation.kind === "delivered" || displayStatus === "paid"
+                                  ? "bg-green-100"
+                                  : situation.kind === "shipping"
+                                    ? "bg-blue-100"
+                                    : situation.kind === "cancelled"
+                                      ? "bg-red-100"
+                                      : "bg-yellow-100"
+                              }`}>
+                                {situation.kind === "shipping" || situation.kind === "delivered" ? (
+                                  <Truck className={`w-5 h-5 ${situation.kind === "delivered" ? "text-green-700" : "text-blue-700"}`} />
+                                ) : (
+                                  getStatusIcon(displayStatus)
+                                )}
                               </div>
                               <div>
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Pedido</p>
@@ -457,9 +558,10 @@ export default function CustomerOrders() {
                               </div>
                             </div>
                             <div className="flex flex-col sm:items-end gap-2">
-                              <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${getStatusColor(displayStatus)}`}>
-                                {getStatusIcon(displayStatus)}
-                                {statusLabel[displayStatus] || displayStatus}
+                              <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${getSituationBadgeClass(situation.kind)}`}>
+                                {situation.kind === "delivered" ? <CheckCircle2 className="w-4 h-4" /> : null}
+                                {situation.kind === "shipping" ? <Truck className="w-4 h-4" /> : null}
+                                {situation.label}
                               </span>
                               <p className="text-xs text-muted-foreground">{formatDateBR(order.createdAt)}</p>
                             </div>
@@ -479,11 +581,26 @@ export default function CustomerOrders() {
                             </div>
                             <div>
                               <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Situação</p>
-                              <p className="text-sm font-semibold text-foreground mt-1">
-                                {displaySituation}
+                              <p className="text-sm font-semibold text-foreground mt-1 leading-snug">
+                                {situation.label}
                               </p>
                             </div>
                           </div>
+
+                          {(trackingCode || order.envioecomDeliveryMode || order.envioecomStatus) && (
+                            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 space-y-1">
+                              <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Envio / Rastreio</p>
+                              {order.envioecomStatus && (
+                                <p className="text-sm font-semibold text-blue-950">{order.envioecomStatus}</p>
+                              )}
+                              {order.envioecomDeliveryMode && (
+                                <p className="text-xs text-blue-900/80">{order.envioecomDeliveryMode}</p>
+                              )}
+                              {trackingCode && (
+                                <p className="text-xs font-mono text-blue-950 break-all">Código: {trackingCode}</p>
+                              )}
+                            </div>
+                          )}
 
                           {/* Actions */}
                           <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
@@ -503,7 +620,7 @@ export default function CustomerOrders() {
                               <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
                               Suporte
                             </Button>
-                            {(order.enviado || order.status === "completed" || order.envioecomBarcode || order.trackingCode) && (
+                            {canTrack && (
                               <Button
                                 variant="outline"
                                 size="sm"

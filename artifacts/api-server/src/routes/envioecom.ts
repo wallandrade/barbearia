@@ -1121,7 +1121,44 @@ router.get("/me/orders/:id/tracking", requireCustomerAuth, async (req, res) => {
       return;
     }
 
-    res.json({ tracking: publicTrackingPayload(rows[0]) });
+    let order = rows[0];
+
+    // Soft-sync: atualiza status na EnvioEcom quando o cliente abre o rastreio
+    if (order.envioecomShipmentId || order.envioecomBarcode || order.envioecomTrackingKey) {
+      try {
+        const live = await resolveLiveShipmentRefs({
+          shipmentId: order.envioecomShipmentId,
+          barcode: order.envioecomBarcode || order.trackingCode,
+          trackingKey: order.envioecomTrackingKey,
+          externalOrderNumber: order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
+          cpf: order.clientDocument,
+          destinationCep: order.addressCep,
+          recipientName: order.clientName,
+        });
+        if (live.status || live.barcode || live.shipmentId) {
+          await applyShipmentStatusToOrder({
+            orderId: order.id,
+            status: live.status || order.envioecomStatus || "Em atualização",
+            barcode: live.barcode,
+            shipmentId: live.shipmentId,
+            trackingKey: live.trackingKey,
+            description: "Status atualizado ao consultar rastreio",
+            updatedAt: new Date().toISOString(),
+            source: "customer-tracking",
+          });
+          const refreshed = await db
+            .select()
+            .from(ordersTable)
+            .where(eq(ordersTable.id, order.id))
+            .limit(1);
+          if (refreshed[0]) order = refreshed[0];
+        }
+      } catch (syncErr) {
+        console.warn("[EnvioEcom] customer tracking soft-sync failed:", syncErr);
+      }
+    }
+
+    res.json({ tracking: publicTrackingPayload(order) });
   } catch (err) {
     console.error("[EnvioEcom] customer tracking error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar rastreio." });

@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Conta do cliente: Situação/card usam status EnvioEcom + bloco rastreio; Rastrear faz soft-sync | Cliente vê frete atualizado no pedido | Admin/etiqueta iguais |
 | 2026-08-13 | EnvioEcom: cotar/criar envio/etiqueta + webhook + rastreio na conta do cliente | Status de entrega atualiza pedido; cliente vê timeline | OCR manual de etiqueta continua disponível |
 | 2026-08-13 | Busca de pedidos no admin: query só dígitos prioriza `orderNumber` exato; se achar, não cai em telefone/CEP/parcial | Digitar `255` retorna só o pedido #255 (se existir) | Demais filtros e busca textual iguais |
 | 2026-08-12 | Admin Clientes: redefinir/mostrar nova senha de login (hash irreversível; gera senha temporária) | Operação de suporte no painel | Fluxo de pedidos/PIX inalterado |
@@ -32,7 +33,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Comprovantes: `proofUrl` + `proofUrls` (galeria; uploads anexam sem apagar anteriores).
 - Edição de pedido (admin primário): troca de itens/quantidades; PIX de diferença via cobrança/gateway quando o valor sobe.
 - Tracking: código, etiqueta (URL/texto), OCR/parse auxiliar (OpenAI / OCR.space nas rotas de pedidos).
-- **EnvioEcom:** admin cotar/criar/etiqueta; webhook atualiza `envioecom_status` + histórico; cliente rastreia em Minha conta. Vínculo por barcode/nº pedido (CPF só no create como destinatário).
+- **EnvioEcom:** admin cotar/criar/etiqueta; webhook atualiza `envioecom_status` + histórico; cliente vê **Situação** e bloco Envio/Rastreio no card + modal Rastrear (soft-sync ao abrir). Vínculo por barcode/nº pedido (CPF só no create como destinatário).
 - Busca no admin (`Admin.tsx` `filteredOrders`): se a query for **só dígitos**, prioriza `orderNumber` **exato**; se existir match, retorna só esse(s) pedido(s). Sem match de número → cai na busca ampla (nome, telefone, e-mail, CEP, produto, id).
 
 ## PIX
