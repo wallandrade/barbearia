@@ -4622,16 +4622,16 @@ export default function Admin() {
 
         {/* Filters (only for orders/charges) */}
         {(tab === "orders" || tab === "charges") && (
-          <div className="flex flex-col sm:flex-row gap-3 mb-6">
-            <div className="relative flex-1 min-w-0">
+          <div className="flex flex-col lg:flex-row gap-3 mb-6">
+            <div className="relative flex-1 min-w-0 overflow-hidden">
               <span className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-10 items-center justify-center text-muted-foreground">
                 <Search className="h-4 w-4" aria-hidden />
               </span>
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar por nome, e-mail, celular, CEP, nº pedido ou produto..."
-                className="w-full min-w-[320px] h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
+                className="w-full min-w-0 h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
             </div>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap shrink-0">
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
               <input type="date" value={dateTo}   onChange={(e) => setDateTo(e.target.value)}   className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
