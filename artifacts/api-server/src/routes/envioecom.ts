@@ -58,15 +58,69 @@ function parseProducts(raw: unknown): OrderProduct[] {
 function mapApiError(err: unknown, res: import("express").Response): void {
   if (err instanceof EnvioEcomApiError) {
     const status = err.status >= 400 && err.status < 600 ? err.status : 502;
+    console.error("[EnvioEcom] API error:", {
+      status: err.status,
+      code: err.code,
+      message: err.message,
+      details: err.details,
+    });
+    const detailText = formatEnvioEcomDetails(err.details);
     res.status(status).json({
       error: err.code || "ENVIOECOM_ERROR",
-      message: err.message,
+      message: detailText ? `${err.message} ${detailText}` : err.message,
       details: err.details,
     });
     return;
   }
   console.error("[EnvioEcom]", err);
   res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro na integração EnvioEcom." });
+}
+
+function formatEnvioEcomDetails(details: unknown): string {
+  if (!details) return "";
+  if (typeof details === "string") return details;
+  if (Array.isArray(details)) return details.map(String).join("; ");
+  if (typeof details === "object") {
+    const entries = Object.entries(details as Record<string, unknown>);
+    if (!entries.length) return "";
+    return entries
+      .map(([key, value]) => {
+        if (Array.isArray(value)) return `${key}: ${value.join(", ")}`;
+        if (value && typeof value === "object") return `${key}: ${JSON.stringify(value)}`;
+        return `${key}: ${String(value)}`;
+      })
+      .join(" | ");
+  }
+  return String(details);
+}
+
+function formatCpfCnpj(raw: string): string {
+  const digits = digitsOnly(raw);
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+  }
+  return raw.trim();
+}
+
+function formatMoneyString(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "0.00";
+  return n.toFixed(2);
+}
+
+function formatWeightString(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "0.300";
+  return Math.min(30, Math.max(0.3, n)).toFixed(3);
+}
+
+function formatDimString(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "2";
+  return String(Math.min(100, Math.max(2, Math.round(n))));
 }
 
 function buildShipmentItemsFromOrder(order: typeof ordersTable.$inferSelect) {
@@ -313,10 +367,44 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
 
     const quoteProducts = buildQuoteProductsFromOrder(order);
     const pack = buildPackageFromProducts(quoteProducts);
-    const externalOrderNumber = String(order.orderNumber ?? order.id);
-    const freightCost = String(req.body?.freight_cost ?? order.shippingCost ?? "0");
-    const deliveryTime = String(req.body?.delivery_time ?? "1");
+    // orderId único na EnvioEcom (evita DUPLICATE_ORDER em retentativas)
+    const externalOrderNumber = `${order.orderNumber ?? "ped"}-${String(order.id).slice(0, 8)}`;
+    const freightCost = formatMoneyString(req.body?.freight_cost ?? order.shippingCost ?? pack.cost ?? 0);
+    const deliveryTimeRaw = String(req.body?.delivery_time ?? "1").replace(/\D/g, "") || "1";
+    const deliveryTime = String(Math.max(1, Number(deliveryTimeRaw) || 1));
     const cepOrigem = digitsOnly(String(req.body?.cep_origem || process.env.ENVIOECOM_ORIGIN_CEP || ""));
+
+    const phone = digitsOnly(order.clientPhone);
+    const document = formatCpfCnpj(order.clientDocument);
+    const documentDigits = digitsOnly(order.clientDocument);
+    const uf = String(order.addressState || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
+    const logradouro = String(order.addressStreet || "").trim();
+    const bairro = String(order.addressNeighborhood || "").trim();
+    const localidade = String(order.addressCity || "").trim();
+    const number = String(order.addressNumber || "").trim() || "S/N";
+    const email = String(order.clientEmail || "").trim().toLowerCase();
+
+    if (documentDigits.length !== 11 && documentDigits.length !== 14) {
+      res.status(400).json({
+        error: "INVALID_DOCUMENT",
+        message: "CPF/CNPJ do pedido inválido para criar envio EnvioEcom.",
+      });
+      return;
+    }
+    if (phone.length < 10 || phone.length > 13) {
+      res.status(400).json({
+        error: "INVALID_PHONE",
+        message: "Telefone do pedido inválido para criar envio EnvioEcom.",
+      });
+      return;
+    }
+    if (!logradouro || !bairro || !localidade || uf.length !== 2) {
+      res.status(400).json({
+        error: "INVALID_ADDRESS",
+        message: "Endereço incompleto no pedido (rua, bairro, cidade e UF são obrigatórios).",
+      });
+      return;
+    }
 
     const shipment: EnvioEcomCreateShipmentInput = {
       orderId: externalOrderNumber,
@@ -325,23 +413,46 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       cep_destino: cepDestino,
       freight_cost: freightCost,
       delivery_time: deliveryTime,
-      height: String(pack.height),
-      width: String(pack.width),
-      length: String(pack.length),
-      weight: String(pack.weight),
-      cost: String(pack.cost || order.subtotal || 0),
-      name: order.clientName,
-      document_number: order.clientDocument,
-      phone_number: digitsOnly(order.clientPhone),
-      email: order.clientEmail,
-      logradouro: String(order.addressStreet || ""),
-      number: String(order.addressNumber || "S/N"),
-      bairro: String(order.addressNeighborhood || ""),
-      localidade: String(order.addressCity || ""),
-      uf: String(order.addressState || "").toUpperCase().slice(0, 2),
-      ...(order.addressComplement ? { complemento: String(order.addressComplement) } : {}),
-      items: buildShipmentItemsFromOrder(order),
+      height: formatDimString(pack.height),
+      width: formatDimString(pack.width),
+      length: formatDimString(pack.length),
+      weight: formatWeightString(pack.weight),
+      cost: formatMoneyString(pack.cost || order.subtotal || 0),
+      name: String(order.clientName || "").trim().slice(0, 120) || "Cliente",
+      document_number: document,
+      phone_number: phone,
+      email: email.includes("@") ? email : "noreply@yury-imports.com",
+      logradouro,
+      number,
+      bairro,
+      localidade,
+      uf,
+      ...(order.addressComplement ? { complemento: String(order.addressComplement).trim().slice(0, 60) } : {}),
+      items: buildShipmentItemsFromOrder(order).map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+        unit_cost: Number(formatMoneyString(item.unit_cost)),
+      })),
     };
+
+    console.log("[EnvioEcom] create payload", {
+      orderId: shipment.orderId,
+      shipping_company: shipment.shipping_company,
+      cep_destino: shipment.cep_destino,
+      freight_cost: shipment.freight_cost,
+      delivery_time: shipment.delivery_time,
+      dims: {
+        h: shipment.height,
+        w: shipment.width,
+        l: shipment.length,
+        weight: shipment.weight,
+        cost: shipment.cost,
+      },
+      uf: shipment.uf,
+      phone_len: phone.length,
+      document_len: documentDigits.length,
+      items: shipment.items?.length || 0,
+    });
 
     const created = await createShipments({
       shipments: [shipment],

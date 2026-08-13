@@ -8732,9 +8732,15 @@ function OrdersPanel({
         barcode?: string | null;
         status?: string;
         message?: string;
+        details?: unknown;
+        error?: string;
       };
       if (!res.ok) {
-        toast.error(data.message || "Falha ao criar envio EnvioEcom.");
+        const extra =
+          data.details && typeof data.details === "object"
+            ? ` ${JSON.stringify(data.details)}`
+            : "";
+        toast.error((data.message || "Falha ao criar envio EnvioEcom.") + extra);
         return;
       }
       patchOrderLocal(order.id, {
