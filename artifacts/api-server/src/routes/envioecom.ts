@@ -23,6 +23,7 @@ import {
   isDeliveredStatus,
   isEnvioEcomConfigured,
   isInTransitStatus,
+  isLabelReadyStatus,
   isProvisionalEnvioEcomBarcode,
   parseCarriersInput,
   pickBestBarcode,
@@ -263,7 +264,11 @@ async function applyShipmentStatusToOrder(params: {
     patch.envioecomExternalOrderNumber = String(params.externalOrderNumber);
   }
 
-  if (isInTransitStatus(params.status) || isDeliveredStatus(params.status)) {
+  if (
+    isInTransitStatus(params.status) ||
+    isDeliveredStatus(params.status) ||
+    isLabelReadyStatus(params.status)
+  ) {
     patch.enviado = true;
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {

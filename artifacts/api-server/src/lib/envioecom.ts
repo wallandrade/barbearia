@@ -857,6 +857,7 @@ export function isDeliveredStatus(status: string): boolean {
   return s.includes("entregue") || s.includes("objeto entregue");
 }
 
+/** Status em que o pacote já saiu do "só pago" e pode contar como enviado/postagem. */
 export function isInTransitStatus(status: string): boolean {
   const s = status.toLowerCase();
   return (
@@ -866,7 +867,26 @@ export function isInTransitStatus(status: string): boolean {
     s.includes("expedido") ||
     s.includes("saiu para entrega") ||
     s.includes("aguardando expedição") ||
-    s.includes("aguardando expedicao")
+    s.includes("aguardando expedicao") ||
+    s.includes("etiqueta emitida") ||
+    s.includes("pronto para envio") ||
+    s.includes("processando envio") ||
+    s.includes("dc-e emitida") ||
+    s.includes("dce emitida")
+  );
+}
+
+/** Etiqueta gerada / pronta para postagem (marca enviado mesmo antes do trânsito). */
+export function isLabelReadyStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return (
+    s.includes("etiqueta emitida") ||
+    s.includes("pronto para envio") ||
+    s.includes("processando envio") ||
+    s.includes("aguardando expedição") ||
+    s.includes("aguardando expedicao") ||
+    s.includes("dc-e emitida") ||
+    s.includes("dce emitida")
   );
 }
 
