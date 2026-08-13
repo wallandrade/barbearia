@@ -8770,10 +8770,37 @@ function OrdersPanel({
   const generateEnvioEcomLabel = async (order: AdminOrder) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
+      // Sync primeiro para trocar EC... pelo código/ID definitivo
+      try {
+        await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+      } catch {
+        // segue para labels mesmo se sync falhar
+      }
+
+      let shipmentIdOverride = "";
+      const currentCode = String((order as any).envioecomBarcode || (order as any).trackingCode || "");
+      if (/^EC/i.test(currentCode) && !(order as any).envioecomShipmentId) {
+        const typed = window.prompt(
+          "Cole o ID do envio do painel EnvioEcom (número no topo, ex.: 726384):",
+          "",
+        );
+        shipmentIdOverride = String(typed || "").replace(/\D/g, "");
+        if (!shipmentIdOverride) {
+          toast.error("Informe o ID do envio para gerar a etiqueta.");
+          return;
+        }
+      }
+
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          shipmentIdOverride ? { shipment_id: shipmentIdOverride } : {},
+        ),
       });
       const data = await res.json() as {
         ok?: boolean;
@@ -8781,8 +8808,58 @@ function OrdersPanel({
         pdfBase64?: string;
         message?: string;
         processing?: boolean;
+        needsShipmentId?: boolean;
+        shipmentId?: string | null;
+        barcode?: string | null;
       };
       if (!res.ok) {
+        if (data.needsShipmentId) {
+          const typed = window.prompt(
+            "Cole o ID do envio do painel EnvioEcom (ex.: 726384) ou o rastreio 8880...:",
+            shipmentIdOverride || "",
+          );
+          const value = String(typed || "").trim();
+          if (!value) {
+            toast.error(data.message || "Falha ao gerar etiqueta.");
+            return;
+          }
+          const retryBody = /^\d{5,}$/.test(value.replace(/\D/g, "")) && value.replace(/\D/g, "").length <= 10
+            ? { shipment_id: value.replace(/\D/g, "") }
+            : { barcode: value.replace(/\s+/g, "") };
+          const retry = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
+            method: "POST",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify(retryBody),
+          });
+          const retryData = await retry.json() as typeof data;
+          if (!retry.ok) {
+            toast.error(retryData.message || "Falha ao gerar etiqueta.");
+            return;
+          }
+          if (retryData.labelUrl) {
+            patchOrderLocal(order.id, {
+              envioecomLabelUrl: retryData.labelUrl,
+              trackingLabelUrl: retryData.labelUrl,
+              envioecomShipmentId: retryData.shipmentId || (order as any).envioecomShipmentId,
+              envioecomBarcode: retryData.barcode || (order as any).envioecomBarcode,
+              trackingCode: retryData.barcode || (order as any).trackingCode,
+              enviado: true,
+            });
+            window.open(retryData.labelUrl, "_blank", "noopener,noreferrer");
+            toast.success("Etiqueta gerada.");
+            return;
+          }
+          if (retryData.pdfBase64) {
+            const blob = new Blob(
+              [Uint8Array.from(atob(retryData.pdfBase64), (c) => c.charCodeAt(0))],
+              { type: "application/pdf" },
+            );
+            const url = URL.createObjectURL(blob);
+            window.open(url, "_blank", "noopener,noreferrer");
+            toast.success("Etiqueta gerada (download local).");
+            return;
+          }
+        }
         toast.error(data.message || "Falha ao gerar etiqueta.");
         return;
       }
@@ -8821,9 +8898,20 @@ function OrdersPanel({
   const syncEnvioEcomStatus = async (order: AdminOrder) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
+      let body: Record<string, string> = {};
+      const currentCode = String((order as any).envioecomBarcode || (order as any).trackingCode || "");
+      if (/^EC/i.test(currentCode) && !(order as any).envioecomShipmentId) {
+        const typed = window.prompt(
+          "Opcional: cole o ID do envio do painel EnvioEcom (ex.: 726384) para sincronizar:",
+          "",
+        );
+        const id = String(typed || "").replace(/\D/g, "");
+        if (id) body = { shipment_id: id };
+      }
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       const data = await res.json() as {
         ok?: boolean;

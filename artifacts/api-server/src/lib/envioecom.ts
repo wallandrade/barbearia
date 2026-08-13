@@ -412,6 +412,9 @@ export async function listShipments(params?: {
 }): Promise<{
   success?: boolean;
   data?: unknown[];
+  shipments?: unknown[];
+  results?: unknown[];
+  items?: unknown[];
   meta?: Record<string, unknown>;
   [key: string]: unknown;
 }> {
@@ -428,6 +431,29 @@ export async function listShipments(params?: {
   return envioecomJson(`/shipments?${qs.toString()}`);
 }
 
+export function extractShipmentRows(payload: unknown): Record<string, unknown>[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) {
+    return payload.map(asRecord).filter(Boolean) as Record<string, unknown>[];
+  }
+  const root = asRecord(payload);
+  if (!root) return [];
+  const candidates = [root.data, root.shipments, root.results, root.items, root.rows];
+  for (const c of candidates) {
+    if (Array.isArray(c)) {
+      return c.map(asRecord).filter(Boolean) as Record<string, unknown>[];
+    }
+    const nested = asRecord(c);
+    if (nested) {
+      const inner = nested.data || nested.shipments || nested.results || nested.items;
+      if (Array.isArray(inner)) {
+        return inner.map(asRecord).filter(Boolean) as Record<string, unknown>[];
+      }
+    }
+  }
+  return [];
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -435,7 +461,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function flattenShipmentRow(row: Record<string, unknown>): Record<string, unknown> {
   const nested = asRecord(row.data) || {};
-  return { ...row, ...nested };
+  const dest = asRecord(row.destination) || asRecord(row.to) || asRecord(nested.destination) || {};
+  const receiver = asRecord(row.receiver) || asRecord(row.destinatario) || asRecord(nested.receiver) || {};
+  return { ...row, ...nested, ...dest, ...receiver };
 }
 
 /** Prefer barcode definitivo (ex. J&T 8880...) a códigos provisórios (EC...). */
@@ -455,6 +483,10 @@ export function pickBestBarcode(candidates: Array<string | null | undefined>): s
   return [...list].sort((a, b) => score(b) - score(a))[0] || null;
 }
 
+export function isProvisionalEnvioEcomBarcode(code: string | null | undefined): boolean {
+  return /^EC/i.test(String(code || "").trim());
+}
+
 export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
   barcode: string | null;
   shipmentId: string | null;
@@ -462,6 +494,8 @@ export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
   status: string | null;
   externalOrderNumber: string | null;
   destinationCep: string | null;
+  documentNumber: string | null;
+  recipientName: string | null;
 } {
   const row = flattenShipmentRow(rowInput);
   const finalStatus = asRecord(row.final_status);
@@ -471,6 +505,7 @@ export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
     row.tracking_code as string,
     row.trackingCode as string,
     row.tracking_number as string,
+    row.trackingNumber as string,
   ]);
 
   const shipmentIdRaw = row.shipping_id ?? row.shipment_id ?? row.id;
@@ -499,8 +534,22 @@ export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
     ).trim() || null;
 
   const destinationCep = digitsOnly(
-    String(row.cep_destino || row.destination_zipcode || row.postal_code_destination || ""),
+    String(
+      row.cep_destino ||
+        row.destination_zipcode ||
+        row.postal_code_destination ||
+        row.postal_code ||
+        row.cep ||
+        row.zipcode ||
+        "",
+    ),
   );
+
+  const documentNumber = digitsOnly(
+    String(row.document_number || row.cpf || row.document || row.receiver_document || ""),
+  );
+
+  const recipientName = String(row.name || row.recipient_name || row.destinatario || "").trim() || null;
 
   return {
     barcode,
@@ -509,6 +558,8 @@ export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
     status,
     externalOrderNumber,
     destinationCep: destinationCep.length === 8 ? destinationCep : null,
+    documentNumber: documentNumber.length >= 11 ? documentNumber : null,
+    recipientName,
   };
 }
 
@@ -561,6 +612,7 @@ export async function resolveLiveShipmentRefs(input: {
   externalOrderNumber?: string | null;
   cpf?: string | null;
   destinationCep?: string | null;
+  recipientName?: string | null;
 }): Promise<{
   barcode: string | null;
   shipmentId: string | null;
@@ -580,63 +632,112 @@ export async function resolveLiveShipmentRefs(input: {
     }
   };
 
-  const shipmentId = String(input.shipmentId || "").trim();
-  const barcode = String(input.barcode || "").trim();
+  let shipmentId = String(input.shipmentId || "").trim();
+  let barcode = String(input.barcode || "").trim();
   const trackingKey = String(input.trackingKey || "").trim();
 
   let found =
     (shipmentId ? await tryGet(shipmentId) : null) ||
-    (barcode ? await tryGet(barcode) : null) ||
+    (!isProvisionalEnvioEcomBarcode(barcode) && barcode ? await tryGet(barcode) : null) ||
     (trackingKey ? await tryGet(trackingKey) : null);
 
-  if (!found) {
+  if (!found || isProvisionalEnvioEcomBarcode(found.barcode) || !found.shipmentId) {
     const cpf = digitsOnly(input.cpf);
-    const lists: unknown[] = [];
+    const lists: Record<string, unknown>[] = [];
+    const pushList = (payload: unknown, source: string) => {
+      const rows = extractShipmentRows(payload);
+      console.log(`[EnvioEcom] list ${source}: ${rows.length} rows`);
+      lists.push(...rows);
+    };
+
     if (cpf.length >= 11) {
       try {
-        const byCpf = await listShipments({ cpf, limit: 50 });
-        if (Array.isArray(byCpf.data)) lists.push(...byCpf.data);
+        pushList(await listShipments({ cpf, limit: 50 }), "cpf");
       } catch (err) {
         console.warn("[EnvioEcom] list by cpf failed:", err);
       }
     }
     if (barcode) {
       try {
-        const byBarcode = await listShipments({ barcode, limit: 20 });
-        if (Array.isArray(byBarcode.data)) lists.push(...byBarcode.data);
+        pushList(await listShipments({ barcode, limit: 20 }), "barcode");
+      } catch {
+        // ignore
+      }
+    }
+    if (shipmentId && /^\d+$/.test(shipmentId)) {
+      try {
+        pushList(await listShipments({ ids: [shipmentId], limit: 10 }), "ids");
       } catch {
         // ignore
       }
     }
     try {
-      const recent = await listShipments({ page: 1, limit: 50 });
-      if (Array.isArray(recent.data)) lists.push(...recent.data);
+      pushList(await listShipments({ page: 1, limit: 50 }), "recent");
     } catch (err) {
       console.warn("[EnvioEcom] list recent failed:", err);
     }
 
     const destCep = digitsOnly(input.destinationCep);
     const external = String(input.externalOrderNumber || "").trim().toLowerCase();
+    const nameNeedle = String(input.recipientName || "").trim().toLowerCase();
 
-    for (const row of lists) {
-      const rec = asRecord(row);
-      if (!rec) continue;
+    type Scored = { score: number; picked: ReturnType<typeof pickShipmentIdentifiers>; raw: Record<string, unknown> };
+    const scored: Scored[] = [];
+
+    for (const rec of lists) {
       const picked = pickShipmentIdentifiers(rec);
-      const externalMatch =
+      let score = 0;
+      if (shipmentId && picked.shipmentId === shipmentId) score += 100;
+      if (
         external &&
         picked.externalOrderNumber &&
-        picked.externalOrderNumber.toLowerCase().includes(external.split("-")[0] || external);
-      const cepMatch = destCep.length === 8 && picked.destinationCep === destCep;
-      const barcodeMatch =
-        (barcode && picked.barcode === barcode) ||
-        (barcode && String(rec.tracking_key || "") === barcode) ||
-        (trackingKey && picked.trackingKey === trackingKey);
-
-      if (externalMatch || (cepMatch && (barcodeMatch || !barcode || /^EC/i.test(barcode))) || barcodeMatch) {
-        found = { ...picked, raw: flattenShipmentRow(rec) };
-        // Prefer exact external match
-        if (externalMatch) break;
+        (picked.externalOrderNumber.toLowerCase() === external ||
+          picked.externalOrderNumber.toLowerCase().includes(external) ||
+          external.includes(picked.externalOrderNumber.toLowerCase()) ||
+          picked.externalOrderNumber.toLowerCase().includes(external.split("-")[0] || ""))
+      ) {
+        score += 80;
       }
+      if (destCep.length === 8 && picked.destinationCep === destCep) score += 40;
+      if (cpf.length >= 11 && picked.documentNumber === cpf) score += 50;
+      if (
+        barcode &&
+        (picked.barcode === barcode ||
+          picked.trackingKey === barcode ||
+          String(rec.tracking_key || "") === barcode)
+      ) {
+        score += 30;
+      }
+      if (trackingKey && picked.trackingKey === trackingKey) score += 30;
+      if (nameNeedle && picked.recipientName && picked.recipientName.toLowerCase().includes(nameNeedle.split(" ")[0]!)) {
+        score += 15;
+      }
+      // Prefer definitive barcode
+      if (picked.barcode && !isProvisionalEnvioEcomBarcode(picked.barcode)) score += 10;
+      if (picked.shipmentId) score += 5;
+
+      if (score >= 40) {
+        scored.push({ score, picked, raw: flattenShipmentRow(rec) });
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    if (scored[0]) {
+      console.log("[EnvioEcom] resolve match", {
+        score: scored[0].score,
+        shipmentId: scored[0].picked.shipmentId,
+        barcode: scored[0].picked.barcode,
+        status: scored[0].picked.status,
+      });
+      found = { ...scored[0].picked, raw: scored[0].raw };
+    } else {
+      console.warn("[EnvioEcom] resolve found no match", {
+        lists: lists.length,
+        destCep,
+        external,
+        hadCpf: cpf.length >= 11,
+        barcodePrefix: barcode.slice(0, 4),
+      });
     }
   }
 
@@ -647,7 +748,7 @@ export async function resolveLiveShipmentRefs(input: {
   }
 
   return {
-    barcode: found?.barcode || barcode || null,
+    barcode: pickBestBarcode([found?.barcode, barcode]) || barcode || null,
     shipmentId: found?.shipmentId || shipmentId || null,
     trackingKey: found?.trackingKey || trackingKey || null,
     status: found?.status || null,

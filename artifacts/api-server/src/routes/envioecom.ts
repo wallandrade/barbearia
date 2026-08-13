@@ -23,6 +23,7 @@ import {
   isDeliveredStatus,
   isEnvioEcomConfigured,
   isInTransitStatus,
+  isProvisionalEnvioEcomBarcode,
   parseCarriersInput,
   pickBestBarcode,
   quoteFreight,
@@ -568,8 +569,11 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     }
 
     const { order } = loaded;
-    let barcode = String(order.envioecomBarcode || order.trackingCode || "").trim();
-    let shipmentId = String(order.envioecomShipmentId || "").trim();
+    const bodyShipmentId = String(req.body?.shipment_id || req.body?.shipping_id || "").trim();
+    const bodyBarcode = String(req.body?.barcode || "").trim();
+
+    let barcode = bodyBarcode || String(order.envioecomBarcode || order.trackingCode || "").trim();
+    let shipmentId = bodyShipmentId || String(order.envioecomShipmentId || "").trim();
     let trackingKey = String(order.envioecomTrackingKey || "").trim();
 
     if (!barcode && !shipmentId && !trackingKey) {
@@ -586,10 +590,18 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         externalOrderNumber: order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
         cpf: order.clientDocument,
         destinationCep: order.addressCep,
+        recipientName: order.clientName,
       });
       if (live.shipmentId) shipmentId = live.shipmentId;
       if (live.barcode) barcode = live.barcode;
       if (live.trackingKey) trackingKey = live.trackingKey;
+
+      console.log("[EnvioEcom] labels resolve", {
+        shipmentId,
+        barcodePrefix: String(barcode || "").slice(0, 6),
+        status: live.status,
+        provisional: isProvisionalEnvioEcomBarcode(barcode),
+      });
 
       if (live.status || live.shipmentId || live.barcode) {
         await applyShipmentStatusToOrder({
@@ -623,6 +635,18 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     const numericId = shipmentId && /^\d+$/.test(shipmentId) ? Number(shipmentId) : null;
     const labelBarcode = pickBestBarcode([barcode, trackingKey]);
 
+    if (numericId == null && isProvisionalEnvioEcomBarcode(labelBarcode)) {
+      res.status(409).json({
+        error: "PROVISIONAL_BARCODE",
+        message:
+          "Código EC... é provisório. No painel EnvioEcom copie o ID do envio (ex.: 726384) quando o botão pedir, ou o rastreio 8880....",
+        barcode: labelBarcode,
+        shipmentId: shipmentId || null,
+        needsShipmentId: true,
+      });
+      return;
+    }
+
     let label: Awaited<ReturnType<typeof generateLabels>>;
     try {
       if (numericId != null) {
@@ -639,7 +663,12 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         return;
       }
     } catch (labelErr) {
-      if (labelErr instanceof EnvioEcomApiError && numericId != null && labelBarcode) {
+      if (
+        labelErr instanceof EnvioEcomApiError &&
+        numericId != null &&
+        labelBarcode &&
+        !isProvisionalEnvioEcomBarcode(labelBarcode)
+      ) {
         console.warn("[EnvioEcom] labels by id failed, retry barcode:", labelErr.message);
         try {
           label = await generateLabels({ barcodes: [labelBarcode], merge_dce: mergeDce });
@@ -648,10 +677,11 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
             res.status(retryErr.status || 400).json({
               error: retryErr.code || "LABEL_FAILED",
               message:
-                "Etiqueta indisponível. No painel o envio existe; tente Sync status e Etiqueta EE de novo. Se persistir, use o ID do envio no painel.",
+                "Etiqueta indisponível mesmo com shipping_id. Confira no painel se o status é 'Pronto para envio'.",
               details: retryErr.details,
               barcode: labelBarcode,
               shipmentId: shipmentId || null,
+              needsShipmentId: true,
             });
             return;
           }
@@ -661,10 +691,11 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         res.status(labelErr.status || 400).json({
           error: labelErr.code || "LABEL_FAILED",
           message:
-            "Etiqueta indisponível. Sincronize o status (Sync status) para atualizar o código definitivo da transportadora e tente novamente.",
+            "Etiqueta indisponível. Informe o ID do envio do painel EnvioEcom (número no topo, ex.: 726384).",
           details: labelErr.details,
           barcode: labelBarcode,
           shipmentId: shipmentId || null,
+          needsShipmentId: true,
         });
         return;
       } else {
@@ -743,18 +774,28 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     }
 
     const { order } = loaded;
-    if (!order.envioecomShipmentId && !order.envioecomBarcode && !order.envioecomTrackingKey) {
+    const bodyShipmentId = String(req.body?.shipment_id || req.body?.shipping_id || "").trim();
+    const bodyBarcode = String(req.body?.barcode || "").trim();
+
+    if (
+      !bodyShipmentId &&
+      !bodyBarcode &&
+      !order.envioecomShipmentId &&
+      !order.envioecomBarcode &&
+      !order.envioecomTrackingKey
+    ) {
       res.status(400).json({ error: "NO_SHIPMENT", message: "Pedido sem envio EnvioEcom." });
       return;
     }
 
     const live = await resolveLiveShipmentRefs({
-      shipmentId: order.envioecomShipmentId,
-      barcode: order.envioecomBarcode || order.trackingCode,
+      shipmentId: bodyShipmentId || order.envioecomShipmentId,
+      barcode: bodyBarcode || order.envioecomBarcode || order.trackingCode,
       trackingKey: order.envioecomTrackingKey,
       externalOrderNumber: order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
       cpf: order.clientDocument,
       destinationCep: order.addressCep,
+      recipientName: order.clientName,
     });
 
     if (!live.shipmentId && !live.barcode) {
