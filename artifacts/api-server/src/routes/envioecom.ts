@@ -372,7 +372,30 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     const freightCost = formatMoneyString(req.body?.freight_cost ?? order.shippingCost ?? pack.cost ?? 0);
     const deliveryTimeRaw = String(req.body?.delivery_time ?? "1").replace(/\D/g, "") || "1";
     const deliveryTime = String(Math.max(1, Number(deliveryTimeRaw) || 1));
-    const cepOrigem = digitsOnly(String(req.body?.cep_origem || process.env.ENVIOECOM_ORIGIN_CEP || ""));
+    // EnvioEcom exige cep_origem no create (não herda automaticamente da conta)
+    let cepOrigem = digitsOnly(String(req.body?.cep_origem || process.env.ENVIOECOM_ORIGIN_CEP || ""));
+    if (cepOrigem.length !== 8) {
+      try {
+        const carriers =
+          parseCarriersInput(req.body?.carriers) || getDefaultCarriersFromEnv();
+        const quote = await quoteFreight({
+          postal_code_destination: cepDestino,
+          products: quoteProducts,
+          ...(carriers ? { carriers } : {}),
+        });
+        cepOrigem = digitsOnly(String(quote.origin_zipcode || ""));
+      } catch {
+        // fallback abaixo
+      }
+    }
+    if (cepOrigem.length !== 8) {
+      res.status(400).json({
+        error: "MISSING_ORIGIN_CEP",
+        message:
+          "CEP de origem obrigatório. Defina ENVIOECOM_ORIGIN_CEP no Railway (CEP do remetente, 8 dígitos) ou envie cep_origem no body.",
+      });
+      return;
+    }
 
     const phone = digitsOnly(order.clientPhone);
     const document = formatCpfCnpj(order.clientDocument);
@@ -409,7 +432,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     const shipment: EnvioEcomCreateShipmentInput = {
       orderId: externalOrderNumber,
       shipping_company: shippingCompany,
-      ...(cepOrigem.length === 8 ? { cep_origem: cepOrigem } : {}),
+      cep_origem: cepOrigem,
       cep_destino: cepDestino,
       freight_cost: freightCost,
       delivery_time: deliveryTime,
@@ -438,6 +461,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     console.log("[EnvioEcom] create payload", {
       orderId: shipment.orderId,
       shipping_company: shipment.shipping_company,
+      cep_origem: shipment.cep_origem,
       cep_destino: shipment.cep_destino,
       freight_cost: shipment.freight_cost,
       delivery_time: shipment.delivery_time,

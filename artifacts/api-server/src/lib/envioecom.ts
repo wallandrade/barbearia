@@ -47,7 +47,8 @@ export type EnvioEcomQuoteOption = {
 export type EnvioEcomCreateShipmentInput = {
   orderId: string;
   shipping_company: string;
-  cep_origem?: string;
+  /** Obrigatório na API EnvioEcom create */
+  cep_origem: string;
   cep_destino: string;
   freight_cost: string;
   delivery_time: string;

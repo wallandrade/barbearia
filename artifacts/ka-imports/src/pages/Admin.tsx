@@ -8617,6 +8617,7 @@ function OrdersPanel({
   const [envioecomQuoteModal, setEnvioecomQuoteModal] = useState<null | {
     order: AdminOrder;
     quotes: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
+    originZipcode?: string | null;
   }>(null);
   const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [trackingReview, setTrackingReview] = useState<null | {
@@ -8688,6 +8689,7 @@ function OrdersPanel({
       });
       const data = await res.json() as {
         quotes?: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
+        origin_zipcode?: string | null;
         message?: string;
       };
       if (!res.ok) {
@@ -8699,7 +8701,11 @@ function OrdersPanel({
         toast.error("Nenhuma opção de frete retornada.");
         return;
       }
-      setEnvioecomQuoteModal({ order, quotes });
+      setEnvioecomQuoteModal({
+        order,
+        quotes,
+        originZipcode: data.origin_zipcode ? String(data.origin_zipcode) : null,
+      });
     } catch {
       toast.error("Erro ao cotar EnvioEcom.");
     } finally {
@@ -8710,6 +8716,7 @@ function OrdersPanel({
   const createEnvioEcomShipment = async (
     order: AdminOrder,
     quote: { carrier?: string; price?: string | number; delivery_time?: string | number },
+    originZipcode?: string | null,
   ) => {
     const shippingCompany = String(quote.carrier || "").trim();
     if (!shippingCompany) {
@@ -8718,6 +8725,7 @@ function OrdersPanel({
     }
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
+      const cepOrigem = String(originZipcode || "").replace(/\D/g, "");
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/create`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -8725,6 +8733,7 @@ function OrdersPanel({
           shipping_company: shippingCompany,
           freight_cost: quote.price != null ? String(quote.price) : undefined,
           delivery_time: quote.delivery_time != null ? String(quote.delivery_time) : undefined,
+          ...(cepOrigem.length === 8 ? { cep_origem: cepOrigem } : {}),
         }),
       });
       const data = await res.json() as {
@@ -10776,7 +10785,13 @@ function OrdersPanel({
                     key={`${quote.carrier || "carrier"}-${idx}`}
                     type="button"
                     disabled={!!envioecomBusy[envioecomQuoteModal.order.id]}
-                    onClick={() => { void createEnvioEcomShipment(envioecomQuoteModal.order, quote); }}
+                    onClick={() => {
+                      void createEnvioEcomShipment(
+                        envioecomQuoteModal.order,
+                        quote,
+                        envioecomQuoteModal.originZipcode,
+                      );
+                    }}
                     className="w-full text-left rounded-xl border border-border hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3 transition disabled:opacity-60"
                   >
                     <p className="font-semibold text-foreground">{quote.carrier || "Transportadora"}</p>
