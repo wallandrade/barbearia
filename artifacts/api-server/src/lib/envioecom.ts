@@ -376,8 +376,8 @@ export async function generateLabels(input: {
   const body: Record<string, unknown> = {
     merge_dce: Boolean(input.merge_dce),
   };
-  if (input.barcodes?.length) body.barcodes = input.barcodes;
   if (input.ids?.length) body.ids = input.ids;
+  else if (input.barcodes?.length) body.barcodes = input.barcodes;
 
   const res = await envioecomFetch("/shipments/generate-labels", {
     method: "POST",
@@ -400,6 +400,95 @@ export async function generateLabels(input: {
   }
 
   return { contentType: contentType || "application/pdf", buffer };
+}
+
+export async function listShipments(params?: {
+  page?: number;
+  limit?: number;
+  barcode?: string;
+  status?: string;
+  ids?: Array<string | number>;
+  cpf?: string;
+}): Promise<{
+  success?: boolean;
+  data?: unknown[];
+  meta?: Record<string, unknown>;
+  [key: string]: unknown;
+}> {
+  const qs = new URLSearchParams();
+  qs.set("page", String(params?.page || 1));
+  qs.set("limit", String(Math.min(50, Math.max(1, params?.limit || 50))));
+  qs.set("sort_order", "desc");
+  if (params?.barcode) qs.set("barcode", String(params.barcode).trim());
+  if (params?.status) qs.set("status", String(params.status).trim());
+  if (params?.cpf) qs.set("cpf", digitsOnly(params.cpf));
+  if (params?.ids?.length) {
+    for (const id of params.ids) qs.append("ids[]", String(id));
+  }
+  return envioecomJson(`/shipments?${qs.toString()}`);
+}
+
+/** Extrai barcode/shipping_id/status do retorno de POST /shipping/create */
+export function extractCreatedShipment(created: {
+  shipping_create?: {
+    success?: boolean;
+    created?: number;
+    results?: Array<Record<string, unknown>>;
+  };
+  processed_barcodes?: string[];
+  payment_processing?: unknown;
+}): {
+  barcode: string | null;
+  shipmentId: string | null;
+  status: string;
+  paymentProcessing: unknown;
+  rawFirst: Record<string, unknown>;
+} {
+  const results = Array.isArray(created.shipping_create?.results)
+    ? created.shipping_create!.results!
+    : [];
+  const first = (results[0] || {}) as Record<string, unknown>;
+  const nested =
+    first.data && typeof first.data === "object" && !Array.isArray(first.data)
+      ? (first.data as Record<string, unknown>)
+      : {};
+  const row: Record<string, unknown> = { ...first, ...nested };
+
+  const barcode =
+    String(
+      row.barcode ||
+        row.tracking_code ||
+        row.trackingCode ||
+        created.processed_barcodes?.[0] ||
+        "",
+    ).trim() || null;
+
+  const shipmentIdRaw =
+    row.shipping_id ?? row.shipment_id ?? row.id ?? nested.shipping_id ?? nested.id;
+  const shipmentId =
+    shipmentIdRaw != null && String(shipmentIdRaw).trim() !== ""
+      ? String(shipmentIdRaw).trim()
+      : null;
+
+  const statusFromFinal =
+    row.final_status && typeof row.final_status === "object"
+      ? String((row.final_status as { status?: string }).status || "").trim()
+      : "";
+  const status =
+    String(row.status || statusFromFinal || "").trim() || "Aguardando expedição";
+
+  return {
+    barcode,
+    shipmentId,
+    status,
+    paymentProcessing: created.payment_processing ?? null,
+    rawFirst: row,
+  };
+}
+
+export function isAwaitingPaymentStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").trim().toLowerCase();
+  return s === "aguardando pagamento" || s.includes("aguardando pagamento");
 }
 
 export async function getShipment(identifier: string): Promise<{

@@ -10,6 +10,7 @@ import {
   cancelShipment,
   createShipments,
   digitsOnly,
+  extractCreatedShipment,
   generateLabels,
   getDefaultCarriersFromEnv,
   getDefaultPackageDims,
@@ -19,9 +20,11 @@ import {
   clampEnvioEcomDim,
   clampEnvioEcomWeight,
   clampEnvioEcomDeclaredValue,
+  isAwaitingPaymentStatus,
   isDeliveredStatus,
   isEnvioEcomConfigured,
   isInTransitStatus,
+  listShipments,
   parseCarriersInput,
   quoteFreight,
   registerWebhook,
@@ -483,23 +486,27 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       defer_payment: Boolean(req.body?.defer_payment),
     });
 
-    const results = Array.isArray(created.shipping_create?.results)
-      ? created.shipping_create!.results!
-      : [];
-    const first = (results[0] || {}) as Record<string, unknown>;
-    const barcode =
-      String(first.barcode || first.tracking_code || created.processed_barcodes?.[0] || "").trim() || null;
-    const shipmentId =
-      first.id != null
-        ? String(first.id)
-        : first.shipment_id != null
-          ? String(first.shipment_id)
-          : null;
-    const status = String(first.status || "Aguardando expedição");
+    console.log("[EnvioEcom] create response", JSON.stringify(created).slice(0, 4000));
+
+    const extracted = extractCreatedShipment(created);
+    const barcode = extracted.barcode;
+    const shipmentId = extracted.shipmentId;
+    const status = extracted.status;
+
+    if (!barcode && !shipmentId) {
+      res.status(502).json({
+        error: "CREATE_INCOMPLETE",
+        message: "EnvioEcom não retornou barcode/shipping_id. Verifique saldo e resposta da API.",
+        createResponse: created,
+      });
+      return;
+    }
 
     const history = appendStatusHistory(order.envioecomStatusHistory, {
       status,
-      description: "Envio criado via EnvioEcom",
+      description: isAwaitingPaymentStatus(status)
+        ? "Envio criado (aguardando pagamento na EnvioEcom)"
+        : "Envio criado via EnvioEcom",
       updated_at: new Date().toISOString(),
       timestamp: Math.floor(Date.now() / 1000),
       source: "create",
@@ -527,6 +534,8 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       barcode,
       shipmentId,
       status,
+      paymentProcessing: extracted.paymentProcessing,
+      awaitingPayment: isAwaitingPaymentStatus(status),
       createResponse: created,
     });
   } catch (err) {
@@ -555,16 +564,109 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     }
 
     const { order } = loaded;
-    const barcode = String(order.envioecomBarcode || order.trackingCode || "").trim();
-    if (!barcode) {
-      res.status(400).json({ error: "NO_BARCODE", message: "Pedido sem barcode EnvioEcom. Crie o envio antes." });
+    let barcode = String(order.envioecomBarcode || order.trackingCode || "").trim();
+    let shipmentId = String(order.envioecomShipmentId || "").trim();
+
+    if (!barcode && !shipmentId) {
+      res.status(400).json({ error: "NO_BARCODE", message: "Pedido sem barcode/shipping_id EnvioEcom. Crie o envio antes." });
       return;
     }
 
-    const label = await generateLabels({
-      barcodes: [barcode],
-      merge_dce: Boolean(req.body?.merge_dce),
-    });
+    if (isAwaitingPaymentStatus(order.envioecomStatus)) {
+      res.status(409).json({
+        error: "AWAITING_PAYMENT",
+        message:
+          "Envio ainda em 'Aguardando pagamento'. Pague no painel EnvioEcom (saldo/frete) e depois clique em Etiqueta EE. Etiqueta só libera após o pagamento.",
+        status: order.envioecomStatus,
+        barcode: barcode || null,
+        shipmentId: shipmentId || null,
+      });
+      return;
+    }
+
+    // Recupera shipping_id se faltou no create (doc: preferir ids na etiqueta)
+    if (!shipmentId && barcode) {
+      try {
+        const listed = await listShipments({ barcode, limit: 10 });
+        const rows = Array.isArray(listed.data) ? listed.data : [];
+        const match = rows.find((row) => {
+          if (!row || typeof row !== "object") return false;
+          const r = row as Record<string, unknown>;
+          return String(r.barcode || "").trim() === barcode;
+        }) as Record<string, unknown> | undefined;
+        if (match) {
+          const recovered = match.shipping_id ?? match.shipment_id ?? match.id;
+          if (recovered != null) shipmentId = String(recovered).trim();
+          if (match.status) {
+            // atualiza status local se veio da listagem
+            await applyShipmentStatusToOrder({
+              orderId: order.id,
+              status: String(match.status),
+              barcode,
+              shipmentId,
+              description: "IDs recuperados via listagem EnvioEcom",
+              updatedAt: new Date().toISOString(),
+              source: "labels-recover",
+            });
+            if (isAwaitingPaymentStatus(String(match.status))) {
+              res.status(409).json({
+                error: "AWAITING_PAYMENT",
+                message:
+                  "Envio ainda em 'Aguardando pagamento'. Pague no painel EnvioEcom e tente Etiqueta EE de novo.",
+                status: String(match.status),
+                barcode,
+                shipmentId: shipmentId || null,
+              });
+              return;
+            }
+          }
+        }
+      } catch (recoverErr) {
+        console.warn("[EnvioEcom] listShipments recover failed:", recoverErr);
+      }
+    }
+
+    const mergeDce = Boolean(req.body?.merge_dce);
+    const numericId = shipmentId && /^\d+$/.test(shipmentId) ? Number(shipmentId) : null;
+
+    let label: Awaited<ReturnType<typeof generateLabels>>;
+    try {
+      if (numericId != null) {
+        console.log("[EnvioEcom] generate-labels by id", numericId);
+        label = await generateLabels({ ids: [numericId], merge_dce: mergeDce });
+      } else if (barcode) {
+        console.log("[EnvioEcom] generate-labels by barcode", barcode);
+        label = await generateLabels({ barcodes: [barcode], merge_dce: mergeDce });
+      } else {
+        res.status(400).json({
+          error: "NO_BARCODE",
+          message: "Sem shipping_id numérico nem barcode para gerar etiqueta.",
+        });
+        return;
+      }
+    } catch (labelErr) {
+      // Fallback: se falhou por id, tenta barcode (e vice-versa)
+      if (labelErr instanceof EnvioEcomApiError && numericId != null && barcode) {
+        console.warn("[EnvioEcom] labels by id failed, retry barcode:", labelErr.message);
+        label = await generateLabels({ barcodes: [barcode], merge_dce: mergeDce });
+      } else if (labelErr instanceof EnvioEcomApiError) {
+        const msg = String(labelErr.message || "");
+        if (/aguardando pagamento/i.test(msg) || /barcodes fornecidos/i.test(msg)) {
+          res.status(labelErr.status || 400).json({
+            error: labelErr.code || "LABEL_FAILED",
+            message:
+              "Etiqueta indisponível. Confira no painel EnvioEcom se o frete foi pago (status deve ser 'Aguardando expedição', não 'Aguardando pagamento') e se o envio EC ainda existe.",
+            details: labelErr.details,
+            barcode: barcode || null,
+            shipmentId: shipmentId || null,
+          });
+          return;
+        }
+        throw labelErr;
+      } else {
+        throw labelErr;
+      }
+    }
 
     if (label.json && !String(label.contentType).includes("pdf")) {
       res.status(202).json({
@@ -582,7 +684,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         buffer: label.buffer,
         contentType: "application/pdf",
         folder: "envioecom-labels",
-        fileName: `${order.id}-${barcode}.pdf`,
+        fileName: `${order.id}-${barcode || shipmentId || "label"}.pdf`,
       });
       labelUrl = uploaded.url;
     } catch (uploadErr) {
@@ -593,6 +695,8 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       .update(ordersTable)
       .set({
         envioecomLabelUrl: labelUrl,
+        ...(shipmentId ? { envioecomShipmentId: shipmentId } : {}),
+        ...(barcode ? { envioecomBarcode: barcode } : {}),
         ...(labelUrl ? { trackingLabelUrl: labelUrl } : {}),
         enviado: true,
         updatedAt: new Date(),
@@ -601,7 +705,8 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
 
     res.json({
       ok: true,
-      barcode,
+      barcode: barcode || null,
+      shipmentId: shipmentId || null,
       labelUrl,
       pdfBase64: labelUrl ? undefined : label.buffer.toString("base64"),
       contentType: label.contentType,
@@ -632,13 +737,35 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     }
 
     const { order } = loaded;
-    const identifier = String(order.envioecomBarcode || order.envioecomShipmentId || "").trim();
+    let identifier = String(order.envioecomShipmentId || order.envioecomBarcode || "").trim();
     if (!identifier) {
       res.status(400).json({ error: "NO_SHIPMENT", message: "Pedido sem envio EnvioEcom." });
       return;
     }
 
-    const detail = await getShipment(identifier);
+    let detail: Awaited<ReturnType<typeof getShipment>>;
+    try {
+      // Preferir shipping_id numérico (mais estável que barcode)
+      detail = await getShipment(identifier);
+    } catch (err) {
+      if (
+        err instanceof EnvioEcomApiError &&
+        order.envioecomBarcode &&
+        identifier !== order.envioecomBarcode
+      ) {
+        detail = await getShipment(String(order.envioecomBarcode));
+      } else if (err instanceof EnvioEcomApiError && order.envioecomBarcode) {
+        // Última tentativa: listar por barcode e pegar id
+        const listed = await listShipments({ barcode: String(order.envioecomBarcode), limit: 10 });
+        const rows = Array.isArray(listed.data) ? listed.data : [];
+        const match = rows[0] as Record<string, unknown> | undefined;
+        const recoveredId = match?.shipping_id ?? match?.shipment_id ?? match?.id;
+        if (recoveredId == null) throw err;
+        detail = await getShipment(String(recoveredId));
+      } else {
+        throw err;
+      }
+    }
     const data = (detail.data || {}) as Record<string, unknown>;
     const status = String(
       (data.final_status as { status?: string } | undefined)?.status ||
