@@ -10,8 +10,9 @@ Providers externos **presentes no código**. Precedência: código > memória.
 |------|--------|---------|-----------------|
 | 2026-08-13 | Admin: botão **Vincular EE** + modal (ID/rastreio, sem `prompt`) | Liga envio criado no painel EnvioEcom ao pedido e sync status | API sync/labels iguais |
 | 2026-08-13 | Card admin: EE/enviado + badge **sem estoque** (consulta estoque no card; lista cópia segue `!enviado`) | Evita recompra na cópia e alerta visual de falta | Cotação/create iguais |
+| 2026-08-13 | Etiqueta EE não marca `enviado`; cópia exclui por etiqueta OU enviado; Enviado = postado/manual | Badge Enviado só quando realmente enviado | Cotação/create iguais |
 | 2026-08-13 | Card admin: borda verde + badge com status EnvioEcom (etiqueta/pronto/etc.) | Operação vê frete no card | Sync/webhook iguais |
-| 2026-08-13 | `enviado=true` também em Etiqueta emitida / Pronto para envio / DC-e (webhook+sync) | Pedido marca enviado sem depender só do botão Etiqueta EE | Cotação/create iguais |
+| 2026-08-13 | `enviado=true` em trânsito/entregue (webhook+sync); etiqueta pronta **não** seta enviado | Enviado = postado ou clique manual | Cotação/create iguais |
 | 2026-08-13 | Aba Admin **Rastreios**: board de todos envios + sync lote/individual | Visão operacional de status EnvioEcom | Cotação/create iguais |
 | 2026-08-13 | Cliente: Situação do pedido prioriza `envioecomStatus`; tracking soft-sync na consulta | Card/minha conta refletem frete | Cotação/create admin iguais |
 | 2026-08-13 | Etiqueta: bloqueia EC provisório; aceita `shipment_id` do painel; resolve por CPF/CEP/nome | PDF do #511 via ID 726384 | Cotação igual |
@@ -40,7 +41,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`)
 - Pacote padrão se produto sem medidas: `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults
-- Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; gerar etiqueta ou status de etiqueta pronta marca `enviado`
+- Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; etiqueta pronta **não** marca `enviado` (só trânsito/entregue ou botão manual). Lista de cópia admin exclui por etiqueta EE **ou** `enviado`.
 - Origem no create: **obrigatória** — `cep_origem` no body, senão `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
 - Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`)

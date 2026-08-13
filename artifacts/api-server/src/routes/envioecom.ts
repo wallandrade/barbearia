@@ -264,11 +264,7 @@ async function applyShipmentStatusToOrder(params: {
     patch.envioecomExternalOrderNumber = String(params.externalOrderNumber);
   }
 
-  if (
-    isInTransitStatus(params.status) ||
-    isDeliveredStatus(params.status) ||
-    isLabelReadyStatus(params.status)
-  ) {
+  if (isInTransitStatus(params.status) || isDeliveredStatus(params.status)) {
     patch.enviado = true;
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {
@@ -777,7 +773,6 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         ...(trackingKey ? { envioecomTrackingKey: trackingKey } : {}),
         ...(barcode ? { trackingCode: barcode } : {}),
         ...(labelUrl ? { trackingLabelUrl: labelUrl } : {}),
-        enviado: true,
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, order.id));
@@ -1014,7 +1009,7 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
       if (eeStatus && isDeliveredStatus(eeStatus)) group = "delivered";
       else if (/cancelad/i.test(eeStatus)) group = "cancelled";
       else if (/aguardando pagamento/i.test(eeStatus) || /^created$/i.test(eeStatus)) group = "awaiting";
-      else if (eeStatus && (isInTransitStatus(eeStatus) || /pronto para envio|processando/i.test(eeStatus))) {
+      else if (eeStatus && (isInTransitStatus(eeStatus) || isLabelReadyStatus(eeStatus) || /pronto para envio|processando/i.test(eeStatus))) {
         group = "in_transit";
       } else if (eeStatus) group = "in_transit";
 

@@ -11,6 +11,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
 | 2026-08-13 | Card admin: com EE/enviado ainda consulta estoque; badge **sem estoque** ao lado do status | Alerta visual sem repor pedido na lista de cópia | `ordersParaEnviar` segue `!enviado` |
+| 2026-08-13 | Etiqueta EE / Pronto para envio **não** marca `enviado`; badge Enviado só pós-postagem ou clique manual; lista cópia exclui por etiqueta OU enviado | Evita “Enviado” falso e recompra na cópia | Cotação/create iguais |
 | 2026-08-13 | Aba Admin Rastreios: lista status/atualizações EnvioEcom + sync lote | Operação vê todos os fretes | Pedidos/checkout iguais |
 | 2026-08-13 | Conta do cliente: Situação/card usam status EnvioEcom + bloco rastreio; Rastrear faz soft-sync | Cliente vê frete atualizado no pedido | Admin/etiqueta iguais |
 | 2026-08-13 | EnvioEcom: cotar/criar envio/etiqueta + webhook + rastreio na conta do cliente | Status de entrega atualiza pedido; cliente vê timeline | OCR manual de etiqueta continua disponível |
@@ -35,7 +36,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Comprovantes: `proofUrl` + `proofUrls` (galeria; uploads anexam sem apagar anteriores).
 - Edição de pedido (admin primário): troca de itens/quantidades; PIX de diferença via cobrança/gateway quando o valor sobe.
 - Tracking: código, etiqueta (URL/texto), OCR/parse auxiliar (OpenAI / OCR.space nas rotas de pedidos).
-- **EnvioEcom:** admin cotar/criar/etiqueta; webhook atualiza `envioecom_status` + histórico; cliente vê **Situação** e bloco Envio/Rastreio no card + modal Rastrear (soft-sync ao abrir). Vínculo por barcode/nº pedido (CPF só no create como destinatário). Status etiqueta pronta / Pronto para envio marca `enviado` (sai da lista copiar/fila), mas o **card ainda consulta estoque** e mostra badge **sem estoque** se faltar.
+- **EnvioEcom:** admin cotar/criar/etiqueta; webhook atualiza `envioecom_status` + histórico; cliente vê **Situação** e bloco Envio/Rastreio no card + modal Rastrear (soft-sync ao abrir). Vínculo por barcode/nº pedido (CPF só no create como destinatário). **Etiqueta pronta / Pronto para envio** não seta `enviado` (badge Enviado só em trânsito/entregue ou “Marcar como Enviado”). Lista “copiar pedidos para enviar” exclui se `enviado` **ou** status/PDF de etiqueta EE. Card ainda consulta estoque e mostra **sem estoque** se faltar.
 - Busca no admin (`Admin.tsx` `filteredOrders`): se a query for **só dígitos**, prioriza `orderNumber` **exato**; se existir match, retorna só esse(s) pedido(s). Sem match de número → cai na busca ampla (nome, telefone, e-mail, CEP, produto, id).
 
 ## PIX

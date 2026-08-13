@@ -3873,7 +3873,9 @@ export default function Admin() {
   const ordersParaEnviar = orders
     .filter((o) => {
       const isActiveReshipment = isActiveReshipmentOrder(o);
-      const isPendingNormalShipment = (o.status === "paid" || o.status === "completed") && !o.enviado;
+      const isPendingNormalShipment =
+        (o.status === "paid" || o.status === "completed")
+        && !isExcludedFromShippingCopyList(o as { enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null });
       return isPendingNormalShipment || isActiveReshipment;
     })
     .sort((a, b) => {
@@ -8548,6 +8550,7 @@ function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean
   if (!s) return false;
   return (
     s.includes("etiqueta emitida") ||
+    s.includes("etiqueta gerada") ||
     s.includes("pronto para envio") ||
     s.includes("processando envio") ||
     s.includes("aguardando expedição") ||
@@ -8555,6 +8558,18 @@ function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean
     s.includes("dc-e emitida") ||
     s.includes("dce emitida")
   );
+}
+
+/** Sai da lista "copiar pedidos para enviar" sem precisar de badge Enviado. */
+function isExcludedFromShippingCopyList(order: {
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+}): boolean {
+  if (order.enviado) return true;
+  if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
+  if (String(order.envioecomLabelUrl || "").trim()) return true;
+  return false;
 }
 
 function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolean {
@@ -8972,7 +8987,6 @@ function OrdersPanel({
           envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
           envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
           trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
-          enviado: true,
         });
         if (payload.labelUrl) {
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
@@ -10182,8 +10196,12 @@ function OrdersPanel({
           };
           return (
             <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${cardRingClass}`}>
-            {/* Shipping queue block */}
-            {shippingQueueMap[order.id] && !enviados[order.id] && (() => {
+            {/* Shipping queue block — some se já marcado enviado OU etiqueta EE pronta */}
+            {shippingQueueMap[order.id] && !isExcludedFromShippingCopyList({
+              enviado: enviados[order.id],
+              envioecomStatus,
+              envioecomLabelUrl: (order as any).envioecomLabelUrl,
+            }) && (() => {
               const q = shippingQueueMap[order.id];
               const deadlineDate = new Date(q.postingDeadlineAt);
               const now = new Date();
