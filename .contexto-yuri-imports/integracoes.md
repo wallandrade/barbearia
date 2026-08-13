@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-11
+> **Última atualização:** 2026-08-13
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Integração EnvioEcom (cotação, create, etiqueta, webhook, rastreio cliente) | Frete/rastreio automatizável via API | OCR/upload de etiqueta manual permanece como fallback |
 | 2026-08-11 | Baseline de integrações | Mapa de providers | Sem mudança de código |
 
 ## PIX / gateways
@@ -18,9 +19,22 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Confirmação: **webhooks** (`routes/webhooks.ts`) — `/api/webhook/pix`, `/api/webhook`, URLs por pedido/cobrança/rifa.
 - Polling de transação no gateway: tratado como bloqueado; status lido do BD.
 
+## EnvioEcom (frete / etiqueta / rastreio)
+
+- Client: `artifacts/api-server/src/lib/envioecom.ts`
+- Rotas: `artifacts/api-server/src/routes/envioecom.ts`
+- Base: `ENVIOECOM_BASE_URL` (default `https://envioecom.com.br/api/v1/whitelabel`)
+- Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`)
+- Pacote padrão se produto sem medidas: `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH`
+- Origem opcional no create: `ENVIOECOM_ORIGIN_CEP`
+- Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
+- Admin: quote/create/labels/sync + registrar webhook (`PUBLIC_API_URL`)
+- Cliente: `GET /api/me/orders/:id/tracking` + modal em `CustomerOrders.tsx`
+- Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
+
 ## Storage
 
-- **Cloudflare R2** via `@aws-sdk/client-s3` — `artifacts/api-server/src/lib/r2.ts` (imagens de produto, settings, etiquetas, etc.).
+- **Cloudflare R2** via `@aws-sdk/client-s3` — `artifacts/api-server/src/lib/r2.ts` (imagens de produto, settings, etiquetas, PDFs EnvioEcom, etc.).
 - Scripts de migração de imagens: `scripts/src/migrate-product-images-to-r2.ts`.
 
 ## E-mail / CRM
@@ -39,10 +53,11 @@ Providers externos **presentes no código**. Precedência: código > memória.
 ## Outros
 
 - Geo IP: `ip-api.com` — `lib/ip-geo.ts` (fire-and-forget em pedidos).
-- OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados).
+- OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados) — fallback paralelo ao EnvioEcom.
 - **Google Sheets:** mencionado em docs/comentários antigos — **sem implementação ativa encontrada**; produtos no MySQL.
 
 ## Incertezas
 
 - TODO confirmar com humano: DentPeg em produção vs experimental.
-- TODO confirmar: chaves/env obrigatórias por ambiente (Railway/Vercel/Replit).
+- TODO confirmar: chaves/env EnvioEcom e `PUBLIC_API_URL` por ambiente (Railway/Vercel).
+- TODO confirmar: medidas reais por produto vs defaults de pacote.

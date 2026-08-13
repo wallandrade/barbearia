@@ -31,6 +31,7 @@ import motoboyCepRangesRouter from "./motoboy-cep-ranges";
 import shippingQueueRouter from "./shipping-queue";
 
 import brevoRouter from "./brevo";
+import envioecomRouter from "./envioecom";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -64,5 +65,6 @@ router.use(motoboySlots);
 router.use(motoboyCepRangesRouter);
 router.use(shippingQueueRouter);
 router.use(brevoRouter);
+router.use(envioecomRouter);
 
 export default router;

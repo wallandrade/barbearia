@@ -59,6 +59,17 @@ export const ordersTable = mysqlTable("orders", {
   trackingLabelText: mediumtext("tracking_label_text"),
   trackingDetectedName: varchar("tracking_detected_name", { length: 255 }),
   trackingDetectedAddress: text("tracking_detected_address"),
+  // EnvioEcom integration
+  envioecomShipmentId: varchar("envioecom_shipment_id", { length: 64 }),
+  envioecomBarcode: varchar("envioecom_barcode", { length: 64 }),
+  envioecomTrackingKey: varchar("envioecom_tracking_key", { length: 128 }),
+  envioecomDeliveryMode: varchar("envioecom_delivery_mode", { length: 128 }),
+  envioecomStatus: varchar("envioecom_status", { length: 255 }),
+  envioecomStatusUpdatedAt: timestamp("envioecom_status_updated_at"),
+  envioecomStatusHistory: json("envioecom_status_history"),
+  envioecomLabelUrl: mediumtext("envioecom_label_url"),
+  envioecomFreightCost: decimal("envioecom_freight_cost", { precision: 10, scale: 2 }),
+  envioecomExternalOrderNumber: varchar("envioecom_external_order_number", { length: 64 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

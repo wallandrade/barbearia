@@ -524,7 +524,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -4623,8 +4623,10 @@ export default function Admin() {
         {/* Filters (only for orders/charges) */}
         {(tab === "orders" || tab === "charges") && (
           <div className="flex flex-col sm:flex-row gap-3 mb-6">
-            <div className="relative flex-1">
-              <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <div className="relative flex-1 min-w-0">
+              <span className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-10 items-center justify-center text-muted-foreground">
+                <Search className="h-4 w-4" aria-hidden />
+              </span>
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar por nome, e-mail, celular, CEP, nº pedido ou produto..."
                 className="w-full min-w-[320px] h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
@@ -8610,6 +8612,11 @@ function OrdersPanel({
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
+  const [envioecomBusy, setEnvioecomBusy] = useState<Record<string, boolean>>({});
+  const [envioecomQuoteModal, setEnvioecomQuoteModal] = useState<null | {
+    order: AdminOrder;
+    quotes: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
+  }>(null);
   const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [trackingReview, setTrackingReview] = useState<null | {
     order: AdminOrder;
@@ -8651,6 +8658,169 @@ function OrdersPanel({
     if (status === "reenvio_resolvido_sem_entrada") return "Reenvio · Resolvido sem entrada";
     if (status === "reenvio_enviado") return "Reenvio · Enviado";
     return "Reenvio";
+  };
+
+  const patchOrderLocal = (orderId: string, patch: Record<string, unknown>) => {
+    const current = ordersLookup.find((o) => o.id === orderId);
+    if (!current) return;
+    onSetOrderPatched({ ...current, ...patch } as AdminOrder);
+  };
+
+  const quoteEnvioEcom = async (order: AdminOrder) => {
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/quote`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json() as {
+        quotes?: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao cotar frete EnvioEcom.");
+        return;
+      }
+      const quotes = data.quotes || [];
+      if (!quotes.length) {
+        toast.error("Nenhuma opção de frete retornada.");
+        return;
+      }
+      setEnvioecomQuoteModal({ order, quotes });
+    } catch {
+      toast.error("Erro ao cotar EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const createEnvioEcomShipment = async (
+    order: AdminOrder,
+    quote: { carrier?: string; price?: string | number; delivery_time?: string | number },
+  ) => {
+    const shippingCompany = String(quote.carrier || "").trim();
+    if (!shippingCompany) {
+      toast.error("Cotação sem transportadora.");
+      return;
+    }
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/create`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shipping_company: shippingCompany,
+          freight_cost: quote.price != null ? String(quote.price) : undefined,
+          delivery_time: quote.delivery_time != null ? String(quote.delivery_time) : undefined,
+        }),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        barcode?: string | null;
+        status?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao criar envio EnvioEcom.");
+        return;
+      }
+      patchOrderLocal(order.id, {
+        envioecomBarcode: data.barcode,
+        envioecomDeliveryMode: shippingCompany,
+        envioecomStatus: data.status,
+        trackingCode: data.barcode || (order as any).trackingCode,
+      });
+      setEnvioecomQuoteModal(null);
+      toast.success(data.barcode ? `Envio criado: ${data.barcode}` : "Envio criado no EnvioEcom.");
+    } catch {
+      toast.error("Erro ao criar envio EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const generateEnvioEcomLabel = async (order: AdminOrder) => {
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        labelUrl?: string | null;
+        pdfBase64?: string;
+        message?: string;
+        processing?: boolean;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao gerar etiqueta.");
+        return;
+      }
+      if (data.processing) {
+        toast.info(data.message || "Etiqueta em processamento. Tente de novo em instantes.");
+        return;
+      }
+      if (data.labelUrl) {
+        patchOrderLocal(order.id, {
+          envioecomLabelUrl: data.labelUrl,
+          trackingLabelUrl: data.labelUrl,
+          enviado: true,
+        });
+        window.open(data.labelUrl, "_blank", "noopener,noreferrer");
+        toast.success("Etiqueta gerada.");
+        return;
+      }
+      if (data.pdfBase64) {
+        const blob = new Blob(
+          [Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0))],
+          { type: "application/pdf" },
+        );
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        toast.success("Etiqueta gerada (download local).");
+        return;
+      }
+      toast.success("Etiqueta processada.");
+    } catch {
+      toast.error("Erro ao gerar etiqueta EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const syncEnvioEcomStatus = async (order: AdminOrder) => {
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        tracking?: {
+          status?: string | null;
+          barcode?: string | null;
+          deliveryMode?: string | null;
+        };
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao sincronizar status.");
+        return;
+      }
+      patchOrderLocal(order.id, {
+        envioecomStatus: data.tracking?.status,
+        envioecomBarcode: data.tracking?.barcode,
+        envioecomDeliveryMode: data.tracking?.deliveryMode,
+      });
+      toast.success(data.tracking?.status ? `Status: ${data.tracking.status}` : "Status sincronizado.");
+    } catch {
+      toast.error("Erro ao sincronizar EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
   };
 
   const orderAddressText = (order: AdminOrder) => {
@@ -9989,6 +10159,45 @@ function OrdersPanel({
                     {trackingUploading[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                     {trackingUploading[order.id] ? "Lendo Etiqueta..." : "Etiqueta/Rastreio"}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
+                    disabled={!!envioecomBusy[order.id]}
+                    onClick={() => { void quoteEnvioEcom(order); }}
+                    title="Cotar e criar envio via EnvioEcom"
+                  >
+                    {envioecomBusy[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
+                    EnvioEcom
+                  </Button>
+                  {((order as any).envioecomBarcode || (order as any).envioecomShipmentId) && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
+                        disabled={!!envioecomBusy[order.id]}
+                        onClick={() => { void generateEnvioEcomLabel(order); }}
+                      >
+                        Etiqueta EE
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
+                        disabled={!!envioecomBusy[order.id]}
+                        onClick={() => { void syncEnvioEcomStatus(order); }}
+                      >
+                        Sync status
+                      </Button>
+                    </>
+                  )}
+                  {(order as any).envioecomStatus && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                      EE: {(order as any).envioecomStatus}
+                      {(order as any).envioecomBarcode ? ` · ${(order as any).envioecomBarcode}` : ""}
+                    </span>
+                  )}
                   {(order.proofUrls && order.proofUrls.length > 0) && (
                     <div className="flex items-center gap-1 flex-wrap">
                       {order.proofUrls.map((url, i) => (
@@ -10424,6 +10633,45 @@ function OrdersPanel({
               </div>
             </motion.div>
           </motion.div>
+        )}
+
+        {envioecomQuoteModal && (
+          <div className="fixed inset-0 z-[120] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Cotação EnvioEcom</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pedido #{getOrderReference(envioecomQuoteModal.order)} · {envioecomQuoteModal.order.clientName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="p-1.5 rounded-lg hover:bg-muted"
+                  onClick={() => setEnvioecomQuoteModal(null)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+                {envioecomQuoteModal.quotes.map((quote, idx) => (
+                  <button
+                    key={`${quote.carrier || "carrier"}-${idx}`}
+                    type="button"
+                    disabled={!!envioecomBusy[envioecomQuoteModal.order.id]}
+                    onClick={() => { void createEnvioEcomShipment(envioecomQuoteModal.order, quote); }}
+                    className="w-full text-left rounded-xl border border-border hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3 transition disabled:opacity-60"
+                  >
+                    <p className="font-semibold text-foreground">{quote.carrier || "Transportadora"}</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {quote.price != null ? `R$ ${quote.price}` : "Preço n/d"}
+                      {quote.delivery_time != null ? ` · ${quote.delivery_time} dia(s)` : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
 
         {adminPasswordModalOpen && (

@@ -2141,6 +2141,14 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     trackingLabelText:      o.trackingLabelText ?? null,
     trackingDetectedName:   o.trackingDetectedName ?? null,
     trackingDetectedAddress:o.trackingDetectedAddress ?? null,
+    envioecomShipmentId:    (o as any).envioecomShipmentId ?? null,
+    envioecomBarcode:       (o as any).envioecomBarcode ?? null,
+    envioecomTrackingKey:   (o as any).envioecomTrackingKey ?? null,
+    envioecomDeliveryMode:  (o as any).envioecomDeliveryMode ?? null,
+    envioecomStatus:        (o as any).envioecomStatus ?? null,
+    envioecomStatusUpdatedAt: (o as any).envioecomStatusUpdatedAt?.toISOString?.() ?? null,
+    envioecomLabelUrl:      (o as any).envioecomLabelUrl ?? null,
+    envioecomFreightCost:   (o as any).envioecomFreightCost != null ? Number((o as any).envioecomFreightCost) : null,
   };
 }
 

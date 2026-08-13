@@ -54,7 +54,7 @@ Schemas em `lib/db/src/schema/*.ts` (export em `index.ts`):
 
 ## Integrações (resumo)
 
-APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, OCR/OpenAI etiquetas, ip-api.com. Detalhes: `integracoes.md`.
+APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, OCR/OpenAI etiquetas, ip-api.com, **EnvioEcom** (frete/etiqueta/rastreio). Detalhes: `integracoes.md`.
 
 ## Deploy
 

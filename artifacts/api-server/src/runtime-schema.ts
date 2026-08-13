@@ -144,6 +144,17 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "tracking_label_text", sql: "ALTER TABLE orders ADD COLUMN tracking_label_text MEDIUMTEXT NULL" },
     { name: "tracking_detected_name", sql: "ALTER TABLE orders ADD COLUMN tracking_detected_name VARCHAR(255) NULL" },
     { name: "tracking_detected_address", sql: "ALTER TABLE orders ADD COLUMN tracking_detected_address TEXT NULL" },
+    // EnvioEcom
+    { name: "envioecom_shipment_id", sql: "ALTER TABLE orders ADD COLUMN envioecom_shipment_id VARCHAR(64) NULL" },
+    { name: "envioecom_barcode", sql: "ALTER TABLE orders ADD COLUMN envioecom_barcode VARCHAR(64) NULL" },
+    { name: "envioecom_tracking_key", sql: "ALTER TABLE orders ADD COLUMN envioecom_tracking_key VARCHAR(128) NULL" },
+    { name: "envioecom_delivery_mode", sql: "ALTER TABLE orders ADD COLUMN envioecom_delivery_mode VARCHAR(128) NULL" },
+    { name: "envioecom_status", sql: "ALTER TABLE orders ADD COLUMN envioecom_status VARCHAR(255) NULL" },
+    { name: "envioecom_status_updated_at", sql: "ALTER TABLE orders ADD COLUMN envioecom_status_updated_at TIMESTAMP NULL" },
+    { name: "envioecom_status_history", sql: "ALTER TABLE orders ADD COLUMN envioecom_status_history JSON NULL" },
+    { name: "envioecom_label_url", sql: "ALTER TABLE orders ADD COLUMN envioecom_label_url MEDIUMTEXT NULL" },
+    { name: "envioecom_freight_cost", sql: "ALTER TABLE orders ADD COLUMN envioecom_freight_cost DECIMAL(10,2) NULL" },
+    { name: "envioecom_external_order_number", sql: "ALTER TABLE orders ADD COLUMN envioecom_external_order_number VARCHAR(64) NULL" },
   ];
 
   for (const definition of definitions) {
@@ -171,6 +182,14 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     {
       name: "orders_seller_commission_paid_at_idx",
       sql: "ALTER TABLE orders ADD KEY orders_seller_commission_paid_at_idx (seller_commission_paid_at)",
+    },
+    {
+      name: "orders_envioecom_barcode_idx",
+      sql: "ALTER TABLE orders ADD KEY orders_envioecom_barcode_idx (envioecom_barcode)",
+    },
+    {
+      name: "orders_envioecom_shipment_id_idx",
+      sql: "ALTER TABLE orders ADD KEY orders_envioecom_shipment_id_idx (envioecom_shipment_id)",
     },
   ];
 

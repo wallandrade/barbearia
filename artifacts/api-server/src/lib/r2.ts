@@ -23,7 +23,7 @@ function normalizeR2AccountId(value: string): string {
 
 const R2_ACCOUNT_ID = normalizeR2AccountId(R2_ACCOUNT_ID_RAW);
 
-const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);
 
 function getR2Client(): S3Client {
   if ((!R2_ACCOUNT_ID && !R2_S3_ENDPOINT) || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_BASE_URL) {
@@ -52,6 +52,8 @@ function getExtensionFromMimeType(mimeType: string): string {
       return "webp";
     case "image/gif":
       return "gif";
+    case "application/pdf":
+      return "pdf";
     default:
       return "bin";
   }
@@ -124,6 +126,34 @@ export async function uploadOrderTrackingLabelToR2(input: { dataUrl: string; ord
   }));
 
   return `${R2_PUBLIC_BASE_URL}/${objectKey}`;
+}
+
+export async function uploadBufferToR2(input: {
+  buffer: Buffer;
+  contentType: string;
+  folder?: string;
+  fileName?: string;
+}): Promise<{ url: string; key: string }> {
+  const client = getR2Client();
+  const mimeType = String(input.contentType || "application/octet-stream").toLowerCase();
+  const extension = getExtensionFromMimeType(mimeType);
+  const folder = String(input.folder || "uploads").replace(/^\/+|\/+$/g, "") || "uploads";
+  const safeName = String(input.fileName || `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${extension}`)
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+  const objectKey = `${folder}/${safeName}`;
+
+  await client.send(new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: objectKey,
+    Body: input.buffer,
+    ContentType: mimeType,
+    CacheControl: "public, max-age=31536000, immutable",
+  }));
+
+  return {
+    url: `${R2_PUBLIC_BASE_URL}/${objectKey}`,
+    key: objectKey,
+  };
 }
 
 export async function uploadSiteSettingImageToR2(input: { dataUrl: string; settingKey: string }): Promise<string> {
