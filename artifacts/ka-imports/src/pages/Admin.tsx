@@ -8739,6 +8739,8 @@ function OrdersPanel({
       const data = await res.json() as {
         ok?: boolean;
         barcode?: string | null;
+        shipmentId?: string | null;
+        trackingKey?: string | null;
         status?: string;
         message?: string;
         details?: unknown;
@@ -8754,12 +8756,20 @@ function OrdersPanel({
       }
       patchOrderLocal(order.id, {
         envioecomBarcode: data.barcode,
+        envioecomShipmentId: data.shipmentId,
+        envioecomTrackingKey: data.trackingKey,
         envioecomDeliveryMode: shippingCompany,
         envioecomStatus: data.status,
         trackingCode: data.barcode || (order as any).trackingCode,
       });
       setEnvioecomQuoteModal(null);
-      toast.success(data.barcode ? `Envio criado: ${data.barcode}` : "Envio criado no EnvioEcom.");
+      toast.success(
+        data.shipmentId
+          ? `Envio criado (#${data.shipmentId}${data.barcode ? ` · ${data.barcode}` : ""})`
+          : data.barcode
+            ? `Envio criado: ${data.barcode}`
+            : "Envio criado no EnvioEcom.",
+      );
     } catch {
       toast.error("Erro ao criar envio EnvioEcom.");
     } finally {
@@ -8770,22 +8780,39 @@ function OrdersPanel({
   const generateEnvioEcomLabel = async (order: AdminOrder) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
-      // Sync primeiro para trocar EC... pelo código/ID definitivo
+      let knownShipmentId = String((order as any).envioecomShipmentId || "").trim();
+      let knownBarcode = String((order as any).envioecomBarcode || (order as any).trackingCode || "").trim();
+
+      // Sync primeiro: grava shipping_id/barcode definitivo sem pedir nada
       try {
-        await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
+        const syncRes = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
           method: "POST",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify(knownShipmentId ? { shipment_id: knownShipmentId } : {}),
         });
+        if (syncRes.ok) {
+          const syncData = await syncRes.json() as {
+            resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
+            tracking?: { barcode?: string | null; trackingCode?: string | null };
+          };
+          if (syncData.resolved?.shipmentId) knownShipmentId = String(syncData.resolved.shipmentId);
+          if (syncData.resolved?.barcode) knownBarcode = String(syncData.resolved.barcode);
+          patchOrderLocal(order.id, {
+            envioecomShipmentId: knownShipmentId || (order as any).envioecomShipmentId,
+            envioecomBarcode: knownBarcode || (order as any).envioecomBarcode,
+            trackingCode: knownBarcode || (order as any).trackingCode,
+            envioecomStatus: syncData.resolved?.status || (order as any).envioecomStatus,
+          });
+        }
       } catch {
-        // segue para labels mesmo se sync falhar
+        // segue para labels
       }
 
-      let shipmentIdOverride = "";
-      const currentCode = String((order as any).envioecomBarcode || (order as any).trackingCode || "");
-      if (/^EC/i.test(currentCode) && !(order as any).envioecomShipmentId) {
+      // Só pede ID se ainda não temos shipping_id salvo (caso raro / pedido antigo)
+      let shipmentIdOverride = knownShipmentId;
+      if (!shipmentIdOverride && /^EC/i.test(knownBarcode)) {
         const typed = window.prompt(
-          "Cole o ID do envio do painel EnvioEcom (número no topo, ex.: 726384):",
+          "Cole o ID do envio do painel EnvioEcom (só desta vez; será salvo no pedido):",
           "",
         );
         shipmentIdOverride = String(typed || "").replace(/\D/g, "");
@@ -8812,10 +8839,26 @@ function OrdersPanel({
         shipmentId?: string | null;
         barcode?: string | null;
       };
+
+      const applyLabelSuccess = (payload: typeof data) => {
+        patchOrderLocal(order.id, {
+          envioecomLabelUrl: payload.labelUrl,
+          trackingLabelUrl: payload.labelUrl,
+          envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
+          envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
+          trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
+          enviado: true,
+        });
+        if (payload.labelUrl) {
+          const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
+          toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
+        }
+      };
+
       if (!res.ok) {
         if (data.needsShipmentId) {
           const typed = window.prompt(
-            "Cole o ID do envio do painel EnvioEcom (ex.: 726384) ou o rastreio 8880...:",
+            "Cole o ID do envio do painel EnvioEcom (ex.: 726384) — será salvo e não pediremos de novo:",
             shipmentIdOverride || "",
           );
           const value = String(typed || "").trim();
@@ -8823,9 +8866,11 @@ function OrdersPanel({
             toast.error(data.message || "Falha ao gerar etiqueta.");
             return;
           }
-          const retryBody = /^\d{5,}$/.test(value.replace(/\D/g, "")) && value.replace(/\D/g, "").length <= 10
-            ? { shipment_id: value.replace(/\D/g, "") }
-            : { barcode: value.replace(/\s+/g, "") };
+          const digits = value.replace(/\D/g, "");
+          const retryBody =
+            /^\d{5,}$/.test(digits) && digits.length <= 10
+              ? { shipment_id: digits }
+              : { barcode: value.replace(/\s+/g, "") };
           const retry = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
             method: "POST",
             headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -8837,16 +8882,7 @@ function OrdersPanel({
             return;
           }
           if (retryData.labelUrl) {
-            patchOrderLocal(order.id, {
-              envioecomLabelUrl: retryData.labelUrl,
-              trackingLabelUrl: retryData.labelUrl,
-              envioecomShipmentId: retryData.shipmentId || (order as any).envioecomShipmentId,
-              envioecomBarcode: retryData.barcode || (order as any).envioecomBarcode,
-              trackingCode: retryData.barcode || (order as any).trackingCode,
-              enviado: true,
-            });
-            window.open(retryData.labelUrl, "_blank", "noopener,noreferrer");
-            toast.success("Etiqueta gerada.");
+            applyLabelSuccess(retryData);
             return;
           }
           if (retryData.pdfBase64) {
@@ -8868,17 +8904,7 @@ function OrdersPanel({
         return;
       }
       if (data.labelUrl) {
-        patchOrderLocal(order.id, {
-          envioecomLabelUrl: data.labelUrl,
-          trackingLabelUrl: data.labelUrl,
-          enviado: true,
-        });
-        const opened = window.open(data.labelUrl, "_blank", "noopener,noreferrer");
-        if (!opened) {
-          toast.success("Etiqueta gerada. Clique em Ver PDF (pop-up bloqueado).");
-        } else {
-          toast.success("Etiqueta gerada — abriu em nova aba.");
-        }
+        applyLabelSuccess(data);
         return;
       }
       if (data.pdfBase64) {
@@ -8902,16 +8928,8 @@ function OrdersPanel({
   const syncEnvioEcomStatus = async (order: AdminOrder) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
-      let body: Record<string, string> = {};
-      const currentCode = String((order as any).envioecomBarcode || (order as any).trackingCode || "");
-      if (/^EC/i.test(currentCode) && !(order as any).envioecomShipmentId) {
-        const typed = window.prompt(
-          "Opcional: cole o ID do envio do painel EnvioEcom (ex.: 726384) para sincronizar:",
-          "",
-        );
-        const id = String(typed || "").replace(/\D/g, "");
-        if (id) body = { shipment_id: id };
-      }
+      const knownId = String((order as any).envioecomShipmentId || "").trim();
+      const body: Record<string, string> = knownId ? { shipment_id: knownId } : {};
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -8924,6 +8942,7 @@ function OrdersPanel({
           barcode?: string | null;
           deliveryMode?: string | null;
         };
+        resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
         message?: string;
       };
       if (!res.ok) {
@@ -8931,11 +8950,15 @@ function OrdersPanel({
         return;
       }
       patchOrderLocal(order.id, {
-        envioecomStatus: data.tracking?.status,
-        envioecomBarcode: data.tracking?.barcode,
+        envioecomStatus: data.resolved?.status || data.tracking?.status,
+        envioecomBarcode: data.resolved?.barcode || data.tracking?.barcode,
+        envioecomShipmentId: data.resolved?.shipmentId || knownId || (order as any).envioecomShipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
+        trackingCode: data.resolved?.barcode || data.tracking?.barcode || (order as any).trackingCode,
       });
-      toast.success(data.tracking?.status ? `Status: ${data.tracking.status}` : "Status sincronizado.");
+      toast.success(data.tracking?.status || data.resolved?.status
+        ? `Status: ${data.resolved?.status || data.tracking?.status}`
+        : "Status sincronizado.");
     } catch {
       toast.error("Erro ao sincronizar EnvioEcom.");
     } finally {

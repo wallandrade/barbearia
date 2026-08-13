@@ -532,15 +532,52 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       })
       .where(eq(ordersTable.id, order.id));
 
+    // Se veio shipping_id, busca detalhe fresco (barcode definitivo / status pago)
+    let finalBarcode = barcode;
+    let finalShipmentId = shipmentId;
+    let finalStatus = status;
+    let finalTrackingKey = trackingKey;
+    if (shipmentId) {
+      try {
+        const live = await resolveLiveShipmentRefs({
+          shipmentId,
+          barcode,
+          trackingKey,
+          externalOrderNumber,
+          cpf: order.clientDocument,
+          destinationCep: order.addressCep,
+          recipientName: order.clientName,
+        });
+        if (live.barcode || live.shipmentId || live.status) {
+          finalBarcode = live.barcode || finalBarcode;
+          finalShipmentId = live.shipmentId || finalShipmentId;
+          finalStatus = live.status || finalStatus;
+          finalTrackingKey = live.trackingKey || finalTrackingKey;
+          await applyShipmentStatusToOrder({
+            orderId: order.id,
+            status: finalStatus,
+            barcode: finalBarcode,
+            shipmentId: finalShipmentId,
+            trackingKey: finalTrackingKey,
+            description: "IDs atualizados após create",
+            updatedAt: new Date().toISOString(),
+            source: "create-refresh",
+          });
+        }
+      } catch (refreshErr) {
+        console.warn("[EnvioEcom] post-create refresh failed:", refreshErr);
+      }
+    }
+
     res.json({
       ok: true,
       orderId: order.id,
-      barcode,
-      shipmentId,
-      trackingKey,
-      status,
+      barcode: finalBarcode,
+      shipmentId: finalShipmentId,
+      trackingKey: finalTrackingKey,
+      status: finalStatus,
       paymentProcessing: extracted.paymentProcessing,
-      awaitingPayment: isAwaitingPaymentStatus(status),
+      awaitingPayment: isAwaitingPaymentStatus(finalStatus),
       createResponse: created,
     });
   } catch (err) {
