@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Aba Admin **Rastreios**: board de todos envios + sync lote/individual | Visão operacional de status EnvioEcom | Cotação/create iguais |
 | 2026-08-13 | Cliente: Situação do pedido prioriza `envioecomStatus`; tracking soft-sync na consulta | Card/minha conta refletem frete | Cotação/create admin iguais |
 | 2026-08-13 | Etiqueta: bloqueia EC provisório; aceita `shipment_id` do painel; resolve por CPF/CEP/nome | PDF do #511 via ID 726384 | Cotação igual |
 | 2026-08-13 | Sync/etiqueta resolvem barcode definitivo (EC…→8880…) via CPF/`shipping_id` | Corrige etiqueta quando painel tem rastreio e admin ainda tem EC | Cotação igual |
@@ -38,7 +39,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"
 - Origem no create: **obrigatória** — `cep_origem` no body, senão `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
-- Admin: quote/create/labels/sync/cancel + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`)
+- Admin: quote/create/labels/sync/cancel + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`)
 - Create envia `items` (produtos do pedido: name/quantity/unit_cost)
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: card com Situação/EnvioEcom + `GET /api/me/orders/:id/tracking` (soft-sync) + modal em `CustomerOrders.tsx`

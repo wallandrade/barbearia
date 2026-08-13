@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, or } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import { db, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
@@ -938,6 +938,244 @@ router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, 
     });
   } catch (err) {
     mapApiError(err, res);
+  }
+});
+
+// --------------------------------------------------------------------------
+// GET /api/admin/envioecom/tracking-board — painel de todos os rastreios
+// --------------------------------------------------------------------------
+router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Não autenticado." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess && !adminScope.sellerCode) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão." });
+      return;
+    }
+
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const statusGroup = String(req.query.group || "all").trim().toLowerCase();
+    const limit = Math.min(300, Math.max(1, Number(req.query.limit) || 150));
+
+    const conditions = [
+      or(
+        isNotNull(ordersTable.envioecomBarcode),
+        isNotNull(ordersTable.envioecomShipmentId),
+        isNotNull(ordersTable.envioecomStatus),
+      ),
+    ];
+    if (!adminScope.hasGlobalAccess && adminScope.sellerCode) {
+      conditions.push(eq(ordersTable.sellerCode, adminScope.sellerCode));
+    }
+
+    const rows = await db
+      .select({
+        id: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
+        clientName: ordersTable.clientName,
+        clientPhone: ordersTable.clientPhone,
+        status: ordersTable.status,
+        enviado: ordersTable.enviado,
+        sellerCode: ordersTable.sellerCode,
+        trackingCode: ordersTable.trackingCode,
+        envioecomShipmentId: ordersTable.envioecomShipmentId,
+        envioecomBarcode: ordersTable.envioecomBarcode,
+        envioecomDeliveryMode: ordersTable.envioecomDeliveryMode,
+        envioecomStatus: ordersTable.envioecomStatus,
+        envioecomStatusUpdatedAt: ordersTable.envioecomStatusUpdatedAt,
+        envioecomStatusHistory: ordersTable.envioecomStatusHistory,
+        envioecomLabelUrl: ordersTable.envioecomLabelUrl,
+        envioecomFreightCost: ordersTable.envioecomFreightCost,
+        createdAt: ordersTable.createdAt,
+        updatedAt: ordersTable.updatedAt,
+      })
+      .from(ordersTable)
+      .where(and(...conditions))
+      .orderBy(
+        sql`COALESCE(${ordersTable.envioecomStatusUpdatedAt}, ${ordersTable.updatedAt}) DESC`,
+      )
+      .limit(limit);
+
+    const mapped = rows.map((row) => {
+      const history = Array.isArray(row.envioecomStatusHistory)
+        ? (row.envioecomStatusHistory as StatusHistoryEntry[])
+        : [];
+      const lastEvents = history.slice(-5).reverse();
+      const eeStatus = String(row.envioecomStatus || "").trim();
+      let group: "delivered" | "in_transit" | "awaiting" | "cancelled" | "other" = "other";
+      if (eeStatus && isDeliveredStatus(eeStatus)) group = "delivered";
+      else if (/cancelad/i.test(eeStatus)) group = "cancelled";
+      else if (/aguardando pagamento/i.test(eeStatus) || /^created$/i.test(eeStatus)) group = "awaiting";
+      else if (eeStatus && (isInTransitStatus(eeStatus) || /pronto para envio|processando/i.test(eeStatus))) {
+        group = "in_transit";
+      } else if (eeStatus) group = "in_transit";
+
+      return {
+        orderId: row.id,
+        orderNumber: row.orderNumber,
+        clientName: row.clientName,
+        clientPhone: row.clientPhone,
+        orderStatus: row.status,
+        enviado: !!row.enviado,
+        sellerCode: row.sellerCode,
+        trackingCode: row.trackingCode || row.envioecomBarcode || null,
+        shipmentId: row.envioecomShipmentId,
+        barcode: row.envioecomBarcode,
+        deliveryMode: row.envioecomDeliveryMode,
+        status: eeStatus || null,
+        statusUpdatedAt: row.envioecomStatusUpdatedAt?.toISOString?.() ?? null,
+        freightCost: row.envioecomFreightCost != null ? Number(row.envioecomFreightCost) : null,
+        labelUrl: row.envioecomLabelUrl || null,
+        lastEvents,
+        group,
+        createdAt: row.createdAt?.toISOString?.() ?? null,
+        updatedAt: row.updatedAt?.toISOString?.() ?? null,
+      };
+    });
+
+    const filtered = mapped.filter((item) => {
+      if (statusGroup !== "all" && item.group !== statusGroup) return false;
+      if (!q) return true;
+      const hay = [
+        item.orderNumber,
+        item.clientName,
+        item.clientPhone,
+        item.trackingCode,
+        item.barcode,
+        item.shipmentId,
+        item.status,
+        item.deliveryMode,
+        item.sellerCode,
+      ]
+        .map((v) => String(v || "").toLowerCase())
+        .join(" ");
+      return hay.includes(q);
+    });
+
+    const summary = {
+      total: mapped.length,
+      delivered: mapped.filter((i) => i.group === "delivered").length,
+      inTransit: mapped.filter((i) => i.group === "in_transit").length,
+      awaiting: mapped.filter((i) => i.group === "awaiting").length,
+      cancelled: mapped.filter((i) => i.group === "cancelled").length,
+      other: mapped.filter((i) => i.group === "other").length,
+    };
+
+    res.json({
+      ok: true,
+      summary,
+      items: filtered,
+      configured: isEnvioEcomConfigured(),
+    });
+  } catch (err) {
+    console.error("[EnvioEcom] tracking-board error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar rastreios." });
+  }
+});
+
+// --------------------------------------------------------------------------
+// POST /api/admin/envioecom/tracking-board/sync — sync em lote (limitado)
+// body: { orderIds?: string[], limit?: number }
+// --------------------------------------------------------------------------
+router.post("/admin/envioecom/tracking-board/sync", requireAdminAuth, async (req, res) => {
+  try {
+    if (!isEnvioEcomConfigured()) {
+      res.status(503).json({ error: "NOT_CONFIGURED", message: "EnvioEcom não configurado." });
+      return;
+    }
+
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Não autenticado." });
+      return;
+    }
+
+    const requestedIds = Array.isArray(req.body?.orderIds)
+      ? req.body.orderIds.map((id: unknown) => String(id || "").trim()).filter(Boolean)
+      : [];
+    const limit = Math.min(30, Math.max(1, Number(req.body?.limit) || 20));
+
+    const conditions = [
+      or(
+        isNotNull(ordersTable.envioecomBarcode),
+        isNotNull(ordersTable.envioecomShipmentId),
+      ),
+    ];
+    if (!adminScope.hasGlobalAccess && adminScope.sellerCode) {
+      conditions.push(eq(ordersTable.sellerCode, adminScope.sellerCode));
+    }
+
+    let candidates = await db
+      .select()
+      .from(ordersTable)
+      .where(and(...conditions))
+      .orderBy(desc(ordersTable.envioecomStatusUpdatedAt))
+      .limit(200);
+
+    if (requestedIds.length) {
+      const set = new Set(requestedIds);
+      candidates = candidates.filter((o) => set.has(o.id));
+    } else {
+      // Prioriza não entregues
+      candidates = candidates.filter((o) => {
+        const st = String(o.envioecomStatus || "");
+        return !isDeliveredStatus(st) && !/cancelad/i.test(st);
+      });
+    }
+
+    const batch = candidates.slice(0, limit);
+    const results: Array<{ orderId: string; ok: boolean; status?: string | null; message?: string }> = [];
+
+    for (const order of batch) {
+      try {
+        const live = await resolveLiveShipmentRefs({
+          shipmentId: order.envioecomShipmentId,
+          barcode: order.envioecomBarcode || order.trackingCode,
+          trackingKey: order.envioecomTrackingKey,
+          externalOrderNumber: order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
+          cpf: order.clientDocument,
+          destinationCep: order.addressCep,
+          recipientName: order.clientName,
+        });
+        if (!live.shipmentId && !live.barcode) {
+          results.push({ orderId: order.id, ok: false, message: "Envio não encontrado" });
+          continue;
+        }
+        const status = live.status || order.envioecomStatus || null;
+        if (status) {
+          await applyShipmentStatusToOrder({
+            orderId: order.id,
+            status,
+            barcode: live.barcode,
+            shipmentId: live.shipmentId,
+            trackingKey: live.trackingKey,
+            description: "Sync em lote (painel rastreios)",
+            updatedAt: new Date().toISOString(),
+            source: "tracking-board-sync",
+          });
+        }
+        results.push({ orderId: order.id, ok: true, status });
+      } catch (err) {
+        results.push({
+          orderId: order.id,
+          ok: false,
+          message: err instanceof Error ? err.message : "Erro no sync",
+        });
+      }
+    }
+
+    res.json({
+      ok: true,
+      synced: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    });
+  } catch (err) {
+    console.error("[EnvioEcom] tracking-board sync error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao sincronizar rastreios." });
   }
 });
 

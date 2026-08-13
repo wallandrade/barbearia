@@ -535,6 +535,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 
 
 
@@ -1004,7 +1005,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "rastreios" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
 
 interface CommissionPendingOrder {
   id: string;
@@ -4585,6 +4586,7 @@ export default function Admin() {
         <div className="flex gap-0 mb-6 border-b border-border overflow-x-auto bg-white rounded-t-xl">
           {([
             { key: "orders",        label: "Pedidos",          icon: "QrCode",      count: orders.length },
+            { key: "rastreios",     label: "Rastreios",        icon: "Truck" },
             { key: "charges",       label: "Links Pagamento",  icon: "LinkIcon",    count: charges.length },
             { key: "commissions",   label: "Comissões",        icon: "DollarSign",  count: commissionSummary.pendingCount || undefined },
             { key: "expenses",      label: "Despesas",         icon: "AlertTriangle", count: expenses.length || undefined },
@@ -4781,6 +4783,16 @@ export default function Admin() {
               setOrders((prev) => prev.filter((o) => o.id !== id));
             }}
             shippingQueueMap={shippingQueueMap}
+          />
+        ) : tab === "rastreios" ? (
+          <AdminEnvioEcomTrackingPanel
+            authHeaders={authHeaders}
+            onUnauthorized={handleUnauthorized}
+            onGoToOrder={(orderId) => {
+              setSearch(orderId);
+              setTab("orders");
+              setExpandedOrder(orderId);
+            }}
           />
         ) : tab === "charges" ? (
           <ChargesPanel
