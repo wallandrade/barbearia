@@ -102,6 +102,123 @@ export function getDefaultPackageDims(): {
   };
 }
 
+/** EnvioEcom quote limits (docs): dim <= 100cm, weight <= 30kg, declared <= R$3000 */
+export const ENVIOECOM_MAX_DIM_CM = 100;
+export const ENVIOECOM_MAX_WEIGHT_KG = 30;
+export const ENVIOECOM_MAX_DECLARED_VALUE = 3000;
+export const ENVIOECOM_MIN_DIM_CM = 2;
+export const ENVIOECOM_MIN_WEIGHT_KG = 0.3;
+
+export function clampEnvioEcomDim(cm: number): number {
+  const n = Number(cm);
+  if (!Number.isFinite(n)) return ENVIOECOM_MIN_DIM_CM;
+  return Math.min(ENVIOECOM_MAX_DIM_CM, Math.max(ENVIOECOM_MIN_DIM_CM, n));
+}
+
+export function clampEnvioEcomWeight(kg: number): number {
+  const n = Number(kg);
+  if (!Number.isFinite(n)) return ENVIOECOM_MIN_WEIGHT_KG;
+  return Math.min(ENVIOECOM_MAX_WEIGHT_KG, Math.max(ENVIOECOM_MIN_WEIGHT_KG, n));
+}
+
+export function clampEnvioEcomDeclaredValue(value: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(ENVIOECOM_MAX_DECLARED_VALUE, n);
+}
+
+export type EnvioEcomPackageUnit = {
+  weight: number;
+  length: number;
+  height: number;
+  width: number;
+  quantity: number;
+  price: number;
+};
+
+/**
+ * Consolida o pedido em UM pacote (quantity=1) dentro dos limites EnvioEcom.
+ * Sem medidas reais no produto, usa o pacote padrão (não empilha altura × qtd).
+ */
+export function consolidateOrderIntoSinglePackage(input: {
+  products: Array<{
+    weight?: number;
+    length?: number;
+    height?: number;
+    width?: number;
+    quantity?: number;
+    price?: number;
+  }>;
+  fallbackSubtotal?: number;
+}): EnvioEcomPackageUnit {
+  const defaults = getDefaultPackageDims();
+  const products = Array.isArray(input.products) ? input.products : [];
+  const fallback = Number(input.fallbackSubtotal || 0);
+
+  if (products.length === 0) {
+    return {
+      weight: clampEnvioEcomWeight(defaults.weight),
+      length: clampEnvioEcomDim(defaults.length),
+      height: clampEnvioEcomDim(defaults.height),
+      width: clampEnvioEcomDim(defaults.width),
+      quantity: 1,
+      price: clampEnvioEcomDeclaredValue(fallback),
+    };
+  }
+
+  const hasRealDims = products.some(
+    (p) =>
+      Number(p.weight) > 0 ||
+      Number(p.length) > 0 ||
+      Number(p.height) > 0 ||
+      Number(p.width) > 0,
+  );
+
+  const totalQty = products.reduce((sum, p) => sum + Math.max(1, Number(p.quantity) || 1), 0);
+  const declared = clampEnvioEcomDeclaredValue(
+    products.reduce((sum, p) => sum + (Number(p.price) || 0) * Math.max(1, Number(p.quantity) || 1), 0) ||
+      fallback,
+  );
+
+  if (!hasRealDims) {
+    // 1 caixa padrão; peso cresce de forma controlada com a qtd, sem estourar altura.
+    const weight = clampEnvioEcomWeight(defaults.weight * Math.max(1, totalQty));
+    return {
+      weight,
+      length: clampEnvioEcomDim(defaults.length),
+      height: clampEnvioEcomDim(defaults.height),
+      width: clampEnvioEcomDim(defaults.width),
+      quantity: 1,
+      price: declared,
+    };
+  }
+
+  // Com medidas reais: regras EnvioEcom (altura empilha; L/C do primeiro) + clamp.
+  const normalized = products.map((p) => ({
+    weight: Number(p.weight) > 0 ? Number(p.weight) : defaults.weight,
+    length: Number(p.length) > 0 ? Number(p.length) : defaults.length,
+    height: Number(p.height) > 0 ? Number(p.height) : defaults.height,
+    width: Number(p.width) > 0 ? Number(p.width) : defaults.width,
+    quantity: Math.max(1, Number(p.quantity) || 1),
+  }));
+  const first = normalized[0]!;
+  const weight = clampEnvioEcomWeight(
+    normalized.reduce((sum, p) => sum + p.weight * p.quantity, 0),
+  );
+  const stackedHeight = normalized.reduce((sum, p) => sum + p.height * p.quantity, 0);
+  const maxLength = Math.max(...normalized.map((p) => p.length), first.length);
+  const maxWidth = Math.max(...normalized.map((p) => p.width), first.width);
+
+  return {
+    weight,
+    length: clampEnvioEcomDim(maxLength),
+    height: clampEnvioEcomDim(stackedHeight),
+    width: clampEnvioEcomDim(maxWidth),
+    quantity: 1,
+    price: declared,
+  };
+}
+
 export function isEnvioEcomConfigured(): boolean {
   const permanent = String(process.env.ENVIOECOM_TOKEN || "").trim();
   if (permanent) return true;

@@ -15,6 +15,10 @@ import {
   getDefaultPackageDims,
   getShipment,
   getWebhookConfig,
+  consolidateOrderIntoSinglePackage,
+  clampEnvioEcomDim,
+  clampEnvioEcomWeight,
+  clampEnvioEcomDeclaredValue,
   isDeliveredStatus,
   isEnvioEcomConfigured,
   isInTransitStatus,
@@ -84,45 +88,34 @@ function buildShipmentItemsFromOrder(order: typeof ordersTable.$inferSelect) {
 }
 
 function buildQuoteProductsFromOrder(order: typeof ordersTable.$inferSelect) {
-  const defaults = getDefaultPackageDims();
-  const products = parseProducts(order.products);
-  if (products.length === 0) {
-    return [
-      {
-        weight: defaults.weight,
-        length: defaults.length,
-        height: defaults.height,
-        width: defaults.width,
-        quantity: 1,
-        price: Number(order.subtotal || order.total || 0),
-      },
-    ];
-  }
-
-  return products.map((p) => ({
-    weight: Number(p.weight) > 0 ? Number(p.weight) : defaults.weight,
-    length: Number(p.length) > 0 ? Number(p.length) : defaults.length,
-    height: Number(p.height) > 0 ? Number(p.height) : defaults.height,
-    width: Number(p.width) > 0 ? Number(p.width) : defaults.width,
-    quantity: Math.max(1, Number(p.quantity) || 1),
-    price: Number(p.price) || 0,
-  }));
+  const pack = consolidateOrderIntoSinglePackage({
+    products: parseProducts(order.products),
+    fallbackSubtotal: Number(order.subtotal || order.total || 0),
+  });
+  // Sempre 1 pacote — evita a EnvioEcom empilhar altura×qtd dos defaults e estourar 100cm.
+  return [pack];
 }
 
 function buildPackageFromProducts(products: ReturnType<typeof buildQuoteProductsFromOrder>) {
   const defaults = getDefaultPackageDims();
   const first = products[0];
-  const weight = Math.max(
-    0.3,
-    products.reduce((sum, p) => sum + p.weight * p.quantity, 0),
+  const weight = clampEnvioEcomWeight(
+    products.reduce((sum, p) => sum + p.weight * Math.max(1, p.quantity || 1), 0) || defaults.weight,
   );
-  const height = Math.max(
-    2,
-    products.reduce((sum, p) => sum + p.height * p.quantity, 0),
+  const height = clampEnvioEcomDim(
+    products.length <= 1
+      ? (first?.height || defaults.height)
+      : products.reduce((sum, p) => sum + p.height * Math.max(1, p.quantity || 1), 0),
   );
-  const length = Math.max(2, first?.length || defaults.length);
-  const width = Math.max(2, first?.width || defaults.width);
-  const cost = products.reduce((sum, p) => sum + p.price * p.quantity, 0);
+  const length = clampEnvioEcomDim(
+    Math.max(...products.map((p) => p.length), first?.length || defaults.length),
+  );
+  const width = clampEnvioEcomDim(
+    Math.max(...products.map((p) => p.width), first?.width || defaults.width),
+  );
+  const cost = clampEnvioEcomDeclaredValue(
+    products.reduce((sum, p) => sum + p.price * Math.max(1, p.quantity || 1), 0),
+  );
   return { weight, height, length, width, cost };
 }
 
