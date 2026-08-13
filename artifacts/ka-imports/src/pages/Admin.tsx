@@ -8543,6 +8543,34 @@ function InventoryPanel({
   );
 }
 
+function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("etiqueta emitida") ||
+    s.includes("pronto para envio") ||
+    s.includes("processando envio") ||
+    s.includes("aguardando expedição") ||
+    s.includes("aguardando expedicao") ||
+    s.includes("dc-e emitida") ||
+    s.includes("dce emitida")
+  );
+}
+
+function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (
+    isEnvioEcomLabelReadyStatus(s) ||
+    s.includes("trânsito") ||
+    s.includes("transito") ||
+    s.includes("postado") ||
+    s.includes("expedido") ||
+    s.includes("saiu para entrega") ||
+    s.includes("entregue")
+  );
+}
+
 function OrdersPanel({
   allOrders,
   productImageById,
@@ -10077,6 +10105,14 @@ function OrdersPanel({
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
           // Definir isReshipment no escopo correto
           const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
+          const envioecomStatus = String((order as any).envioecomStatus || "").trim();
+          const envioecomLabelReady = isEnvioEcomLabelReadyStatus(envioecomStatus);
+          const envioecomShippedLike = isEnvioEcomShippedLikeStatus(envioecomStatus);
+          const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
+            ? "ring-2 ring-emerald-500"
+            : isPrioridade
+              ? "ring-2 ring-red-400"
+              : "";
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
@@ -10084,7 +10120,7 @@ function OrdersPanel({
             return productId ? String(productImageById[productId] || "").trim() : "";
           };
           return (
-            <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${isPrioridade ? "ring-2 ring-red-400" : ""}`}>
+            <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${cardRingClass}`}>
             {/* Shipping queue block */}
             {shippingQueueMap[order.id] && !enviados[order.id] && (() => {
               const q = shippingQueueMap[order.id];
@@ -10116,11 +10152,30 @@ function OrdersPanel({
                           </span>
                         )}
                         <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">#{getOrderReference(order)}</span>
-                        {/* Badge de status de envio */}
-                        {enviados[order.id] ? (
+                        {/* Badge de status de envio / EnvioEcom */}
+                        {envioecomStatus ? (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                              envioecomLabelReady || envioecomShippedLike
+                                ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                : /cancelad/i.test(envioecomStatus)
+                                  ? "bg-red-100 text-red-800 border-red-200"
+                                  : "bg-teal-50 text-teal-900 border-teal-200"
+                            }`}
+                            title="Status EnvioEcom (atualiza com webhook/sync)"
+                          >
+                            <Truck className="w-3 h-3" />
+                            {envioecomStatus}
+                          </span>
+                        ) : enviados[order.id] ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Enviado</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Pendente para envio</span>
+                        )}
+                        {enviados[order.id] && envioecomStatus && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">
+                            Enviado
+                          </span>
                         )}
                         {!enviados[order.id] && (
                           <span
