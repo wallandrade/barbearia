@@ -9376,15 +9376,9 @@ function OrdersPanel({
     }
   };
   const verifyOrderStock = (orderId: string, balancesSnapshot: InventoryBalanceRecord[] = inventoryBalances): { hasStock: boolean; message: string; missingItems: string[] } => {
-    // Only check stock when marking as enviado (novoValor = true)
     const order = ordersLookup.find(o => o.id === orderId);
     if (!order) {
       return { hasStock: false, message: "Pedido não encontrado", missingItems: [] };
-    }
-
-    // If currently marked as enviado and trying to unmark (revert to pendente), skip stock check
-    if (enviados[orderId]) {
-      return { hasStock: true, message: "", missingItems: [] };
     }
 
     // Avoid false negatives while inventory snapshot is still loading.
@@ -10149,7 +10143,8 @@ function OrdersPanel({
           const normalizedOrderStatus = normalizeOrderStatus(order.status);
           const isPaidOrCompleted = normalizedOrderStatus === "paid" || normalizedOrderStatus === "completed";
           const isExpanded = expandedOrder === order.id;
-          const orderStockCheck = enviados[order.id] || !globalInventorySnapshotReady
+          // Estoque no card mesmo com enviado/EE (alerta visual). Lista "para enviar" continua só com !enviado.
+          const orderStockCheck = !globalInventorySnapshotReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
             : verifyOrderStock(order.id);
           const orderProducts = getOrderProducts(order.products);
@@ -10243,22 +10238,22 @@ function OrdersPanel({
                             Enviado
                           </span>
                         )}
-                        {!enviados[order.id] && (
-                          <span
-                            title={!globalInventorySnapshotReady
-                              ? "Carregando saldo de estoque"
-                              : orderStockCheck.hasStock
-                                ? "Estoque suficiente para envio"
-                                : orderStockCheck.missingItems.join("\n")}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!globalInventorySnapshotReady
-                              ? "bg-slate-100 text-slate-700 border-slate-200"
-                              : orderStockCheck.hasStock
-                              ? "bg-green-100 text-green-800 border-green-200"
-                              : "bg-red-100 text-red-800 border-red-200"}`}
-                          >
-                            {!globalInventorySnapshotReady ? "Estoque carregando" : (orderStockCheck.hasStock ? "Estoque OK" : "Faltando estoque")}
-                          </span>
-                        )}
+                        <span
+                          title={!globalInventorySnapshotReady
+                            ? "Carregando saldo de estoque"
+                            : orderStockCheck.hasStock
+                              ? "Estoque suficiente para envio"
+                              : orderStockCheck.missingItems.join("\n") || "Sem estoque dos produtos do pedido"}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!globalInventorySnapshotReady
+                            ? "bg-slate-100 text-slate-700 border-slate-200"
+                            : orderStockCheck.hasStock
+                            ? "bg-green-100 text-green-800 border-green-200"
+                            : "bg-red-100 text-red-800 border-red-200"}`}
+                        >
+                          {!globalInventorySnapshotReady
+                            ? "Estoque carregando"
+                            : (orderStockCheck.hasStock ? "Estoque OK" : "sem estoque")}
+                        </span>
                         {isReshipment && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${rs === "reenvio_aguardando_estoque" ? "bg-red-100 text-red-800 border-red-200" : rs === "reenvio_pronto_para_envio" ? "bg-red-50 text-red-700 border-red-200" : "bg-rose-100 text-rose-800 border-rose-200"}`}>
                             <AlertTriangle className="w-3 h-3" />{reshipmentStatusLabel(rs)}

@@ -9,6 +9,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
 | 2026-08-13 | Admin: botão **Vincular EE** + modal (ID/rastreio, sem `prompt`) | Liga envio criado no painel EnvioEcom ao pedido e sync status | API sync/labels iguais |
+| 2026-08-13 | Card admin: EE/enviado + badge **sem estoque** (consulta estoque no card; lista cópia segue `!enviado`) | Evita recompra na cópia e alerta visual de falta | Cotação/create iguais |
 | 2026-08-13 | Card admin: borda verde + badge com status EnvioEcom (etiqueta/pronto/etc.) | Operação vê frete no card | Sync/webhook iguais |
 | 2026-08-13 | `enviado=true` também em Etiqueta emitida / Pronto para envio / DC-e (webhook+sync) | Pedido marca enviado sem depender só do botão Etiqueta EE | Cotação/create iguais |
 | 2026-08-13 | Aba Admin **Rastreios**: board de todos envios + sync lote/individual | Visão operacional de status EnvioEcom | Cotação/create iguais |
