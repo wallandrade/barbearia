@@ -8545,6 +8545,19 @@ function InventoryPanel({
   );
 }
 
+function isEnvioEcomPostedStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("trânsito") ||
+    s.includes("transito") ||
+    s.includes("postado") ||
+    s.includes("expedido") ||
+    s.includes("saiu para entrega") ||
+    s.includes("entregue")
+  );
+}
+
 function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   if (!s) return false;
@@ -8897,7 +8910,19 @@ function OrdersPanel({
         envioecomShipmentId: shipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
         trackingCode: barcode || (order as any).trackingCode,
+        ...(isEnvioEcomLabelReadyStatus(status)
+          ? { enviado: false }
+          : isEnvioEcomPostedStatus(status)
+            ? { enviado: true }
+            : {}),
       });
+      if (isEnvioEcomLabelReadyStatus(status)) {
+        onSetOrderEnviado(order.id, false);
+        setEnviados((prev) => ({ ...prev, [order.id]: false }));
+      } else if (isEnvioEcomPostedStatus(status)) {
+        onSetOrderEnviado(order.id, true);
+        setEnviados((prev) => ({ ...prev, [order.id]: true }));
+      }
       setEnvioecomLinkModal(null);
       setEnvioecomLinkDraft("");
       toast.success(
@@ -8987,7 +9012,10 @@ function OrdersPanel({
           envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
           envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
           trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
+          enviado: false,
         });
+        onSetOrderEnviado(order.id, false);
+        setEnviados((prev) => ({ ...prev, [order.id]: false }));
         if (payload.labelUrl) {
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
@@ -9069,15 +9097,28 @@ function OrdersPanel({
         toast.error(data.message || "Falha ao sincronizar status.");
         return;
       }
+      const syncedStatus = data.resolved?.status || data.tracking?.status;
       patchOrderLocal(order.id, {
-        envioecomStatus: data.resolved?.status || data.tracking?.status,
+        envioecomStatus: syncedStatus,
         envioecomBarcode: data.resolved?.barcode || data.tracking?.barcode,
         envioecomShipmentId: data.resolved?.shipmentId || knownId || (order as any).envioecomShipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
         trackingCode: data.resolved?.barcode || data.tracking?.barcode || (order as any).trackingCode,
+        ...(isEnvioEcomLabelReadyStatus(syncedStatus)
+          ? { enviado: false }
+          : isEnvioEcomPostedStatus(syncedStatus)
+            ? { enviado: true }
+            : {}),
       });
-      toast.success(data.tracking?.status || data.resolved?.status
-        ? `Status: ${data.resolved?.status || data.tracking?.status}`
+      if (isEnvioEcomLabelReadyStatus(syncedStatus)) {
+        onSetOrderEnviado(order.id, false);
+        setEnviados((prev) => ({ ...prev, [order.id]: false }));
+      } else if (isEnvioEcomPostedStatus(syncedStatus)) {
+        onSetOrderEnviado(order.id, true);
+        setEnviados((prev) => ({ ...prev, [order.id]: true }));
+      }
+      toast.success(syncedStatus
+        ? `Status: ${syncedStatus}`
         : "Status sincronizado.");
     } catch {
       toast.error("Erro ao sincronizar EnvioEcom.");
@@ -10183,6 +10224,8 @@ function OrdersPanel({
           const envioecomStatus = String((order as any).envioecomStatus || "").trim();
           const envioecomLabelReady = isEnvioEcomLabelReadyStatus(envioecomStatus);
           const envioecomShippedLike = isEnvioEcomShippedLikeStatus(envioecomStatus);
+          // Etiqueta/pronto ≠ postado: não mostrar "Enviado" nem botão Pendente só por legado
+          const showEnviadoUi = !!enviados[order.id] && !envioecomLabelReady;
           const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
             ? "ring-2 ring-emerald-500"
             : isPrioridade
@@ -10246,12 +10289,13 @@ function OrdersPanel({
                             <Truck className="w-3 h-3" />
                             {envioecomStatus}
                           </span>
-                        ) : enviados[order.id] ? (
+                        ) : showEnviadoUi ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Enviado</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Pendente para envio</span>
                         )}
-                        {enviados[order.id] && envioecomStatus && (
+                        {/* Segundo badge Enviado: não mostrar se for só etiqueta/pronto (legado) */}
+                        {showEnviadoUi && !!envioecomStatus && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">
                             Enviado
                           </span>
@@ -10601,16 +10645,27 @@ function OrdersPanel({
                 </Button>
                 <Button
                   size="sm"
-                  className={`gap-1.5 rounded-full px-5 py-2 font-semibold transition shadow-sm border ${enviados[order.id]
+                  className={`gap-1.5 rounded-full px-5 py-2 font-semibold transition shadow-sm border ${showEnviadoUi
                     ? "bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200"
                     : "bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200"}`}
                   variant="outline"
                   disabled={!!enviando[order.id]}
-                  onClick={() => toggleEnviado(order.id)}
+                  onClick={() => {
+                    // Legado: enviado=true com só etiqueta — Sync limpa no BD sem pedir senha
+                    if (enviados[order.id] && envioecomLabelReady) {
+                      void syncEnvioEcomStatus(order).then(() => {
+                        onSetOrderEnviado(order.id, false);
+                        setEnviados((prev) => ({ ...prev, [order.id]: false }));
+                        patchOrderLocal(order.id, { enviado: false });
+                      });
+                      return;
+                    }
+                    toggleEnviado(order.id);
+                  }}
                 >
                   {enviando[order.id]
                     ? "Salvando..."
-                    : enviados[order.id]
+                    : showEnviadoUi
                       ? "Marcar como Pendente"
                       : "Marcar como Enviado"}
                 </Button>

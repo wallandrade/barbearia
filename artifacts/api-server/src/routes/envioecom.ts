@@ -266,6 +266,9 @@ async function applyShipmentStatusToOrder(params: {
 
   if (isInTransitStatus(params.status) || isDeliveredStatus(params.status)) {
     patch.enviado = true;
+  } else if (isLabelReadyStatus(params.status)) {
+    // Etiqueta pronta ≠ postado. Limpa `enviado` legado da regra antiga.
+    patch.enviado = false;
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {
     patch.status = "completed";
@@ -773,6 +776,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         ...(trackingKey ? { envioecomTrackingKey: trackingKey } : {}),
         ...(barcode ? { trackingCode: barcode } : {}),
         ...(labelUrl ? { trackingLabelUrl: labelUrl } : {}),
+        enviado: false,
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, order.id));
