@@ -875,7 +875,10 @@ export function isInTransitStatus(status: string): boolean {
   );
 }
 
-/** Etiqueta gerada / pronta para postagem — NÃO marca `enviado` (ainda não postou). */
+/**
+ * Etiqueta gerada / pronta para postagem.
+ * Não marca `enviado` e também não desmarca (marcação manual prevalece).
+ */
 export function isLabelReadyStatus(status: string): boolean {
   const s = status.toLowerCase();
   return (

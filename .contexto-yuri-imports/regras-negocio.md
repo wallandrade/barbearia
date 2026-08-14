@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-14 | `enviado` manual **não** é desfeito por Sync/webhook/Etiqueta EE; só o botão Pendente desliga; EE só **liga** em trânsito/entregue | Evita card voltar a pendente e risco de reenvio | Cotação/create/lista cópia iguais |
 | 2026-08-14 | Motoboy na escolha do card **não reserva** (só grava pool); baixa no Marcar Enviado | Saldo Motoboy só cai quando sai de fato | Loja ainda reserva na escolha |
 | 2026-08-13 | Escolha Loja/Motoboy no card **persiste** (`inventory_pool`) e **reserva** (baixa imediata); Enviado não baixa de novo se já reservado | Ctrl+R mantém escolha; saldo cai na reserva | Entrada Motoboy não debita loja |
 | 2026-08-13 | Marcar Enviado: admin escolhe pool **Loja** ou **Motoboy** no card (`inventoryPool`); estorno detecta pool pela saída | Baixa no estoque certo independente do frete | Entrada Motoboy ainda não debita loja |
@@ -41,7 +42,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Comprovantes: `proofUrl` + `proofUrls` (galeria; uploads anexam sem apagar anteriores).
 - Edição de pedido (admin primário): troca de itens/quantidades; PIX de diferença via cobrança/gateway quando o valor sobe.
 - Tracking: código, etiqueta (URL/texto), OCR/parse auxiliar (OpenAI / OCR.space nas rotas de pedidos).
-- **EnvioEcom:** admin cotar/criar/etiqueta; webhook atualiza `envioecom_status` + histórico; cliente vê **Situação** e bloco Envio/Rastreio no card + modal Rastrear (soft-sync ao abrir). Vínculo por barcode/nº pedido (CPF só no create como destinatário). **Etiqueta pronta / Pronto para envio** não seta `enviado` (badge Enviado só em trânsito/entregue ou “Marcar como Enviado”). Lista “copiar pedidos para enviar” exclui se `enviado` **ou** status/PDF de etiqueta EE. Card ainda consulta estoque e mostra **sem estoque** se faltar.
+- **EnvioEcom:** admin cotar/criar/etiqueta; webhook atualiza `envioecom_status` + histórico; cliente vê **Situação** e bloco Envio/Rastreio no card + modal Rastrear (soft-sync ao abrir). Vínculo por barcode/nº pedido (CPF só no create como destinatário). **Etiqueta pronta / Pronto para envio** não seta `enviado` e **também não desmarca** se o admin já clicou “Marcar como Enviado” (só o botão Pendente desliga). EE só **liga** `enviado` em trânsito/entregue. Lista “copiar pedidos para enviar” exclui se `enviado` **ou** status/PDF de etiqueta EE. Card ainda consulta estoque e mostra **sem estoque** se faltar.
 - Busca no admin (`Admin.tsx` `filteredOrders`): se a query for **só dígitos**, prioriza `orderNumber` **exato**; se existir match, retorna só esse(s) pedido(s). Sem match de número → cai na busca ampla (nome, telefone, e-mail, CEP, produto, id).
 
 ## PIX

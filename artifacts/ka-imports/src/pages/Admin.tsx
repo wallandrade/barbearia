@@ -9021,16 +9021,10 @@ function OrdersPanel({
         envioecomShipmentId: shipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
         trackingCode: barcode || (order as any).trackingCode,
-        ...(isEnvioEcomLabelReadyStatus(status)
-          ? { enviado: false }
-          : isEnvioEcomPostedStatus(status)
-            ? { enviado: true }
-            : {}),
+        // Só liga enviado se já postado; nunca desliga marcado manual.
+        ...(isEnvioEcomPostedStatus(status) ? { enviado: true } : {}),
       });
-      if (isEnvioEcomLabelReadyStatus(status)) {
-        onSetOrderEnviado(order.id, false);
-        setEnviados((prev) => ({ ...prev, [order.id]: false }));
-      } else if (isEnvioEcomPostedStatus(status)) {
+      if (isEnvioEcomPostedStatus(status)) {
         onSetOrderEnviado(order.id, true);
         setEnviados((prev) => ({ ...prev, [order.id]: true }));
       }
@@ -9123,10 +9117,8 @@ function OrdersPanel({
           envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
           envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
           trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
-          enviado: false,
+          // Etiqueta não desfaz "Marcar como Enviado" manual.
         });
-        onSetOrderEnviado(order.id, false);
-        setEnviados((prev) => ({ ...prev, [order.id]: false }));
         if (payload.labelUrl) {
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
@@ -9215,16 +9207,10 @@ function OrdersPanel({
         envioecomShipmentId: data.resolved?.shipmentId || knownId || (order as any).envioecomShipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
         trackingCode: data.resolved?.barcode || data.tracking?.barcode || (order as any).trackingCode,
-        ...(isEnvioEcomLabelReadyStatus(syncedStatus)
-          ? { enviado: false }
-          : isEnvioEcomPostedStatus(syncedStatus)
-            ? { enviado: true }
-            : {}),
+        // Só liga enviado se já postado; nunca desliga marcado manual.
+        ...(isEnvioEcomPostedStatus(syncedStatus) ? { enviado: true } : {}),
       });
-      if (isEnvioEcomLabelReadyStatus(syncedStatus)) {
-        onSetOrderEnviado(order.id, false);
-        setEnviados((prev) => ({ ...prev, [order.id]: false }));
-      } else if (isEnvioEcomPostedStatus(syncedStatus)) {
+      if (isEnvioEcomPostedStatus(syncedStatus)) {
         onSetOrderEnviado(order.id, true);
         setEnviados((prev) => ({ ...prev, [order.id]: true }));
       }
@@ -10468,8 +10454,8 @@ function OrdersPanel({
           const envioecomStatus = String((order as any).envioecomStatus || "").trim();
           const envioecomLabelReady = isEnvioEcomLabelReadyStatus(envioecomStatus);
           const envioecomShippedLike = isEnvioEcomShippedLikeStatus(envioecomStatus);
-          // Etiqueta/pronto ≠ postado: não mostrar "Enviado" nem botão Pendente só por legado
-          const showEnviadoUi = !!enviados[order.id] && !envioecomLabelReady;
+          // Badge Enviado segue a flag (manual ou postagem EE). Etiqueta pronta sozinha não desfaz.
+          const showEnviadoUi = !!enviados[order.id];
           const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
             ? "ring-2 ring-emerald-500"
             : isPrioridade
@@ -10538,7 +10524,7 @@ function OrdersPanel({
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Pendente para envio</span>
                         )}
-                        {/* Segundo badge Enviado: não mostrar se for só etiqueta/pronto (legado) */}
+                        {/* Badge Enviado junto do status EE quando já marcado */}
                         {showEnviadoUi && !!envioecomStatus && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">
                             Enviado
@@ -10930,15 +10916,7 @@ function OrdersPanel({
                   variant="outline"
                   disabled={!!enviando[order.id]}
                   onClick={() => {
-                    // Legado: enviado=true com só etiqueta — Sync limpa no BD sem pedir senha
-                    if (enviados[order.id] && envioecomLabelReady) {
-                      void syncEnvioEcomStatus(order).then(() => {
-                        onSetOrderEnviado(order.id, false);
-                        setEnviados((prev) => ({ ...prev, [order.id]: false }));
-                        patchOrderLocal(order.id, { enviado: false });
-                      });
-                      return;
-                    }
+                    // Só o clique manual (toggle) liga/desliga enviado — Sync EE não desfaz.
                     toggleEnviado(order.id);
                   }}
                 >

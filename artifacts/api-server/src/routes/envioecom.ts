@@ -279,11 +279,10 @@ async function applyShipmentStatusToOrder(params: {
     patch.envioecomExternalOrderNumber = String(params.externalOrderNumber);
   }
 
+  // Só liga enviado na postagem real. Nunca desliga: se o admin marcou à mão,
+  // Sync/webhook/etiqueta não podem voltar a pendente (risco de reenvio).
   if (isInTransitStatus(params.status) || isDeliveredStatus(params.status)) {
     patch.enviado = true;
-  } else if (isLabelReadyStatus(params.status)) {
-    // Etiqueta pronta ≠ postado. Limpa `enviado` legado da regra antiga.
-    patch.enviado = false;
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {
     patch.status = "completed";
@@ -791,7 +790,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         ...(trackingKey ? { envioecomTrackingKey: trackingKey } : {}),
         ...(barcode ? { trackingCode: barcode } : {}),
         ...(labelUrl ? { trackingLabelUrl: labelUrl } : {}),
-        enviado: false,
+        // Não zera `enviado`: etiqueta ≠ desfazer marcação manual.
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, order.id));
