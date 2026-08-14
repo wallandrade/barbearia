@@ -91,15 +91,16 @@ export function getDefaultPackageDims(): {
   height: number;
   width: number;
 } {
+  // Padrão alinhado ao simulador do painel EnvioEcom: 2×12×17 cm, 0,300 kg
   const weight = Number(process.env.ENVIOECOM_DEFAULT_WEIGHT || "0.3");
-  const length = Number(process.env.ENVIOECOM_DEFAULT_LENGTH || "20");
-  const height = Number(process.env.ENVIOECOM_DEFAULT_HEIGHT || "10");
-  const width = Number(process.env.ENVIOECOM_DEFAULT_WIDTH || "15");
+  const length = Number(process.env.ENVIOECOM_DEFAULT_LENGTH || "17");
+  const height = Number(process.env.ENVIOECOM_DEFAULT_HEIGHT || "2");
+  const width = Number(process.env.ENVIOECOM_DEFAULT_WIDTH || "12");
   return {
     weight: Number.isFinite(weight) && weight > 0 ? weight : 0.3,
-    length: Number.isFinite(length) && length > 0 ? length : 20,
-    height: Number.isFinite(height) && height > 0 ? height : 10,
-    width: Number.isFinite(width) && width > 0 ? width : 15,
+    length: Number.isFinite(length) && length > 0 ? length : 17,
+    height: Number.isFinite(height) && height > 0 ? height : 2,
+    width: Number.isFinite(width) && width > 0 ? width : 12,
   };
 }
 
@@ -126,6 +127,13 @@ export function clampEnvioEcomDeclaredValue(value: number): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.min(ENVIOECOM_MAX_DECLARED_VALUE, n);
+}
+
+/** Valor declarado padrão do simulador EnvioEcom (R$ 5,00) quando produto sem medidas reais. */
+export function getDefaultDeclaredValue(): number {
+  const value = Number(process.env.ENVIOECOM_DEFAULT_DECLARED_VALUE || "5");
+  if (!Number.isFinite(value) || value < 0) return 5;
+  return clampEnvioEcomDeclaredValue(value);
 }
 
 export type EnvioEcomPackageUnit = {
@@ -163,7 +171,7 @@ export function consolidateOrderIntoSinglePackage(input: {
       height: clampEnvioEcomDim(defaults.height),
       width: clampEnvioEcomDim(defaults.width),
       quantity: 1,
-      price: clampEnvioEcomDeclaredValue(fallback),
+      price: getDefaultDeclaredValue(),
     };
   }
 
@@ -175,22 +183,20 @@ export function consolidateOrderIntoSinglePackage(input: {
       Number(p.width) > 0,
   );
 
-  const totalQty = products.reduce((sum, p) => sum + Math.max(1, Number(p.quantity) || 1), 0);
-  const declared = clampEnvioEcomDeclaredValue(
+  const declaredFromProducts = clampEnvioEcomDeclaredValue(
     products.reduce((sum, p) => sum + (Number(p.price) || 0) * Math.max(1, Number(p.quantity) || 1), 0) ||
       fallback,
   );
 
   if (!hasRealDims) {
-    // 1 caixa padrão; peso cresce de forma controlada com a qtd, sem estourar altura.
-    const weight = clampEnvioEcomWeight(defaults.weight * Math.max(1, totalQty));
+    // Mesmo padrão do simulador EnvioEcom: 1 caixa 2×12×17, 0,3kg, valor R$5
     return {
-      weight,
+      weight: clampEnvioEcomWeight(defaults.weight),
       length: clampEnvioEcomDim(defaults.length),
       height: clampEnvioEcomDim(defaults.height),
       width: clampEnvioEcomDim(defaults.width),
       quantity: 1,
-      price: declared,
+      price: getDefaultDeclaredValue(),
     };
   }
 
@@ -216,7 +222,7 @@ export function consolidateOrderIntoSinglePackage(input: {
     height: clampEnvioEcomDim(stackedHeight),
     width: clampEnvioEcomDim(maxWidth),
     quantity: 1,
-    price: declared,
+    price: declaredFromProducts,
   };
 }
 

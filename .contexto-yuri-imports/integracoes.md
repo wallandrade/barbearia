@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Pacote padrão EE = simulador site: 2×12×17 cm, 0,3 kg, valor R$5 | Cotação admin alinha preço com painel EnvioEcom | Create/webhook iguais; produto com medidas reais segue medidas reais |
 | 2026-08-13 | Admin: botão **Vincular EE** + modal (ID/rastreio, sem `prompt`) | Liga envio criado no painel EnvioEcom ao pedido e sync status | API sync/labels iguais |
 | 2026-08-13 | Card admin: EE/enviado + badge **sem estoque** (consulta estoque no card; lista cópia segue `!enviado`) | Evita recompra na cópia e alerta visual de falta | Cotação/create iguais |
 | 2026-08-13 | Etiqueta EE não marca `enviado`; cópia exclui por etiqueta OU enviado; Enviado = postado/manual | Badge Enviado só quando realmente enviado | Cotação/create iguais |
@@ -39,7 +40,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Rotas: `artifacts/api-server/src/routes/envioecom.ts`
 - Base: `ENVIOECOM_BASE_URL` (default `https://envioecom.com.br/api/v1/whitelabel`)
 - Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`)
-- Pacote padrão se produto sem medidas: `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH`
+- Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults
 - Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; etiqueta pronta **não** marca `enviado` (só trânsito/entregue ou botão manual). Lista de cópia admin exclui por etiqueta EE **ou** `enviado`.
 - Origem no create: **obrigatória** — `cep_origem` no body, senão `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
