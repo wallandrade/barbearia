@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, motoboyBookingsTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, motoboyBookingsTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -2230,9 +2230,18 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { enviado, adminPassword } = req.body as { enviado: boolean; adminPassword?: string };
+    const { enviado, adminPassword, inventoryPool: inventoryPoolRaw } = req.body as {
+      enviado: boolean;
+      adminPassword?: string;
+      inventoryPool?: "loja" | "motoboy" | string;
+    };
     if (typeof enviado !== "boolean") {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'enviado' obrigatório e deve ser boolean." });
+      return;
+    }
+    const requestedPool = String(inventoryPoolRaw || "").toLowerCase().trim();
+    if (requestedPool && requestedPool !== "loja" && requestedPool !== "motoboy") {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja' ou 'motoboy'." });
       return;
     }
     const rows = await db
@@ -2253,7 +2262,38 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     const wasEnviado = !!order.enviado;
-    const isMotoboyOrder = String(order.shippingType || "").toLowerCase().trim() === "motoboy";
+    const shippingIsMotoboy = String(order.shippingType || "").toLowerCase().trim() === "motoboy";
+    const defaultPool: "loja" | "motoboy" = shippingIsMotoboy ? "motoboy" : "loja";
+
+    // Estorno: prioriza pool informado; senão detecta pela última saída com referenceId do pedido.
+    let inventoryPool: "loja" | "motoboy" = requestedPool === "motoboy" || requestedPool === "loja"
+      ? requestedPool
+      : defaultPool;
+    if (wasEnviado && !enviado && !requestedPool) {
+      const [motoExit] = await db
+        .select({ id: inventoryMotoboyMovementsTable.id })
+        .from(inventoryMotoboyMovementsTable)
+        .where(and(
+          eq(inventoryMotoboyMovementsTable.referenceId, id),
+          eq(inventoryMotoboyMovementsTable.type, "exit"),
+        ))
+        .limit(1);
+      if (motoExit) {
+        inventoryPool = "motoboy";
+      } else {
+        const [lojaExit] = await db
+          .select({ id: inventoryMovementsTable.id })
+          .from(inventoryMovementsTable)
+          .where(and(
+            eq(inventoryMovementsTable.referenceId, id),
+            eq(inventoryMovementsTable.type, "exit"),
+          ))
+          .limit(1);
+        if (lojaExit) inventoryPool = "loja";
+      }
+    }
+    const useMotoboyStock = inventoryPool === "motoboy";
+
     if (wasEnviado && !enviado) {
       const providedPassword = String(adminPassword || "").trim();
       if (!providedPassword) {
@@ -2312,7 +2352,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         }
 
         const productIds = resolvedItems.map((item) => item.productId!).filter(Boolean);
-        const stockByProduct = isMotoboyOrder
+        const stockByProduct = useMotoboyStock
           ? await getMotoboyStockMap(productIds)
           : await (async () => {
               const balanceRows = productIds.length > 0
@@ -2336,9 +2376,9 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
               .join("; ");
             res.status(400).json({
               error: "INSUFFICIENT_STOCK",
-              message: isMotoboyOrder
+              message: useMotoboyStock
                 ? `Estoque Motoboy insuficiente para envio: ${details}.`
-                : `Estoque insuficiente para envio: ${details}.`,
+                : `Estoque Loja insuficiente para envio: ${details}.`,
             });
             return;
           }
@@ -2350,13 +2390,13 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           }
           const qty = enviado ? -item.quantity : item.quantity;
           const reason = enviado
-            ? (isMotoboyOrder
+            ? (useMotoboyStock
               ? `Saída Motoboy por envio do pedido ${id}`
-              : `Saída por envio do pedido ${id}`)
-            : (isMotoboyOrder
+              : `Saída Loja por envio do pedido ${id}`)
+            : (useMotoboyStock
               ? `Estorno Motoboy de saída do pedido ${id}`
-              : `Estorno de saída do pedido ${id}`);
-          if (isMotoboyOrder) {
+              : `Estorno Loja de saída do pedido ${id}`);
+          if (useMotoboyStock) {
             await registerMotoboyInventoryEntry({
               productId: item.productId!,
               quantity: qty,
@@ -2398,8 +2438,8 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       }
     }
 
-    broadcastNotification({ type: "order_enviado_updated", data: { id, enviado } });
-    res.json({ ok: true, id, enviado });
+    broadcastNotification({ type: "order_enviado_updated", data: { id, enviado, inventoryPool } });
+    res.json({ ok: true, id, enviado, inventoryPool });
   } catch (err) {
     console.error("Update order enviado error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar status de envio." });

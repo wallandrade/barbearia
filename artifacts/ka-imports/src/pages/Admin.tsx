@@ -695,7 +695,7 @@ interface OrderBumpsPanelProps {
 }
 
 // ProductSelect with image thumbnails and search - Custom implementation
-function ProductSelect({ products, value, onChange, placeholder }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string }) {
+function ProductSelect({ products, value, onChange, placeholder, dropdownPlacement = "bottom" }: { products: BumpProduct[]; value: string; onChange: (v: string) => void; placeholder: string; dropdownPlacement?: "top" | "bottom" }) {
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -726,9 +726,20 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
     }
   }, [isOpen]);
 
+  const dropdownPosClass = dropdownPlacement === "top"
+    ? "absolute bottom-full left-0 right-0 mb-1"
+    : "absolute top-full left-0 right-0 mt-1";
+
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative">
+        {!isOpen && selectedProduct?.image && (
+          <img
+            src={selectedProduct.image}
+            alt=""
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded object-cover border border-border pointer-events-none z-10"
+          />
+        )}
         <input
           ref={inputRef}
           type="text"
@@ -739,29 +750,38 @@ function ProductSelect({ products, value, onChange, placeholder }: { products: B
             setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
-          className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={`w-full border border-border rounded-lg py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            !isOpen && selectedProduct?.image ? "pl-10 pr-9" : "px-3 pr-9"
+          }`}
           autoComplete="off"
         />
         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
       </div>
 
       {isOpen && filteredProducts.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-40 max-h-64 overflow-y-auto">
+        <div className={`${dropdownPosClass} bg-white border border-border rounded-lg shadow-lg z-40 max-h-64 overflow-y-auto`}>
           {filteredProducts.map((p) => (
             <button
               key={p.id}
+              type="button"
               onClick={() => handleSelect(p.id)}
               className="w-full px-3 py-2 text-sm hover:bg-blue-100 cursor-pointer flex items-center gap-2 text-left border-b border-border last:border-b-0 transition-colors"
             >
-              {p.image && <img src={p.image} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
-              <span>{p.name}</span>
+              {p.image ? (
+                <img src={p.image} alt="" className="w-8 h-8 rounded-md object-cover flex-shrink-0 border border-border" />
+              ) : (
+                <div className="w-8 h-8 rounded-md bg-muted flex-shrink-0 border border-border flex items-center justify-center">
+                  <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                </div>
+              )}
+              <span className="truncate">{p.name}</span>
             </button>
           ))}
         </div>
       )}
 
       {isOpen && filteredProducts.length === 0 && search && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-40 px-3 py-2 text-sm text-gray-500">
+        <div className={`${dropdownPosClass} bg-white border border-border rounded-lg shadow-lg z-40 px-3 py-2 text-sm text-gray-500`}>
           Nenhum produto encontrado
         </div>
       )}
@@ -8061,7 +8081,6 @@ function InventoryPanel({
   onResolvePendingReshipment: (item: ReshipmentRecord, registerStockEntry: boolean) => Promise<void>;
 }) {
   const [stockTab, setStockTab] = useState<"loja" | "motoboy">("loja");
-  const [entryProductQuery, setEntryProductQuery] = useState("");
   const [manualProductQuery, setManualProductQuery] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
   const [reshipmentActionLoading, setReshipmentActionLoading] = useState<Record<string, boolean>>({});
@@ -8073,15 +8092,6 @@ function InventoryPanel({
   });
 
   useEffect(() => {
-    if (!entryForm.productId) {
-      setEntryProductQuery("");
-      return;
-    }
-    const selected = products.find((p) => p.id === entryForm.productId);
-    if (selected) setEntryProductQuery(selected.name);
-  }, [entryForm.productId, products]);
-
-  useEffect(() => {
     if (!manualForm.productId) {
       setManualProductQuery("");
       return;
@@ -8089,13 +8099,6 @@ function InventoryPanel({
     const selected = products.find((p) => p.id === manualForm.productId);
     if (selected) setManualProductQuery(selected.name);
   }, [manualForm.productId, products]);
-
-  const applyEntryProductQuery = (rawValue: string) => {
-    const value = rawValue.trim();
-    setEntryProductQuery(rawValue);
-    const selected = products.find((p) => p.name.trim().toLowerCase() === value.toLowerCase());
-    setEntryForm((prev) => ({ ...prev, productId: selected?.id || "" }));
-  };
 
   const applyManualProductQuery = (rawValue: string) => {
     const value = rawValue.trim();
@@ -8261,7 +8264,7 @@ function InventoryPanel({
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
-                ? "Registre o que está na mão do motoboy. Pedidos Motoboy baixam daqui ao marcar enviado."
+                ? "Registre o que está na mão do motoboy. Em Marcar Enviado, escolha Loja ou Motoboy no card do pedido."
                 : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
@@ -8280,18 +8283,13 @@ function InventoryPanel({
             <option value="exit">Saída</option>
           </select>
           <div className="md:col-span-2">
-            <input
-              list="inventory-entry-products"
-              className="h-10 w-full rounded-lg border border-border px-3 text-sm bg-white"
+            <ProductSelect
+              products={products}
+              value={entryForm.productId}
+              onChange={(v) => setEntryForm((prev) => ({ ...prev, productId: v }))}
               placeholder="Pesquise e selecione o produto"
-              value={entryProductQuery}
-              onChange={(e) => applyEntryProductQuery(e.target.value)}
+              dropdownPlacement="top"
             />
-            <datalist id="inventory-entry-products">
-              {products.map((p) => (
-                <option key={p.id} value={p.name} />
-              ))}
-            </datalist>
           </div>
           <input
             type="number"
@@ -8786,6 +8784,7 @@ function OrdersPanel({
   const [orderPriorities, setOrderPriorities] = useState<Record<string, boolean>>({});
   const [orderPriorityUpdating, setOrderPriorityUpdating] = useState<Record<string, boolean>>({});
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
+  const [enviadoInventoryPool, setEnviadoInventoryPool] = useState<Record<string, "loja" | "motoboy">>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
   const [envioecomBusy, setEnvioecomBusy] = useState<Record<string, boolean>>({});
@@ -9295,6 +9294,21 @@ function OrdersPanel({
     setEnviados(map);
   }, [ordersLookup]);
 
+  // Pool de estoque padrão: Motoboy se frete Motoboy; senão Loja (admin pode trocar no card)
+  useEffect(() => {
+    setEnviadoInventoryPool((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const order of ordersLookup) {
+        if (next[order.id]) continue;
+        const isMotoboy = String((order as { shippingType?: string }).shippingType || "").toLowerCase().trim() === "motoboy";
+        next[order.id] = isMotoboy ? "motoboy" : "loja";
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [ordersLookup]);
+
   useEffect(() => {
     const map: Record<string, boolean> = {};
     for (const order of ordersLookup) {
@@ -9538,16 +9552,28 @@ function OrdersPanel({
       setAdminPasswordSubmitting(false);
     }
   };
-  const verifyOrderStock = (orderId: string, balancesSnapshot?: InventoryBalanceRecord[]): { hasStock: boolean; message: string; missingItems: string[] } => {
+  const resolveInventoryPoolForOrder = (orderId: string): "loja" | "motoboy" => {
+    const existing = enviadoInventoryPool[orderId];
+    if (existing === "loja" || existing === "motoboy") return existing;
+    const order = ordersLookup.find((o) => o.id === orderId);
+    const isMotoboy = String((order as { shippingType?: string } | undefined)?.shippingType || "").toLowerCase().trim() === "motoboy";
+    return isMotoboy ? "motoboy" : "loja";
+  };
+
+  const verifyOrderStock = (
+    orderId: string,
+    balancesSnapshot?: InventoryBalanceRecord[],
+    inventoryPool?: "loja" | "motoboy",
+  ): { hasStock: boolean; message: string; missingItems: string[] } => {
     const order = ordersLookup.find(o => o.id === orderId);
     if (!order) {
       return { hasStock: false, message: "Pedido não encontrado", missingItems: [] };
     }
 
-    const isMotoboy = String((order as { shippingType?: string }).shippingType || "").toLowerCase().trim() === "motoboy";
+    const pool = inventoryPool || resolveInventoryPoolForOrder(orderId);
     const effectiveBalances = balancesSnapshot
-      ?? (isMotoboy ? motoboyInventoryBalances : inventoryBalances);
-    const stockLabel = isMotoboy ? "estoque Motoboy" : "estoque";
+      ?? (pool === "motoboy" ? motoboyInventoryBalances : inventoryBalances);
+    const stockLabel = pool === "motoboy" ? "estoque Motoboy" : "estoque Loja";
 
     // Avoid false negatives while inventory snapshot is still loading.
     if (effectiveBalances.length === 0) {
@@ -9677,10 +9703,13 @@ function OrdersPanel({
       return;
     }
 
+    const inventoryPool = resolveInventoryPoolForOrder(orderId);
+
     // Verify stock before marking as enviado
     if (novoValor) {
       // Only check stock when marking as enviado (not when unmarking)
-      const stockCheck = verifyOrderStock(orderId, trackingInventoryBalances ?? inventoryBalances);
+      const balancesForPool = inventoryPool === "motoboy" ? motoboyInventoryBalances : inventoryBalances;
+      const stockCheck = verifyOrderStock(orderId, balancesForPool, inventoryPool);
       if (!stockCheck.hasStock) {
         toast.error(stockCheck.message);
         return;
@@ -9695,7 +9724,11 @@ function OrdersPanel({
           ...authHeaders(),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ enviado: novoValor, ...(adminPassword ? { adminPassword } : {}) }),
+        body: JSON.stringify({
+          enviado: novoValor,
+          inventoryPool,
+          ...(adminPassword ? { adminPassword } : {}),
+        }),
       });
       if (res.status === 404) {
         toast.error("Pedido não encontrado no banco de dados!");
@@ -9709,7 +9742,11 @@ function OrdersPanel({
       }
       onSetOrderEnviado(orderId, novoValor);
       setEnviados(prev => ({ ...prev, [orderId]: novoValor }));
-      toast.success(novoValor ? "Pedido marcado como enviado!" : "Pedido marcado como pendente!");
+      toast.success(
+        novoValor
+          ? `Pedido marcado como enviado (baixa em ${inventoryPool === "motoboy" ? "Motoboy" : "Loja"})!`
+          : "Pedido marcado como pendente!",
+      );
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : "Erro ao atualizar status de envio!";
       toast.error(message);
@@ -10179,7 +10216,9 @@ function OrdersPanel({
 
     const targetOrderId = trackingSelectedOrderId || trackingReview.order.id;
     const targetOrder = ordersLookup.find((o) => o.id === targetOrderId) || trackingReview.order;
-    const stockCheck = verifyOrderStock(targetOrderId);
+    const inventoryPool = resolveInventoryPoolForOrder(targetOrderId);
+    const balancesForPool = inventoryPool === "motoboy" ? motoboyInventoryBalances : inventoryBalances;
+    const stockCheck = verifyOrderStock(targetOrderId, balancesForPool, inventoryPool);
     if (!stockCheck.hasStock) {
       toast.error(stockCheck.message);
       return;
@@ -10210,7 +10249,7 @@ function OrdersPanel({
             ...authHeaders(),
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ enviado: true }),
+          body: JSON.stringify({ enviado: true, inventoryPool }),
         });
 
         if (envioRes.status === 404) {
@@ -10252,13 +10291,20 @@ function OrdersPanel({
   const modalInventoryBalances = (trackingInventoryBalances && trackingInventoryBalances.length > 0)
     ? trackingInventoryBalances
     : inventoryBalances;
-  const trackingInventoryReady = modalInventoryBalances.length > 0;
-  const globalInventorySnapshotReady = inventoryBalances.length > 0;
+  const trackingInventoryReady = modalInventoryBalances.length > 0 || motoboyInventoryBalances.length > 0;
+  const trackingReviewPool = trackingReview ? resolveInventoryPoolForOrder(trackingReview.order.id) : "loja";
+  const trackingTargetPool = trackingTargetOrderId ? resolveInventoryPoolForOrder(trackingTargetOrderId) : "loja";
+  const trackingReviewBalances = trackingReviewPool === "motoboy" ? motoboyInventoryBalances : modalInventoryBalances;
+  const trackingTargetBalances = trackingTargetPool === "motoboy" ? motoboyInventoryBalances : modalInventoryBalances;
   const trackingReviewStock = trackingReview
-    ? (trackingInventoryReady ? verifyOrderStock(trackingReview.order.id, modalInventoryBalances) : { hasStock: true, message: "", missingItems: [] as string[] })
+    ? (trackingReviewBalances.length > 0
+      ? verifyOrderStock(trackingReview.order.id, trackingReviewBalances, trackingReviewPool)
+      : { hasStock: true, message: "", missingItems: [] as string[] })
     : { hasStock: true, message: "", missingItems: [] as string[] };
   const trackingTargetStock = trackingTargetOrderId
-    ? verifyOrderStock(trackingTargetOrderId, modalInventoryBalances)
+    ? (trackingTargetBalances.length > 0
+      ? verifyOrderStock(trackingTargetOrderId, trackingTargetBalances, trackingTargetPool)
+      : { hasStock: true, message: "", missingItems: [] as string[] })
     : { hasStock: true, message: "", missingItems: [] as string[] };
 
   if (orders.length === 0) return (
@@ -10312,9 +10358,13 @@ function OrdersPanel({
           const isPaidOrCompleted = normalizedOrderStatus === "paid" || normalizedOrderStatus === "completed";
           const isExpanded = expandedOrder === order.id;
           // Estoque no card mesmo com enviado/EE (alerta visual). Lista "para enviar" continua só com !enviado.
-          const orderStockCheck = !globalInventorySnapshotReady
+          const selectedInventoryPool = resolveInventoryPoolForOrder(order.id);
+          const poolInventoryReady = selectedInventoryPool === "motoboy"
+            ? motoboyInventoryBalances.length > 0
+            : inventoryBalances.length > 0;
+          const orderStockCheck = !poolInventoryReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
-            : verifyOrderStock(order.id);
+            : verifyOrderStock(order.id, undefined, selectedInventoryPool);
           const orderProducts = getOrderProducts(order.products);
           const grossAmount = Number(order.cardTotalActual ?? order.total) || 0;
           const orderProductsCost = orderProducts.reduce((sum, item) => {
@@ -10414,20 +10464,22 @@ function OrdersPanel({
                           </span>
                         )}
                         <span
-                          title={!globalInventorySnapshotReady
+                          title={!poolInventoryReady
                             ? "Carregando saldo de estoque"
                             : orderStockCheck.hasStock
-                              ? "Estoque suficiente para envio"
-                              : orderStockCheck.missingItems.join("\n") || "Sem estoque dos produtos do pedido"}
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!globalInventorySnapshotReady
+                              ? `Estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} suficiente para envio`
+                              : orderStockCheck.missingItems.join("\n") || `Sem estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} dos produtos do pedido`}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!poolInventoryReady
                             ? "bg-slate-100 text-slate-700 border-slate-200"
                             : orderStockCheck.hasStock
                             ? "bg-green-100 text-green-800 border-green-200"
                             : "bg-red-100 text-red-800 border-red-200"}`}
                         >
-                          {!globalInventorySnapshotReady
+                          {!poolInventoryReady
                             ? "Estoque carregando"
-                            : (orderStockCheck.hasStock ? "Estoque OK" : "sem estoque")}
+                            : (orderStockCheck.hasStock
+                              ? `Estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} OK`
+                              : `sem estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"}`)}
                         </span>
                         {isReshipment && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${rs === "reenvio_aguardando_estoque" ? "bg-red-100 text-red-800 border-red-200" : rs === "reenvio_pronto_para_envio" ? "bg-red-50 text-red-700 border-red-200" : "bg-rose-100 text-rose-800 border-rose-200"}`}>
@@ -10756,6 +10808,24 @@ function OrdersPanel({
                     : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
+                {!showEnviadoUi && (
+                  <label className="inline-flex items-center gap-1.5 h-8 rounded-full border border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900">
+                    <span className="whitespace-nowrap">Baixa estoque:</span>
+                    <select
+                      className="h-6 rounded-md border border-amber-200 bg-white px-1.5 text-xs font-semibold text-slate-800"
+                      value={selectedInventoryPool}
+                      onChange={(e) => {
+                        const value = e.target.value === "motoboy" ? "motoboy" : "loja";
+                        setEnviadoInventoryPool((prev) => ({ ...prev, [order.id]: value }));
+                      }}
+                      title="De qual estoque baixar ao marcar enviado"
+                      aria-label="Estoque para baixa no envio"
+                    >
+                      <option value="loja">Loja</option>
+                      <option value="motoboy">Motoboy</option>
+                    </select>
+                  </label>
+                )}
                 <Button
                   size="sm"
                   className={`gap-1.5 rounded-full px-5 py-2 font-semibold transition shadow-sm border ${showEnviadoUi
