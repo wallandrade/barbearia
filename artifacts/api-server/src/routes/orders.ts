@@ -2314,7 +2314,7 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/inventory-pool  (protected)
-// Persiste Loja/Motoboy e reserva (baixa imediata) o estoque do pedido.
+// Loja: reserva (baixa imediata). Motoboy: só grava preferência — baixa ao Enviado/postagem.
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, res) => {
   try {
@@ -2354,9 +2354,15 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     const currentPool: InventoryPoolKind | null =
       currentPoolRaw === "motoboy" || currentPoolRaw === "loja" ? currentPoolRaw : null;
     const currentlyReserved = !!(order as any).inventoryReserved;
+    // Motoboy: não reserva na escolha — só baixa quando sair (Enviado / postado).
+    const softSelect = nextPool === "motoboy";
 
-    if (currentlyReserved && currentPool === nextPool) {
+    if (!softSelect && currentlyReserved && currentPool === nextPool) {
       res.json({ ok: true, order: mapOrder(order), inventoryPool: nextPool, inventoryReserved: true });
+      return;
+    }
+    if (softSelect && currentPool === nextPool && !currentlyReserved) {
+      res.json({ ok: true, order: mapOrder(order), inventoryPool: nextPool, inventoryReserved: false });
       return;
     }
 
@@ -2369,14 +2375,18 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       return;
     }
 
-    if (currentlyReserved && currentPool && currentPool !== nextPool && resolvedItems.length > 0) {
-      await applyOrderInventoryDelta({
-        pool: currentPool,
-        items: resolvedItems,
-        orderId: id,
-        clientName: order.clientName || null,
-        kind: "release",
-      });
+    // Libera reserva dura anterior (ex.: Loja→Motoboy ou Motoboy reservado legado)
+    if (currentlyReserved && currentPool && resolvedItems.length > 0) {
+      const shouldRelease = softSelect || currentPool !== nextPool;
+      if (shouldRelease) {
+        await applyOrderInventoryDelta({
+          pool: currentPool,
+          items: resolvedItems,
+          orderId: id,
+          clientName: order.clientName || null,
+          kind: "release",
+        });
+      }
     }
 
     if (resolvedItems.length > 0) {
@@ -2384,8 +2394,8 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       const stockByProduct = await getStockMapForPool(nextPool, productIds);
       const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId) || 0) < item.quantity);
       if (insufficient.length > 0) {
-        // Re-reserve previous pool if we already released it
-        if (currentlyReserved && currentPool && currentPool !== nextPool) {
+        // Re-reserva Loja se liberamos e a troca falhou
+        if (currentlyReserved && currentPool === "loja" && (softSelect || currentPool !== nextPool)) {
           try {
             await applyOrderInventoryDelta({
               pool: currentPool,
@@ -2404,25 +2414,28 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
           message: nextPool === "motoboy"
-            ? `Estoque Motoboy insuficiente para reservar: ${details}.`
+            ? `Estoque Motoboy insuficiente: ${details}.`
             : `Estoque Loja insuficiente para reservar: ${details}.`,
         });
         return;
       }
 
-      await applyOrderInventoryDelta({
-        pool: nextPool,
-        items: resolvedItems,
-        orderId: id,
-        clientName: order.clientName || null,
-        kind: "reserve",
-      });
+      if (!softSelect) {
+        await applyOrderInventoryDelta({
+          pool: nextPool,
+          items: resolvedItems,
+          orderId: id,
+          clientName: order.clientName || null,
+          kind: "reserve",
+        });
+      }
     }
 
+    const inventoryReserved = !softSelect;
     await db.update(ordersTable)
       .set({
         inventoryPool: nextPool,
-        inventoryReserved: true,
+        inventoryReserved,
         updatedAt: new Date(),
       } as any)
       .where(buildAdminOrderWhere(id, adminScope));
@@ -2430,17 +2443,17 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     const updated = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
     broadcastNotification({
       type: "order_inventory_pool_updated",
-      data: { id, inventoryPool: nextPool, inventoryReserved: true },
+      data: { id, inventoryPool: nextPool, inventoryReserved },
     });
     res.json({
       ok: true,
       order: updated[0] ? mapOrder(updated[0]) : null,
       inventoryPool: nextPool,
-      inventoryReserved: true,
+      inventoryReserved,
     });
   } catch (err) {
     console.error("Update inventory pool error:", err);
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao reservar estoque do pedido." });
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar estoque do pedido." });
   }
 });
 

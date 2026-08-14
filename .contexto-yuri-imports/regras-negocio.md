@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-13
+> **Última atualização:** 2026-08-14
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-14 | Motoboy na escolha do card **não reserva** (só grava pool); baixa no Marcar Enviado | Saldo Motoboy só cai quando sai de fato | Loja ainda reserva na escolha |
 | 2026-08-13 | Escolha Loja/Motoboy no card **persiste** (`inventory_pool`) e **reserva** (baixa imediata); Enviado não baixa de novo se já reservado | Ctrl+R mantém escolha; saldo cai na reserva | Entrada Motoboy não debita loja |
 | 2026-08-13 | Marcar Enviado: admin escolhe pool **Loja** ou **Motoboy** no card (`inventoryPool`); estorno detecta pool pela saída | Baixa no estoque certo independente do frete | Entrada Motoboy ainda não debita loja |
 | 2026-08-13 | Estoque Motoboy: pool separado + aba; baixa no Enviado se frete Motoboy | Saber o que está na mão do motoboy | Estoque loja / EnvioEcom iguais |
@@ -87,7 +88,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Tickets (`support_tickets`) por CPF/pedido.
 - Reenvios automáticos/manuais (`reshipments`, `manual_reshipments`).
 - Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
-- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card do pedido, botões **Loja/Motoboy** chamam `PATCH .../inventory-pool`: grava `inventory_pool` + `inventory_reserved` e **baixa imediatamente** (reserva). Trocar de pool libera a reserva anterior e reserva no novo. **Marcar Enviado** não baixa de novo se já reservado (estorno do Enviado também não devolve enquanto a reserva existir). Entrada Motoboy **não** debita a loja automaticamente.
+- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado**. **Loja** continua reservando na escolha (`inventory_reserved`). Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.
 
 ## Prova social e settings

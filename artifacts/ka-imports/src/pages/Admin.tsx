@@ -8265,7 +8265,7 @@ function InventoryPanel({
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
-                ? "Registre o que está na mão do motoboy. No card do pedido, Loja/Motoboy salva e reserva o estoque."
+                ? "Registre o que está na mão do motoboy. Pedidos Motoboy só baixam ao marcar enviado (não reservam na escolha)."
                 : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
@@ -9604,22 +9604,29 @@ function OrdersPanel({
         inventoryReserved?: boolean;
       };
       if (!res.ok) {
-        throw new Error(data?.message || "Erro ao reservar estoque.");
+        throw new Error(data?.message || "Erro ao salvar estoque do pedido.");
       }
+      const reserved = data.inventoryReserved === true;
       if (data.order) {
         onSetOrderPatched(data.order);
       } else {
         patchOrderLocal(orderId, {
           inventoryPool: pool,
-          inventoryReserved: true,
+          inventoryReserved: reserved,
         } as Partial<AdminOrder>);
       }
       setEnviadoInventoryPool((prev) => ({ ...prev, [orderId]: pool }));
-      setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: true }));
+      setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: reserved }));
       onRefreshInventory();
-      toast.success(`Estoque ${pool === "motoboy" ? "Motoboy" : "Loja"} reservado para o pedido.`);
+      toast.success(
+        pool === "motoboy"
+          ? "Estoque Motoboy selecionado. A baixa só ocorre ao marcar enviado / postagem."
+          : reserved
+            ? "Estoque Loja reservado para o pedido."
+            : "Estoque Loja selecionado.",
+      );
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : "Erro ao reservar estoque.";
+      const message = err instanceof Error && err.message ? err.message : "Erro ao salvar estoque do pedido.";
       toast.error(message);
     } finally {
       setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: false }));
