@@ -956,6 +956,93 @@ function parseOrderItemsForInventory(raw: unknown): Array<{ productId: string | 
   return [...grouped.values()];
 }
 
+type InventoryPoolKind = "loja" | "motoboy";
+
+async function resolveOrderInventoryItems(products: unknown): Promise<Array<{ productId: string; productName: string; quantity: number }>> {
+  const orderItems = parseOrderItemsForInventory(products);
+  if (orderItems.length === 0) return [];
+
+  let resolvedItems = orderItems;
+  const missingIds = orderItems.filter((item) => !item.productId);
+  if (missingIds.length > 0) {
+    const productRows = await db
+      .select({ id: productsTable.id, name: productsTable.name })
+      .from(productsTable);
+    const productIdByName = new Map(productRows.map((row) => [String(row.name || "").trim().toLowerCase(), row.id] as const));
+    resolvedItems = orderItems.map((item) => {
+      if (item.productId) return item;
+      const byName = productIdByName.get(item.productName.trim().toLowerCase()) || null;
+      return { ...item, productId: byName };
+    });
+  }
+
+  const stillMissing = resolvedItems.filter((item) => !item.productId);
+  if (stillMissing.length > 0) {
+    const names = stillMissing.map((item) => item.productName).join(", ");
+    const err = new Error(`Não foi possível mapear os produtos no estoque: ${names}.`) as Error & { code?: string };
+    err.code = "INVENTORY_PRODUCT_MAPPING_ERROR";
+    throw err;
+  }
+
+  return resolvedItems.map((item) => ({
+    productId: item.productId!,
+    productName: item.productName,
+    quantity: item.quantity,
+  }));
+}
+
+async function getStockMapForPool(pool: InventoryPoolKind, productIds: string[]): Promise<Map<string, number>> {
+  if (pool === "motoboy") return getMotoboyStockMap(productIds);
+  const balanceRows = productIds.length > 0
+    ? await db
+      .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
+      .from(inventoryBalancesTable)
+      .where(inArray(inventoryBalancesTable.productId, productIds))
+    : [];
+  const map = new Map<string, number>();
+  for (const row of balanceRows as Array<{ productId: string; quantity: number }>) {
+    map.set(String(row.productId), Number(row.quantity) || 0);
+  }
+  return map;
+}
+
+async function applyOrderInventoryDelta(params: {
+  pool: InventoryPoolKind;
+  items: Array<{ productId: string; productName: string; quantity: number }>;
+  orderId: string;
+  clientName: string | null;
+  kind: "reserve" | "release" | "ship" | "unship";
+}): Promise<void> {
+  const isExit = params.kind === "reserve" || params.kind === "ship";
+  const poolLabel = params.pool === "motoboy" ? "Motoboy" : "Loja";
+  const reasonByKind: Record<typeof params.kind, string> = {
+    reserve: `Reserva ${poolLabel} pedido ${params.orderId}`,
+    release: `Liberação reserva ${poolLabel} pedido ${params.orderId}`,
+    ship: `Saída ${poolLabel} por envio do pedido ${params.orderId}`,
+    unship: `Estorno ${poolLabel} de saída do pedido ${params.orderId}`,
+  };
+  for (const item of params.items) {
+    const qty = isExit ? -item.quantity : item.quantity;
+    if (params.pool === "motoboy") {
+      await registerMotoboyInventoryEntry({
+        productId: item.productId,
+        quantity: qty,
+        reason: reasonByKind[params.kind],
+        referenceId: params.orderId,
+        clientName: params.clientName,
+      });
+    } else {
+      await registerInventoryEntry({
+        productId: item.productId,
+        quantity: qty,
+        reason: reasonByKind[params.kind],
+        referenceId: params.orderId,
+        clientName: params.clientName,
+      });
+    }
+  }
+}
+
 async function attachLegacyGuestOrdersToCustomer(userId: string, email: string): Promise<void> {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!userId || !normalizedEmail) return;
@@ -2136,6 +2223,11 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipIsProxy:              o.ipIsProxy ?? null,
     isPrioridade:           !!(o as any).isPrioridade,
     enviado:                !!o.enviado,
+    inventoryPool:          (() => {
+      const raw = String((o as any).inventoryPool || "").toLowerCase().trim();
+      return raw === "motoboy" || raw === "loja" ? raw : null;
+    })(),
+    inventoryReserved:      !!(o as any).inventoryReserved,
     trackingCode:           o.trackingCode ?? null,
     trackingLabelUrl:       o.trackingLabelUrl ?? null,
     trackingLabelText:      o.trackingLabelText ?? null,
@@ -2221,6 +2313,138 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/inventory-pool  (protected)
+// Persiste Loja/Motoboy e reserva (baixa imediata) o estoque do pedido.
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const rawPool = String((req.body as { inventoryPool?: string })?.inventoryPool || "").toLowerCase().trim();
+    if (rawPool !== "loja" && rawPool !== "motoboy") {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja' ou 'motoboy'." });
+      return;
+    }
+    const nextPool = rawPool as InventoryPoolKind;
+
+    const rows = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    const order = rows[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    if (order.enviado) {
+      res.status(400).json({
+        error: "ORDER_ALREADY_SHIPPED",
+        message: "Pedido já marcado como enviado. Desmarque o envio antes de trocar o estoque.",
+      });
+      return;
+    }
+
+    const currentPoolRaw = String((order as any).inventoryPool || "").toLowerCase().trim();
+    const currentPool: InventoryPoolKind | null =
+      currentPoolRaw === "motoboy" || currentPoolRaw === "loja" ? currentPoolRaw : null;
+    const currentlyReserved = !!(order as any).inventoryReserved;
+
+    if (currentlyReserved && currentPool === nextPool) {
+      res.json({ ok: true, order: mapOrder(order), inventoryPool: nextPool, inventoryReserved: true });
+      return;
+    }
+
+    let resolvedItems: Array<{ productId: string; productName: string; quantity: number }>;
+    try {
+      resolvedItems = await resolveOrderInventoryItems(order.products);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro ao mapear produtos.";
+      res.status(400).json({ error: "INVENTORY_PRODUCT_MAPPING_ERROR", message });
+      return;
+    }
+
+    if (currentlyReserved && currentPool && currentPool !== nextPool && resolvedItems.length > 0) {
+      await applyOrderInventoryDelta({
+        pool: currentPool,
+        items: resolvedItems,
+        orderId: id,
+        clientName: order.clientName || null,
+        kind: "release",
+      });
+    }
+
+    if (resolvedItems.length > 0) {
+      const productIds = resolvedItems.map((item) => item.productId);
+      const stockByProduct = await getStockMapForPool(nextPool, productIds);
+      const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId) || 0) < item.quantity);
+      if (insufficient.length > 0) {
+        // Re-reserve previous pool if we already released it
+        if (currentlyReserved && currentPool && currentPool !== nextPool) {
+          try {
+            await applyOrderInventoryDelta({
+              pool: currentPool,
+              items: resolvedItems,
+              orderId: id,
+              clientName: order.clientName || null,
+              kind: "reserve",
+            });
+          } catch (rollbackErr) {
+            console.error("Rollback inventory reserve failed:", rollbackErr);
+          }
+        }
+        const details = insufficient
+          .map((item) => `${item.productName} (precisa ${item.quantity}, disponível ${stockByProduct.get(item.productId) || 0})`)
+          .join("; ");
+        res.status(400).json({
+          error: "INSUFFICIENT_STOCK",
+          message: nextPool === "motoboy"
+            ? `Estoque Motoboy insuficiente para reservar: ${details}.`
+            : `Estoque Loja insuficiente para reservar: ${details}.`,
+        });
+        return;
+      }
+
+      await applyOrderInventoryDelta({
+        pool: nextPool,
+        items: resolvedItems,
+        orderId: id,
+        clientName: order.clientName || null,
+        kind: "reserve",
+      });
+    }
+
+    await db.update(ordersTable)
+      .set({
+        inventoryPool: nextPool,
+        inventoryReserved: true,
+        updatedAt: new Date(),
+      } as any)
+      .where(buildAdminOrderWhere(id, adminScope));
+
+    const updated = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    broadcastNotification({
+      type: "order_inventory_pool_updated",
+      data: { id, inventoryPool: nextPool, inventoryReserved: true },
+    });
+    res.json({
+      ok: true,
+      order: updated[0] ? mapOrder(updated[0]) : null,
+      inventoryPool: nextPool,
+      inventoryReserved: true,
+    });
+  } catch (err) {
+    console.error("Update inventory pool error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao reservar estoque do pedido." });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/enviado  (protected)
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => {
@@ -2245,17 +2469,14 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       return;
     }
     const rows = await db
-      .select({
-        id: ordersTable.id,
-        products: ordersTable.products,
-        clientName: ordersTable.clientName,
-        enviado: ordersTable.enviado,
-        shippingType: ordersTable.shippingType,
-      })
+      .select()
       .from(ordersTable)
       .where(buildAdminOrderWhere(id, adminScope))
       .limit(1);
-    const order = rows[0];
+    const order = rows[0] as (typeof ordersTable.$inferSelect & {
+      inventoryPool?: string | null;
+      inventoryReserved?: boolean | null;
+    }) | undefined;
     if (!order) {
       res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
       return;
@@ -2263,33 +2484,42 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
 
     const wasEnviado = !!order.enviado;
     const shippingIsMotoboy = String(order.shippingType || "").toLowerCase().trim() === "motoboy";
-    const defaultPool: "loja" | "motoboy" = shippingIsMotoboy ? "motoboy" : "loja";
+    const savedPoolRaw = String(order.inventoryPool || "").toLowerCase().trim();
+    const savedPool: InventoryPoolKind | null =
+      savedPoolRaw === "motoboy" || savedPoolRaw === "loja" ? savedPoolRaw : null;
+    const alreadyReserved = !!order.inventoryReserved && !!savedPool;
+    const defaultPool: InventoryPoolKind = savedPool || (shippingIsMotoboy ? "motoboy" : "loja");
 
-    // Estorno: prioriza pool informado; senão detecta pela última saída com referenceId do pedido.
-    let inventoryPool: "loja" | "motoboy" = requestedPool === "motoboy" || requestedPool === "loja"
+    let inventoryPool: InventoryPoolKind = requestedPool === "motoboy" || requestedPool === "loja"
       ? requestedPool
       : defaultPool;
-    if (wasEnviado && !enviado && !requestedPool) {
-      const [motoExit] = await db
-        .select({ id: inventoryMotoboyMovementsTable.id })
-        .from(inventoryMotoboyMovementsTable)
-        .where(and(
-          eq(inventoryMotoboyMovementsTable.referenceId, id),
-          eq(inventoryMotoboyMovementsTable.type, "exit"),
-        ))
-        .limit(1);
-      if (motoExit) {
-        inventoryPool = "motoboy";
-      } else {
-        const [lojaExit] = await db
-          .select({ id: inventoryMovementsTable.id })
-          .from(inventoryMovementsTable)
+
+    // Estorno: se já reservado, mantém o pool salvo; senão detecta pela saída.
+    if (wasEnviado && !enviado) {
+      if (alreadyReserved && savedPool) {
+        inventoryPool = savedPool;
+      } else if (!requestedPool) {
+        const [motoExit] = await db
+          .select({ id: inventoryMotoboyMovementsTable.id })
+          .from(inventoryMotoboyMovementsTable)
           .where(and(
-            eq(inventoryMovementsTable.referenceId, id),
-            eq(inventoryMovementsTable.type, "exit"),
+            eq(inventoryMotoboyMovementsTable.referenceId, id),
+            eq(inventoryMotoboyMovementsTable.type, "exit"),
           ))
           .limit(1);
-        if (lojaExit) inventoryPool = "loja";
+        if (motoExit) {
+          inventoryPool = "motoboy";
+        } else {
+          const [lojaExit] = await db
+            .select({ id: inventoryMovementsTable.id })
+            .from(inventoryMovementsTable)
+            .where(and(
+              eq(inventoryMovementsTable.referenceId, id),
+              eq(inventoryMovementsTable.type, "exit"),
+            ))
+            .limit(1);
+          if (lojaExit) inventoryPool = "loja";
+        }
       }
     }
     const useMotoboyStock = inventoryPool === "motoboy";
@@ -2320,59 +2550,31 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
             inArray(reshipmentsTable.status, ["reenvio_aguardando_estoque", "reenvio_pronto_para_envio"]),
           ))
           .limit(1)
-          .then((rows) => !!rows[0])
+          .then((r) => !!r[0])
       : false;
 
-    if (enviado !== wasEnviado) {
-      const orderItems = parseOrderItemsForInventory(order.products);
-      if (orderItems.length > 0) {
-        const missingIds = orderItems.filter((item) => !item.productId);
-        let resolvedItems = orderItems;
+    // Já reservado: estoque já saiu na escolha Loja/Motoboy — não baixa/estorna de novo no Enviado.
+    const skipStockBecauseReserved = alreadyReserved;
 
-        if (missingIds.length > 0) {
-          const productRows = await db
-            .select({ id: productsTable.id, name: productsTable.name })
-            .from(productsTable);
-          const productIdByName = new Map(productRows.map((row) => [String(row.name || "").trim().toLowerCase(), row.id] as const));
-          resolvedItems = orderItems.map((item) => {
-            if (item.productId) return item;
-            const byName = productIdByName.get(item.productName.trim().toLowerCase()) || null;
-            return { ...item, productId: byName };
-          });
-        }
+    if (enviado !== wasEnviado && !skipStockBecauseReserved) {
+      let resolvedItems: Array<{ productId: string; productName: string; quantity: number }> = [];
+      try {
+        resolvedItems = await resolveOrderInventoryItems(order.products);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erro ao mapear produtos.";
+        res.status(400).json({ error: "INVENTORY_PRODUCT_MAPPING_ERROR", message });
+        return;
+      }
 
-        const stillMissingIds = resolvedItems.filter((item) => !item.productId);
-        if (stillMissingIds.length > 0) {
-          const names = stillMissingIds.map((item) => item.productName).join(", ");
-          res.status(400).json({
-            error: "INVENTORY_PRODUCT_MAPPING_ERROR",
-            message: `Não foi possível mapear os produtos no estoque: ${names}.`,
-          });
-          return;
-        }
-
-        const productIds = resolvedItems.map((item) => item.productId!).filter(Boolean);
-        const stockByProduct = useMotoboyStock
-          ? await getMotoboyStockMap(productIds)
-          : await (async () => {
-              const balanceRows = productIds.length > 0
-                ? await db
-                    .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
-                    .from(inventoryBalancesTable)
-                    .where(inArray(inventoryBalancesTable.productId, productIds))
-                : [];
-              const map = new Map<string, number>();
-              for (const row of balanceRows as Array<{ productId: string; quantity: number }>) {
-                map.set(String(row.productId), Number(row.quantity) || 0);
-              }
-              return map;
-            })();
+      if (resolvedItems.length > 0) {
+        const productIds = resolvedItems.map((item) => item.productId);
+        const stockByProduct = await getStockMapForPool(inventoryPool, productIds);
 
         if (enviado) {
-          const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId!) || 0) < item.quantity);
+          const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId) || 0) < item.quantity);
           if (insufficient.length > 0) {
             const details = insufficient
-              .map((item) => `${item.productName} (precisa ${item.quantity}, disponível ${stockByProduct.get(item.productId!) || 0})`)
+              .map((item) => `${item.productName} (precisa ${item.quantity}, disponível ${stockByProduct.get(item.productId) || 0})`)
               .join("; ");
             res.status(400).json({
               error: "INSUFFICIENT_STOCK",
@@ -2384,41 +2586,28 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           }
         }
 
-        for (const item of resolvedItems) {
-          if (shouldSkipReturnToStock && !enviado) {
-            continue;
-          }
-          const qty = enviado ? -item.quantity : item.quantity;
-          const reason = enviado
-            ? (useMotoboyStock
-              ? `Saída Motoboy por envio do pedido ${id}`
-              : `Saída Loja por envio do pedido ${id}`)
-            : (useMotoboyStock
-              ? `Estorno Motoboy de saída do pedido ${id}`
-              : `Estorno Loja de saída do pedido ${id}`);
-          if (useMotoboyStock) {
-            await registerMotoboyInventoryEntry({
-              productId: item.productId!,
-              quantity: qty,
-              reason,
-              referenceId: id,
-              clientName: order.clientName || null,
-            });
-          } else {
-            await registerInventoryEntry({
-              productId: item.productId!,
-              quantity: qty,
-              reason,
-              referenceId: id,
-              clientName: order.clientName || null,
-            });
-          }
+        if (!(shouldSkipReturnToStock && !enviado)) {
+          await applyOrderInventoryDelta({
+            pool: inventoryPool,
+            items: resolvedItems,
+            orderId: id,
+            clientName: order.clientName || null,
+            kind: enviado ? "ship" : "unship",
+          });
         }
       }
     }
 
     await db.update(ordersTable)
-      .set({ enviado, updatedAt: new Date() })
+      .set({
+        enviado,
+        inventoryPool,
+        // Mantém reserva se já havia; se baixou no envio sem reserva prévia, marca pool sem reserved
+        ...(enviado && !alreadyReserved ? { inventoryReserved: false } : {}),
+        ...(enviado && alreadyReserved ? { inventoryReserved: true } : {}),
+        ...(!enviado && alreadyReserved ? { inventoryReserved: true } : {}),
+        updatedAt: new Date(),
+      } as any)
       .where(buildAdminOrderWhere(id, adminScope));
 
     // Release motoboy slot when order is marked as shipped
@@ -2439,7 +2628,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     broadcastNotification({ type: "order_enviado_updated", data: { id, enviado, inventoryPool } });
-    res.json({ ok: true, id, enviado, inventoryPool });
+    res.json({ ok: true, id, enviado, inventoryPool, inventoryReserved: alreadyReserved });
   } catch (err) {
     console.error("Update order enviado error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar status de envio." });

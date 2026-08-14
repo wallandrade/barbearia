@@ -4821,6 +4821,7 @@ export default function Admin() {
               setOrders((prev) => prev.filter((o) => o.id !== id));
             }}
             shippingQueueMap={shippingQueueMap}
+            onRefreshInventory={fetchInventoryOverview}
           />
         ) : tab === "rastreios" ? (
           <AdminEnvioEcomTrackingPanel
@@ -8264,7 +8265,7 @@ function InventoryPanel({
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
-                ? "Registre o que está na mão do motoboy. Em Marcar Enviado, escolha Loja ou Motoboy no card do pedido."
+                ? "Registre o que está na mão do motoboy. No card do pedido, Loja/Motoboy salva e reserva o estoque."
                 : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
@@ -8718,7 +8719,7 @@ function OrdersPanel({
   updateOrderStatus, setProofModal, setProofViewer, openWhatsApp,
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
   onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups, onSetReshipmentStatus, onRemoveOrder,
-  shippingQueueMap,
+  shippingQueueMap, onRefreshInventory,
 }: {
   allOrders: AdminOrder[];
   productImageById: Record<string, string>;
@@ -8755,6 +8756,7 @@ function OrdersPanel({
   onSetReshipmentStatus: (reshipmentId: string, status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado") => void;
   onRemoveOrder: (id: string) => void;
   shippingQueueMap: Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }>;
+  onRefreshInventory: () => void;
 }) {
 
   const normalizeIp = (ip?: string | null) => String(ip || "").trim().replace(/^::ffff:/, "") || "-";
@@ -8785,6 +8787,8 @@ function OrdersPanel({
   const [orderPriorityUpdating, setOrderPriorityUpdating] = useState<Record<string, boolean>>({});
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
   const [enviadoInventoryPool, setEnviadoInventoryPool] = useState<Record<string, "loja" | "motoboy">>({});
+  const [inventoryReservedByOrder, setInventoryReservedByOrder] = useState<Record<string, boolean>>({});
+  const [inventoryPoolSaving, setInventoryPoolSaving] = useState<Record<string, boolean>>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
   const [envioecomBusy, setEnvioecomBusy] = useState<Record<string, boolean>>({});
@@ -9294,16 +9298,38 @@ function OrdersPanel({
     setEnviados(map);
   }, [ordersLookup]);
 
-  // Pool de estoque padrão: Motoboy se frete Motoboy; senão Loja (admin pode trocar no card)
+  // Pool de estoque: prioriza valor salvo no pedido; senão Motoboy se frete Motoboy
   useEffect(() => {
     setEnviadoInventoryPool((prev) => {
       const next = { ...prev };
       let changed = false;
       for (const order of ordersLookup) {
+        const saved = String((order as { inventoryPool?: string | null }).inventoryPool || "").toLowerCase().trim();
+        const fromDb = saved === "motoboy" || saved === "loja" ? saved as "loja" | "motoboy" : null;
+        if (fromDb) {
+          if (next[order.id] !== fromDb) {
+            next[order.id] = fromDb;
+            changed = true;
+          }
+          continue;
+        }
         if (next[order.id]) continue;
         const isMotoboy = String((order as { shippingType?: string }).shippingType || "").toLowerCase().trim() === "motoboy";
         next[order.id] = isMotoboy ? "motoboy" : "loja";
         changed = true;
+      }
+      return changed ? next : prev;
+    });
+
+    setInventoryReservedByOrder((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const order of ordersLookup) {
+        const reserved = !!(order as { inventoryReserved?: boolean | null }).inventoryReserved;
+        if (next[order.id] !== reserved) {
+          next[order.id] = reserved;
+          changed = true;
+        }
       }
       return changed ? next : prev;
     });
@@ -9556,8 +9582,48 @@ function OrdersPanel({
     const existing = enviadoInventoryPool[orderId];
     if (existing === "loja" || existing === "motoboy") return existing;
     const order = ordersLookup.find((o) => o.id === orderId);
+    const saved = String((order as { inventoryPool?: string | null } | undefined)?.inventoryPool || "").toLowerCase().trim();
+    if (saved === "loja" || saved === "motoboy") return saved;
     const isMotoboy = String((order as { shippingType?: string } | undefined)?.shippingType || "").toLowerCase().trim() === "motoboy";
     return isMotoboy ? "motoboy" : "loja";
+  };
+
+  const saveInventoryPoolForOrder = async (orderId: string, pool: "loja" | "motoboy") => {
+    if (!orderId) return;
+    setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${orderId}/inventory-pool`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ inventoryPool: pool }),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        order?: AdminOrder;
+        inventoryPool?: "loja" | "motoboy";
+        inventoryReserved?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao reservar estoque.");
+      }
+      if (data.order) {
+        onSetOrderPatched(data.order);
+      } else {
+        patchOrderLocal(orderId, {
+          inventoryPool: pool,
+          inventoryReserved: true,
+        } as Partial<AdminOrder>);
+      }
+      setEnviadoInventoryPool((prev) => ({ ...prev, [orderId]: pool }));
+      setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: true }));
+      onRefreshInventory();
+      toast.success(`Estoque ${pool === "motoboy" ? "Motoboy" : "Loja"} reservado para o pedido.`);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Erro ao reservar estoque.";
+      toast.error(message);
+    } finally {
+      setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: false }));
+    }
   };
 
   const verifyOrderStock = (
@@ -9571,6 +9637,13 @@ function OrdersPanel({
     }
 
     const pool = inventoryPool || resolveInventoryPoolForOrder(orderId);
+    const reserved = !!(inventoryReservedByOrder[orderId] ?? (order as { inventoryReserved?: boolean }).inventoryReserved);
+    const orderPool = String((order as { inventoryPool?: string | null }).inventoryPool || "").toLowerCase().trim();
+    // Reserva já baixou o estoque deste pedido — considerar OK no pool reservado
+    if (reserved && orderPool === pool) {
+      return { hasStock: true, message: "", missingItems: [] };
+    }
+
     const effectiveBalances = balancesSnapshot
       ?? (pool === "motoboy" ? motoboyInventoryBalances : inventoryBalances);
     const stockLabel = pool === "motoboy" ? "estoque Motoboy" : "estoque Loja";
@@ -9742,6 +9815,7 @@ function OrdersPanel({
       }
       onSetOrderEnviado(orderId, novoValor);
       setEnviados(prev => ({ ...prev, [orderId]: novoValor }));
+      onRefreshInventory();
       toast.success(
         novoValor
           ? `Pedido marcado como enviado (baixa em ${inventoryPool === "motoboy" ? "Motoboy" : "Loja"})!`
@@ -10477,6 +10551,8 @@ function OrdersPanel({
                         >
                           {!poolInventoryReady
                             ? "Estoque carregando"
+                            : inventoryReservedByOrder[order.id] && String((order as { inventoryPool?: string }).inventoryPool || "").toLowerCase() === selectedInventoryPool
+                              ? `Reservado ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"}`
                             : (orderStockCheck.hasStock
                               ? `Estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} OK`
                               : `sem estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"}`)}
@@ -10809,22 +10885,35 @@ function OrdersPanel({
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
                 {!showEnviadoUi && (
-                  <label className="inline-flex items-center gap-1.5 h-8 rounded-full border border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900">
-                    <span className="whitespace-nowrap">Baixa estoque:</span>
-                    <select
-                      className="h-6 rounded-md border border-amber-200 bg-white px-1.5 text-xs font-semibold text-slate-800"
-                      value={selectedInventoryPool}
-                      onChange={(e) => {
-                        const value = e.target.value === "motoboy" ? "motoboy" : "loja";
-                        setEnviadoInventoryPool((prev) => ({ ...prev, [order.id]: value }));
-                      }}
-                      title="De qual estoque baixar ao marcar enviado"
-                      aria-label="Estoque para baixa no envio"
+                  <div className="inline-flex items-center gap-1 h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 text-xs font-semibold text-amber-900">
+                    <span className="whitespace-nowrap">
+                      {inventoryReservedByOrder[order.id] ? "Reservado:" : "Baixa estoque:"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!!inventoryPoolSaving[order.id]}
+                      onClick={() => { void saveInventoryPoolForOrder(order.id, "loja"); }}
+                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition ${
+                        selectedInventoryPool === "loja"
+                          ? "bg-slate-800 text-white border-slate-800"
+                          : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
+                      }`}
                     >
-                      <option value="loja">Loja</option>
-                      <option value="motoboy">Motoboy</option>
-                    </select>
-                  </label>
+                      Loja
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!!inventoryPoolSaving[order.id]}
+                      onClick={() => { void saveInventoryPoolForOrder(order.id, "motoboy"); }}
+                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition ${
+                        selectedInventoryPool === "motoboy"
+                          ? "bg-orange-600 text-white border-orange-600"
+                          : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
+                      }`}
+                    >
+                      {inventoryPoolSaving[order.id] ? "..." : "Motoboy"}
+                    </button>
+                  </div>
                 )}
                 <Button
                   size="sm"

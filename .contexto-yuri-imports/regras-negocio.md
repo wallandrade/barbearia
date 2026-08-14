@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Escolha Loja/Motoboy no card **persiste** (`inventory_pool`) e **reserva** (baixa imediata); Enviado não baixa de novo se já reservado | Ctrl+R mantém escolha; saldo cai na reserva | Entrada Motoboy não debita loja |
 | 2026-08-13 | Marcar Enviado: admin escolhe pool **Loja** ou **Motoboy** no card (`inventoryPool`); estorno detecta pool pela saída | Baixa no estoque certo independente do frete | Entrada Motoboy ainda não debita loja |
 | 2026-08-13 | Estoque Motoboy: pool separado + aba; baixa no Enviado se frete Motoboy | Saber o que está na mão do motoboy | Estoque loja / EnvioEcom iguais |
 | 2026-08-13 | Card admin: com EE/enviado ainda consulta estoque; badge **sem estoque** ao lado do status | Alerta visual sem repor pedido na lista de cópia | `ordersParaEnviar` segue `!enviado` |
@@ -86,7 +87,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Tickets (`support_tickets`) por CPF/pedido.
 - Reenvios automáticos/manuais (`reshipments`, `manual_reshipments`).
 - Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
-- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). Em **Marcar Enviado**, o card escolhe `inventoryPool` (`loja` \| `motoboy`); default sugerido = frete Motoboy → Motoboy, senão Loja. Estorno desfaz no mesmo pool (detecta pela saída com `referenceId` do pedido). Entrada Motoboy **não** debita a loja automaticamente.
+- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card do pedido, botões **Loja/Motoboy** chamam `PATCH .../inventory-pool`: grava `inventory_pool` + `inventory_reserved` e **baixa imediatamente** (reserva). Trocar de pool libera a reserva anterior e reserva no novo. **Marcar Enviado** não baixa de novo se já reservado (estorno do Enviado também não devolve enquanto a reserva existir). Entrada Motoboy **não** debita a loja automaticamente.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.
 
 ## Prova social e settings
