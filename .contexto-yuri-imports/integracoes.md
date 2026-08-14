@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-13
+> **Última atualização:** 2026-08-14
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-14 | Nome genérico EnvioEcom no create (`envioecom_shipment_item_name`); editável em Rastreios | Create nunca manda nome do catálogo | Cotação/webhook iguais; envios já criados não mudam |
 | 2026-08-13 | Pacote padrão EE = simulador site: 2×12×17 cm, 0,3 kg, valor R$5 | Cotação admin alinha preço com painel EnvioEcom | Create/webhook iguais; produto com medidas reais segue medidas reais |
 | 2026-08-13 | Admin: botão **Vincular EE** + modal (ID/rastreio, sem `prompt`) | Liga envio criado no painel EnvioEcom ao pedido e sync status | API sync/labels iguais |
 | 2026-08-13 | Card admin: EE/enviado + badge **sem estoque** (consulta estoque no card; lista cópia segue `!enviado`) | Evita recompra na cópia e alerta visual de falta | Cotação/create iguais |

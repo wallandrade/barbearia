@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Search, Truck } from "lucide-react";
+import { Loader2, RefreshCw, Save, Search, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -88,6 +88,68 @@ export default function AdminEnvioEcomTrackingPanel({
   const [q, setQ] = useState("");
   const [group, setGroup] = useState<"all" | TrackingBoardItem["group"]>("all");
   const [configured, setConfigured] = useState(true);
+  const [itemNameDraft, setItemNameDraft] = useState("Mercadoria");
+  const [itemNameSaved, setItemNameSaved] = useState("Mercadoria");
+  const [itemNameLoading, setItemNameLoading] = useState(true);
+  const [itemNameSaving, setItemNameSaving] = useState(false);
+
+  const fetchItemName = useCallback(async () => {
+    setItemNameLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/shipment-item-name`, {
+        headers: authHeaders(),
+      });
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      const data = await res.json() as { name?: string; defaultName?: string; message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao carregar nome genérico EnvioEcom.");
+        return;
+      }
+      const name = String(data.name || data.defaultName || "Mercadoria").trim() || "Mercadoria";
+      setItemNameDraft(name);
+      setItemNameSaved(name);
+    } catch {
+      toast.error("Erro ao carregar nome genérico EnvioEcom.");
+    } finally {
+      setItemNameLoading(false);
+    }
+  }, [authHeaders, onUnauthorized]);
+
+  const saveItemName = async () => {
+    const name = itemNameDraft.trim().slice(0, 120);
+    if (!name) {
+      toast.error("Informe o nome genérico do produto.");
+      return;
+    }
+    setItemNameSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/shipment-item-name`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      const data = await res.json() as { name?: string; message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao salvar nome genérico.");
+        return;
+      }
+      const saved = String(data.name || name).trim();
+      setItemNameDraft(saved);
+      setItemNameSaved(saved);
+      toast.success("Nome genérico salvo. Novos creates EnvioEcom usarão esse nome.");
+    } catch {
+      toast.error("Erro ao salvar nome genérico.");
+    } finally {
+      setItemNameSaving(false);
+    }
+  };
 
   const fetchBoard = useCallback(async () => {
     setLoading(true);
@@ -125,6 +187,10 @@ export default function AdminEnvioEcomTrackingPanel({
   useEffect(() => {
     void fetchBoard();
   }, [fetchBoard]);
+
+  useEffect(() => {
+    void fetchItemName();
+  }, [fetchItemName]);
 
   const syncBatch = async () => {
     setSyncing(true);
@@ -194,6 +260,8 @@ export default function AdminEnvioEcomTrackingPanel({
     { key: "cancelled", label: "Cancelados", value: summary?.cancelled ?? 0 },
   ]), [items.length, summary]);
 
+  const itemNameDirty = itemNameDraft.trim() !== itemNameSaved.trim();
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-teal-100 bg-teal-50/50 p-4 flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
@@ -232,6 +300,37 @@ export default function AdminEnvioEcomTrackingPanel({
             Sync abertos (até 20)
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+        <div>
+          <p className="text-sm font-bold text-amber-950">Nome do produto no create EnvioEcom</p>
+          <p className="text-xs text-amber-900/80 mt-0.5">
+            Esse nome é enviado para <span className="font-semibold">todos</span> os itens. O nome real do site nunca vai na API.
+            Envios já criados não mudam — só os próximos creates.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={itemNameDraft}
+            onChange={(e) => setItemNameDraft(e.target.value.slice(0, 120))}
+            disabled={itemNameLoading || itemNameSaving}
+            placeholder="Ex.: Mercadoria / Suplementos"
+            className="flex-1 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
+            maxLength={120}
+          />
+          <Button
+            className="h-11 gap-1.5 bg-amber-700 hover:bg-amber-800"
+            disabled={itemNameLoading || itemNameSaving || !itemNameDraft.trim() || !itemNameDirty}
+            onClick={() => { void saveItemName(); }}
+          >
+            {itemNameSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {itemNameSaving ? "Salvando..." : "Salvar nome"}
+          </Button>
+        </div>
+        <p className="text-[11px] text-amber-900/70">
+          Atual: <span className="font-semibold">{itemNameLoading ? "…" : itemNameSaved}</span>
+        </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

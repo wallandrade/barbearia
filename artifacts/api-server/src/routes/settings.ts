@@ -33,7 +33,9 @@ const ALLOWED_KEYS = [
   "outbound_webhook_event_new_order",
   "outbound_webhook_event_order_paid",
   // Admin helpers
-  "admin_saved_brands"
+  "admin_saved_brands",
+  // EnvioEcom: nome genérico dos itens no create (nunca nome do catálogo)
+  "envioecom_shipment_item_name",
 ];
 
 const IMAGE_SETTING_KEYS = new Set([

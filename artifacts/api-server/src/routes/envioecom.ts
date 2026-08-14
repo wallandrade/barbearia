@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
-import { db, ordersTable } from "@workspace/db";
+import { db, ordersTable, siteSettingsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
@@ -128,19 +128,34 @@ function formatDimString(value: unknown): string {
   return String(Math.min(100, Math.max(2, Math.round(n))));
 }
 
-function buildShipmentItemsFromOrder(order: typeof ordersTable.$inferSelect) {
+const ENVIOECOM_SHIPMENT_ITEM_NAME_KEY = "envioecom_shipment_item_name";
+const ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT = "Mercadoria";
+
+async function getEnvioEcomShipmentItemName(): Promise<string> {
+  const rows = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, ENVIOECOM_SHIPMENT_ITEM_NAME_KEY))
+    .limit(1);
+  const raw = String(rows[0]?.value || "").trim().slice(0, 120);
+  return raw || ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT;
+}
+
+async function buildShipmentItemsFromOrder(order: typeof ordersTable.$inferSelect) {
+  const genericName = await getEnvioEcomShipmentItemName();
   const products = parseProducts(order.products);
   if (!products.length) {
     return [
       {
-        name: "Pedido",
+        name: genericName,
         quantity: 1,
         unit_cost: Number(order.subtotal || order.total || 0),
       },
     ];
   }
+  // Nunca envia o nome real do catálogo — só o nome genérico configurado no painel Rastreios.
   return products.map((p) => ({
-    name: String(p.name || "Produto").slice(0, 120),
+    name: genericName,
     quantity: Math.max(1, Number(p.quantity) || 1),
     unit_cost: Number(p.price) || 0,
   }));
@@ -460,7 +475,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       localidade,
       uf,
       ...(order.addressComplement ? { complemento: String(order.addressComplement).trim().slice(0, 60) } : {}),
-      items: buildShipmentItemsFromOrder(order).map((item) => ({
+      items: (await buildShipmentItemsFromOrder(order)).map((item) => ({
         name: item.name,
         quantity: item.quantity,
         unit_cost: Number(formatMoneyString(item.unit_cost)),
@@ -942,6 +957,49 @@ router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, 
     });
   } catch (err) {
     mapApiError(err, res);
+  }
+});
+
+// --------------------------------------------------------------------------
+// GET/PUT /api/admin/envioecom/shipment-item-name — nome genérico dos itens no create
+// --------------------------------------------------------------------------
+router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req, res) => {
+  try {
+    const name = await getEnvioEcomShipmentItemName();
+    res.json({
+      ok: true,
+      key: ENVIOECOM_SHIPMENT_ITEM_NAME_KEY,
+      name,
+      defaultName: ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT,
+    });
+  } catch (err) {
+    console.error("[EnvioEcom] get shipment-item-name error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao carregar nome do produto EnvioEcom." });
+  }
+});
+
+router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, res) => {
+  try {
+    const name = String((req.body as { name?: string })?.name || "").trim().slice(0, 120);
+    if (!name) {
+      res.status(400).json({
+        error: "INVALID_INPUT",
+        message: "Informe o nome genérico do produto (não pode ficar vazio).",
+      });
+      return;
+    }
+
+    await db
+      .insert(siteSettingsTable)
+      .values({ key: ENVIOECOM_SHIPMENT_ITEM_NAME_KEY, value: name, updatedAt: new Date() })
+      .onDuplicateKeyUpdate({
+        set: { value: name, updatedAt: new Date() },
+      });
+
+    res.json({ ok: true, name });
+  } catch (err) {
+    console.error("[EnvioEcom] put shipment-item-name error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar nome do produto EnvioEcom." });
   }
 });
 
