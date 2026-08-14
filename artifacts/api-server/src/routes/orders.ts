@@ -19,7 +19,7 @@ import {
   registerAffiliateLead,
   resolveAffiliateByCode,
 } from "../lib/affiliates";
-import { getReshipmentByOrderIds, registerInventoryEntry } from "../lib/reshipments";
+import { getReshipmentByOrderIds, getMotoboyStockMap, registerInventoryEntry, registerMotoboyInventoryEntry } from "../lib/reshipments";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
@@ -2241,6 +2241,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         products: ordersTable.products,
         clientName: ordersTable.clientName,
         enviado: ordersTable.enviado,
+        shippingType: ordersTable.shippingType,
       })
       .from(ordersTable)
       .where(buildAdminOrderWhere(id, adminScope))
@@ -2252,6 +2253,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     const wasEnviado = !!order.enviado;
+    const isMotoboyOrder = String(order.shippingType || "").toLowerCase().trim() === "motoboy";
     if (wasEnviado && !enviado) {
       const providedPassword = String(adminPassword || "").trim();
       if (!providedPassword) {
@@ -2310,17 +2312,21 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         }
 
         const productIds = resolvedItems.map((item) => item.productId!).filter(Boolean);
-        const balanceRows = productIds.length > 0
-          ? await db
-              .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
-              .from(inventoryBalancesTable)
-              .where(inArray(inventoryBalancesTable.productId, productIds))
-          : [];
-
-        const stockByProduct = new Map<string, number>();
-        for (const row of balanceRows as Array<{ productId: string; quantity: number }>) {
-          stockByProduct.set(String(row.productId), Number(row.quantity) || 0);
-        }
+        const stockByProduct = isMotoboyOrder
+          ? await getMotoboyStockMap(productIds)
+          : await (async () => {
+              const balanceRows = productIds.length > 0
+                ? await db
+                    .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
+                    .from(inventoryBalancesTable)
+                    .where(inArray(inventoryBalancesTable.productId, productIds))
+                : [];
+              const map = new Map<string, number>();
+              for (const row of balanceRows as Array<{ productId: string; quantity: number }>) {
+                map.set(String(row.productId), Number(row.quantity) || 0);
+              }
+              return map;
+            })();
 
         if (enviado) {
           const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId!) || 0) < item.quantity);
@@ -2330,7 +2336,9 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
               .join("; ");
             res.status(400).json({
               error: "INSUFFICIENT_STOCK",
-              message: `Estoque insuficiente para envio: ${details}.`,
+              message: isMotoboyOrder
+                ? `Estoque Motoboy insuficiente para envio: ${details}.`
+                : `Estoque insuficiente para envio: ${details}.`,
             });
             return;
           }
@@ -2341,15 +2349,30 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
             continue;
           }
           const qty = enviado ? -item.quantity : item.quantity;
-          await registerInventoryEntry({
-            productId: item.productId!,
-            quantity: qty,
-            reason: enviado
-              ? `Saída por envio do pedido ${id}`
-              : `Estorno de saída do pedido ${id}`,
-            referenceId: id,
-            clientName: order.clientName || null,
-          });
+          const reason = enviado
+            ? (isMotoboyOrder
+              ? `Saída Motoboy por envio do pedido ${id}`
+              : `Saída por envio do pedido ${id}`)
+            : (isMotoboyOrder
+              ? `Estorno Motoboy de saída do pedido ${id}`
+              : `Estorno de saída do pedido ${id}`);
+          if (isMotoboyOrder) {
+            await registerMotoboyInventoryEntry({
+              productId: item.productId!,
+              quantity: qty,
+              reason,
+              referenceId: id,
+              clientName: order.clientName || null,
+            });
+          } else {
+            await registerInventoryEntry({
+              productId: item.productId!,
+              quantity: qty,
+              reason,
+              referenceId: id,
+              clientName: order.clientName || null,
+            });
+          }
         }
       }
     }

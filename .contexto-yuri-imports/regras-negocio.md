@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-13 | Estoque Motoboy: pool separado + aba; baixa no Enviado se frete Motoboy | Saber o que está na mão do motoboy | Estoque loja / EnvioEcom iguais |
 | 2026-08-13 | Card admin: com EE/enviado ainda consulta estoque; badge **sem estoque** ao lado do status | Alerta visual sem repor pedido na lista de cópia | `ordersParaEnviar` segue `!enviado` |
 | 2026-08-13 | Etiqueta EE / Pronto para envio **não** marca `enviado`; badge Enviado só pós-postagem ou clique manual; lista cópia exclui por etiqueta OU enviado | Evita “Enviado” falso e recompra na cópia | Cotação/create iguais |
 | 2026-08-13 | UI: esconde Enviado se EE for só etiqueta/pronto; Sync limpa `enviado` legado | Card #555 deixa de mostrar Enviado falso | Lista cópia igual |
@@ -83,7 +84,8 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 - Tickets (`support_tickets`) por CPF/pedido.
 - Reenvios automáticos/manuais (`reshipments`, `manual_reshipments`).
-- Inventário: saldos e movimentos (`inventory_*`), retornos manuais (`manual_return_items`).
+- Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
+- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). Pedido `shippingType=motoboy` + Marcar Enviado baixa/estorna o Motoboy (não a loja). Entrada Motoboy **não** debita a loja automaticamente.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.
 
 ## Prova social e settings
