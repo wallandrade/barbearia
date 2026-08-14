@@ -48,7 +48,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
 - Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`)
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
-- Create envia `items` (produtos do pedido: name/quantity/unit_cost)
+- Create envia `items` com **nome genérico** (`site_settings.envioecom_shipment_item_name`, default `Mercadoria`) — nunca o nome real do produto; editável em Admin → Rastreios (`GET/PUT .../shipment-item-name`)
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: card com Situação/EnvioEcom + `GET /api/me/orders/:id/tracking` (soft-sync) + modal em `CustomerOrders.tsx`
 - Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
