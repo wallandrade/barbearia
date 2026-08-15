@@ -1860,9 +1860,12 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { products: newProducts, address, discountAmount } = req.body as {
+    const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument } = req.body as {
       products: Array<{ id: string; name: string; quantity: number; price: number }>;
       discountAmount?: number;
+      clientPhone?: string | null;
+      clientEmail?: string | null;
+      clientDocument?: string | null;
       address?: {
         cep?: string | null;
         street?: string | null;
@@ -1942,6 +1945,38 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     const nextAddressCity = address?.city !== undefined ? String(address.city || "").trim() || null : undefined;
     const nextAddressState = address?.state !== undefined ? String(address.state || "").trim() || null : undefined;
 
+    const nextClientPhone = clientPhone !== undefined
+      ? String(clientPhone || "").replace(/\D/g, "").trim() || null
+      : undefined;
+    const nextClientEmail = clientEmail !== undefined
+      ? String(clientEmail || "").trim().toLowerCase() || null
+      : undefined;
+    const nextClientDocument = clientDocument !== undefined
+      ? String(clientDocument || "").replace(/\D/g, "").trim() || null
+      : undefined;
+
+    if (nextClientPhone !== undefined && nextClientPhone !== null) {
+      if (nextClientPhone.length < 10 || nextClientPhone.length > 13) {
+        res.status(400).json({ error: "INVALID_PHONE", message: "Telefone inválido (use DDD + número)." });
+        return;
+      }
+    }
+    if (nextClientEmail !== undefined && nextClientEmail !== null) {
+      if (!nextClientEmail.includes("@") || nextClientEmail.length < 5) {
+        res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
+        return;
+      }
+    }
+    if (nextClientDocument !== undefined && nextClientDocument !== null) {
+      if (nextClientDocument.length !== 11 && nextClientDocument.length !== 14) {
+        res.status(400).json({
+          error: "INVALID_DOCUMENT",
+          message: "CPF/CNPJ inválido (informe 11 ou 14 dígitos).",
+        });
+        return;
+      }
+    }
+
     const updates: Partial<typeof ordersTable.$inferInsert> = {
       products: resolvedProducts,
       subtotal: String(computedSubtotal),
@@ -1959,6 +1994,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     if (nextAddressNeighborhood !== undefined) updates.addressNeighborhood = nextAddressNeighborhood;
     if (nextAddressCity !== undefined) updates.addressCity = nextAddressCity;
     if (nextAddressState !== undefined) updates.addressState = nextAddressState;
+    if (nextClientPhone !== undefined) updates.clientPhone = nextClientPhone;
+    if (nextClientEmail !== undefined) updates.clientEmail = nextClientEmail;
+    if (nextClientDocument !== undefined) updates.clientDocument = nextClientDocument;
 
     await db.update(ordersTable)
       .set(updates)

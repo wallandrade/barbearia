@@ -1442,6 +1442,11 @@ export default function Admin() {
     city: "",
     state: "",
   });
+  const [editContact, setEditContact] = useState({
+    phone: "",
+    email: "",
+    document: "",
+  });
   const [editDiscount, setEditDiscount] = useState(0);
   const [editProductSearch, setEditProductSearch] = useState("");
   const [editSaving, setEditSaving] = useState(false);
@@ -3360,6 +3365,11 @@ export default function Admin() {
       city: String(order.addressCity || ""),
       state: String(order.addressState || ""),
     });
+    setEditContact({
+      phone: String(order.clientPhone || ""),
+      email: String(order.clientEmail || ""),
+      document: String(order.clientDocument || ""),
+    });
     setEditProductSearch("");
     setDiffOrder(null);
     setDiffPixResult(null);
@@ -3567,6 +3577,9 @@ export default function Admin() {
         body: JSON.stringify({
           products: editItems,
           discountAmount: discountAmount,
+          clientPhone: editContact.phone,
+          clientEmail: editContact.email,
+          clientDocument: editContact.document,
           address: {
             cep: editAddress.cep,
             street: editAddress.street,
@@ -3578,7 +3591,15 @@ export default function Admin() {
           },
         }),
       });
-      if (!res.ok) { toast.error("Erro ao salvar edição."); return; }
+      if (!res.ok) {
+        let message = "Erro ao salvar edição.";
+        try {
+          const err = await res.json() as { message?: string };
+          if (err?.message) message = err.message;
+        } catch { /* ignore */ }
+        toast.error(message);
+        return;
+      }
       const data = await res.json() as { ok: boolean; order: AdminOrder };
       setOrders((prev) => prev.map((o) => o.id === editOrderModal.id ? { ...data.order, proofUrls: o.proofUrls } : o));
       toast.success("Pedido editado com sucesso!");
@@ -7433,6 +7454,33 @@ export default function Admin() {
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Contato do cliente</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        value={editContact.phone}
+                        onChange={(e) => setEditContact((prev) => ({ ...prev, phone: e.target.value }))}
+                        placeholder="Telefone"
+                        inputMode="tel"
+                        className="h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary"
+                      />
+                      <input
+                        value={editContact.document}
+                        onChange={(e) => setEditContact((prev) => ({ ...prev, document: e.target.value }))}
+                        placeholder="CPF / CNPJ"
+                        inputMode="numeric"
+                        className="h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary"
+                      />
+                      <input
+                        value={editContact.email}
+                        onChange={(e) => setEditContact((prev) => ({ ...prev, email: e.target.value }))}
+                        placeholder="E-mail"
+                        type="email"
+                        className="h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary sm:col-span-2"
+                      />
+                    </div>
                   </div>
 
                   <div>
