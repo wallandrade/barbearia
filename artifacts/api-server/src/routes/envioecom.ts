@@ -25,6 +25,7 @@ import {
   isInTransitStatus,
   isLabelReadyStatus,
   isProvisionalEnvioEcomBarcode,
+  mergeStatusHistoryWithTimeline,
   parseCarriersInput,
   pickBestBarcode,
   quoteFreight,
@@ -239,21 +240,28 @@ async function applyShipmentStatusToOrder(params: {
   freightCost?: string | number | null;
   externalOrderNumber?: string | null;
   description?: string | null;
+  location?: string | null;
   updatedAt?: string | null;
   timestamp?: number | null;
   source: string;
+  /** Timeline completa da API — substitui histórico local genérico. */
+  timeline?: StatusHistoryEntry[] | null;
 }) {
   const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, params.orderId)).limit(1);
   const order = rows[0];
   if (!order) return { updated: false };
 
-  const history = appendStatusHistory(order.envioecomStatusHistory, {
-    status: params.status,
-    description: params.description || null,
-    updated_at: params.updatedAt || null,
-    timestamp: params.timestamp ?? null,
-    source: params.source,
-  });
+  const timeline = Array.isArray(params.timeline) ? params.timeline : [];
+  const history = timeline.length
+    ? mergeStatusHistoryWithTimeline(order.envioecomStatusHistory, timeline)
+    : appendStatusHistory(order.envioecomStatusHistory, {
+        status: params.status,
+        description: params.description || null,
+        location: params.location || null,
+        updated_at: params.updatedAt || null,
+        timestamp: params.timestamp ?? null,
+        source: params.source,
+      });
 
   const patch: Record<string, unknown> = {
     envioecomStatus: params.status,
@@ -577,9 +585,11 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
             barcode: finalBarcode,
             shipmentId: finalShipmentId,
             trackingKey: finalTrackingKey,
+            deliveryMode: live.deliveryMode,
             description: "IDs atualizados após create",
             updatedAt: new Date().toISOString(),
             source: "create-refresh",
+            timeline: live.statusHistory,
           });
         }
       } catch (refreshErr) {
@@ -665,9 +675,11 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
           barcode: live.barcode || barcode,
           shipmentId: live.shipmentId || shipmentId,
           trackingKey: live.trackingKey || trackingKey,
+          deliveryMode: live.deliveryMode,
           description: "IDs/barcode sincronizados antes de gerar etiqueta",
           updatedAt: new Date().toISOString(),
           source: "labels-resolve",
+          timeline: live.statusHistory,
         });
       }
 
@@ -870,9 +882,11 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
         barcode: live.barcode,
         shipmentId: live.shipmentId,
         trackingKey: live.trackingKey,
-        description: "Status sincronizado manualmente",
+        deliveryMode: live.deliveryMode,
+        description: live.statusHistory?.length ? null : "Status sincronizado manualmente",
         updatedAt: new Date().toISOString(),
         source: "sync",
+        timeline: live.statusHistory,
       });
     } else if (live.barcode || live.shipmentId) {
       await db
@@ -1213,9 +1227,11 @@ router.post("/admin/envioecom/tracking-board/sync", requireAdminAuth, async (req
             barcode: live.barcode,
             shipmentId: live.shipmentId,
             trackingKey: live.trackingKey,
-            description: "Sync em lote (painel rastreios)",
+            deliveryMode: live.deliveryMode,
+            description: live.statusHistory?.length ? null : "Sync em lote (painel rastreios)",
             updatedAt: new Date().toISOString(),
             source: "tracking-board-sync",
+            timeline: live.statusHistory,
           });
         }
         results.push({ orderId: order.id, ok: true, status });
@@ -1314,6 +1330,11 @@ router.post("/webhook/envioecom", async (req, res) => {
     const deliveryMode = req.body?.delivery_mode ? String(req.body.delivery_mode) : null;
     const freightCost = req.body?.freight_cost != null ? String(req.body.freight_cost) : null;
     const description = req.body?.description ? String(req.body.description) : null;
+    const location =
+      (req.body?.location ? String(req.body.location) : null) ||
+      (req.body?.cidade ? String(req.body.cidade) : null) ||
+      (req.body?.local ? String(req.body.local) : null) ||
+      (req.body?.unidade ? String(req.body.unidade) : null);
     const updatedAt = req.body?.updated_at ? String(req.body.updated_at) : null;
     const timestamp = typeof req.body?.timestamp === "number" ? req.body.timestamp : null;
 
@@ -1386,6 +1407,7 @@ router.post("/webhook/envioecom", async (req, res) => {
       freightCost,
       externalOrderNumber: externalOrderNumber || order.envioecomExternalOrderNumber,
       description,
+      location,
       updatedAt,
       timestamp,
       source: "webhook",
@@ -1441,9 +1463,11 @@ router.get("/me/orders/:id/tracking", requireCustomerAuth, async (req, res) => {
             barcode: live.barcode,
             shipmentId: live.shipmentId,
             trackingKey: live.trackingKey,
-            description: "Status atualizado ao consultar rastreio",
+            deliveryMode: live.deliveryMode,
+            description: live.statusHistory?.length ? null : "Status atualizado ao consultar rastreio",
             updatedAt: new Date().toISOString(),
             source: "customer-tracking",
+            timeline: live.statusHistory,
           });
           const refreshed = await db
             .select()

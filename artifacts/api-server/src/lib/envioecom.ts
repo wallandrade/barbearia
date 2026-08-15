@@ -624,15 +624,33 @@ export async function resolveLiveShipmentRefs(input: {
   shipmentId: string | null;
   trackingKey: string | null;
   status: string | null;
+  statusHistory: StatusHistoryEntry[];
+  deliveryMode: string | null;
   raw?: Record<string, unknown> | null;
 }> {
   const tryGet = async (id: string) => {
     try {
-      const detail = await getShipment(id);
+      let detail: { success?: boolean; data?: Record<string, unknown> };
+      if (/^\d+$/.test(String(id).trim())) {
+        try {
+          detail = await getShipmentByInternalId(id);
+        } catch {
+          detail = await getShipment(id);
+        }
+      } else {
+        detail = await getShipment(id);
+      }
       const data = asRecord(detail.data) || asRecord(detail);
       if (!data) return null;
       const picked = pickShipmentIdentifiers(data);
-      return { ...picked, raw: data };
+      const statusHistory = extractStatusHistoryFromShipment(data, "envioecom");
+      const deliveryMode =
+        pickStringField(flattenShipmentRow(data), ["delivery_mode", "deliveryMode", "shipping_company", "carrier"]) ||
+        null;
+      if (statusHistory.length) {
+        console.log("[EnvioEcom] status_history events:", statusHistory.length, "id:", id);
+      }
+      return { ...picked, statusHistory, deliveryMode, raw: data };
     } catch {
       return null;
     }
@@ -735,7 +753,13 @@ export async function resolveLiveShipmentRefs(input: {
         barcode: scored[0].picked.barcode,
         status: scored[0].picked.status,
       });
-      found = { ...scored[0].picked, raw: scored[0].raw };
+      found = {
+        ...scored[0].picked,
+        statusHistory: extractStatusHistoryFromShipment(scored[0].raw, "envioecom"),
+        deliveryMode:
+          pickStringField(scored[0].raw, ["delivery_mode", "deliveryMode", "shipping_company", "carrier"]) || null,
+        raw: scored[0].raw,
+      };
     } else {
       console.warn("[EnvioEcom] resolve found no match", {
         lists: lists.length,
@@ -758,6 +782,8 @@ export async function resolveLiveShipmentRefs(input: {
     shipmentId: found?.shipmentId || shipmentId || null,
     trackingKey: found?.trackingKey || trackingKey || null,
     status: found?.status || null,
+    statusHistory: Array.isArray(found?.statusHistory) ? found!.statusHistory! : [],
+    deliveryMode: found?.deliveryMode || null,
     raw: found?.raw || null,
   };
 }
@@ -773,6 +799,15 @@ export async function getShipment(identifier: string): Promise<{
 }> {
   const id = encodeURIComponent(String(identifier || "").trim());
   return envioecomJson(`/shipments/${id}`);
+}
+
+/** Detalhe completo por ID interno (barcode sem máscara + status_history). */
+export async function getShipmentByInternalId(id: string | number): Promise<{
+  success?: boolean;
+  data?: Record<string, unknown>;
+}> {
+  const numeric = encodeURIComponent(String(id || "").trim());
+  return envioecomJson(`/shipments/by-id/${numeric}`);
 }
 
 export async function cancelShipment(
@@ -830,15 +865,203 @@ export async function getWebhookConfig(): Promise<{
 export type StatusHistoryEntry = {
   status: string;
   description?: string | null;
+  location?: string | null;
   updated_at?: string | null;
   timestamp?: number | null;
   source?: string;
 };
 
+function pickStringField(row: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function pickTimestamp(row: Record<string, unknown>): number | null {
+  const raw =
+    row.timestamp ??
+    row.time ??
+    row.unix ??
+    row.created_at_ts ??
+    row.updated_at_ts;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw > 1e12 ? Math.floor(raw / 1000) : raw;
+  }
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    const n = Number(raw.trim());
+    return n > 1e12 ? Math.floor(n / 1000) : n;
+  }
+  return null;
+}
+
+function normalizeHistoryEvent(raw: unknown, source = "envioecom"): StatusHistoryEntry | null {
+  const row = asRecord(raw);
+  if (!row) return null;
+
+  const status = pickStringField(row, [
+    "status",
+    "event",
+    "evento",
+    "title",
+    "titulo",
+    "name",
+    "nome",
+  ]);
+  if (!status) return null;
+
+  const location = pickStringField(row, [
+    "location",
+    "local",
+    "cidade",
+    "city",
+    "unidade",
+    "unit",
+    "facility",
+    "place",
+    "origem",
+    "destino",
+    "localidade",
+  ]);
+
+  let description = pickStringField(row, [
+    "description",
+    "descricao",
+    "detail",
+    "details",
+    "message",
+    "mensagem",
+    "obs",
+    "observation",
+    "observacao",
+  ]);
+
+  const chave = pickStringField(row, ["chave", "key", "dce_key", "chave_dce", "access_key"]);
+  if (chave) {
+    const chaveLine = `Chave: ${chave}`;
+    description = description ? `${description}\n${chaveLine}` : chaveLine;
+  }
+
+  // Se a "descrição" for só a cidade/unidade, trate como location.
+  if (!location && description && description.length <= 80 && !description.includes("\n")) {
+    const looksLikePlace =
+      / - /.test(description) ||
+      /\b(SP|MG|RJ|PR|RS|BA|PE|CE|DF|GO|SC|ES|MT|MS|PA|AM|MA|PI|RN|PB|AL|SE|RO|AC|AP|RR|TO)\b/i.test(description);
+    if (looksLikePlace && !/objeto|envio|pacote|entregue|coletado/i.test(description)) {
+      return {
+        status,
+        description: null,
+        location: description,
+        updated_at: pickStringField(row, ["updated_at", "date", "datetime", "created_at", "data", "hora"]),
+        timestamp: pickTimestamp(row),
+        source,
+      };
+    }
+  }
+
+  return {
+    status,
+    description,
+    location,
+    updated_at: pickStringField(row, ["updated_at", "date", "datetime", "created_at", "data", "hora"]),
+    timestamp: pickTimestamp(row),
+    source,
+  };
+}
+
+function collectHistoryArrays(root: Record<string, unknown>): unknown[] {
+  const candidates: unknown[] = [];
+  const pushArray = (value: unknown) => {
+    if (Array.isArray(value) && value.length) candidates.push(...value);
+  };
+
+  pushArray(root.status_history);
+  pushArray(root.statusHistory);
+  pushArray(root.history);
+  pushArray(root.events);
+  pushArray(root.tracking_events);
+  pushArray(root.trackingHistory);
+  pushArray(root.tracking_history);
+  pushArray(root.ocorrencias);
+  pushArray(root.movimentacoes);
+  pushArray(root.timeline);
+
+  const nested =
+    asRecord(root.data) ||
+    asRecord(root.tracking) ||
+    asRecord(root.final_status) ||
+    asRecord(root.finalStatus) ||
+    {};
+  pushArray(nested.status_history);
+  pushArray(nested.statusHistory);
+  pushArray(nested.history);
+  pushArray(nested.events);
+  pushArray(nested.tracking_events);
+  pushArray(nested.ocorrencias);
+  pushArray(nested.movimentacoes);
+
+  return candidates;
+}
+
+/** Extrai timeline completa do payload GET /shipments (com cidade/local quando existir). */
+export function extractStatusHistoryFromShipment(
+  rawInput: unknown,
+  source = "envioecom",
+): StatusHistoryEntry[] {
+  const root = asRecord(rawInput);
+  if (!root) return [];
+
+  const flat = flattenShipmentRow(root);
+  const items = collectHistoryArrays(flat);
+  const mapped = items
+    .map((item) => normalizeHistoryEvent(item, source))
+    .filter((item): item is StatusHistoryEntry => !!item);
+
+  // Se veio só final_status como objeto único, inclui como último evento.
+  if (!mapped.length) {
+    const finalStatus =
+      asRecord(flat.final_status) ||
+      asRecord(flat.finalStatus) ||
+      asRecord(asRecord(flat.data)?.final_status);
+    const single = normalizeHistoryEvent(finalStatus, source);
+    if (single) mapped.push(single);
+  }
+
+  // Ordena cronologicamente (antigo → novo) quando possível.
+  mapped.sort((a, b) => {
+    const ta = a.timestamp ?? (a.updated_at ? Date.parse(a.updated_at) : NaN);
+    const tb = b.timestamp ?? (b.updated_at ? Date.parse(b.updated_at) : NaN);
+    if (Number.isFinite(ta) && Number.isFinite(tb)) return ta - tb;
+    if (Number.isFinite(ta)) return -1;
+    if (Number.isFinite(tb)) return 1;
+    return 0;
+  });
+
+  // Dedup por status + updated_at/timestamp
+  const out: StatusHistoryEntry[] = [];
+  for (const entry of mapped) {
+    const last = out[out.length - 1];
+    if (
+      last &&
+      last.status === entry.status &&
+      String(last.updated_at || "") === String(entry.updated_at || "") &&
+      String(last.timestamp || "") === String(entry.timestamp || "") &&
+      String(last.location || "") === String(entry.location || "")
+    ) {
+      continue;
+    }
+    out.push(entry);
+  }
+  return out.slice(-80);
+}
+
 export function appendStatusHistory(
   current: unknown,
   entry: StatusHistoryEntry,
-  max = 50,
+  max = 80,
 ): StatusHistoryEntry[] {
   const list: StatusHistoryEntry[] = Array.isArray(current)
     ? (current as StatusHistoryEntry[]).slice()
@@ -848,7 +1071,8 @@ export function appendStatusHistory(
   if (
     last &&
     last.status === entry.status &&
-    String(last.updated_at || "") === String(entry.updated_at || "")
+    String(last.updated_at || "") === String(entry.updated_at || "") &&
+    String(last.location || "") === String(entry.location || "")
   ) {
     return list;
   }
@@ -856,6 +1080,18 @@ export function appendStatusHistory(
   list.push(entry);
   if (list.length > max) return list.slice(list.length - max);
   return list;
+}
+
+/** Prefere timeline da API quando vier completa; evento único só acrescenta. */
+export function mergeStatusHistoryWithTimeline(
+  current: unknown,
+  timeline: StatusHistoryEntry[],
+  max = 80,
+): StatusHistoryEntry[] {
+  const existing = Array.isArray(current) ? (current as StatusHistoryEntry[]) : [];
+  if (!timeline.length) return existing.slice(-max);
+  if (timeline.length >= 2 || existing.length === 0) return timeline.slice(-max);
+  return appendStatusHistory(existing, timeline[0]!, max);
 }
 
 export function isDeliveredStatus(status: string): boolean {

@@ -11,6 +11,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 type TrackingHistoryEvent = {
   status: string;
   description?: string | null;
+  location?: string | null;
   updated_at?: string | null;
   timestamp?: number | null;
   source?: string;
@@ -213,6 +214,47 @@ function mergeTrackingIntoOrder(order: CustomerOrder, tracking: TrackingInfo): C
 
 function getOrderTrackingHistory(order: CustomerOrder): TrackingHistoryEvent[] {
   return Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
+}
+
+function formatTrackingWhen(event: TrackingHistoryEvent): string | null {
+  if (event.updated_at) {
+    const parsed = Date.parse(event.updated_at);
+    if (Number.isFinite(parsed)) {
+      return new Date(parsed).toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+    return event.updated_at;
+  }
+  if (typeof event.timestamp === "number" && Number.isFinite(event.timestamp)) {
+    const ms = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
+    return new Date(ms).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+  return null;
+}
+
+function isInternalTrackingDescription(description: string | null | undefined): boolean {
+  const d = String(description || "").toLowerCase();
+  if (!d) return false;
+  return (
+    d.includes("status atualizado ao consultar") ||
+    d.includes("status sincronizado manualmente") ||
+    d.includes("sync em lote") ||
+    d.includes("ids/barcode sincronizados") ||
+    d.includes("ids atualizados após create")
+  );
 }
 
 function isDeliveredSituation(order: CustomerOrder): boolean {
@@ -662,21 +704,31 @@ export default function CustomerOrders() {
                               {getOrderTrackingHistory(order).length > 0 ? (
                                 <div className="space-y-2 pt-1 border-t border-blue-100/80">
                                   <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Eventos</p>
-                                  <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
-                                    {[...getOrderTrackingHistory(order)].reverse().map((event, idx) => (
-                                      <div
-                                        key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
-                                        className="rounded-lg border border-blue-100 bg-white/70 px-3 py-2"
-                                      >
-                                        <p className="text-sm font-semibold text-foreground">{event.status}</p>
-                                        {event.description && (
-                                          <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
-                                        )}
-                                        {event.updated_at && (
-                                          <p className="text-[11px] text-muted-foreground mt-1">{event.updated_at}</p>
-                                        )}
-                                      </div>
-                                    ))}
+                                  <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                                    {[...getOrderTrackingHistory(order)].reverse().map((event, idx) => {
+                                      const when = formatTrackingWhen(event);
+                                      const showDescription =
+                                        !!event.description && !isInternalTrackingDescription(event.description);
+                                      return (
+                                        <div
+                                          key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
+                                          className="rounded-lg border border-blue-100 bg-white/70 px-3 py-2"
+                                        >
+                                          <p className="text-sm font-semibold text-blue-950">{event.status}</p>
+                                          {event.location && (
+                                            <p className="text-xs text-blue-900/80 mt-0.5">{event.location}</p>
+                                          )}
+                                          {showDescription && (
+                                            <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">
+                                              {event.description}
+                                            </p>
+                                          )}
+                                          {when && (
+                                            <p className="text-[11px] text-muted-foreground mt-1">{when}</p>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               ) : (

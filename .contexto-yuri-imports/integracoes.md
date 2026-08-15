@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-15 | Sync/tracking importa `status_history` da EE (location/cidade) via GET shipment / by-id | Card cliente alinhado ao painel EnvioEcom | Cotação/create iguais |
 | 2026-08-15 | Cliente: histórico EE no card + soft-sync lista/poll; `mapOrder` expõe `envioecomStatusHistory` | Eventos visíveis sem modal | Cotação/create/webhook iguais |
 | 2026-08-14 | Sync/webhook/Etiqueta EE **não** zeram `enviado`; só ligam em trânsito/entregue | Marcação manual de Enviado permanece | Cotação/create iguais |
 | 2026-08-14 | Nome genérico EnvioEcom no create (`envioecom_shipment_item_name`); editável em Rastreios | Create nunca manda nome do catálogo | Cotação/webhook iguais; envios já criados não mudam |
@@ -52,7 +53,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
 - Create envia `items` com **nome genérico** (`site_settings.envioecom_shipment_item_name`, default `Mercadoria`) — nunca o nome real do produto; editável em Admin → Rastreios (`GET/PUT .../shipment-item-name`)
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
-- Cliente: card com Situação/EnvioEcom + eventos abertos (`envioecomStatusHistory` no `GET /me/orders`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` (Atualizar rastreio) em `CustomerOrders.tsx`
+- Cliente: card com Situação/EnvioEcom + eventos abertos (`status_history` da API → `envioecomStatusHistory`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` em `CustomerOrders.tsx`
 - Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
 
 ## Storage
