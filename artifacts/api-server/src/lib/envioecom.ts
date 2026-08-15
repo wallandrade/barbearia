@@ -902,6 +902,14 @@ function normalizeHistoryEvent(raw: unknown, source = "envioecom"): StatusHistor
   const row = asRecord(raw);
   if (!row) return null;
 
+  // Log uma vez por processo para descobrir campos reais da EE (cidade).
+  const g = globalThis as typeof globalThis & { __envioecomHistoryKeysLogged?: boolean };
+  if (!g.__envioecomHistoryKeysLogged) {
+    g.__envioecomHistoryKeysLogged = true;
+    console.log("[EnvioEcom] status_history sample keys:", Object.keys(row));
+    console.log("[EnvioEcom] status_history sample values:", JSON.stringify(row).slice(0, 1200));
+  }
+
   const status = pickStringField(row, [
     "status",
     "event",
@@ -910,26 +918,96 @@ function normalizeHistoryEvent(raw: unknown, source = "envioecom"): StatusHistor
     "titulo",
     "name",
     "nome",
+    "situation",
+    "situacao",
   ]);
   if (!status) return null;
 
-  const location = pickStringField(row, [
-    "location",
-    "local",
+  const nestedPlace =
+    asRecord(row.location) ||
+    asRecord(row.local) ||
+    asRecord(row.place) ||
+    asRecord(row.facility) ||
+    asRecord(row.unidade) ||
+    asRecord(row.address) ||
+    asRecord(row.endereco) ||
+    asRecord(row.geo) ||
+    null;
+
+  const cityOnly = pickStringField(row, [
     "cidade",
     "city",
+    "city_name",
+    "cityName",
+    "nome_cidade",
+    "localidade",
+    "municipio",
+  ]) || (nestedPlace
+    ? pickStringField(nestedPlace, ["cidade", "city", "city_name", "name", "nome", "localidade", "municipio"])
+    : null);
+
+  const unitCode = pickStringField(row, [
     "unidade",
     "unit",
+    "unit_code",
+    "unitCode",
     "facility",
+    "facility_code",
+    "facilityCode",
+    "hub",
+    "agencia",
+    "branch",
+    "ponto",
+    "codigo_unidade",
+  ]) || (nestedPlace
+    ? pickStringField(nestedPlace, ["unidade", "unit", "code", "codigo", "name", "nome"])
+    : null);
+
+  let location = pickStringField(row, [
+    "location",
+    "local",
+    "localizacao",
+    "localização",
+    "location_name",
+    "locationName",
     "place",
+    "facility_name",
+    "facilityName",
     "origem",
     "destino",
-    "localidade",
+    "ponto",
+    "hub_name",
+    "hubName",
   ]);
+
+  if (!location && nestedPlace) {
+    location = pickStringField(nestedPlace, [
+      "location",
+      "local",
+      "localizacao",
+      "name",
+      "nome",
+      "label",
+      "full",
+      "display",
+    ]);
+  }
+
+  // Monta "Ribeirão Preto - SN RAO" a partir de cidade + sufixo do status/unidade.
+  if (!location && cityOnly) {
+    const statusSuffix = status.includes(" - ")
+      ? status.split(" - ").slice(1).join(" - ").trim()
+      : "";
+    const unit = unitCode || statusSuffix;
+    location = unit && !cityOnly.toLowerCase().includes(unit.toLowerCase())
+      ? `${cityOnly} - ${unit}`
+      : cityOnly;
+  }
 
   let description = pickStringField(row, [
     "description",
     "descricao",
+    "descrição",
     "detail",
     "details",
     "message",
@@ -937,28 +1015,51 @@ function normalizeHistoryEvent(raw: unknown, source = "envioecom"): StatusHistor
     "obs",
     "observation",
     "observacao",
+    "observação",
+    "text",
+    "texto",
+    "info",
   ]);
 
-  const chave = pickStringField(row, ["chave", "key", "dce_key", "chave_dce", "access_key"]);
-  if (chave) {
+  const chave = pickStringField(row, ["chave", "key", "dce_key", "chave_dce", "access_key", "nfe_key"]);
+  if (chave && !/chave:/i.test(String(description || ""))) {
     const chaveLine = `Chave: ${chave}`;
-    description = description ? `${description}\n${chaveLine}` : chaveLine;
+    description = description && description !== status ? `${description}\n${chaveLine}` : chaveLine;
   }
 
-  // Se a "descrição" for só a cidade/unidade, trate como location.
-  if (!location && description && description.length <= 80 && !description.includes("\n")) {
+  // Description idêntica ao status = lixo visual (não é cidade).
+  if (description && description.trim().toLowerCase() === status.trim().toLowerCase()) {
+    description = null;
+  }
+
+  // Description parece local (cidade) e é diferente do status → vira location.
+  if (!location && description && description.length <= 100 && !description.includes("\n")) {
     const looksLikePlace =
       / - /.test(description) ||
-      /\b(SP|MG|RJ|PR|RS|BA|PE|CE|DF|GO|SC|ES|MT|MS|PA|AM|MA|PI|RN|PB|AL|SE|RO|AC|AP|RR|TO)\b/i.test(description);
-    if (looksLikePlace && !/objeto|envio|pacote|entregue|coletado/i.test(description)) {
-      return {
-        status,
-        description: null,
-        location: description,
-        updated_at: pickStringField(row, ["updated_at", "date", "datetime", "created_at", "data", "hora"]),
-        timestamp: pickTimestamp(row),
-        source,
-      };
+      /\b(SP|MG|RJ|PR|RS|BA|PE|CE|DF|GO|SC|ES|MT|MS|PA|AM|MA|PI|RN|PB|AL|SE|RO|AC|AP|RR|TO)\b/i.test(description) ||
+      /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç.]+)+$/.test(description);
+    const isNarrative = /objeto|envio|pacote|entregue|coletado|shipment|operator|your /i.test(description);
+    if (looksLikePlace && !isNarrative) {
+      location = description;
+      description = null;
+    }
+  }
+
+  // Varredura: qualquer string do evento que pareça "Cidade - UNIDADE" e ≠ status.
+  if (!location) {
+    for (const value of Object.values(row)) {
+      if (typeof value !== "string") continue;
+      const text = value.trim();
+      if (!text || text.toLowerCase() === status.toLowerCase()) continue;
+      if (text.length > 100 || text.includes("\n")) continue;
+      const looksLikeCityUnit =
+        / - /.test(text) &&
+        !/^(expedido|recebido|coletado|etiqueta|processando|aguardando|dc-e|envio criado)/i.test(text) &&
+        /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(text);
+      if (looksLikeCityUnit) {
+        location = text;
+        break;
+      }
     }
   }
 
@@ -966,7 +1067,7 @@ function normalizeHistoryEvent(raw: unknown, source = "envioecom"): StatusHistor
     status,
     description,
     location,
-    updated_at: pickStringField(row, ["updated_at", "date", "datetime", "created_at", "data", "hora"]),
+    updated_at: pickStringField(row, ["updated_at", "date", "datetime", "created_at", "data", "hora", "event_date", "eventDate"]),
     timestamp: pickTimestamp(row),
     source,
   };

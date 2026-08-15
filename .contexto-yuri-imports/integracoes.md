@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-15 | Parser de `status_history`: cidade/local + não repetir status na description | Card igual painel EE (ex. Ribeirão Preto) | Cotação/create iguais |
 | 2026-08-15 | Sync/tracking importa `status_history` da EE (location/cidade) via GET shipment / by-id | Card cliente alinhado ao painel EnvioEcom | Cotação/create iguais |
 | 2026-08-15 | Cliente: histórico EE no card + soft-sync lista/poll; `mapOrder` expõe `envioecomStatusHistory` | Eventos visíveis sem modal | Cotação/create/webhook iguais |
 | 2026-08-14 | Sync/webhook/Etiqueta EE **não** zeram `enviado`; só ligam em trânsito/entregue | Marcação manual de Enviado permanece | Cotação/create iguais |

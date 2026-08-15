@@ -707,15 +707,20 @@ export default function CustomerOrders() {
                                   <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
                                     {[...getOrderTrackingHistory(order)].reverse().map((event, idx) => {
                                       const when = formatTrackingWhen(event);
+                                      const desc = String(event.description || "").trim();
+                                      const statusText = String(event.status || "").trim();
                                       const showDescription =
-                                        !!event.description && !isInternalTrackingDescription(event.description);
+                                        !!desc &&
+                                        desc.toLowerCase() !== statusText.toLowerCase() &&
+                                        !isInternalTrackingDescription(desc);
                                       return (
                                         <div
                                           key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
                                           className="rounded-lg border border-blue-100 bg-white/70 px-3 py-2"
                                         >
                                           <p className="text-sm font-semibold text-blue-950">{event.status}</p>
-                                          {event.location && (
+                                          {event.location &&
+                                            event.location.trim().toLowerCase() !== statusText.toLowerCase() && (
                                             <p className="text-xs text-blue-900/80 mt-0.5">{event.location}</p>
                                           )}
                                           {showDescription && (
