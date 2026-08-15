@@ -2239,6 +2239,9 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     envioecomDeliveryMode:  (o as any).envioecomDeliveryMode ?? null,
     envioecomStatus:        (o as any).envioecomStatus ?? null,
     envioecomStatusUpdatedAt: (o as any).envioecomStatusUpdatedAt?.toISOString?.() ?? null,
+    envioecomStatusHistory: Array.isArray((o as any).envioecomStatusHistory)
+      ? (o as any).envioecomStatusHistory
+      : [],
     envioecomLabelUrl:      (o as any).envioecomLabelUrl ?? null,
     envioecomFreightCost:   (o as any).envioecomFreightCost != null ? Number((o as any).envioecomFreightCost) : null,
   };

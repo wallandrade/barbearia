@@ -130,6 +130,7 @@ const entries: Entry[] = [
   { neighborhood: "Raposo Tavares",       city: "São Paulo", price: 80,  sortOrder: 67 },
   { neighborhood: "Rio Pequeno",          city: "São Paulo", price: 75,  sortOrder: 68 },
   { neighborhood: "Santa Cecília",        city: "São Paulo", price: 50,  sortOrder: 69 },
+  { neighborhood: "Santana",              city: "São Paulo", price: 70,  sortOrder: 96 },
   { neighborhood: "Sé",                   city: "São Paulo", price: 50,  sortOrder: 70 },
   { neighborhood: "Sapopemba",            city: "São Paulo", price: 75,  sortOrder: 71 },
   { neighborhood: "São Lucas",            city: "São Paulo", price: 70,  sortOrder: 72 },

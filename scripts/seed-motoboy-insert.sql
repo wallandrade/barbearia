@@ -115,6 +115,7 @@ INSERT INTO `motoboy_neighborhoods` (`id`,`neighborhood_name`,`city`,`price`,`so
 ('sp67','Raposo Tavares','São Paulo',80.00,67,1),
 ('sp68','Rio Pequeno','São Paulo',75.00,68,1),
 ('sp69','Santa Cecilia','São Paulo',50.00,69,1),
+('sp96','Santana','São Paulo',70.00,96,1),
 ('sp70','Se','São Paulo',50.00,70,1),
 ('sp71','Sapopemba','São Paulo',75.00,71,1),
 ('sp72','Sao Lucas','São Paulo',70.00,72,1),

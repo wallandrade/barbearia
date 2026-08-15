@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { clearCustomerToken, fetchCustomerProfile, getCustomerAuthHeaders } from "@/lib/customer-auth";
@@ -7,6 +7,14 @@ import { Copy, DollarSign, Gift, Loader2, LogOut, Package, Save, Ticket, Users, 
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+type TrackingHistoryEvent = {
+  status: string;
+  description?: string | null;
+  updated_at?: string | null;
+  timestamp?: number | null;
+  source?: string;
+};
 
 type CustomerOrder = {
   id: string;
@@ -27,6 +35,9 @@ type CustomerOrder = {
   envioecomBarcode?: string | null;
   envioecomStatus?: string | null;
   envioecomDeliveryMode?: string | null;
+  envioecomStatusHistory?: TrackingHistoryEvent[];
+  envioecomShipmentId?: string | null;
+  envioecomTrackingKey?: string | null;
 };
 
 type TrackingInfo = {
@@ -38,13 +49,7 @@ type TrackingInfo = {
   deliveryMode?: string | null;
   status?: string | null;
   statusUpdatedAt?: string | null;
-  history?: Array<{
-    status: string;
-    description?: string | null;
-    updated_at?: string | null;
-    timestamp?: number | null;
-    source?: string;
-  }>;
+  history?: TrackingHistoryEvent[];
   labelUrl?: string | null;
   hasShipment?: boolean;
 };
@@ -182,12 +187,36 @@ function getSituationBadgeClass(kind: ReturnType<typeof getCustomerSituation>["k
 
 function hasTrackableShipment(order: CustomerOrder): boolean {
   return Boolean(
-    order.envioecomBarcode ||
+    order.envioecomShipmentId ||
+      order.envioecomTrackingKey ||
+      order.envioecomBarcode ||
       order.envioecomStatus ||
       order.trackingCode ||
       order.enviado ||
       order.status === "completed",
   );
+}
+
+function mergeTrackingIntoOrder(order: CustomerOrder, tracking: TrackingInfo): CustomerOrder {
+  return {
+    ...order,
+    enviado: tracking.enviado ?? order.enviado,
+    trackingCode: tracking.trackingCode || tracking.barcode || order.trackingCode,
+    envioecomBarcode: tracking.barcode || order.envioecomBarcode,
+    envioecomStatus: tracking.status || order.envioecomStatus,
+    envioecomDeliveryMode: tracking.deliveryMode || order.envioecomDeliveryMode,
+    envioecomStatusHistory: Array.isArray(tracking.history)
+      ? tracking.history
+      : (order.envioecomStatusHistory || []),
+  };
+}
+
+function getOrderTrackingHistory(order: CustomerOrder): TrackingHistoryEvent[] {
+  return Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
+}
+
+function isDeliveredSituation(order: CustomerOrder): boolean {
+  return getCustomerSituation(order).kind === "delivered";
 }
 
 function getStatusIcon(status: string) {
@@ -207,6 +236,8 @@ function getStatusIcon(status: string) {
   }
 }
 
+const TRACKING_POLL_MS = 120_000;
+
 export default function CustomerOrders() {
   const [, setLocation] = useLocation();
   const [loading, setLoading] = useState(true);
@@ -219,47 +250,55 @@ export default function CustomerOrders() {
   const [isSavingPixel, setIsSavingPixel] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<string | null>(null);
-  const [trackingModalOrder, setTrackingModalOrder] = useState<CustomerOrder | null>(null);
-  const [trackingInfo, setTrackingInfo] = useState<TrackingInfo | null>(null);
-  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackingSyncingIds, setTrackingSyncingIds] = useState<Record<string, boolean>>({});
+  const ordersRef = useRef<CustomerOrder[]>([]);
+  ordersRef.current = orders;
 
-  const openTracking = async (order: CustomerOrder) => {
-    setTrackingModalOrder(order);
-    setTrackingInfo(null);
-    setTrackingLoading(true);
+  const applyTrackingToOrder = (orderId: string, tracking: TrackingInfo) => {
+    setOrders((prev) =>
+      prev.map((item) => (item.id === orderId ? mergeTrackingIntoOrder(item, tracking) : item)),
+    );
+  };
+
+  const syncOrderTracking = async (order: CustomerOrder, opts?: { silent?: boolean }) => {
+    setTrackingSyncingIds((prev) => ({ ...prev, [order.id]: true }));
     try {
       const res = await fetch(`${BASE}/api/me/orders/${order.id}/tracking`, {
         headers: getCustomerAuthHeaders(),
       });
       const data = await res.json() as { tracking?: TrackingInfo; message?: string };
       if (!res.ok) {
-        toast.error(data.message || "Não foi possível carregar o rastreio.");
-        setTrackingModalOrder(null);
-        return;
+        if (!opts?.silent) {
+          toast.error(data.message || "Não foi possível atualizar o rastreio.");
+        }
+        return null;
       }
       const tracking = data.tracking || null;
-      setTrackingInfo(tracking);
-      if (tracking) {
-        setOrders((prev) =>
-          prev.map((item) =>
-            item.id === order.id
-              ? {
-                  ...item,
-                  enviado: tracking.enviado ?? item.enviado,
-                  trackingCode: tracking.trackingCode || tracking.barcode || item.trackingCode,
-                  envioecomBarcode: tracking.barcode || item.envioecomBarcode,
-                  envioecomStatus: tracking.status || item.envioecomStatus,
-                  envioecomDeliveryMode: tracking.deliveryMode || item.envioecomDeliveryMode,
-                }
-              : item,
-          ),
-        );
-      }
+      if (tracking) applyTrackingToOrder(order.id, tracking);
+      return tracking;
     } catch {
-      toast.error("Erro ao carregar rastreio.");
-      setTrackingModalOrder(null);
+      if (!opts?.silent) toast.error("Erro ao atualizar rastreio.");
+      return null;
     } finally {
-      setTrackingLoading(false);
+      setTrackingSyncingIds((prev) => {
+        const next = { ...prev };
+        delete next[order.id];
+        return next;
+      });
+    }
+  };
+
+  const syncTrackableOrders = async (list: CustomerOrder[], opts?: { silent?: boolean; onlyOpen?: boolean }) => {
+    const targets = list.filter((order) => {
+      if (!hasTrackableShipment(order)) return false;
+      if (opts?.onlyOpen && isDeliveredSituation(order)) return false;
+      return true;
+    });
+    // Evita rajada na EnvioEcom: no máximo 2 em paralelo.
+    const concurrency = 2;
+    for (let i = 0; i < targets.length; i += concurrency) {
+      const chunk = targets.slice(i, i + concurrency);
+      await Promise.all(chunk.map((order) => syncOrderTracking(order, { silent: opts?.silent ?? true })));
     }
   };
 
@@ -322,10 +361,14 @@ export default function CustomerOrders() {
 
         if (!active) return;
 
+        const loadedOrders = ordersData.orders || [];
         setProfileName(profile.name);
-        setOrders(ordersData.orders || []);
+        setOrders(loadedOrders);
         setAffiliateData(normalizedAffiliatePayload);
         setPixelIdInput(normalizedAffiliatePayload?.affiliate?.facebookPixelId || "");
+
+        // Soft-sync EnvioEcom assim que a lista carrega (histórico já vem do BD).
+        void syncTrackableOrders(loadedOrders, { silent: true });
       } catch {
         toast.error("Não foi possível carregar seus pedidos.");
       } finally {
@@ -341,6 +384,15 @@ export default function CustomerOrders() {
       active = false;
     };
   }, [setLocation]);
+
+  // Poll leve enquanto o cliente está em Meus pedidos (só fretes em aberto).
+  useEffect(() => {
+    if (activeSection !== "orders" || loading) return;
+    const timer = window.setInterval(() => {
+      void syncTrackableOrders(ordersRef.current, { silent: true, onlyOpen: true });
+    }, TRACKING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [activeSection, loading]);
 
   function handleLogout() {
     clearCustomerToken();
@@ -587,9 +639,17 @@ export default function CustomerOrders() {
                             </div>
                           </div>
 
-                          {(trackingCode || order.envioecomDeliveryMode || order.envioecomStatus) && (
-                            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 space-y-1">
-                              <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Envio / Rastreio</p>
+                          {(trackingCode || order.envioecomDeliveryMode || order.envioecomStatus || getOrderTrackingHistory(order).length > 0) && (
+                            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Envio / Rastreio</p>
+                                {trackingSyncingIds[order.id] && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-blue-700/80">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Atualizando
+                                  </span>
+                                )}
+                              </div>
                               {order.envioecomStatus && (
                                 <p className="text-sm font-semibold text-blue-950">{order.envioecomStatus}</p>
                               )}
@@ -598,6 +658,33 @@ export default function CustomerOrders() {
                               )}
                               {trackingCode && (
                                 <p className="text-xs font-mono text-blue-950 break-all">Código: {trackingCode}</p>
+                              )}
+                              {getOrderTrackingHistory(order).length > 0 ? (
+                                <div className="space-y-2 pt-1 border-t border-blue-100/80">
+                                  <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Eventos</p>
+                                  <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                                    {[...getOrderTrackingHistory(order)].reverse().map((event, idx) => (
+                                      <div
+                                        key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
+                                        className="rounded-lg border border-blue-100 bg-white/70 px-3 py-2"
+                                      >
+                                        <p className="text-sm font-semibold text-foreground">{event.status}</p>
+                                        {event.description && (
+                                          <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
+                                        )}
+                                        {event.updated_at && (
+                                          <p className="text-[11px] text-muted-foreground mt-1">{event.updated_at}</p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                canTrack && (
+                                  <p className="text-xs text-blue-900/70">
+                                    O histórico de eventos aparece assim que houver atualização do frete.
+                                  </p>
+                                )
                               )}
                             </div>
                           )}
@@ -625,10 +712,15 @@ export default function CustomerOrders() {
                                 variant="outline"
                                 size="sm"
                                 className="rounded-lg text-xs"
-                                onClick={() => openTracking(order)}
+                                disabled={!!trackingSyncingIds[order.id]}
+                                onClick={() => { void syncOrderTracking(order); }}
                               >
-                                <Truck className="w-3.5 h-3.5 mr-1.5" />
-                                Rastrear
+                                {trackingSyncingIds[order.id] ? (
+                                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                ) : (
+                                  <Truck className="w-3.5 h-3.5 mr-1.5" />
+                                )}
+                                Atualizar rastreio
                               </Button>
                             )}
                             <Button
@@ -802,86 +894,6 @@ export default function CustomerOrders() {
           </div>
         </div>
       </div>
-
-      {trackingModalOrder && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-foreground">Rastreio do pedido</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  #{trackingModalOrder.orderNumber != null ? String(trackingModalOrder.orderNumber) : trackingModalOrder.id}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setTrackingModalOrder(null);
-                  setTrackingInfo(null);
-                }}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"
-                aria-label="Fechar"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {trackingLoading ? (
-              <div className="py-10 flex items-center justify-center text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                Carregando rastreio...
-              </div>
-            ) : !trackingInfo?.hasShipment && !trackingInfo?.trackingCode ? (
-              <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                Ainda não há código de rastreio para este pedido. Assim que o envio for postado, o status aparece aqui automaticamente.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="rounded-xl bg-muted/40 border border-border p-3 space-y-1">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Status atual</p>
-                  <p className="text-base font-bold text-foreground">{trackingInfo?.status || "Aguardando atualização"}</p>
-                  {trackingInfo?.deliveryMode && (
-                    <p className="text-xs text-muted-foreground">{trackingInfo.deliveryMode}</p>
-                  )}
-                  {(trackingInfo?.barcode || trackingInfo?.trackingCode) && (
-                    <p className="text-xs font-mono text-foreground mt-1">
-                      Código: {trackingInfo.barcode || trackingInfo.trackingCode}
-                    </p>
-                  )}
-                </div>
-
-                {Array.isArray(trackingInfo?.history) && trackingInfo!.history!.length > 0 && (
-                  <div className="space-y-2 max-h-56 overflow-y-auto">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Histórico</p>
-                    {[...trackingInfo!.history!].reverse().map((event, idx) => (
-                      <div key={`${event.status}-${event.updated_at || idx}`} className="rounded-lg border border-border px-3 py-2">
-                        <p className="text-sm font-semibold text-foreground">{event.status}</p>
-                        {event.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
-                        )}
-                        {event.updated_at && (
-                          <p className="text-[11px] text-muted-foreground mt-1">{event.updated_at}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <Button
-              type="button"
-              className="w-full rounded-xl"
-              onClick={() => {
-                setTrackingModalOrder(null);
-                setTrackingInfo(null);
-              }}
-            >
-              Fechar
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
