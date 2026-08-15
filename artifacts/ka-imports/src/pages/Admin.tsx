@@ -5367,6 +5367,7 @@ export default function Admin() {
             motoboyBalances={motoboyInventoryBalances}
             motoboyMovements={motoboyInventoryMovements}
             pendingReshipments={pendingReshipments}
+            labelProjectionOrders={orders}
             entryForm={inventoryEntryForm}
             setEntryForm={setInventoryEntryForm}
             submitting={inventorySubmitting}
@@ -8052,6 +8053,7 @@ function InventoryPanel({
   motoboyBalances,
   motoboyMovements,
   pendingReshipments,
+  labelProjectionOrders,
   entryForm,
   setEntryForm,
   submitting,
@@ -8071,6 +8073,16 @@ function InventoryPanel({
   motoboyBalances: InventoryBalanceRecord[];
   motoboyMovements: InventoryMovementRecord[];
   pendingReshipments: ReshipmentRecord[];
+  labelProjectionOrders: Array<{
+    id: string;
+    orderNumber?: number | null;
+    products?: unknown;
+    enviado?: boolean | null;
+    status?: string | null;
+    envioecomStatus?: string | null;
+    envioecomLabelUrl?: string | null;
+    trackingLabelUrl?: string | null;
+  }>;
   entryForm: {
     productId: string;
     quantity: string;
@@ -8164,6 +8176,10 @@ function InventoryPanel({
         return productName.includes(normalizedBalanceSearch);
       })
     : activeBalances;
+
+  const motoboyLabelProjectionLines = labelProjectionOrders
+    .filter((order) => orderHasPendingEnvioEcomLabel(order))
+    .flatMap((order) => buildOrderStockProjectionLines(order, motoboyBalances));
 
   const onFillManualReturnEntry = () => {
     const clientName = String(manualReturnDraft.clientName || "").trim();
@@ -8313,7 +8329,7 @@ function InventoryPanel({
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
-                ? "Registre o que está na mão do motoboy. Pedidos Motoboy só baixam ao marcar enviado (não reservam na escolha)."
+                ? "Registre o que está na mão do motoboy. Pedidos Motoboy só baixam ao marcar enviado (não reservam na escolha). Pedidos com etiqueta EE aparecem como previsão (linha imaginária), sem baixar."
                 : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
@@ -8505,21 +8521,41 @@ function InventoryPanel({
               <div className="space-y-2 h-full overflow-auto pr-1">
                 {filteredBalances.map((row) => {
                   const prod = products.find((p) => p.id === row.productId);
+                  const pendingForProduct = stockTab === "motoboy"
+                    ? motoboyLabelProjectionLines.filter((line) => {
+                        if (line.productId && line.productId === row.productId) return true;
+                        return line.productName.trim().toLowerCase() === String(row.productName || "").trim().toLowerCase();
+                      })
+                    : [];
+                  const pendingQty = pendingForProduct.reduce((sum, line) => sum + line.orderQty, 0);
+                  const projectedQty = row.quantity - pendingQty;
                   return (
-                    <div key={row.productId} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {prod?.image ? (
-                          <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
-                        ) : (
-                          <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
-                            <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                        )}
-                        <span className="text-sm truncate">{row.productName}</span>
+                    <div key={row.productId} className="rounded-lg border border-border px-3 py-2 gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {prod?.image ? (
+                            <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
+                          ) : (
+                            <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
+                              <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                          <span className="text-sm truncate">{row.productName}</span>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+                          {row.quantity} un
+                        </span>
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
-                        {row.quantity} un
-                      </span>
+                      {pendingForProduct.length > 0 && (
+                        <div className="mt-1.5 ml-10 rounded-md border border-dashed border-amber-300 bg-amber-50/80 px-2 py-1.5">
+                          <p className="text-[11px] font-semibold text-amber-950">
+                            Linha imaginária: se sair {pendingQty} un (etiqueta), Motoboy fica {projectedQty} un
+                          </p>
+                          <p className="text-[11px] text-amber-900/80 mt-0.5">
+                            {pendingForProduct.map((line) => `#${line.orderRef}`).join(", ")} — sem baixa ainda
+                          </p>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -8527,6 +8563,35 @@ function InventoryPanel({
             )}
           </div>
         </div>
+
+        {stockTab === "motoboy" && motoboyLabelProjectionLines.length > 0 && (
+          <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-4 xl:col-span-2">
+            <p className="text-sm font-semibold text-amber-950">Previsão — etiqueta gerada (linha imaginária)</p>
+            <p className="text-xs text-amber-900/80 mt-1 mb-3">
+              Só alerta: se o pedido sair, o saldo Motoboy ficaria assim. Não reserva e não baixa estoque até marcar enviado / coletado.
+            </p>
+            <div className="space-y-2 max-h-[320px] overflow-auto pr-1">
+              {motoboyLabelProjectionLines.map((line) => (
+                <div
+                  key={`${line.orderId}:${line.productId || line.productName}`}
+                  className="rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="font-medium text-foreground">
+                      Pedido #{line.orderRef} · {line.productName}
+                    </p>
+                    <p className={`text-xs font-semibold shrink-0 ${line.projectedQty < 0 ? "text-red-700" : "text-amber-900"}`}>
+                      se sair {line.orderQty} un → Motoboy fica {line.projectedQty} un
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Saldo Motoboy hoje: {line.currentQty} un (sem baixa ainda)
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {stockTab === "loja" && (
         <div className="rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[620px] overflow-hidden">
@@ -8749,6 +8814,98 @@ function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolea
     isEnvioEcomLabelReadyStatus(s) ||
     isEnvioEcomPostedStatus(s)
   );
+}
+
+/** Pedido com etiqueta EE pronta e ainda não marcado enviado — candidato a previsão de estoque. */
+function orderHasPendingEnvioEcomLabel(order: {
+  enviado?: boolean | null;
+  status?: string | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+  trackingLabelUrl?: string | null;
+}): boolean {
+  if (order.enviado) return false;
+  if (isCancelledOrderStatus(order.status)) return false;
+  if (String(order.envioecomLabelUrl || "").trim()) return true;
+  if (String(order.trackingLabelUrl || "").trim()) return true;
+  if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
+  return false;
+}
+
+type StockProjectionLine = {
+  orderId: string;
+  orderRef: string;
+  productId: string | null;
+  productName: string;
+  orderQty: number;
+  currentQty: number;
+  projectedQty: number;
+};
+
+function resolveBalanceQtyForProduct(
+  balances: InventoryBalanceRecord[],
+  productId: string | null,
+  productName: string,
+): number {
+  const id = String(productId || "").trim();
+  if (id) {
+    const byId = balances.find((b) => String(b.productId || "").trim() === id);
+    if (byId) return Number(byId.quantity || 0);
+  }
+  const normalize = (value: string) => value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const target = normalize(productName);
+  if (!target) return 0;
+  const byName = balances.find((b) => normalize(String(b.productName || "")) === target);
+  return byName ? Number(byName.quantity || 0) : 0;
+}
+
+/** Previsão só de alerta: saldo atual − qty do pedido (não altera estoque). */
+function buildOrderStockProjectionLines(
+  order: { id?: string; orderNumber?: number | null; products?: unknown },
+  balances: InventoryBalanceRecord[],
+): StockProjectionLine[] {
+  const orderId = String(order?.id || "");
+  const orderRef = getOrderReference(order);
+  const totals = new Map<string, { productId: string | null; productName: string; qty: number }>();
+  for (const product of getOrderProducts(order?.products)) {
+    const qty = Number(product.quantity || 0);
+    if (qty <= 0) continue;
+    const productId = String((product as { id?: string }).id || (product as { productId?: string }).productId || "").trim() || null;
+    const productName = String(product.name || "Produto").trim() || "Produto";
+    const key = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
+    const prev = totals.get(key);
+    totals.set(key, {
+      productId: prev?.productId || productId,
+      productName: prev?.productName || productName,
+      qty: (prev?.qty || 0) + qty,
+    });
+  }
+  return Array.from(totals.values()).map((item) => {
+    const currentQty = resolveBalanceQtyForProduct(balances, item.productId, item.productName);
+    return {
+      orderId,
+      orderRef,
+      productId: item.productId,
+      productName: item.productName,
+      orderQty: item.qty,
+      currentQty,
+      projectedQty: currentQty - item.qty,
+    };
+  });
+}
+
+function formatStockProjectionToast(lines: StockProjectionLine[], poolLabel: string): string {
+  if (lines.length === 0) return "";
+  const body = lines
+    .map((line) => `· ${line.productName}: se sair ${line.orderQty} un, ${poolLabel} fica ${line.projectedQty} un (hoje ${line.currentQty})`)
+    .join("\n");
+  return `Atenção estoque (${poolLabel}) — só alerta, sem baixa:\n${body}`;
 }
 
 function OrdersPanel({
@@ -9170,6 +9327,15 @@ function OrdersPanel({
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
         }
+        // Só alerta: previsão Loja + Motoboy (sem reservar/baixar).
+        const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
+        const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
+        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Loja");
+        const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
+        const projectionMsg = [lojaMsg, motoMsg].filter(Boolean).join("\n\n");
+        if (projectionMsg) {
+          toast.message(projectionMsg, { duration: 16000 });
+        }
       };
 
       if (!res.ok) {
@@ -9200,6 +9366,14 @@ function OrdersPanel({
         const url = URL.createObjectURL(blob);
         window.open(url, "_blank", "noopener,noreferrer");
         toast.success("Etiqueta gerada (download local).");
+        const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
+        const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
+        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Loja");
+        const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
+        const projectionMsg = [lojaMsg, motoMsg].filter(Boolean).join("\n\n");
+        if (projectionMsg) {
+          toast.message(projectionMsg, { duration: 16000 });
+        }
         return;
       }
       toast.success("Etiqueta processada.");

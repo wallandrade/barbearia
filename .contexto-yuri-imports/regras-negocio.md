@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-15 | Etiqueta EE: toast de previsão estoque (Loja/Motoboy) + linhas imaginárias no Estoque Motoboy | Alerta sem reservar/baixar; baixa continua no enviado/coletado | Sync/webhook/reserva Loja iguais |
 | 2026-08-15 | Editar Pedido admin: telefone, e-mail e CPF/CNPJ (`clientPhone`/`clientEmail`/`clientDocument`) | Corrige contato/documento p/ EnvioEcom sem ir no BD | Produtos/endereço/desconto iguais |
 | 2026-08-15 | Status EE **Coletado/Recebido** conta como postado: marca `enviado` e sai da lista 48h/cópia/POSTAR ATÉ | Evita pedido já coletado continuar na fila | Cotação/create iguais |
 | 2026-08-15 | Soft-sync consome `status_history` da EnvioEcom (cidade/local) e grava no card do cliente | Timeline igual ao painel EE | Cotação/create iguais |
@@ -95,6 +96,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Reenvios automáticos/manuais (`reshipments`, `manual_reshipments`).
 - Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
 - **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado**. **Loja** continua reservando na escolha (`inventory_reserved`). Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.
+- **Etiqueta EnvioEcom:** ao gerar, toast de **previsão** (saldo atual − qty do pedido) em Loja e Motoboy — **sem** reservar/baixar. Na aba Estoque Motoboy, pedidos com etiqueta e ainda não enviados aparecem como **linha imaginária** sob o produto e numa lista “Previsão”; a baixa real segue no Coletado/Enviado.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.
 
 ## Prova social e settings
