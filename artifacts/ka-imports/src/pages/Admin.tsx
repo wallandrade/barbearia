@@ -8658,6 +8658,8 @@ function isEnvioEcomPostedStatus(status: string | null | undefined): boolean {
     s.includes("transito") ||
     s.includes("postado") ||
     s.includes("expedido") ||
+    s.includes("coletado") ||
+    s.includes("recebido") ||
     s.includes("saiu para entrega") ||
     s.includes("entregue")
   );
@@ -8685,7 +8687,9 @@ function isExcludedFromShippingCopyList(order: {
   envioecomLabelUrl?: string | null;
 }): boolean {
   if (order.enviado) return true;
+  // Etiqueta pronta OU já coletado/expedido/etc. — não volta na cópia 48h.
   if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
+  if (isEnvioEcomPostedStatus(order.envioecomStatus)) return true;
   if (String(order.envioecomLabelUrl || "").trim()) return true;
   return false;
 }
@@ -8695,12 +8699,7 @@ function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolea
   if (!s) return false;
   return (
     isEnvioEcomLabelReadyStatus(s) ||
-    s.includes("trânsito") ||
-    s.includes("transito") ||
-    s.includes("postado") ||
-    s.includes("expedido") ||
-    s.includes("saiu para entrega") ||
-    s.includes("entregue")
+    isEnvioEcomPostedStatus(s)
   );
 }
 

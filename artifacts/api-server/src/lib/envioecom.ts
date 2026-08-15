@@ -1208,6 +1208,8 @@ export function isInTransitStatus(status: string): boolean {
     s.includes("transito") ||
     s.includes("postado") ||
     s.includes("expedido") ||
+    s.includes("coletado") ||
+    s.includes("recebido") ||
     s.includes("saiu para entrega")
   );
 }
