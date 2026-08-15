@@ -8082,6 +8082,7 @@ function InventoryPanel({
     envioecomStatus?: string | null;
     envioecomLabelUrl?: string | null;
     trackingLabelUrl?: string | null;
+    inventoryReserved?: boolean | null;
   }>;
   entryForm: {
     productId: string;
@@ -8179,6 +8180,8 @@ function InventoryPanel({
 
   const motoboyLabelProjectionLines = labelProjectionOrders
     .filter((order) => orderHasPendingEnvioEcomLabel(order))
+    // Já deu baixa/reserva: saldo real já caiu — não projetar de novo.
+    .filter((order) => !(order as { inventoryReserved?: boolean | null }).inventoryReserved)
     .flatMap((order) => buildOrderStockProjectionLines(order, motoboyBalances));
 
   const onFillManualReturnEntry = () => {
@@ -9795,14 +9798,15 @@ function OrdersPanel({
     return isMotoboy ? "motoboy" : "loja";
   };
 
-  const saveInventoryPoolForOrder = async (orderId: string, pool: "loja" | "motoboy") => {
+  const saveInventoryPoolForOrder = async (orderId: string, pool: "loja" | "motoboy", opts?: { reserveNow?: boolean }) => {
     if (!orderId) return;
+    const reserveNow = opts?.reserveNow === true;
     setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: true }));
     try {
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/inventory-pool`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ inventoryPool: pool }),
+        body: JSON.stringify({ inventoryPool: pool, ...(reserveNow ? { reserveNow: true } : {}) }),
       });
       const data = await res.json().catch(() => ({})) as {
         message?: string;
@@ -9825,19 +9829,30 @@ function OrdersPanel({
       setEnviadoInventoryPool((prev) => ({ ...prev, [orderId]: pool }));
       setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: reserved }));
       onRefreshInventory();
-      toast.success(
-        pool === "motoboy"
-          ? "Estoque Motoboy selecionado. A baixa só ocorre ao marcar enviado / postagem."
-          : reserved
-            ? "Estoque Loja reservado para o pedido."
-            : "Estoque Loja selecionado.",
-      );
+      if (reserveNow && reserved) {
+        toast.success(
+          `Baixa feita no estoque ${pool === "motoboy" ? "Motoboy" : "Loja"}. Coletado/Enviado não baixa de novo.`,
+        );
+      } else {
+        toast.success(
+          pool === "motoboy"
+            ? "Estoque Motoboy selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora)."
+            : reserved
+              ? "Estoque Loja reservado para o pedido."
+              : "Estoque Loja selecionado.",
+        );
+      }
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : "Erro ao salvar estoque do pedido.";
       toast.error(message);
     } finally {
       setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: false }));
     }
+  };
+
+  const debitInventoryNowForOrder = async (orderId: string) => {
+    const pool = resolveInventoryPoolForOrder(orderId);
+    await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true });
   };
 
   const verifyOrderStock = (
@@ -11101,7 +11116,7 @@ function OrdersPanel({
                 {!showEnviadoUi && (
                   <div className="inline-flex items-center gap-1 h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
-                      {inventoryReservedByOrder[order.id] ? "Reservado:" : "Baixa estoque:"}
+                      {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
                     </span>
                     <button
                       type="button"
@@ -11127,6 +11142,22 @@ function OrdersPanel({
                     >
                       {inventoryPoolSaving[order.id] ? "..." : "Motoboy"}
                     </button>
+                    {!inventoryReservedByOrder[order.id] && (
+                      <button
+                        type="button"
+                        disabled={!!inventoryPoolSaving[order.id]}
+                        onClick={() => { void debitInventoryNowForOrder(order.id); }}
+                        title={`Dar baixa agora no estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} (Coletado/Enviado não baixa de novo)`}
+                        className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        Dar baixa agora
+                      </button>
+                    )}
+                    {inventoryReservedByOrder[order.id] && (
+                      <span className="h-6 px-2 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold">
+                        OK
+                      </span>
+                    )}
                   </div>
                 )}
                 <Button

@@ -2355,7 +2355,8 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/inventory-pool  (protected)
-// Loja: reserva (baixa imediata). Motoboy: só grava preferência — baixa ao Enviado/postagem.
+// Loja: reserva (baixa imediata). Motoboy: só grava preferência — baixa ao Enviado/postagem,
+// salvo reserveNow=true (botão "Dar baixa agora" no card).
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, res) => {
   try {
@@ -2365,12 +2366,14 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
 
-    const rawPool = String((req.body as { inventoryPool?: string })?.inventoryPool || "").toLowerCase().trim();
+    const body = req.body as { inventoryPool?: string; reserveNow?: boolean };
+    const rawPool = String(body?.inventoryPool || "").toLowerCase().trim();
     if (rawPool !== "loja" && rawPool !== "motoboy") {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja' ou 'motoboy'." });
       return;
     }
     const nextPool = rawPool as InventoryPoolKind;
+    const reserveNow = body?.reserveNow === true;
 
     const rows = await db
       .select()
@@ -2395,8 +2398,9 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     const currentPool: InventoryPoolKind | null =
       currentPoolRaw === "motoboy" || currentPoolRaw === "loja" ? currentPoolRaw : null;
     const currentlyReserved = !!(order as any).inventoryReserved;
-    // Motoboy: não reserva na escolha — só baixa quando sair (Enviado / postado).
-    const softSelect = nextPool === "motoboy";
+    // Motoboy: não reserva na escolha — só baixa quando sair (Enviado / postado),
+    // a menos que o admin clique "Dar baixa agora" (reserveNow).
+    const softSelect = nextPool === "motoboy" && !reserveNow;
 
     if (!softSelect && currentlyReserved && currentPool === nextPool) {
       res.json({ ok: true, order: mapOrder(order), inventoryPool: nextPool, inventoryReserved: true });
@@ -2455,7 +2459,9 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
           message: nextPool === "motoboy"
-            ? `Estoque Motoboy insuficiente: ${details}.`
+            ? (reserveNow
+              ? `Estoque Motoboy insuficiente para dar baixa: ${details}.`
+              : `Estoque Motoboy insuficiente: ${details}.`)
             : `Estoque Loja insuficiente para reservar: ${details}.`,
         });
         return;
@@ -2491,6 +2497,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       order: updated[0] ? mapOrder(updated[0]) : null,
       inventoryPool: nextPool,
       inventoryReserved,
+      reservedNow: reserveNow && inventoryReserved,
     });
   } catch (err) {
     console.error("Update inventory pool error:", err);
