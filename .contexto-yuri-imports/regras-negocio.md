@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-16 | Cliente: “Pronto para envio” → “Estamos embalando seu pedido” (+ dica de despacho) | Linguagem amigável no Meus pedidos | Admin/Status frete EE iguais |
 | 2026-08-16 | Card Meus pedidos: foto do produto (snapshot no checkout + enrich pelo catálogo) | Cliente vê thumbnail no card e em detalhes | Admin/EnvioEcom iguais |
 | 2026-08-16 | Badge Status frete colorido por evento EE (Rastreios + card) | Expedido/Recebido cinza, Saiu azul, Pronto/Entregue verde, Aguardando amarelo | Webhook/sync iguais |
 | 2026-08-15 | Botão **Dar baixa agora** no card (`reserveNow`); Motoboy também pode reservar; Enviado/Coletado não baixa de novo | Baixa antecipada sem duplicar | Escolha Motoboy sem botão continua soft |

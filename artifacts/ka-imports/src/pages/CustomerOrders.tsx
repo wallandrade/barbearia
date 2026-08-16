@@ -109,6 +109,50 @@ function normalizeShippingStatus(raw: string | null | undefined): string {
   return String(raw || "").trim();
 }
 
+function isPackingBeforePostStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return (
+    s.includes("pronto para envio") ||
+    s.includes("etiqueta emitida") ||
+    s.includes("etiqueta gerada") ||
+    s.includes("processando envio") ||
+    s.includes("aguardando expedição") ||
+    s.includes("aguardando expedicao") ||
+    s.includes("dc-e emitida") ||
+    s.includes("dce emitida") ||
+    s.includes("envio criado")
+  );
+}
+
+/** Texto amigável para o cliente (admin continua com o status EE original). */
+function toCustomerFriendlyShippingLabel(raw: string | null | undefined): string {
+  const status = normalizeShippingStatus(raw);
+  if (!status) return "";
+  const s = status.toLowerCase();
+  if (isPackingBeforePostStatus(status) || /aguardando postagem/.test(s)) {
+    return "Estamos embalando seu pedido";
+  }
+  if (/aguardando pagamento/.test(s)) {
+    return "Preparando envio";
+  }
+  if (/saiu para entrega|em rota/.test(s)) {
+    return "Saiu para entrega";
+  }
+  if (/entregue/.test(s)) {
+    return "Entregue";
+  }
+  return status;
+}
+
+function customerShippingHint(raw: string | null | undefined): string | null {
+  const status = normalizeShippingStatus(raw);
+  if (!status) return null;
+  if (isPackingBeforePostStatus(status) || /aguardando postagem/i.test(status)) {
+    return "Em breve ele será despachado. Aguarde a atualização do rastreio.";
+  }
+  return null;
+}
+
 function isShippingDelivered(status: string): boolean {
   const s = status.toLowerCase();
   return s.includes("entregue") || s.includes("objeto entregue");
@@ -121,13 +165,10 @@ function isShippingInTransit(status: string): boolean {
     s.includes("transito") ||
     s.includes("postado") ||
     s.includes("expedido") ||
+    s.includes("coletado") ||
+    s.includes("recebido") ||
     s.includes("saiu para entrega") ||
-    s.includes("em rota") ||
-    s.includes("pronto para envio") ||
-    s.includes("processando envio") ||
-    s.includes("etiqueta emitida") ||
-    s.includes("aguardando expedição") ||
-    s.includes("aguardando expedicao")
+    s.includes("em rota")
   );
 }
 
@@ -135,6 +176,7 @@ function isShippingInTransit(status: string): boolean {
 function getCustomerSituation(order: CustomerOrder): {
   label: string;
   kind: "paid" | "processing" | "shipping" | "delivered" | "cancelled" | "pending";
+  hint?: string | null;
 } {
   if (order.status === "cancelled") {
     return { label: "Cancelado", kind: "cancelled" };
@@ -143,15 +185,23 @@ function getCustomerSituation(order: CustomerOrder): {
   const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
   if (shippingStatus) {
     if (isShippingDelivered(shippingStatus) || order.status === "completed") {
-      return { label: shippingStatus, kind: "delivered" };
+      return { label: toCustomerFriendlyShippingLabel(shippingStatus), kind: "delivered" };
     }
     if (/cancelad/i.test(shippingStatus)) {
       return { label: shippingStatus, kind: "cancelled" };
     }
-    if (/aguardando pagamento/i.test(shippingStatus)) {
-      return { label: "Preparando envio", kind: "processing" };
+    if (/aguardando pagamento/i.test(shippingStatus) || isPackingBeforePostStatus(shippingStatus)) {
+      return {
+        label: toCustomerFriendlyShippingLabel(shippingStatus),
+        kind: "processing",
+        hint: customerShippingHint(shippingStatus),
+      };
     }
-    return { label: shippingStatus, kind: isShippingInTransit(shippingStatus) ? "shipping" : "processing" };
+    return {
+      label: toCustomerFriendlyShippingLabel(shippingStatus),
+      kind: isShippingInTransit(shippingStatus) ? "shipping" : "processing",
+      hint: customerShippingHint(shippingStatus),
+    };
   }
 
   if (order.status === "completed") {
@@ -733,9 +783,18 @@ export default function CustomerOrders() {
                                   </span>
                                 )}
                               </div>
-                              {order.envioecomStatus && (
-                                <p className="text-sm font-semibold text-blue-950">{order.envioecomStatus}</p>
-                              )}
+                              {order.envioecomStatus && (() => {
+                                const friendly = toCustomerFriendlyShippingLabel(order.envioecomStatus);
+                                const hint = customerShippingHint(order.envioecomStatus);
+                                return (
+                                  <div>
+                                    <p className="text-sm font-semibold text-blue-950">{friendly}</p>
+                                    {hint && (
+                                      <p className="text-xs text-blue-900/80 mt-0.5">{hint}</p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               {order.envioecomDeliveryMode && (
                                 <p className="text-xs text-blue-900/80">{order.envioecomDeliveryMode}</p>
                               )}
@@ -759,7 +818,9 @@ export default function CustomerOrders() {
                                           key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
                                           className="rounded-lg border border-blue-100 bg-white/70 px-3 py-2"
                                         >
-                                          <p className="text-sm font-semibold text-blue-950">{event.status}</p>
+                                          <p className="text-sm font-semibold text-blue-950">
+                                            {toCustomerFriendlyShippingLabel(event.status) || event.status}
+                                          </p>
                                           {event.location &&
                                             event.location.trim().toLowerCase() !== statusText.toLowerCase() && (
                                             <p className="text-xs text-blue-900/80 mt-0.5">{event.location}</p>
