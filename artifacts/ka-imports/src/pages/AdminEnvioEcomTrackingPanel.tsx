@@ -60,19 +60,38 @@ const groupLabel: Record<TrackingBoardItem["group"], string> = {
   other: "Outros",
 };
 
-function groupBadgeClass(group: TrackingBoardItem["group"]): string {
-  switch (group) {
-    case "delivered":
-      return "bg-green-50 text-green-800 border-green-200";
-    case "in_transit":
-      return "bg-blue-50 text-blue-800 border-blue-200";
-    case "awaiting":
-      return "bg-amber-50 text-amber-900 border-amber-200";
-    case "cancelled":
-      return "bg-red-50 text-red-800 border-red-200";
-    default:
-      return "bg-muted text-muted-foreground border-border";
+/** Cores do badge Status frete conforme o evento EE (não só o group genérico). */
+function freightStatusBadgeClass(
+  status: string | null | undefined,
+  group?: TrackingBoardItem["group"],
+): string {
+  const s = String(status || "").toLowerCase().trim();
+
+  if (/cancelad/.test(s) || group === "cancelled") {
+    return "bg-red-50 text-red-800 border-red-200";
   }
+  if (/entregue/.test(s) || group === "delivered") {
+    return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  }
+  if (/saiu para entrega|saiu p\/ entrega|em rota de entrega/.test(s)) {
+    return "bg-sky-50 text-sky-800 border-sky-200";
+  }
+  if (
+    /pronto para envio|etiqueta emitida|etiqueta gerada|dc-e emitida|dce emitida|processando envio|aguardando expedi/.test(s)
+  ) {
+    return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  }
+  if (/aguardando postagem|aguardando pagamento|envio criado/.test(s) || group === "awaiting") {
+    return "bg-amber-50 text-amber-900 border-amber-200";
+  }
+  if (/expedido|recebido|coletado|postado|tr[aâ]nsito/.test(s) || group === "in_transit") {
+    return "bg-slate-100 text-slate-700 border-slate-300";
+  }
+  return "bg-muted text-muted-foreground border-border";
+}
+
+function groupBadgeClass(group: TrackingBoardItem["group"]): string {
+  return freightStatusBadgeClass(null, group);
 }
 
 export default function AdminEnvioEcomTrackingPanel({
@@ -417,7 +436,7 @@ export default function AdminEnvioEcomTrackingPanel({
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-semibold border ${groupBadgeClass(item.group)}`}>
+                      <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(item.status, item.group)}`}>
                         {item.status || groupLabel[item.group]}
                       </span>
                       {last?.description && (

@@ -8819,6 +8819,29 @@ function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolea
   );
 }
 
+/** Cores do badge Status frete / EE conforme o evento. */
+function freightStatusBadgeClass(status: string | null | undefined): string {
+  const s = String(status || "").toLowerCase().trim();
+  if (!s) return "bg-yellow-100 text-yellow-800 border-yellow-200";
+  if (/cancelad/.test(s)) return "bg-red-50 text-red-800 border-red-200";
+  if (/entregue/.test(s)) return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  if (/saiu para entrega|saiu p\/ entrega|em rota de entrega/.test(s)) {
+    return "bg-sky-50 text-sky-800 border-sky-200";
+  }
+  if (
+    /pronto para envio|etiqueta emitida|etiqueta gerada|dc-e emitida|dce emitida|processando envio|aguardando expedi/.test(s)
+  ) {
+    return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  }
+  if (/aguardando postagem|aguardando pagamento|envio criado/.test(s)) {
+    return "bg-amber-50 text-amber-900 border-amber-200";
+  }
+  if (/expedido|recebido|coletado|postado|tr[aâ]nsito/.test(s)) {
+    return "bg-slate-100 text-slate-700 border-slate-300";
+  }
+  return "bg-teal-50 text-teal-900 border-teal-200";
+}
+
 /** Pedido com etiqueta EE pronta e ainda não marcado enviado — candidato a previsão de estoque. */
 function orderHasPendingEnvioEcomLabel(order: {
   enviado?: boolean | null;
@@ -10743,13 +10766,7 @@ function OrdersPanel({
                         {/* Badge de status de envio / EnvioEcom */}
                         {envioecomStatus ? (
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                              envioecomLabelReady || envioecomShippedLike
-                                ? "bg-emerald-100 text-emerald-900 border-emerald-300"
-                                : /cancelad/i.test(envioecomStatus)
-                                  ? "bg-red-100 text-red-800 border-red-200"
-                                  : "bg-teal-50 text-teal-900 border-teal-200"
-                            }`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${freightStatusBadgeClass(envioecomStatus)}`}
                             title="Status EnvioEcom (atualiza com webhook/sync)"
                           >
                             <Truck className="w-3 h-3" />
@@ -11070,7 +11087,7 @@ function OrdersPanel({
                     </>
                   )}
                   {(order as any).envioecomStatus && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass((order as any).envioecomStatus)}`}>
                       EE: {(order as any).envioecomStatus}
                       {(order as any).envioecomBarcode ? ` · ${(order as any).envioecomBarcode}` : ""}
                     </span>
