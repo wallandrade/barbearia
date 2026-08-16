@@ -1200,6 +1200,7 @@ router.post("/orders", async (req, res) => {
           quantity,
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
+          image: String(current.image || "").trim() || null,
           selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
           variantLabel: variantLabel || undefined,
         };
@@ -1210,6 +1211,7 @@ router.post("/orders", async (req, res) => {
         quantity: number;
         price: number;
         costPrice: number;
+        image: string | null;
         selectedVariants?: Array<{ groupName: string; option: string }>;
         variantLabel?: string;
       } => Boolean(item));
@@ -1392,7 +1394,8 @@ router.get("/me/orders", requireCustomerAuth, async (req, res) => {
       .where(eq(ordersTable.userId, customerSession.userId))
       .orderBy(desc(ordersTable.createdAt));
 
-    res.json({ orders: orders.map(mapOrder) });
+    const mapped = await enrichOrdersWithProductImages(orders.map(mapOrder));
+    res.json({ orders: mapped });
   } catch (err) {
     console.error("Customer orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
@@ -1427,7 +1430,8 @@ router.get("/me/orders/:id", requireCustomerAuth, async (req, res) => {
       return;
     }
 
-    res.json({ order: mapOrder(rows[0]) });
+    const [order] = await enrichOrdersWithProductImages([mapOrder(rows[0])]);
+    res.json({ order });
   } catch (err) {
     console.error("Customer order detail error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedido." });
@@ -1458,7 +1462,8 @@ router.get("/orders/guest/:id", async (req, res) => {
       return;
     }
 
-    res.json({ order: mapOrder(rows[0]) });
+    const [order] = await enrichOrdersWithProductImages([mapOrder(rows[0])]);
+    res.json({ order });
   } catch (err) {
     console.error("Guest order access error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedido." });
@@ -2190,6 +2195,39 @@ router.get("/admin/export", requireAdminAuth, async (req, res) => {
   }
 });
 
+async function enrichOrdersWithProductImages<T extends { products?: Array<{ id?: string; image?: string | null }> }>(
+  orders: T[],
+): Promise<T[]> {
+  const missingIds = new Set<string>();
+  for (const order of orders) {
+    for (const product of order.products || []) {
+      const id = String(product?.id || "").trim();
+      const image = String(product?.image || "").trim();
+      if (id && !image) missingIds.add(id);
+    }
+  }
+  if (missingIds.size === 0) return orders;
+
+  const rows = await db
+    .select({ id: productsTable.id, image: productsTable.image })
+    .from(productsTable)
+    .where(inArray(productsTable.id, Array.from(missingIds)));
+  const imageById = new Map(
+    rows.map((row) => [row.id, String(row.image || "").trim() || null] as const),
+  );
+
+  return orders.map((order) => ({
+    ...order,
+    products: (order.products || []).map((product) => {
+      const id = String(product?.id || "").trim();
+      const existing = String(product?.image || "").trim();
+      if (existing || !id) return product;
+      const fromCatalog = imageById.get(id);
+      return fromCatalog ? { ...product, image: fromCatalog } : product;
+    }),
+  }));
+}
+
 function mapOrder(o: typeof ordersTable.$inferSelect) {
   let proofUrls: string[] = [];
   if (o.proofUrls) {
@@ -2199,14 +2237,14 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     proofUrls = [o.proofUrl, ...proofUrls];
   }
 
-  let products: Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number }> = [];
+  let products: Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null }> = [];
   if (Array.isArray(o.products)) {
-    products = o.products as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number }>;
+    products = o.products as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null }>;
   } else if (typeof o.products === "string") {
     try {
       const parsed = JSON.parse(o.products);
       if (Array.isArray(parsed)) {
-        products = parsed as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number }>;
+        products = parsed as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null }>;
       }
     } catch {
       products = [];

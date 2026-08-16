@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-16 | Card Meus pedidos: foto do produto (snapshot no checkout + enrich pelo catálogo) | Cliente vê thumbnail no card e em detalhes | Admin/EnvioEcom iguais |
 | 2026-08-16 | Badge Status frete colorido por evento EE (Rastreios + card) | Expedido/Recebido cinza, Saiu azul, Pronto/Entregue verde, Aguardando amarelo | Webhook/sync iguais |
 | 2026-08-15 | Botão **Dar baixa agora** no card (`reserveNow`); Motoboy também pode reservar; Enviado/Coletado não baixa de novo | Baixa antecipada sem duplicar | Escolha Motoboy sem botão continua soft |
 | 2026-08-15 | Etiqueta EE: toast de previsão estoque (Loja/Motoboy) + linhas imaginárias no Estoque Motoboy | Alerta sem reservar/baixar; baixa continua no enviado/coletado | Sync/webhook/reserva Loja iguais |
@@ -43,7 +44,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 ## Pedidos e checkout
 
 - Pedidos em tabela `orders` (`lib/db/src/schema/orders.ts`); rotas em `artifacts/api-server/src/routes/orders.ts`, checkout PIX em `checkout.ts`.
-- Cliente: nome, e-mail, telefone, documento, endereço (CEP etc.), produtos JSON, frete, seguro opcional, cupom, vendedor (`sellerCode`), afiliado.
+- Cliente: nome, e-mail, telefone, documento, endereço (CEP etc.), produtos JSON (inclui `image` no snapshot do checkout; `/api/me/orders` completa foto pelo catálogo se faltar), frete, seguro opcional, cupom, vendedor (`sellerCode`), afiliado.
 - Status usados no admin (código): `pending`, `awaiting_payment`, `paid`, `cancelled`, `completed`.
 - Métodos de pagamento observados: `pix`, cartão simulado (`card_simulation` / fluxos de cartão), WhatsApp (`whatsapp_pix`), crédito de afiliado (`affiliate_credit`).
 - Guest orders: `guestAccessToken` para acesso sem conta.

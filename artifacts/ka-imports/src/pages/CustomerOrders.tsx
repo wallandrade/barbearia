@@ -27,7 +27,7 @@ type CustomerOrder = {
   createdAt: string;
   clientName?: string;
   clientPhone?: string;
-  products?: Array<{ name: string; quantity: number; price: number }>;
+  products?: Array<{ id?: string; name: string; quantity: number; price: number; image?: string | null }>;
   subtotal?: number;
   shippingCost?: number;
   insuranceAmount?: number;
@@ -661,6 +661,47 @@ export default function CustomerOrders() {
                             </div>
                           </div>
 
+                          {order.products && order.products.length > 0 && (
+                            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border/50 overflow-x-auto">
+                              {order.products.slice(0, 4).map((product, idx) => {
+                                const image = String(product.image || "").trim();
+                                return (
+                                  <div
+                                    key={`${order.id}-thumb-${idx}`}
+                                    className="shrink-0 w-14 h-14 rounded-xl border border-border bg-muted/40 overflow-hidden flex items-center justify-center"
+                                    title={`${product.quantity}x ${product.name}`}
+                                  >
+                                    {image ? (
+                                      <img
+                                        src={image}
+                                        alt={product.name}
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <Package className="w-5 h-5 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {order.products.length > 4 && (
+                                <span className="text-xs font-semibold text-muted-foreground shrink-0">
+                                  +{order.products.length - 4}
+                                </span>
+                              )}
+                              <div className="min-w-0 flex-1 pl-1">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {order.products[0].quantity}x {order.products[0].name}
+                                </p>
+                                {order.products.length > 1 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    +{order.products.length - 1} item{order.products.length > 2 ? "s" : ""}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Details: Total, Payment, Status */}
                           <div className="grid grid-cols-3 gap-3 mb-4 pb-4 border-t border-border/50 pt-4">
                             <div>
@@ -811,14 +852,26 @@ export default function CustomerOrders() {
                                     {order.products.map((product, idx) => (
                                       <div
                                         key={idx}
-                                        className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/30"
+                                        className="flex items-center justify-between gap-3 p-3 rounded-lg bg-muted/30 border border-border/30"
                                       >
-                                        <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                          <div className="w-12 h-12 rounded-lg border border-border bg-muted/40 overflow-hidden flex items-center justify-center shrink-0">
+                                            {String(product.image || "").trim() ? (
+                                              <img
+                                                src={String(product.image)}
+                                                alt={product.name}
+                                                className="w-full h-full object-cover"
+                                                loading="lazy"
+                                              />
+                                            ) : (
+                                              <Package className="w-4 h-4 text-muted-foreground" />
+                                            )}
+                                          </div>
                                           <p className="font-medium text-foreground text-sm truncate">
                                             {product.quantity}x {product.name}
                                           </p>
                                         </div>
-                                        <p className="font-semibold text-foreground ml-3">
+                                        <p className="font-semibold text-foreground ml-3 shrink-0">
                                           {formatCurrency(product.price * product.quantity)}
                                         </p>
                                       </div>

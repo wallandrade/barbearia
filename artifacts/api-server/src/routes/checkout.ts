@@ -316,6 +316,7 @@ router.post("/checkout/pix", async (req, res) => {
           quantity,
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
+          image: String(current.image || "").trim() || null,
           selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
           variantLabel: variantLabel || undefined,
         };
@@ -326,6 +327,7 @@ router.post("/checkout/pix", async (req, res) => {
         quantity: number;
         price: number;
         costPrice: number;
+        image: string | null;
         selectedVariants?: Array<{ groupName: string; option: string }>;
         variantLabel?: string;
       } => Boolean(item));
