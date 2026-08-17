@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-17 | Distância km no tracking cliente: BrasilAPI CEP + Nominatim (cidade EE) + Haversine | Card mostra “cerca de X km da sua cidade” | Cotação/create/webhook iguais |
 | 2026-08-17 | tracking-board: Pronto/etiqueta → `awaiting`; `in_transit` só coletado/postado/etc. | Contador Aguardando vs Em trânsito correto | Cotação/create/webhook iguais |
 | 2026-08-15 | Coletado/Recebido EE = postado (`enviado` + fora da cópia 48h) | Fila/admin não reabre pedido já coletado | Cotação/create iguais |
 | 2026-08-15 | Parser de `status_history`: cidade/local + não repetir status na description | Card igual painel EE (ex. Ribeirão Preto) | Cotação/create iguais |
@@ -57,6 +58,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Create envia `items` com **nome genérico** (`site_settings.envioecom_shipment_item_name`, default `Mercadoria`) — nunca o nome real do produto; editável em Admin → Rastreios (`GET/PUT .../shipment-item-name`)
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: card com Situação/EnvioEcom + eventos abertos (`status_history` da API → `envioecomStatusHistory`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` em `CustomerOrders.tsx`
+- Distância aproximada (pós-coleta): `geo-distance.ts` geocodifica último `location` do histórico (Nominatim) e cidade do cliente (BrasilAPI CEP v2 ou Nominatim); Haversine → `distanceKmFromCustomerCity` no payload de tracking; UI: “Está a cerca de X km da sua cidade” (não mostra em embalagem/entregue/sem local)
 - Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
 
 ## Storage

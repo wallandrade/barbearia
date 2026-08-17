@@ -34,6 +34,10 @@ import {
   type EnvioEcomCreateShipmentInput,
   type StatusHistoryEntry,
 } from "../lib/envioecom";
+import {
+  estimateDistanceKmToCustomerCity,
+  pickLatestPackageLocation,
+} from "../lib/geo-distance";
 
 const router: IRouter = Router();
 
@@ -1492,7 +1496,52 @@ router.get("/me/orders/:id/tracking", requireCustomerAuth, async (req, res) => {
       }
     }
 
-    res.json({ tracking: publicTrackingPayload(order) });
+    const base = publicTrackingPayload(order);
+    const history = Array.isArray(order.envioecomStatusHistory)
+      ? (order.envioecomStatusHistory as StatusHistoryEntry[])
+      : [];
+    const packageLocation = pickLatestPackageLocation(history);
+
+    let distanceKmFromCustomerCity: number | null = null;
+    let distancePackageCity: string | null = null;
+    let distanceCustomerCity: string | null = null;
+
+    // Só estima quando há local no histórico e o pedido já saiu da fase de embalagem.
+    const statusLower = String(order.envioecomStatus || "").toLowerCase();
+    const stillPacking =
+      /pronto para envio|etiqueta emitida|etiqueta gerada|processando envio|aguardando (expedi[cç][aã]o|postagem)|dc-e emitida|dce emitida|envio criado|aguardando pagamento/.test(
+        statusLower,
+      );
+    if (packageLocation && !stillPacking && !isDeliveredStatus(order.envioecomStatus || "")) {
+      try {
+        const estimatePromise = estimateDistanceKmToCustomerCity({
+          packageLocation,
+          customerCity: order.addressCity,
+          customerState: order.addressState,
+          customerCep: order.addressCep,
+        });
+        const estimate = await Promise.race([
+          estimatePromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]);
+        if (estimate) {
+          distanceKmFromCustomerCity = estimate.km;
+          distancePackageCity = estimate.packageCityLabel;
+          distanceCustomerCity = estimate.customerCityLabel;
+        }
+      } catch (geoErr) {
+        console.warn("[EnvioEcom] customer tracking distance estimate failed:", geoErr);
+      }
+    }
+
+    res.json({
+      tracking: {
+        ...base,
+        distanceKmFromCustomerCity,
+        distancePackageCity,
+        distanceCustomerCity,
+      },
+    });
   } catch (err) {
     console.error("[EnvioEcom] customer tracking error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar rastreio." });

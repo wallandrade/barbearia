@@ -39,6 +39,9 @@ type CustomerOrder = {
   envioecomStatusHistory?: TrackingHistoryEvent[];
   envioecomShipmentId?: string | null;
   envioecomTrackingKey?: string | null;
+  distanceKmFromCustomerCity?: number | null;
+  distancePackageCity?: string | null;
+  distanceCustomerCity?: string | null;
 };
 
 type TrackingInfo = {
@@ -53,6 +56,10 @@ type TrackingInfo = {
   history?: TrackingHistoryEvent[];
   labelUrl?: string | null;
   hasShipment?: boolean;
+  /** Distância aproximada cidade do pacote → cidade do cliente (km). */
+  distanceKmFromCustomerCity?: number | null;
+  distancePackageCity?: string | null;
+  distanceCustomerCity?: string | null;
 };
 
 type AccountSection = "orders" | "affiliate" | "raffle";
@@ -259,7 +266,33 @@ function mergeTrackingIntoOrder(order: CustomerOrder, tracking: TrackingInfo): C
     envioecomStatusHistory: Array.isArray(tracking.history)
       ? tracking.history
       : (order.envioecomStatusHistory || []),
+    distanceKmFromCustomerCity:
+      tracking.distanceKmFromCustomerCity !== undefined
+        ? tracking.distanceKmFromCustomerCity
+        : order.distanceKmFromCustomerCity,
+    distancePackageCity:
+      tracking.distancePackageCity !== undefined
+        ? tracking.distancePackageCity
+        : order.distancePackageCity,
+    distanceCustomerCity:
+      tracking.distanceCustomerCity !== undefined
+        ? tracking.distanceCustomerCity
+        : order.distanceCustomerCity,
   };
+}
+
+function shouldShowDistanceToCustomerCity(
+  order: CustomerOrder,
+  situation: ReturnType<typeof getCustomerSituation>,
+): boolean {
+  if (order.distanceKmFromCustomerCity == null || !Number.isFinite(order.distanceKmFromCustomerCity)) {
+    return false;
+  }
+  if (situation.kind === "cancelled" || situation.kind === "pending" || situation.kind === "delivered") {
+    return false;
+  }
+  if (isPackingBeforePostStatus(order.envioecomStatus || "")) return false;
+  return situation.kind === "shipping" || situation.kind === "processing";
 }
 
 function getOrderTrackingHistory(order: CustomerOrder): TrackingHistoryEvent[] {
@@ -769,6 +802,11 @@ export default function CustomerOrders() {
                               <p className="text-sm font-semibold text-foreground mt-1 leading-snug">
                                 {situation.label}
                               </p>
+                              {shouldShowDistanceToCustomerCity(order, situation) && (
+                                <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                                  Está a cerca de {order.distanceKmFromCustomerCity} km da sua cidade
+                                </p>
+                              )}
                             </div>
                           </div>
 
