@@ -54,8 +54,8 @@ type Props = {
 
 const groupLabel: Record<TrackingBoardItem["group"], string> = {
   delivered: "Entregue",
-  in_transit: "Em trânsito / postagem",
-  awaiting: "Aguardando",
+  in_transit: "Em trânsito",
+  awaiting: "Aguardando coleta / postagem",
   cancelled: "Cancelado",
   other: "Outros",
 };
@@ -273,8 +273,8 @@ export default function AdminEnvioEcomTrackingPanel({
 
   const cards = useMemo(() => ([
     { key: "total", label: "Total com envio", value: summary?.total ?? items.length },
-    { key: "inTransit", label: "Em trânsito", value: summary?.inTransit ?? 0 },
     { key: "awaiting", label: "Aguardando", value: summary?.awaiting ?? 0 },
+    { key: "inTransit", label: "Em trânsito", value: summary?.inTransit ?? 0 },
     { key: "delivered", label: "Entregues", value: summary?.delivered ?? 0 },
     { key: "cancelled", label: "Cancelados", value: summary?.cancelled ?? 0 },
   ]), [items.length, summary]);
@@ -380,8 +380,8 @@ export default function AdminEnvioEcomTrackingPanel({
           className="h-11 px-3 rounded-xl border-2 border-border bg-white text-sm"
         >
           <option value="all">Todos os grupos</option>
-          <option value="in_transit">Em trânsito / postagem</option>
-          <option value="awaiting">Aguardando</option>
+          <option value="awaiting">Aguardando coleta / postagem</option>
+          <option value="in_transit">Em trânsito</option>
           <option value="delivered">Entregues</option>
           <option value="cancelled">Cancelados</option>
           <option value="other">Outros</option>

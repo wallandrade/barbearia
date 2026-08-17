@@ -1081,12 +1081,23 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
       const lastEvents = history.slice(-5).reverse();
       const eeStatus = String(row.envioecomStatus || "").trim();
       let group: "delivered" | "in_transit" | "awaiting" | "cancelled" | "other" = "other";
-      if (eeStatus && isDeliveredStatus(eeStatus)) group = "delivered";
-      else if (/cancelad/i.test(eeStatus)) group = "cancelled";
-      else if (/aguardando pagamento/i.test(eeStatus) || /^created$/i.test(eeStatus)) group = "awaiting";
-      else if (eeStatus && (isInTransitStatus(eeStatus) || isLabelReadyStatus(eeStatus) || /pronto para envio|processando/i.test(eeStatus))) {
+      if (eeStatus && isDeliveredStatus(eeStatus)) {
+        group = "delivered";
+      } else if (/cancelad/i.test(eeStatus)) {
+        group = "cancelled";
+      } else if (
+        // Ainda na loja / aguardando coleta ou postagem (não está em trânsito).
+        isLabelReadyStatus(eeStatus) ||
+        isAwaitingPaymentStatus(eeStatus) ||
+        /aguardando postagem|aguardando coleta|envio criado|^created$/i.test(eeStatus)
+      ) {
+        group = "awaiting";
+      } else if (eeStatus && isInTransitStatus(eeStatus)) {
+        // Já coletado / expedido / postado / saiu para entrega.
         group = "in_transit";
-      } else if (eeStatus) group = "in_transit";
+      } else if (eeStatus) {
+        group = "other";
+      }
 
       return {
         orderId: row.id,
