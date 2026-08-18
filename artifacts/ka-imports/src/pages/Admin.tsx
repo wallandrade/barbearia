@@ -8514,7 +8514,14 @@ function InventoryPanel({
                     .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"))
                     .map((r) => `${r.quantity} un - ${r.productName}`);
                   const label = stockTab === "motoboy" ? "Estoque Motoboy" : "Estoque disponível";
-                  const text = `📦 ${label} (${new Date().toLocaleDateString("pt-BR")}):\n\n${lines.join("\n")}`;
+                  const when = new Date().toLocaleString("pt-BR", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  const text = `📦 ${label} (${when}):\n\n${lines.join("\n")}`;
                   navigator.clipboard.writeText(text).then(() => {
                     const btn = document.getElementById(stockTab === "motoboy" ? "copy-motoboy-stock-btn" : "copy-stock-btn");
                     if (btn) {
