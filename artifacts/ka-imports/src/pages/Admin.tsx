@@ -170,6 +170,20 @@ function drawContainWithTrimmedEdges(sourceCanvas: HTMLCanvasElement): HTMLCanva
 function todayStr() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
+function daysAgoStr(days: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - Math.max(0, days));
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+/** ISO ou YYYY-MM-DD → YYYY-MM-DD em America/Sao_Paulo */
+function ymdInSaoPaulo(isoOrYmd: string | null | undefined): string | null {
+  const raw = String(isoOrYmd || "").trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
 function spDateStr(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -1625,6 +1639,26 @@ export default function Admin() {
     localStorage.removeItem("adminUsername");
     setLocation("/admin/login");
   }, [setLocation]);
+
+  /** Abre pedido na aba Pedidos ampliando o filtro de data (API filtra por intervalo). */
+  const goToOrder = useCallback((orderId: string, orderCreatedAt?: string | null) => {
+    const id = String(orderId || "").trim();
+    if (!id) return;
+    setSearch(id);
+    setStatusFilter("all");
+    setMethodFilter("all");
+    const today = todayStr();
+    const orderYmd = ymdInSaoPaulo(orderCreatedAt);
+    if (orderYmd) {
+      setDateFrom(orderYmd <= today ? orderYmd : today);
+      setDateTo(orderYmd >= today ? orderYmd : today);
+    } else {
+      setDateFrom(daysAgoStr(365));
+      setDateTo(today);
+    }
+    setTab("orders");
+    setExpandedOrder(id);
+  }, []);
 
   const fetchFinancialSummary = React.useCallback(async () => {
     setFinancialSummaryLoading(true);
@@ -4852,31 +4886,19 @@ export default function Admin() {
           <AdminEnvioEcomTrackingPanel
             authHeaders={authHeaders}
             onUnauthorized={handleUnauthorized}
-            onGoToOrder={(orderId) => {
-              setSearch(orderId);
-              setTab("orders");
-              setExpandedOrder(orderId);
-            }}
+            onGoToOrder={goToOrder}
           />
         ) : tab === "extrato" ? (
           <AdminBankStatementPanel
             authHeaders={authHeaders}
             onUnauthorized={handleUnauthorized}
-            onGoToOrder={(orderId) => {
-              setSearch(orderId);
-              setTab("orders");
-              setExpandedOrder(orderId);
-            }}
+            onGoToOrder={goToOrder}
           />
         ) : tab === "depositos" ? (
           <AdminBankDepositsPanel
             authHeaders={authHeaders}
             onUnauthorized={handleUnauthorized}
-            onGoToOrder={(orderId) => {
-              setSearch(orderId);
-              setTab("orders");
-              setExpandedOrder(orderId);
-            }}
+            onGoToOrder={goToOrder}
           />
         ) : tab === "charges" ? (
           <ChargesPanel

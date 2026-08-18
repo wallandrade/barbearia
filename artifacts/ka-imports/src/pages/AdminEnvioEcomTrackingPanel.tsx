@@ -49,7 +49,7 @@ type TrackingBoardSummary = {
 type Props = {
   authHeaders: () => HeadersInit;
   onUnauthorized: () => void;
-  onGoToOrder?: (orderId: string) => void;
+  onGoToOrder?: (orderId: string, orderCreatedAt?: string | null) => void;
 };
 
 const groupLabel: Record<TrackingBoardItem["group"], string> = {

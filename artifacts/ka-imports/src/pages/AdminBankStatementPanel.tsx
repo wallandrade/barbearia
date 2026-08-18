@@ -17,7 +17,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 type Props = {
   authHeaders: () => HeadersInit;
   onUnauthorized: () => void;
-  onGoToOrder?: (orderId: string) => void;
+  onGoToOrder?: (orderId: string, orderCreatedAt?: string | null) => void;
 };
 
 type ReportMatch = {
@@ -438,6 +438,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
           <Section
             title={`Depósito confirmado 100% (${matched100.length})`}
             icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+            hint="Nome no extrato igual ao cliente (ou CPF/CNPJ bate). Pode aplicar com confiança."
           >
             {matched100.length === 0 ? (
               <Empty />
@@ -457,6 +458,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
           <Section
             title={`Outros matches — revisar (${matchedOther.length})`}
             icon={<AlertTriangle className="w-4 h-4 text-slate-500" />}
+            hint="PIX do extrato com o mesmo valor e data perto do pedido, mas o nome no banco não bate 100% com o cliente. Revise e use Aplicar este só se for o pagamento certo."
           >
             {matchedOther.length === 0 ? (
               <Empty />
@@ -472,8 +474,11 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
             )}
           </Section>
 
-          <Section title={`Ambíguos (${report.ambiguous.length})`} icon={<AlertTriangle className="w-4 h-4 text-amber-600" />}>
-            {report.ambiguous.length === 0 ? (
+          <Section
+            title={`Ambíguos (${report.ambiguous.length})`}
+            icon={<AlertTriangle className="w-4 h-4 text-amber-600" />}
+            hint="Vários pedidos com o mesmo valor na janela. Escolha o pedido certo e aplique."
+          >            {report.ambiguous.length === 0 ? (
               <Empty />
             ) : (
               <div className="space-y-4">
@@ -579,7 +584,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
                           <button
                             type="button"
                             className="text-primary font-semibold hover:underline"
-                            onClick={() => onGoToOrder?.(o.orderId)}
+                            onClick={() => onGoToOrder?.(o.orderId, o.orderCreatedAt)}
                           >
                             #{o.orderNumber ?? o.orderId.slice(0, 8)}
                           </button>
@@ -634,7 +639,7 @@ function MatchTable({
   applyBusy,
 }: {
   rows: ReportMatch[];
-  onGoToOrder?: (orderId: string) => void;
+  onGoToOrder?: (orderId: string, orderCreatedAt?: string | null) => void;
   highlight?: boolean;
   onApplyOne?: (m: ReportMatch) => void;
   applyLabel?: string;
@@ -665,7 +670,7 @@ function MatchTable({
                 <button
                   type="button"
                   className="text-primary font-semibold hover:underline"
-                  onClick={() => onGoToOrder?.(m.orderId)}
+                  onClick={() => onGoToOrder?.(m.orderId, m.orderCreatedAt)}
                 >
                   #{m.orderNumber ?? m.orderId.slice(0, 8)}
                 </button>
@@ -734,18 +739,21 @@ function SummaryCard({
 function Section({
   title,
   icon,
+  hint,
   children,
 }: {
   title: string;
   icon: ReactNode;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-border bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-1">
         {icon}
         <h3 className="font-bold text-foreground">{title}</h3>
       </div>
+      {hint ? <p className="text-xs text-muted-foreground mb-3 max-w-3xl">{hint}</p> : <div className="mb-3" />}
       {children}
     </div>
   );

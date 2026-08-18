@@ -10,6 +10,8 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Extrato: textos de ajuda nas listas (100% / Outros / Ambíguos) | Operação entende o que revisar | Match/apply iguais |
+| 2026-08-18 | Clique nº pedido (Depósitos/Extrato/Rastreios) amplia filtro de data | Acha pedido fora de “hoje” | API de pedidos igual |
 | 2026-08-18 | Extrato: CPF/CNPJ no OFX = score **100%** se igual `clientDocument` | Confirma cliente mesmo com nome diferente | Valor/janela iguais |
 | 2026-08-18 | Aba Depósitos: **Desfazer** por linha (`POST .../clear`) | Remove vínculo depósito; FITID volta no Extrato | Status pago / Extrato apply iguais |
 | 2026-08-18 | Extrato: **Aplicar este** por linha (Outros matches + 100% + ambíguo) | Confirma depósito individual sem aplicar o lote | Analyze/Depósitos iguais |
