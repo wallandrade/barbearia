@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Extrato: **Aplicar este** por linha (Outros matches + 100% + ambíguo) | Confirma depósito individual sem aplicar o lote | Analyze/Depósitos iguais |
 | 2026-08-18 | Aba **Depósitos** (histórico persistente) + Extrato só manual Inter + ignora FITID repetido | Histórico não some no F5; CNPay fora da conciliação | Apply/analyze base iguais |
 | 2026-08-18 | Extrato: botão **Aplicar só 100%** grava `confirmed_100` + badge Depósito 100% | Confirma só matches com nome 100% | Analyze/OFX iguais |
 | 2026-08-18 | Admin aba **Extrato**: OFX Inter → concilia PIX recebido × pedidos (valor exato + janela data + nome) | Marca depósito OK / não encontrado no pedido | PIX webhook / Marcar Pago iguais (não auto-paga) |
