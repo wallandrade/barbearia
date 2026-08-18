@@ -72,7 +72,7 @@ export const ordersTable = mysqlTable("orders", {
   envioecomLabelUrl: mediumtext("envioecom_label_url"),
   envioecomFreightCost: decimal("envioecom_freight_cost", { precision: 10, scale: 2 }),
   envioecomExternalOrderNumber: varchar("envioecom_external_order_number", { length: 64 }),
-  /** Conciliação com extrato OFX: ok | not_found | null */
+  /** Conciliação com extrato OFX: ok | confirmed_100 | not_found | null */
   bankDepositMatchStatus: varchar("bank_deposit_match_status", { length: 32 }),
   bankDepositFitid: varchar("bank_deposit_fitid", { length: 64 }),
   bankDepositAmount: decimal("bank_deposit_amount", { precision: 10, scale: 2 }),

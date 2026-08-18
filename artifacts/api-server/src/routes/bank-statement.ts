@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, inArray, isNotNull, lte, ne } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte, ne, or } from "drizzle-orm";
 import { db, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { parseOfxStatement } from "../lib/ofx-bank-statement";
@@ -104,7 +104,15 @@ router.post("/admin/bank-statement/analyze", requireAdminAuth, async (req, res) 
     const usedFitidRows = await db
       .select({ fitid: ordersTable.bankDepositFitid })
       .from(ordersTable)
-      .where(and(isNotNull(ordersTable.bankDepositFitid), eq(ordersTable.bankDepositMatchStatus, "ok")));
+      .where(
+        and(
+          isNotNull(ordersTable.bankDepositFitid),
+          or(
+            eq(ordersTable.bankDepositMatchStatus, "ok"),
+            eq(ordersTable.bankDepositMatchStatus, "confirmed_100"),
+          ),
+        ),
+      );
 
     const usedFitids = new Set(
       usedFitidRows.map((r) => String(r.fitid || "").trim()).filter(Boolean),
@@ -141,8 +149,9 @@ router.post("/admin/bank-statement/analyze", requireAdminAuth, async (req, res) 
 // --------------------------------------------------------------------------
 // POST /api/admin/bank-statement/apply
 // body: {
-//   matches?: [{ orderId, creditFitid, creditAmount, creditPostedAt, creditName? }],
+//   matches?: [{ orderId, creditFitid, creditAmount, creditPostedAt, creditName?, nameScore?, matchStatus? }],
 //   notFoundOrderIds?: string[],
+//   onlyConfirmed100?: boolean  // se true, só aplica matches com nameScore >= 1 (ou matchStatus confirmed_100)
 // }
 // --------------------------------------------------------------------------
 router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) => {
@@ -153,20 +162,33 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
       return;
     }
 
-    const matches = Array.isArray(req.body?.matches) ? req.body.matches : [];
+    const onlyConfirmed100 = Boolean(req.body?.onlyConfirmed100);
+    const matchesRaw = Array.isArray(req.body?.matches) ? req.body.matches : [];
     const notFoundOrderIds = Array.isArray(req.body?.notFoundOrderIds)
       ? req.body.notFoundOrderIds.map((id: unknown) => String(id || "").trim()).filter(Boolean)
       : [];
 
+    const matches = onlyConfirmed100
+      ? matchesRaw.filter((raw: { nameScore?: unknown; matchStatus?: unknown }) => {
+          const status = String(raw?.matchStatus || "").trim();
+          if (status === "confirmed_100") return true;
+          const score = Number(raw?.nameScore);
+          return Number.isFinite(score) && score >= 0.999;
+        })
+      : matchesRaw;
+
     if (!matches.length && !notFoundOrderIds.length) {
       res.status(400).json({
         error: "INVALID_INPUT",
-        message: "Envie matches e/ou notFoundOrderIds.",
+        message: onlyConfirmed100
+          ? "Nenhum match com score 100% para aplicar."
+          : "Envie matches e/ou notFoundOrderIds.",
       });
       return;
     }
 
     let appliedOk = 0;
+    let appliedConfirmed100 = 0;
     let appliedNotFound = 0;
     const errors: Array<{ orderId?: string; message: string }> = [];
 
@@ -176,6 +198,13 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
       const creditAmount = Number(raw?.creditAmount);
       const creditPostedAt = String(raw?.creditPostedAt || "").trim().slice(0, 10);
       const creditName = raw?.creditName != null ? String(raw.creditName).trim().slice(0, 255) : null;
+      const nameScore = Number(raw?.nameScore);
+      const requestedStatus = String(raw?.matchStatus || "").trim();
+      const isConfirmed100 =
+        requestedStatus === "confirmed_100" ||
+        (Number.isFinite(nameScore) && nameScore >= 0.999) ||
+        onlyConfirmed100;
+      const matchStatus = isConfirmed100 ? "confirmed_100" : "ok";
 
       if (!orderId || !creditFitid || !Number.isFinite(creditAmount)) {
         errors.push({ orderId, message: "Match incompleto." });
@@ -199,7 +228,10 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
         .where(
           and(
             eq(ordersTable.bankDepositFitid, creditFitid),
-            eq(ordersTable.bankDepositMatchStatus, "ok"),
+            or(
+              eq(ordersTable.bankDepositMatchStatus, "ok"),
+              eq(ordersTable.bankDepositMatchStatus, "confirmed_100"),
+            ),
             ne(ordersTable.id, orderId),
           ),
         )
@@ -217,7 +249,7 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
       await db
         .update(ordersTable)
         .set({
-          bankDepositMatchStatus: "ok",
+          bankDepositMatchStatus: matchStatus,
           bankDepositFitid: creditFitid,
           bankDepositAmount: String(Math.round(creditAmount * 100) / 100),
           bankDepositPayerName: creditName,
@@ -226,7 +258,9 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
           updatedAt: new Date(),
         })
         .where(eq(ordersTable.id, orderId));
-      appliedOk += 1;
+
+      if (matchStatus === "confirmed_100") appliedConfirmed100 += 1;
+      else appliedOk += 1;
     }
 
     if (notFoundOrderIds.length) {
@@ -237,7 +271,9 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
           errors.push({ orderId: order.id, message: "Sem permissão neste pedido." });
           continue;
         }
-        if (order.bankDepositMatchStatus === "ok") continue;
+        if (order.bankDepositMatchStatus === "ok" || order.bankDepositMatchStatus === "confirmed_100") {
+          continue;
+        }
         await db
           .update(ordersTable)
           .set({
@@ -253,6 +289,7 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
     res.json({
       ok: true,
       appliedOk,
+      appliedConfirmed100,
       appliedNotFound,
       errors,
     });

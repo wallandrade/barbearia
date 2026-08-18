@@ -10795,6 +10795,16 @@ function OrdersPanel({
                             Enviado
                           </span>
                         )}
+                        {(order as any).bankDepositMatchStatus === "confirmed_100" && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold border border-emerald-700"
+                            title={(order as any).bankDepositPayerName
+                              ? `Depósito confirmado 100% · ${(order as any).bankDepositPayerName}`
+                              : "Depósito confirmado 100% (nome bateu com o extrato)"}
+                          >
+                            Depósito 100%
+                          </span>
+                        )}
                         {(order as any).bankDepositMatchStatus === "ok" && (
                           <span
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-300"

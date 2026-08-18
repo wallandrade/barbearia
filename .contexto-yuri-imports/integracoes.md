@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Extrato: `confirmed_100` + Aplicar só 100% | Badge Depósito 100% no card | Gateways iguais |
 | 2026-08-18 | Conciliação extrato OFX Banco Inter (upload admin → match pedidos) | Depósito OK / não encontrado | Webhooks PIX / gateways iguais |
 | 2026-08-17 | Distância km no tracking cliente: BrasilAPI CEP + Nominatim (cidade EE) + Haversine | Card mostra “cerca de X km da sua cidade” | Cotação/create/webhook iguais |
 | 2026-08-17 | tracking-board: Pronto/etiqueta → `awaiting`; `in_transit` só coletado/postado/etc. | Contador Aguardando vs Em trânsito correto | Cotação/create/webhook iguais |

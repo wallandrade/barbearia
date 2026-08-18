@@ -181,32 +181,61 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
     }
   };
 
-  const apply = async () => {
-    if (!report) return;
-    const matches = [
-      ...report.matched.map((m) => ({
-        orderId: m.orderId,
-        creditFitid: m.creditFitid,
-        creditAmount: m.creditAmount,
-        creditPostedAt: m.creditPostedAt,
-        creditName: m.creditName,
-      })),
-    ];
+  const matched100 = useMemo(
+    () => (report?.matched || []).filter((m) => m.nameScore >= 0.999),
+    [report],
+  );
+  const matchedOther = useMemo(
+    () => (report?.matched || []).filter((m) => m.nameScore < 0.999),
+    [report],
+  );
 
-    for (const amb of report.ambiguous) {
-      const chosen = manualAmbiguous[amb.creditFitid];
-      if (!chosen) continue;
-      matches.push({
-        orderId: chosen,
-        creditFitid: amb.creditFitid,
-        creditAmount: amb.creditAmount,
-        creditPostedAt: amb.creditPostedAt,
-        creditName: amb.creditName,
-      });
+  const buildMatchPayload = (rows: ReportMatch[], matchStatus?: "ok" | "confirmed_100") =>
+    rows.map((m) => ({
+      orderId: m.orderId,
+      creditFitid: m.creditFitid,
+      creditAmount: m.creditAmount,
+      creditPostedAt: m.creditPostedAt,
+      creditName: m.creditName,
+      nameScore: m.nameScore,
+      ...(matchStatus ? { matchStatus } : {}),
+    }));
+
+  const apply = async (mode: "confirmed_100" | "all_ok") => {
+    if (!report) return;
+
+    const matches =
+      mode === "confirmed_100"
+        ? buildMatchPayload(matched100, "confirmed_100")
+        : [
+            ...buildMatchPayload(matched100, "confirmed_100"),
+            ...buildMatchPayload(matchedOther, "ok"),
+          ];
+
+    if (mode === "all_ok") {
+      for (const amb of report.ambiguous) {
+        const chosen = manualAmbiguous[amb.creditFitid];
+        if (!chosen) continue;
+        matches.push({
+          orderId: chosen,
+          creditFitid: amb.creditFitid,
+          creditAmount: amb.creditAmount,
+          creditPostedAt: amb.creditPostedAt,
+          creditName: amb.creditName,
+          nameScore: 0,
+          matchStatus: "ok",
+        });
+      }
     }
 
-    if (!matches.length && !selectedNotFoundIds.length) {
-      toast.error("Nada para aplicar. Rode a análise e selecione itens.");
+    const notFoundOrderIds = mode === "all_ok" ? selectedNotFoundIds : [];
+
+    if (!matches.length && !notFoundOrderIds.length) {
+      toast.error(
+        mode === "confirmed_100"
+          ? "Nenhum match com score 100% para aplicar."
+          : "Nada para aplicar. Rode a análise e selecione itens.",
+      );
       return;
     }
 
@@ -217,7 +246,8 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           matches,
-          notFoundOrderIds: selectedNotFoundIds,
+          notFoundOrderIds,
+          onlyConfirmed100: mode === "confirmed_100",
         }),
       });
       if (res.status === 401) {
@@ -227,6 +257,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
       const data = (await res.json()) as {
         ok?: boolean;
         appliedOk?: number;
+        appliedConfirmed100?: number;
         appliedNotFound?: number;
         errors?: Array<{ orderId?: string; message: string }>;
         message?: string;
@@ -236,13 +267,14 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
         return;
       }
       toast.success(
-        `Aplicado: ${data.appliedOk ?? 0} depósito OK · ${data.appliedNotFound ?? 0} não encontrado`,
+        mode === "confirmed_100"
+          ? `Salvos: ${data.appliedConfirmed100 ?? 0} depósito confirmado 100%`
+          : `Aplicado: ${data.appliedConfirmed100 ?? 0} × 100% · ${data.appliedOk ?? 0} OK · ${data.appliedNotFound ?? 0} não encontrado`,
       );
       if (data.errors?.length) {
         toast.message(`${data.errors.length} item(ns) com aviso — veja o console`);
         console.warn("[bank-statement apply]", data.errors);
       }
-      // Reanalisa para limpar o relatório
       await analyze();
     } catch {
       toast.error("Erro ao aplicar conciliação.");
@@ -261,8 +293,9 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
           <div>
             <h2 className="text-lg font-bold text-foreground">Extrato bancário (OFX)</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Suba o OFX do Inter, analise créditos (PIX recebido) e marque pedidos: depósito OK ou não encontrado.
-              Valor precisa bater exatamente; data usa janela (compra → pagamento).
+              Suba o OFX do Inter, analise créditos (PIX recebido) e marque pedidos. Score 100% = nome do pagador
+              igual ao cliente — use “Aplicar só 100%” para salvar como depósito confirmado. Valor precisa bater
+              exatamente; data usa janela (compra → pagamento).
             </p>
           </div>
         </div>
@@ -317,67 +350,55 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
 
       {report && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <SummaryCard label="Depósito OK" value={report.summary.matched} tone="ok" />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <SummaryCard label="Confirmado 100%" value={matched100.length} tone="ok" />
+            <SummaryCard label="Depósito OK (outros)" value={matchedOther.length} tone="muted" />
             <SummaryCard label="Ambíguos" value={report.summary.ambiguous} tone="warn" />
             <SummaryCard label="PIX sem pedido" value={report.summary.unmatchedCredits} tone="muted" />
             <SummaryCard label="Pedido sem depósito" value={report.summary.ordersNotFound} tone="bad" />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             <Button
               className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-              disabled={applying}
-              onClick={() => void apply()}
+              disabled={applying || matched100.length === 0}
+              onClick={() => void apply("confirmed_100")}
             >
               {applying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              Aplicar no sistema
+              Aplicar só 100% ({matched100.length})
             </Button>
-            <p className="text-xs text-muted-foreground self-center">
-              Grava “depósito OK” nos matches e “não encontrado” nos pedidos selecionados. Não altera status de pagamento
-              automaticamente.
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={applying}
+              onClick={() => void apply("all_ok")}
+            >
+              Aplicar todos + não encontrados
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              “Só 100%” grava <strong>Depósito confirmado 100%</strong> no pedido. Não altera status de pagamento.
             </p>
           </div>
 
-          <Section title={`Depósito OK (${report.matched.length})`} icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}>
-            {report.matched.length === 0 ? (
+          <Section
+            title={`Depósito confirmado 100% (${matched100.length})`}
+            icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+          >
+            {matched100.length === 0 ? (
               <Empty />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground border-b">
-                      <th className="py-2 pr-3">Pedido</th>
-                      <th className="py-2 pr-3">Cliente</th>
-                      <th className="py-2 pr-3">Valor</th>
-                      <th className="py-2 pr-3">Pagou em</th>
-                      <th className="py-2 pr-3">Nome no extrato</th>
-                      <th className="py-2">Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.matched.map((m) => (
-                      <tr key={m.creditFitid} className="border-b border-border/50">
-                        <td className="py-2 pr-3">
-                          <button
-                            type="button"
-                            className="text-primary font-semibold hover:underline"
-                            onClick={() => onGoToOrder?.(m.orderId)}
-                          >
-                            #{m.orderNumber ?? m.orderId.slice(0, 8)}
-                          </button>
-                          <div className="text-[11px] text-muted-foreground">{formatDateBR(m.orderCreatedAt)}</div>
-                        </td>
-                        <td className="py-2 pr-3">{m.clientName}</td>
-                        <td className="py-2 pr-3 font-semibold">{formatCurrency(m.creditAmount)}</td>
-                        <td className="py-2 pr-3">{formatYmd(m.creditPostedAt)} <span className="text-muted-foreground">(+{m.dayDiff}d)</span></td>
-                        <td className="py-2 pr-3">{m.creditName || "—"}</td>
-                        <td className="py-2">{Math.round(m.nameScore * 100)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <MatchTable rows={matched100} onGoToOrder={onGoToOrder} highlight />
+            )}
+          </Section>
+
+          <Section
+            title={`Outros matches — revisar (${matchedOther.length})`}
+            icon={<AlertTriangle className="w-4 h-4 text-slate-500" />}
+          >
+            {matchedOther.length === 0 ? (
+              <Empty />
+            ) : (
+              <MatchTable rows={matchedOther} onGoToOrder={onGoToOrder} />
             )}
           </Section>
 
@@ -490,6 +511,60 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
           </Section>
         </>
       )}
+    </div>
+  );
+}
+
+function MatchTable({
+  rows,
+  onGoToOrder,
+  highlight,
+}: {
+  rows: ReportMatch[];
+  onGoToOrder?: (orderId: string) => void;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground border-b">
+            <th className="py-2 pr-3">Pedido</th>
+            <th className="py-2 pr-3">Cliente</th>
+            <th className="py-2 pr-3">Valor</th>
+            <th className="py-2 pr-3">Pagou em</th>
+            <th className="py-2 pr-3">Nome no extrato</th>
+            <th className="py-2">Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((m) => (
+            <tr
+              key={m.creditFitid}
+              className={`border-b border-border/50 ${highlight ? "bg-emerald-50/40" : ""}`}
+            >
+              <td className="py-2 pr-3">
+                <button
+                  type="button"
+                  className="text-primary font-semibold hover:underline"
+                  onClick={() => onGoToOrder?.(m.orderId)}
+                >
+                  #{m.orderNumber ?? m.orderId.slice(0, 8)}
+                </button>
+                <div className="text-[11px] text-muted-foreground">{formatDateBR(m.orderCreatedAt)}</div>
+              </td>
+              <td className="py-2 pr-3">{m.clientName}</td>
+              <td className="py-2 pr-3 font-semibold">{formatCurrency(m.creditAmount)}</td>
+              <td className="py-2 pr-3">
+                {formatYmd(m.creditPostedAt)}{" "}
+                <span className="text-muted-foreground">(+{m.dayDiff}d)</span>
+              </td>
+              <td className="py-2 pr-3">{m.creditName || "—"}</td>
+              <td className="py-2 font-semibold">{Math.round(m.nameScore * 100)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

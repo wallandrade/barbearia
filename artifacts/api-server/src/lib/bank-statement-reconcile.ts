@@ -163,8 +163,13 @@ export function reconcileBankStatement(params: {
   const candidateOrders = params.orders.filter((o) => {
     const st = String(o.status || "").toLowerCase();
     if (st === "cancelled") return false;
-    // Já conciliado OK com FITID → não reprocessar como candidato
-    if (o.bankDepositMatchStatus === "ok" && o.bankDepositFitid) return false;
+    // Já conciliado OK / 100% com FITID → não reprocessar como candidato
+    if (
+      (o.bankDepositMatchStatus === "ok" || o.bankDepositMatchStatus === "confirmed_100") &&
+      o.bankDepositFitid
+    ) {
+      return false;
+    }
     return true;
   });
 
