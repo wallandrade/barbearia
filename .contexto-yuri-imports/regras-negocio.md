@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Extrato: ajuda em **Pedido sem depósito no extrato** | Explica marca pending vs paid | Pré-seleção/apply iguais |
 | 2026-08-18 | Extrato: lista “Outros matches” → **Valor bateu, nome diferente** | Linguagem mais clara na operação | Regras de match iguais |
 | 2026-08-18 | Extrato: textos de ajuda nas listas (100% / Outros / Ambíguos) | Operação entende o que revisar | Match/apply iguais |
 | 2026-08-18 | Clique nº pedido (Depósitos/Extrato/Rastreios) amplia filtro de data | Acha pedido fora de “hoje” | API de pedidos igual |

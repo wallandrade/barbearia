@@ -553,6 +553,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
           <Section
             title={`Pedido sem depósito no extrato (${report.ordersNotFound.length})`}
             icon={<XCircle className="w-4 h-4 text-red-600" />}
+            hint="Pedidos do período que não acharam PIX neste extrato. Marque só se quiser registrar “sem depósito”. Os já pagos vêm desmarcados de propósito; os pending vêm marcados."
           >
             {report.ordersNotFound.length === 0 ? (
               <Empty />
