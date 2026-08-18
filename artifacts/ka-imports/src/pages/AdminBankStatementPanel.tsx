@@ -407,7 +407,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <SummaryCard label="Confirmado 100%" value={matched100.length} tone="ok" />
-            <SummaryCard label="Depósito OK (outros)" value={matchedOther.length} tone="muted" />
+            <SummaryCard label="Valor bateu, nome diferente" value={matchedOther.length} tone="muted" />
             <SummaryCard label="Ambíguos" value={report.summary.ambiguous} tone="warn" />
             <SummaryCard label="PIX sem pedido" value={report.summary.unmatchedCredits} tone="muted" />
             <SummaryCard label="Pedido sem depósito" value={report.summary.ordersNotFound} tone="bad" />
@@ -456,7 +456,7 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
           </Section>
 
           <Section
-            title={`Outros matches — revisar (${matchedOther.length})`}
+            title={`Valor bateu, nome diferente (${matchedOther.length})`}
             icon={<AlertTriangle className="w-4 h-4 text-slate-500" />}
             hint="PIX do extrato com o mesmo valor e data perto do pedido, mas o nome no banco não bate 100% com o cliente. Revise e use Aplicar este só se for o pagamento certo."
           >
