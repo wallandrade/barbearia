@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Analyze OFX devolve `credits` + `linkableOrders`; UI busca/vínculo manual | Operação acha PIX por nome e liga ao pedido | Parser / reconcile auto iguais |
 | 2026-08-18 | tracking-board: grupo `awaiting_pickup` + card Aguardando ser coletado | Separa etiqueta pronta de pagamento/criado | Cotação/create/webhook iguais |
 | 2026-08-18 | Conciliação OFX: match CPF/CNPJ no crédito → score 100% | Confirma pagador pelo documento | Parser OFX / apply iguais |
 | 2026-08-18 | `POST /api/admin/bank-statement/clear` + botão Desfazer | Desfaz vínculo depósito errado | Webhooks PIX iguais |
