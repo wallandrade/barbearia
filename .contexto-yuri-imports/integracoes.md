@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-17
+> **Última atualização:** 2026-08-18
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Conciliação extrato OFX Banco Inter (upload admin → match pedidos) | Depósito OK / não encontrado | Webhooks PIX / gateways iguais |
 | 2026-08-17 | Distância km no tracking cliente: BrasilAPI CEP + Nominatim (cidade EE) + Haversine | Card mostra “cerca de X km da sua cidade” | Cotação/create/webhook iguais |
 | 2026-08-17 | tracking-board: Pronto/etiqueta → `awaiting`; `in_transit` só coletado/postado/etc. | Contador Aguardando vs Em trânsito correto | Cotação/create/webhook iguais |
 | 2026-08-15 | Coletado/Recebido EE = postado (`enviado` + fora da cópia 48h) | Fila/admin não reabre pedido já coletado | Cotação/create iguais |
@@ -82,7 +83,9 @@ Providers externos **presentes no código**. Precedência: código > memória.
 ## Outros
 
 - Geo IP: `ip-api.com` — `lib/ip-geo.ts` (fire-and-forget em pedidos).
+- Distância rastreio cliente: BrasilAPI CEP + Nominatim — `lib/geo-distance.ts`.
 - OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados) — fallback paralelo ao EnvioEcom.
+- **Extrato OFX (Banco Inter):** `lib/ofx-bank-statement.ts` + `lib/bank-statement-reconcile.ts`; rotas `POST /api/admin/bank-statement/analyze|apply`; UI aba **Extrato** (`AdminBankStatementPanel.tsx`). Só créditos; valor exato + janela de data + nome.
 - **Google Sheets:** mencionado em docs/comentários antigos — **sem implementação ativa encontrada**; produtos no MySQL.
 
 ## Incertezas

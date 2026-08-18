@@ -536,6 +536,7 @@ import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
+import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 
 
 
@@ -1025,7 +1026,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "rastreios" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "rastreios" | "extrato" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
 
 interface CommissionPendingOrder {
   id: string;
@@ -4645,6 +4646,7 @@ export default function Admin() {
           {([
             { key: "orders",        label: "Pedidos",          icon: "QrCode",      count: orders.length },
             { key: "rastreios",     label: "Rastreios",        icon: "Truck" },
+            { key: "extrato",       label: "Extrato",          icon: "Landmark" },
             { key: "charges",       label: "Links Pagamento",  icon: "LinkIcon",    count: charges.length },
             { key: "commissions",   label: "Comissões",        icon: "DollarSign",  count: commissionSummary.pendingCount || undefined },
             { key: "expenses",      label: "Despesas",         icon: "AlertTriangle", count: expenses.length || undefined },
@@ -4846,6 +4848,16 @@ export default function Admin() {
           />
         ) : tab === "rastreios" ? (
           <AdminEnvioEcomTrackingPanel
+            authHeaders={authHeaders}
+            onUnauthorized={handleUnauthorized}
+            onGoToOrder={(orderId) => {
+              setSearch(orderId);
+              setTab("orders");
+              setExpandedOrder(orderId);
+            }}
+          />
+        ) : tab === "extrato" ? (
+          <AdminBankStatementPanel
             authHeaders={authHeaders}
             onUnauthorized={handleUnauthorized}
             onGoToOrder={(orderId) => {
@@ -10781,6 +10793,24 @@ function OrdersPanel({
                         {showEnviadoUi && !!envioecomStatus && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">
                             Enviado
+                          </span>
+                        )}
+                        {(order as any).bankDepositMatchStatus === "ok" && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-300"
+                            title={(order as any).bankDepositPayerName
+                              ? `Depósito OK · ${(order as any).bankDepositPayerName}`
+                              : "Depósito encontrado no extrato bancário"}
+                          >
+                            Depósito OK
+                          </span>
+                        )}
+                        {(order as any).bankDepositMatchStatus === "not_found" && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 text-orange-800 text-xs font-semibold border border-orange-300"
+                            title="Comprovante de depósito não encontrado no extrato"
+                          >
+                            Depósito não encontrado
                           </span>
                         )}
                         <span

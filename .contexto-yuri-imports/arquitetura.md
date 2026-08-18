@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-08-11
+> **Última atualização:** 2026-08-18
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-18 | Rotas `bank-statement` + campos `bank_deposit_*` em `orders` | Conciliação extrato OFX no admin | Stack/deploy iguais |
 | 2026-08-11 | Baseline arquitetural do monorepo | Orientação de stack/pastas | App intocado nesta missão |
 
 ## Visão geral
@@ -54,7 +55,7 @@ Schemas em `lib/db/src/schema/*.ts` (export em `index.ts`):
 
 ## Integrações (resumo)
 
-APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, OCR/OpenAI etiquetas, ip-api.com, **EnvioEcom** (frete/etiqueta/rastreio). Detalhes: `integracoes.md`.
+APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, OCR/OpenAI etiquetas, ip-api.com, **EnvioEcom** (frete/etiqueta/rastreio), **OFX Inter** (conciliação depósito). Detalhes: `integracoes.md`.
 
 ## Deploy
 
