@@ -537,6 +537,7 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
+import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 
 
 
@@ -1026,7 +1027,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "rastreios" | "extrato" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
 
 interface CommissionPendingOrder {
   id: string;
@@ -4647,6 +4648,7 @@ export default function Admin() {
             { key: "orders",        label: "Pedidos",          icon: "QrCode",      count: orders.length },
             { key: "rastreios",     label: "Rastreios",        icon: "Truck" },
             { key: "extrato",       label: "Extrato",          icon: "Landmark" },
+            { key: "depositos",     label: "Depósitos",        icon: "CheckCircle" },
             { key: "charges",       label: "Links Pagamento",  icon: "LinkIcon",    count: charges.length },
             { key: "commissions",   label: "Comissões",        icon: "DollarSign",  count: commissionSummary.pendingCount || undefined },
             { key: "expenses",      label: "Despesas",         icon: "AlertTriangle", count: expenses.length || undefined },
@@ -4858,6 +4860,16 @@ export default function Admin() {
           />
         ) : tab === "extrato" ? (
           <AdminBankStatementPanel
+            authHeaders={authHeaders}
+            onUnauthorized={handleUnauthorized}
+            onGoToOrder={(orderId) => {
+              setSearch(orderId);
+              setTab("orders");
+              setExpandedOrder(orderId);
+            }}
+          />
+        ) : tab === "depositos" ? (
+          <AdminBankDepositsPanel
             authHeaders={authHeaders}
             onUnauthorized={handleUnauthorized}
             onGoToOrder={(orderId) => {
@@ -10797,12 +10809,12 @@ function OrdersPanel({
                         )}
                         {(order as any).bankDepositMatchStatus === "confirmed_100" && (
                           <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold border border-emerald-700"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold border-2 border-emerald-800 shadow-sm uppercase tracking-wide"
                             title={(order as any).bankDepositPayerName
                               ? `Depósito confirmado 100% · ${(order as any).bankDepositPayerName}`
                               : "Depósito confirmado 100% (nome bateu com o extrato)"}
                           >
-                            Depósito 100%
+                            Depósito pago 100%
                           </span>
                         )}
                         {(order as any).bankDepositMatchStatus === "ok" && (
