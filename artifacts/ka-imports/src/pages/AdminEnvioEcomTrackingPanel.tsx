@@ -28,7 +28,7 @@ type TrackingBoardItem = {
   statusUpdatedAt?: string | null;
   freightCost?: number | null;
   labelUrl?: string | null;
-  group: "delivered" | "in_transit" | "awaiting" | "cancelled" | "other";
+  group: "delivered" | "in_transit" | "awaiting_pickup" | "awaiting" | "cancelled" | "other";
   lastEvents?: Array<{
     status: string;
     description?: string | null;
@@ -41,6 +41,7 @@ type TrackingBoardSummary = {
   total: number;
   delivered: number;
   inTransit: number;
+  awaitingPickup: number;
   awaiting: number;
   cancelled: number;
   other: number;
@@ -55,7 +56,8 @@ type Props = {
 const groupLabel: Record<TrackingBoardItem["group"], string> = {
   delivered: "Entregue",
   in_transit: "Em trânsito",
-  awaiting: "Aguardando coleta / postagem",
+  awaiting_pickup: "Aguardando ser coletado",
+  awaiting: "Aguardando (pagamento / criado)",
   cancelled: "Cancelado",
   other: "Outros",
 };
@@ -77,12 +79,13 @@ function freightStatusBadgeClass(
     return "bg-sky-50 text-sky-800 border-sky-200";
   }
   if (
-    /pronto para envio|etiqueta emitida|etiqueta gerada|dc-e emitida|dce emitida|processando envio|aguardando expedi/.test(s)
+    /pronto para envio|etiqueta emitida|etiqueta gerada|dc-e emitida|dce emitida|processando envio|aguardando expedi|aguardando coleta|aguardando postagem/.test(s) ||
+    group === "awaiting_pickup"
   ) {
-    return "bg-emerald-50 text-emerald-800 border-emerald-200";
-  }
-  if (/aguardando postagem|aguardando pagamento|envio criado/.test(s) || group === "awaiting") {
     return "bg-amber-50 text-amber-900 border-amber-200";
+  }
+  if (/aguardando pagamento|envio criado/.test(s) || group === "awaiting") {
+    return "bg-yellow-50 text-yellow-900 border-yellow-200";
   }
   if (/expedido|recebido|coletado|postado|tr[aâ]nsito/.test(s) || group === "in_transit") {
     return "bg-slate-100 text-slate-700 border-slate-300";
@@ -272,11 +275,12 @@ export default function AdminEnvioEcomTrackingPanel({
   };
 
   const cards = useMemo(() => ([
-    { key: "total", label: "Total com envio", value: summary?.total ?? items.length },
-    { key: "awaiting", label: "Aguardando", value: summary?.awaiting ?? 0 },
-    { key: "inTransit", label: "Em trânsito", value: summary?.inTransit ?? 0 },
-    { key: "delivered", label: "Entregues", value: summary?.delivered ?? 0 },
-    { key: "cancelled", label: "Cancelados", value: summary?.cancelled ?? 0 },
+    { key: "total", group: "all" as const, label: "Total com envio", value: summary?.total ?? items.length },
+    { key: "awaitingPickup", group: "awaiting_pickup" as const, label: "Aguardando ser coletado", value: summary?.awaitingPickup ?? 0 },
+    { key: "awaiting", group: "awaiting" as const, label: "Aguardando (outros)", value: summary?.awaiting ?? 0 },
+    { key: "inTransit", group: "in_transit" as const, label: "Em trânsito", value: summary?.inTransit ?? 0 },
+    { key: "delivered", group: "delivered" as const, label: "Entregues", value: summary?.delivered ?? 0 },
+    { key: "cancelled", group: "cancelled" as const, label: "Cancelados", value: summary?.cancelled ?? 0 },
   ]), [items.length, summary]);
 
   const itemNameDirty = itemNameDraft.trim() !== itemNameSaved.trim();
@@ -352,13 +356,30 @@ export default function AdminEnvioEcomTrackingPanel({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {cards.map((card) => (
-          <div key={card.key} className="rounded-xl border border-border bg-white px-3 py-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{card.label}</p>
-            <p className="text-2xl font-bold text-foreground mt-1">{card.value}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {cards.map((card) => {
+          const active = group === card.group;
+          return (
+            <button
+              key={card.key}
+              type="button"
+              title={
+                card.key === "awaitingPickup"
+                  ? "Etiqueta gerada / pronta — ainda não coletado"
+                  : undefined
+              }
+              onClick={() => setGroup(card.group)}
+              className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                active
+                  ? "border-teal-500 bg-teal-50 ring-1 ring-teal-400"
+                  : "border-border bg-white hover:bg-muted/40"
+              }`}
+            >
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{card.label}</p>
+              <p className="text-2xl font-bold text-foreground mt-1">{card.value}</p>
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2">
@@ -380,7 +401,8 @@ export default function AdminEnvioEcomTrackingPanel({
           className="h-11 px-3 rounded-xl border-2 border-border bg-white text-sm"
         >
           <option value="all">Todos os grupos</option>
-          <option value="awaiting">Aguardando coleta / postagem</option>
+          <option value="awaiting_pickup">Aguardando ser coletado</option>
+          <option value="awaiting">Aguardando (pagamento / criado)</option>
           <option value="in_transit">Em trânsito</option>
           <option value="delivered">Entregues</option>
           <option value="cancelled">Cancelados</option>

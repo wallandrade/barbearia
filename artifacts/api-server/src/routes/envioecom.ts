@@ -1084,16 +1084,26 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
         : [];
       const lastEvents = history.slice(-5).reverse();
       const eeStatus = String(row.envioecomStatus || "").trim();
-      let group: "delivered" | "in_transit" | "awaiting" | "cancelled" | "other" = "other";
+      let group:
+        | "delivered"
+        | "in_transit"
+        | "awaiting_pickup"
+        | "awaiting"
+        | "cancelled"
+        | "other" = "other";
       if (eeStatus && isDeliveredStatus(eeStatus)) {
         group = "delivered";
       } else if (/cancelad/i.test(eeStatus)) {
         group = "cancelled";
       } else if (
-        // Ainda na loja / aguardando coleta ou postagem (não está em trânsito).
+        // Etiqueta pronta / aguardando coleta ou postagem (ainda na loja).
         isLabelReadyStatus(eeStatus) ||
+        /aguardando (coleta|postagem)/i.test(eeStatus)
+      ) {
+        group = "awaiting_pickup";
+      } else if (
         isAwaitingPaymentStatus(eeStatus) ||
-        /aguardando postagem|aguardando coleta|envio criado|^created$/i.test(eeStatus)
+        /envio criado|^created$/i.test(eeStatus)
       ) {
         group = "awaiting";
       } else if (eeStatus && isInTransitStatus(eeStatus)) {
@@ -1149,6 +1159,7 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
       total: mapped.length,
       delivered: mapped.filter((i) => i.group === "delivered").length,
       inTransit: mapped.filter((i) => i.group === "in_transit").length,
+      awaitingPickup: mapped.filter((i) => i.group === "awaiting_pickup").length,
       awaiting: mapped.filter((i) => i.group === "awaiting").length,
       cancelled: mapped.filter((i) => i.group === "cancelled").length,
       other: mapped.filter((i) => i.group === "other").length,
