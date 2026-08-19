@@ -1082,7 +1082,15 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
       const history = Array.isArray(row.envioecomStatusHistory)
         ? (row.envioecomStatusHistory as StatusHistoryEntry[])
         : [];
-      const lastEvents = history.slice(-5).reverse();
+      const eventsChrono = history.slice(-80);
+      const lastEvents = eventsChrono.slice(-5).reverse();
+      const eventsNewestFirst = [...eventsChrono].reverse().map((e) => ({
+        status: e.status,
+        description: e.description ?? null,
+        location: e.location ?? null,
+        updated_at: e.updated_at ?? null,
+        source: e.source ?? null,
+      }));
       const eeStatus = String(row.envioecomStatus || "").trim();
       let group:
         | "delivered"
@@ -1130,6 +1138,7 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
         freightCost: row.envioecomFreightCost != null ? Number(row.envioecomFreightCost) : null,
         labelUrl: row.envioecomLabelUrl || null,
         lastEvents,
+        events: eventsNewestFirst,
         group,
         createdAt: row.createdAt?.toISOString?.() ?? null,
         updatedAt: row.updatedAt?.toISOString?.() ?? null,

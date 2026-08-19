@@ -1,6 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Save, Search, Truck } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Loader2,
+  Package,
+  RefreshCw,
+  Save,
+  Search,
+  Truck,
+} from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -11,6 +22,14 @@ function formatDateBR(date: string | Date | undefined | null): string {
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
+
+type TrackingEvent = {
+  status: string;
+  description?: string | null;
+  location?: string | null;
+  updated_at?: string | null;
+  source?: string | null;
+};
 
 type TrackingBoardItem = {
   orderId: string;
@@ -29,12 +48,9 @@ type TrackingBoardItem = {
   freightCost?: number | null;
   labelUrl?: string | null;
   group: "delivered" | "in_transit" | "awaiting_pickup" | "awaiting" | "cancelled" | "other";
-  lastEvents?: Array<{
-    status: string;
-    description?: string | null;
-    updated_at?: string | null;
-    source?: string;
-  }>;
+  lastEvents?: TrackingEvent[];
+  /** Histórico completo, mais recente primeiro. */
+  events?: TrackingEvent[];
 };
 
 type TrackingBoardSummary = {
@@ -114,6 +130,7 @@ export default function AdminEnvioEcomTrackingPanel({
   const [itemNameSaved, setItemNameSaved] = useState("Mercadoria");
   const [itemNameLoading, setItemNameLoading] = useState(true);
   const [itemNameSaving, setItemNameSaving] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchItemName = useCallback(async () => {
     setItemNameLoading(true);
@@ -449,88 +466,177 @@ export default function AdminEnvioEcomTrackingPanel({
             </thead>
             <tbody>
               {items.map((item) => {
-                const last = item.lastEvents?.[0];
+                const timeline = item.events?.length
+                  ? item.events
+                  : (item.lastEvents || []);
+                const last = timeline[0];
+                const open = expandedId === item.orderId;
+                const toggle = () =>
+                  setExpandedId((prev) => (prev === item.orderId ? null : item.orderId));
                 return (
-                  <tr key={item.orderId} className="border-b border-border/70 align-top hover:bg-muted/20">
-                    <td className="px-3 py-3">
-                      <p className="font-bold text-foreground">
-                        #{item.orderNumber != null ? item.orderNumber : item.orderId.slice(0, 8)}
-                      </p>
-                      {item.deliveryMode && (
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{item.deliveryMode}</p>
-                      )}
-                      {item.shipmentId && (
-                        <p className="text-[11px] font-mono text-muted-foreground">ID {item.shipmentId}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <p className="font-medium text-foreground">{item.clientName || "—"}</p>
-                      {item.clientPhone && (
-                        <p className="text-[11px] text-muted-foreground">{item.clientPhone}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(item.status, item.group)}`}>
-                        {item.status || groupLabel[item.group]}
-                      </span>
-                      {last?.description && (
-                        <p className="text-[11px] text-muted-foreground mt-1 max-w-[220px]">{last.description}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <p className="font-mono text-xs break-all">{item.trackingCode || item.barcode || "—"}</p>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {item.statusUpdatedAt
-                        ? formatDateBR(item.statusUpdatedAt)
-                        : last?.updated_at
-                          ? formatDateBR(last.updated_at)
-                          : "—"}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs"
-                          disabled={syncingId === item.orderId || syncing}
-                          onClick={() => { void syncOne(item); }}
-                        >
-                          {syncingId === item.orderId ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Fragment key={item.orderId}>
+                    <tr
+                      className={`border-b border-border/70 align-top hover:bg-muted/20 cursor-pointer ${open ? "bg-teal-50/40" : ""}`}
+                      onClick={toggle}
+                    >
+                      <td className="px-3 py-3">
+                        <div className="flex items-start gap-1.5">
+                          {open ? (
+                            <ChevronUp className="w-4 h-4 text-teal-700 mt-0.5 shrink-0" />
                           ) : (
-                            "Sync"
+                            <ChevronDown className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                           )}
-                        </Button>
-                        {item.labelUrl && (
+                          <div>
+                            <p className="font-bold text-foreground">
+                              #{item.orderNumber != null ? item.orderNumber : item.orderId.slice(0, 8)}
+                            </p>
+                            {item.deliveryMode && (
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{item.deliveryMode}</p>
+                            )}
+                            {item.shipmentId && (
+                              <p className="text-[11px] font-mono text-muted-foreground">ID {item.shipmentId}</p>
+                            )}
+                            <p className="text-[10px] text-teal-700 mt-1 font-medium">
+                              {open ? "Ocultar rastreio" : "Ver histórico do rastreio"}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="font-medium text-foreground">{item.clientName || "—"}</p>
+                        {item.clientPhone && (
+                          <p className="text-[11px] text-muted-foreground">{item.clientPhone}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`inline-flex px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(item.status, item.group)}`}>
+                          {item.status || groupLabel[item.group]}
+                        </span>
+                        {last?.location && (
+                          <p className="text-[11px] text-muted-foreground mt-1 max-w-[220px]">{last.location}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="font-mono text-xs break-all">{item.trackingCode || item.barcode || "—"}</p>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {item.statusUpdatedAt
+                          ? formatDateBR(item.statusUpdatedAt)
+                          : last?.updated_at
+                            ? formatDateBR(last.updated_at)
+                            : "—"}
+                      </td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-wrap gap-1.5">
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-8 text-xs"
-                            onClick={() => window.open(String(item.labelUrl), "_blank", "noopener,noreferrer")}
+                            disabled={syncingId === item.orderId || syncing}
+                            onClick={() => { void syncOne(item); }}
                           >
-                            PDF
+                            {syncingId === item.orderId ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              "Sync"
+                            )}
                           </Button>
-                        )}
-                        {onGoToOrder && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 text-xs"
-                            onClick={() => onGoToOrder(item.orderId)}
-                          >
-                            Pedido
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          {item.labelUrl && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs"
+                              onClick={() => window.open(String(item.labelUrl), "_blank", "noopener,noreferrer")}
+                            >
+                              PDF
+                            </Button>
+                          )}
+                          {onGoToOrder && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs"
+                              onClick={() => onGoToOrder(item.orderId)}
+                            >
+                              Pedido
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr className="border-b border-border/70 bg-slate-50/80">
+                        <td colSpan={6} className="px-4 py-4">
+                          <TrackingTimeline events={timeline} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function TrackingTimeline({ events }: { events: TrackingEvent[] }) {
+  if (!events.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-white px-4 py-6 text-center text-sm text-muted-foreground">
+        Sem histórico de rastreio ainda. Clique em Sync para puxar da EnvioEcom.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-white p-4 max-w-2xl">
+      <div className="mb-3">
+        <p className="text-sm font-bold text-slate-900">Status do envio</p>
+        <p className="text-xs text-muted-foreground">Movimentações do pacote · mais recente em cima</p>
+      </div>
+      <ol className="relative space-y-0">
+        {events.map((ev, idx) => {
+          const isFirst = idx === 0;
+          const isDone =
+            /entregue|dc-e emitida|dce emitida/i.test(String(ev.status || ""));
+          const detail = [ev.location, ev.description].filter(Boolean).join(" · ");
+          return (
+            <li key={`${ev.status}-${ev.updated_at}-${idx}`} className="relative flex gap-3 pb-5 last:pb-0">
+              {idx < events.length - 1 && (
+                <span className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200" aria-hidden />
+              )}
+              <span
+                className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                  isDone
+                    ? "bg-emerald-500 border-emerald-500 text-white"
+                    : isFirst
+                      ? "bg-sky-500 border-sky-500 text-white"
+                      : "bg-white border-sky-300 text-sky-600"
+                }`}
+              >
+                {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Package className="w-3 h-3" />}
+              </span>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <p className={`text-sm font-semibold ${isDone ? "text-emerald-700" : "text-sky-700"}`}>
+                  {ev.status || "Atualização"}
+                </p>
+                {detail ? (
+                  <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">{detail}</p>
+                ) : null}
+                {ev.updated_at ? (
+                  <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatDateBR(ev.updated_at)}
+                  </p>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

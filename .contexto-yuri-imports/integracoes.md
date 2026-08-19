@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-19 | tracking-board: campo `events` (histórico completo) + UI expand | Timeline no painel admin | Webhook / soft-sync iguais |
 | 2026-08-19 | tracking-board sync: prioridade Pronto + body shipment_id na linha | Lote/linha alinhados ao Sync do card | Cotação/create iguais |
 | 2026-08-19 | `pickEffectiveShipmentStatus` no resolveLiveShipmentRefs | Sync/soft-sync usam Coletado do histórico | Payload API igual |
 | 2026-08-18 | Analyze OFX devolve `credits` + `linkableOrders`; UI busca/vínculo manual | Operação acha PIX por nome e liga ao pedido | Parser / reconcile auto iguais |

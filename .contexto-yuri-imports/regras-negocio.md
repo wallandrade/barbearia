@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-19 | Rastreios: clique na linha expande timeline completa | Histórico do 1º ao último evento | Sync / grupos iguais |
 | 2026-08-19 | Rastreios: Sync linha manda `shipment_id`; lote prioriza Pronto/coleta | Alinha com Sync do card; não some no filtro | Endpoint `/orders/:id/sync` igual |
 | 2026-08-19 | Sync EE: status efetivo = max(`status`, último `status_history`) | Coletado não fica preso em Pronto para envio | Webhook / create iguais |
 | 2026-08-18 | Extrato: **Buscar no extrato** + vincular PIX → nº pedido | Acha depósito por nome (ex. terceiro) | Match automático / apply lote iguais |
