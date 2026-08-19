@@ -34,6 +34,18 @@ function parseOrderProducts(raw: unknown): Array<Record<string, unknown>> {
   return [];
 }
 
+/** Pedido filho de reenvio — custo/comissão/taxa já no original; não entra no líquido. */
+function isReshipmentChildOrder(order: {
+  parentOrderId?: string | null;
+  shippingType?: string | null;
+  observation?: string | null;
+}): boolean {
+  if (String(order.parentOrderId || "").trim()) return true;
+  if (String(order.shippingType || "").trim().toLowerCase() === "reenvio") return true;
+  const obs = String(order.observation || "").trim().toUpperCase();
+  return obs.startsWith("REENVIO DO PEDIDO");
+}
+
 function toUTC(dateStr: string, hour: string, minute: string, second: string) {
   // Cria data no fuso BRT (UTC-3)
   const local = new Date(`${dateStr}T${hour}:${minute}:${second}-03:00`);
@@ -150,6 +162,7 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     let totalGatewayFees = 0;
     let whatsappEconomy = 0; // economia por nao cobrar taxa nos pedidos WhatsApp
     for (const order of orders) {
+      if (isReshipmentChildOrder(order)) continue;
       const amount = parseFloat(order.total || "0");
       let fee = (amount * (fees.feePercent / 100)) + fees.feeFixed;
       if (fee < fees.feeMin) fee = fees.feeMin;
@@ -163,10 +176,12 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     // Cálculo do custo total dos produtos:
     // 1) usa costPrice salvo no item do pedido, quando existir
     // 2) fallback para costPrice atual da tabela de produtos
+    // Pedidos filhos de reenvio: custo já no original — não debitar de novo
     let totalCost = 0;
 
     const productIds = new Set<string>();
     for (const order of orders) {
+      if (isReshipmentChildOrder(order)) continue;
       const products = parseOrderProducts(order.products);
       for (const item of products) {
         const id = String(item.id ?? item.productId ?? "").trim();
@@ -184,6 +199,7 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     }
 
     for (const order of orders) {
+      if (isReshipmentChildOrder(order)) continue;
       const products = parseOrderProducts(order.products);
 
       let orderTotal = 0;
@@ -231,6 +247,7 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
 
     let totalCommission = 0;
     for (const order of orders) {
+      if (isReshipmentChildOrder(order)) continue;
       const amount = parseFloat(order.total || "0");
       let rate = 0;
 
