@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-19 | Lucro est. = R$ 0 também em **cancelado**; reenvio detecta observação `REENVIO DO PEDIDO` | #748 e filhos antigos sem badge negativo | Pedidos pagos normais iguais |
 | 2026-08-19 | Pedido filho de reenvio: lucro est. = R$ 0 (não debita custo de novo) | Sem “prejuízo” fantasma no card/stats | Pedidos normais iguais |
 | 2026-08-19 | Suporte cliente: **Pedido veio faltando** vs **Outro problema** + seleção de itens; ticket guarda `missing_products_json`; Reenviar pré-preenche só o faltante | Filho de reenvio só com o que faltou | Reenvio manual estoque igual |
 | 2026-08-19 | Suporte **Reenviar** cria **pedido filho** (`parent_order_id`, frete Reenvio, pago, fila no filho) + modal de itens | Original intacto; total só qty extra | Reenvios antigos no pai; `manual_reshipments` |
