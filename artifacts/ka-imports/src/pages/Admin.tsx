@@ -212,6 +212,13 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
   }
   return [];
 }
+
+/** Pedido filho de reenvio (falta envio) — custo já foi no pedido original; não conta prejuízo. */
+function isReshipmentChildOrder(order: { shippingType?: string | null; parentOrderId?: string | null } | null | undefined): boolean {
+  if (!order) return false;
+  if (String(order.parentOrderId || "").trim()) return true;
+  return String(order.shippingType || "").trim().toLowerCase() === "reenvio";
+}
 export function orderToText(order: any): string {
   const products = getOrderProducts(order?.products);
   const prioridadeLine = order?.isPrioridade ? "PRIORIDADE URGENTE" : "";
@@ -4162,6 +4169,7 @@ export default function Admin() {
 
   const productCostMap = new Map(statsProductsData.map((p) => [p.id, Number(p.costPrice || 0)] as const));
   const statsTotalCost = statsPaidOrders.reduce((sum, order) => {
+    if (isReshipmentChildOrder(order)) return sum;
     const orderCost = getOrderProducts(order.products).reduce((lineSum, item) => {
       const qty = Number(item.quantity) || 0;
       const lineCost = item.costPrice != null ? Number(item.costPrice) : Number(productCostMap.get(item.id) || 0);
@@ -10962,19 +10970,24 @@ function OrdersPanel({
             ? { hasStock: true, message: "", missingItems: [] as string[] }
             : verifyOrderStock(order.id, undefined, selectedInventoryPool);
           const orderProducts = getOrderProducts(order.products);
+          const isReshipmentChild = isReshipmentChildOrder(order as { shippingType?: string | null; parentOrderId?: string | null });
           const grossAmount = Number(order.cardTotalActual ?? order.total) || 0;
-          const orderProductsCost = orderProducts.reduce((sum, item) => {
-            const qty = Number(item.quantity) || 0;
-            const unitCost = item.costPrice != null
-              ? Number(item.costPrice)
-              : Number(productCostById[String(item.id || "").trim()] || 0);
-            return sum + qty * unitCost;
-          }, 0);
+          const orderProductsCost = isReshipmentChild
+            ? 0
+            : orderProducts.reduce((sum, item) => {
+                const qty = Number(item.quantity) || 0;
+                const unitCost = item.costPrice != null
+                  ? Number(item.costPrice)
+                  : Number(productCostById[String(item.id || "").trim()] || 0);
+                return sum + qty * unitCost;
+              }, 0);
           const commissionRate = getCommissionRate(order.sellerCode, order.sellerCommissionRateSnapshot);
-          const commissionAmount = grossAmount * (commissionRate / 100);
+          const commissionAmount = isReshipmentChild ? 0 : grossAmount * (commissionRate / 100);
           const gatewayFeeRaw = grossAmount * (gatewayFeePercent / 100) + gatewayFeeFixed;
-          const gatewayFee = grossAmount > 0 ? Math.max(gatewayFeeRaw, gatewayFeeMin) : 0;
-          const estimatedProfit = grossAmount - orderProductsCost - commissionAmount - gatewayFee;
+          const gatewayFee = !isReshipmentChild && grossAmount > 0 ? Math.max(gatewayFeeRaw, gatewayFeeMin) : 0;
+          const estimatedProfit = isReshipmentChild
+            ? 0
+            : grossAmount - orderProductsCost - commissionAmount - gatewayFee;
           const reshipmentTrackingCode = String(order?.reshipment?.ticketTrackingCode || "").trim();
           const previewProducts = orderProducts.slice(0, 5);
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
@@ -11231,9 +11244,11 @@ function OrdersPanel({
                   <p className="text-2xl font-bold text-primary">{formatCurrency(order.total)}</p>
                   <p
                     className={`text-xs font-semibold mt-1 ${estimatedProfit >= 0 ? "text-emerald-700" : "text-red-600"}`}
-                    title="Lucro estimado = total - custo dos produtos - comissão - taxa do gateway"
+                    title={isReshipmentChild
+                      ? "Reenvio: custo já contabilizado no pedido original — sem prejuízo extra"
+                      : "Lucro estimado = total - custo dos produtos - comissão - taxa do gateway"}
                   >
-                    Lucro est.: {formatCurrency(estimatedProfit)}
+                    Lucro est.: {isReshipmentChild ? "R$ 0,00 (reenvio)" : formatCurrency(estimatedProfit)}
                   </p>
                 </div>
               </div>
