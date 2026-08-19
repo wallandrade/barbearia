@@ -1220,10 +1220,26 @@ router.post("/admin/envioecom/tracking-board/sync", requireAdminAuth, async (req
       const set = new Set(requestedIds);
       candidates = candidates.filter((o) => set.has(o.id));
     } else {
-      // Prioriza não entregues
+      // Abertos: prioriza etiqueta/pronto (pode estar Coletado na API e ainda “Pronto” no BD)
       candidates = candidates.filter((o) => {
         const st = String(o.envioecomStatus || "");
         return !isDeliveredStatus(st) && !/cancelad/i.test(st);
+      });
+      const batchPriority = (stRaw: string): number => {
+        const st = String(stRaw || "");
+        if (isLabelReadyStatus(st) || /aguardando (coleta|postagem)/i.test(st)) return 0;
+        if (isAwaitingPaymentStatus(st) || /envio criado|^created$/i.test(st)) return 1;
+        if (!st) return 2;
+        if (isInTransitStatus(st)) return 3;
+        return 4;
+      };
+      candidates.sort((a, b) => {
+        const pa = batchPriority(String(a.envioecomStatus || ""));
+        const pb = batchPriority(String(b.envioecomStatus || ""));
+        if (pa !== pb) return pa - pb;
+        const ta = a.envioecomStatusUpdatedAt?.getTime?.() ?? 0;
+        const tb = b.envioecomStatusUpdatedAt?.getTime?.() ?? 0;
+        return ta - tb; // mais antigos primeiro (travados em Pronto)
       });
     }
 

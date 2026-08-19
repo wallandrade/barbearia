@@ -231,8 +231,12 @@ export default function AdminEnvioEcomTrackingPanel({
         toast.error(data.message || "Falha no sync em lote.");
         return;
       }
-      toast.success(`Sync: ${data.synced || 0} ok${data.failed ? `, ${data.failed} falha(s)` : ""}.`);
-      await fetchBoard();
+      toast.success(
+        `Sync: ${data.synced || 0} ok${data.failed ? `, ${data.failed} falha(s)` : ""} (prioriza Pronto/aguardando coleta).`,
+      );
+      // Volta para Todos para não “sumir” pedido que saiu do filtro atual
+      if (group !== "all") setGroup("all");
+      else await fetchBoard();
     } catch {
       toast.error("Erro ao sincronizar rastreios.");
     } finally {
@@ -240,13 +244,20 @@ export default function AdminEnvioEcomTrackingPanel({
     }
   };
 
-  const syncOne = async (orderId: string) => {
-    setSyncingId(orderId);
+  const syncOne = async (item: TrackingBoardItem) => {
+    setSyncingId(item.orderId);
     try {
-      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${orderId}/sync`, {
+      const knownId = String(item.shipmentId || "").trim();
+      const knownBarcode = String(item.barcode || item.trackingCode || "").trim();
+      const body: Record<string, string> = knownId
+        ? { shipment_id: knownId }
+        : knownBarcode
+          ? { barcode: knownBarcode }
+          : {};
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${item.orderId}/sync`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
       if (res.status === 401) {
         onUnauthorized();
@@ -261,12 +272,11 @@ export default function AdminEnvioEcomTrackingPanel({
         toast.error(data.message || "Falha ao sincronizar.");
         return;
       }
-      toast.success(
-        data.resolved?.status || data.tracking?.status
-          ? `Status: ${data.resolved?.status || data.tracking?.status}`
-          : "Sincronizado.",
-      );
-      await fetchBoard();
+      const newStatus = data.resolved?.status || data.tracking?.status;
+      toast.success(newStatus ? `Status: ${newStatus}` : "Sincronizado.");
+      // Se estava filtrado (ex. Aguardando coleta), limpa filtro para o pedido não sumir
+      if (group !== "all") setGroup("all");
+      else await fetchBoard();
     } catch {
       toast.error("Erro ao sincronizar pedido.");
     } finally {
@@ -294,7 +304,8 @@ export default function AdminEnvioEcomTrackingPanel({
             Painel de rastreios EnvioEcom
           </p>
           <p className="text-xs text-teal-800/80 mt-1">
-            Status e últimas atualizações de todos os pedidos com envio. Use sync para puxar da API.
+            Status e últimas atualizações de todos os pedidos com envio. Sync na linha = igual ao card do pedido.
+            “Sync abertos” puxa até 20, priorizando Pronto/aguardando coleta.
           </p>
           {!configured && (
             <p className="text-xs text-amber-800 mt-1 font-semibold">
@@ -317,6 +328,7 @@ export default function AdminEnvioEcomTrackingPanel({
             size="sm"
             className="gap-1.5 bg-teal-700 hover:bg-teal-800"
             disabled={loading || syncing || !configured}
+            title="Sincroniza até 20 abertos; prioriza etiqueta/Pronto para envio"
             onClick={() => { void syncBatch(); }}
           >
             {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -482,7 +494,7 @@ export default function AdminEnvioEcomTrackingPanel({
                           variant="outline"
                           className="h-8 text-xs"
                           disabled={syncingId === item.orderId || syncing}
-                          onClick={() => { void syncOne(item.orderId); }}
+                          onClick={() => { void syncOne(item); }}
                         >
                           {syncingId === item.orderId ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
