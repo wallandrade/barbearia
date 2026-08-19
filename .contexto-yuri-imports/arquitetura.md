@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-08-18
+> **Última atualização:** 2026-08-19
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-19 | `orders.parent_order_id` (+ runtime) para reenvio como pedido filho | Liga filho → pai no suporte | Stack/deploy iguais |
 | 2026-08-18 | Rotas `bank-statement` + campos `bank_deposit_*` em `orders` | Conciliação extrato OFX no admin | Stack/deploy iguais |
 | 2026-08-11 | Baseline arquitetural do monorepo | Orientação de stack/pastas | App intocado nesta missão |
 

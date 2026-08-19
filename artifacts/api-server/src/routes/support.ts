@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { db, ordersTable, supportTicketsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
-import { createOrRefreshReshipment } from "../lib/reshipments";
+import { createReshipmentChildOrder } from "../lib/reshipments";
 
 const router: IRouter = Router();
 
@@ -69,17 +69,44 @@ function maskName(raw: string | null | undefined): string {
   return `${firstMasked} ${lastMasked}`;
 }
 
-function getOrderProducts(raw: unknown): Array<{ name?: string; quantity?: number }> {
-  if (Array.isArray(raw)) return raw as Array<{ name?: string; quantity?: number }>;
+function getOrderProducts(raw: unknown): Array<{ id?: string; name?: string; quantity?: number; price?: number }> {
+  if (Array.isArray(raw)) return raw as Array<{ id?: string; name?: string; quantity?: number; price?: number }>;
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as Array<{ name?: string; quantity?: number }>) : [];
+      return Array.isArray(parsed) ? (parsed as Array<{ id?: string; name?: string; quantity?: number; price?: number }>) : [];
     } catch {
       return [];
     }
   }
   return [];
+}
+
+function normalizeTicketOrderProducts(raw: unknown): Array<{ id: string; name: string; quantity: number; price: number }> {
+  return getOrderProducts(raw)
+    .map((p) => ({
+      id: String(p?.id ?? "").trim(),
+      name: String(p?.name ?? "Produto").trim() || "Produto",
+      quantity: Number(p?.quantity) || 0,
+      price: Number(p?.price) || 0,
+    }))
+    .filter((p) => p.id && p.quantity > 0);
+}
+
+async function loadOrderProductsByIds(orderIds: string[]): Promise<Map<string, Array<{ id: string; name: string; quantity: number; price: number }>>> {
+  const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
+  const map = new Map<string, Array<{ id: string; name: string; quantity: number; price: number }>>();
+  if (uniqueIds.length === 0) return map;
+
+  const rows = await db
+    .select({ id: ordersTable.id, products: ordersTable.products })
+    .from(ordersTable)
+    .where(inArray(ordersTable.id, uniqueIds));
+
+  for (const row of rows) {
+    map.set(row.id, normalizeTicketOrderProducts(row.products));
+  }
+  return map;
 }
 
 function normalizeAddressChange(raw: unknown): AddressChangePayload | null {
@@ -131,28 +158,6 @@ async function isLatestTicketForOrder(orderId: string, ticketId: string): Promis
     .limit(1);
 
   return latestRows[0]?.id === ticketId;
-}
-
-async function applyAddressChangeToOrder(params: {
-  orderId: string;
-  addressChange: AddressChangePayload;
-  scope: { hasGlobalAccess: boolean; sellerCode: string | null };
-}): Promise<void> {
-  await db
-    .update(ordersTable)
-    .set({
-      addressCep: params.addressChange.cep,
-      addressStreet: params.addressChange.street,
-      addressNumber: params.addressChange.number,
-      addressComplement: params.addressChange.complement || null,
-      addressNeighborhood: params.addressChange.neighborhood,
-      addressCity: params.addressChange.city,
-      addressState: params.addressChange.state,
-      updatedAt: new Date(),
-    })
-    .where(params.scope.hasGlobalAccess
-      ? eq(ordersTable.id, params.orderId)
-      : and(eq(ordersTable.id, params.orderId), eq(ordersTable.sellerCode, params.scope.sellerCode!)));
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +331,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         .where(whereClause ? and(whereClause, inArray(supportTicketsTable.orderId, scopedOrderIds)) : inArray(supportTicketsTable.orderId, scopedOrderIds))
         .orderBy(desc(supportTicketsTable.createdAt));
 
+      const productsByOrder = await loadOrderProductsByIds(rows.map((row) => row.orderId));
       const tickets = rows.map((row) => {
         let addressChange: AddressChangePayload | null = null;
         if (row.addressChangeJson) {
@@ -353,6 +359,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
           resolvedAt: row.resolvedAt?.toISOString() ?? null,
           createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
           updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
+          orderProducts: productsByOrder.get(row.orderId) || [],
         };
       });
 
@@ -366,6 +373,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
       .where(whereClause)
       .orderBy(desc(supportTicketsTable.createdAt));
 
+    const productsByOrder = await loadOrderProductsByIds(rows.map((row) => row.orderId));
     const tickets = rows.map((row) => {
       let addressChange: AddressChangePayload | null = null;
       if (row.addressChangeJson) {
@@ -393,6 +401,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         resolvedAt: row.resolvedAt?.toISOString() ?? null,
         createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
         updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
+        orderProducts: productsByOrder.get(row.orderId) || [],
       };
     });
 
@@ -405,6 +414,8 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/admin/support-tickets/:id/reenviar
+// Body opcional: { products: [{ id, name, quantity, price? }] }
+// Cria pedido filho (frete Reenvio) + fila reshipments no filho.
 // ---------------------------------------------------------------------------
 router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req, res) => {
   try {
@@ -433,17 +444,6 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       return;
     }
 
-    const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
-    const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
-
-    if (parsedAddress && canApplyAddress) {
-      await applyAddressChangeToOrder({
-        orderId: ticket.orderId,
-        addressChange: parsedAddress,
-        scope,
-      });
-    }
-
     const orderRows = await db
       .select({ id: ordersTable.id, products: ordersTable.products })
       .from(ordersTable)
@@ -458,11 +458,18 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       return;
     }
 
-    const reshipment = await createOrRefreshReshipment({
-      orderId: order.id,
+    const bodyProducts = Array.isArray(req.body?.products) ? req.body.products : null;
+    const productsRaw = bodyProducts && bodyProducts.length > 0 ? bodyProducts : order.products;
+
+    const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
+    const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
+    const addressOverride = parsedAddress && canApplyAddress ? parsedAddress : null;
+
+    const child = await createReshipmentChildOrder({
+      parentOrderId: order.id,
       supportTicketId: ticket.id,
-      productsRaw: order.products,
-      resolvedReason: "reenvio_autorizado",
+      productsRaw,
+      addressOverride,
     });
 
     await db
@@ -480,8 +487,10 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       data: {
         ticketId: id,
         orderId: order.id,
-        reshipmentId: reshipment.id,
-        reshipmentStatus: reshipment.status,
+        childOrderId: child.childOrderId,
+        childOrderNumber: child.childOrderNumber,
+        reshipmentId: child.reshipment.id,
+        reshipmentStatus: child.reshipment.status,
       },
     });
 
@@ -489,8 +498,11 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       ok: true,
       ticketId: id,
       orderId: order.id,
-      addressApplied: Boolean(parsedAddress && canApplyAddress),
-      reshipment,
+      childOrderId: child.childOrderId,
+      childOrderNumber: child.childOrderNumber,
+      total: child.total,
+      addressApplied: Boolean(addressOverride),
+      reshipment: child.reshipment,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro ao criar reenvio.";
@@ -537,39 +549,34 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
     let resolutionReason: string | null = status === "resolved" ? "resolvido_manual" : null;
     let reshipment: { id: string; status: string; missingProducts: string[] } | null = null;
     let addressApplied = false;
+    let childOrderId: string | null = null;
+    let childOrderNumber: number | null = null;
 
     if (status === "resolved" && ticket.addressChangeJson) {
       const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
       const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
 
-      if (parsedAddress) {
-        if (canApplyAddress) {
-          await applyAddressChangeToOrder({
-            orderId: ticket.orderId,
-            addressChange: parsedAddress,
-            scope,
-          });
-          addressApplied = true;
-        }
+      const orderRows = await db
+        .select({ id: ordersTable.id, products: ordersTable.products })
+        .from(ordersTable)
+        .where(scope.hasGlobalAccess
+          ? eq(ordersTable.id, ticket.orderId)
+          : and(eq(ordersTable.id, ticket.orderId), eq(ordersTable.sellerCode, scope.sellerCode!)))
+        .limit(1);
 
-        const orderRows = await db
-          .select({ id: ordersTable.id, products: ordersTable.products })
-          .from(ordersTable)
-          .where(scope.hasGlobalAccess
-            ? eq(ordersTable.id, ticket.orderId)
-            : and(eq(ordersTable.id, ticket.orderId), eq(ordersTable.sellerCode, scope.sellerCode!)))
-          .limit(1);
-
-        const order = orderRows[0];
-        if (order) {
-          reshipment = await createOrRefreshReshipment({
-            orderId: order.id,
-            supportTicketId: ticket.id,
-            productsRaw: order.products,
-            resolvedReason: "reenvio_autorizado",
-          });
-          resolutionReason = "reenvio_autorizado";
-        }
+      const order = orderRows[0];
+      if (order && parsedAddress) {
+        const child = await createReshipmentChildOrder({
+          parentOrderId: order.id,
+          supportTicketId: ticket.id,
+          productsRaw: order.products,
+          addressOverride: canApplyAddress ? parsedAddress : null,
+        });
+        reshipment = child.reshipment;
+        childOrderId = child.childOrderId;
+        childOrderNumber = child.childOrderNumber;
+        addressApplied = Boolean(canApplyAddress);
+        resolutionReason = "reenvio_autorizado";
       }
     }
 
@@ -588,16 +595,28 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
         data: {
           ticketId: id,
           orderId: ticket.orderId,
+          childOrderId,
+          childOrderNumber,
           reshipmentId: reshipment.id,
           reshipmentStatus: reshipment.status,
         },
       });
     }
 
-    res.json({ ok: true, id, status, resolutionReason, reshipment, addressApplied });
+    res.json({
+      ok: true,
+      id,
+      status,
+      resolutionReason,
+      reshipment,
+      addressApplied,
+      childOrderId,
+      childOrderNumber,
+    });
   } catch (err) {
     console.error("Support ticket status update error:", err);
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar chamado." });
+    const message = err instanceof Error ? err.message : "Erro ao atualizar chamado.";
+    res.status(400).json({ error: "INTERNAL_ERROR", message });
   }
 });
 

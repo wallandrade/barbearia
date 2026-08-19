@@ -1192,6 +1192,7 @@ interface SupportTicketRecord {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  orderProducts?: Array<{ id: string; name: string; quantity: number; price: number }>;
 }
 
 interface ReshipmentRecord {
@@ -5312,6 +5313,7 @@ export default function Admin() {
           <SupportTicketsPanel
             tickets={supportTickets}
             loading={supportLoading}
+            catalogProducts={products}
             onRefresh={fetchSupportTickets}
             onSetStatus={async (id, status) => {
               try {
@@ -5324,6 +5326,7 @@ export default function Admin() {
                   message?: string;
                   resolutionReason?: string | null;
                   reshipment?: { status?: string } | null;
+                  childOrderNumber?: number | null;
                 };
                 if (!res.ok) {
                   toast.error(data?.message || "Erro ao atualizar chamado.");
@@ -5343,10 +5346,15 @@ export default function Admin() {
                   fetchOrders(true);
                   fetchInventoryOverview();
                 }
+                const childRef = data?.childOrderNumber != null ? `#${data.childOrderNumber}` : null;
                 if (status === "resolved" && data?.reshipment?.status === "reenvio_aguardando_estoque") {
-                  toast.success("Chamado resolvido. Pedido entrou em reenvio aguardando estoque.");
+                  toast.success(childRef
+                    ? `Chamado resolvido. Reenvio criado: pedido ${childRef} (aguardando estoque).`
+                    : "Chamado resolvido. Pedido entrou em reenvio aguardando estoque.");
                 } else if (status === "resolved" && data?.reshipment?.status === "reenvio_pronto_para_envio") {
-                  toast.success("Chamado resolvido. Pedido pronto para reenvio.");
+                  toast.success(childRef
+                    ? `Chamado resolvido. Reenvio criado: pedido ${childRef}.`
+                    : "Chamado resolvido. Pedido pronto para reenvio.");
                 } else {
                   toast.success(status === "resolved" ? "Chamado marcado como resolvido." : "Chamado reaberto.");
                 }
@@ -5375,13 +5383,18 @@ export default function Admin() {
                 toast.error("Erro ao excluir chamado.");
               }
             }}
-            onReenviar={async (id) => {
+            onReenviar={async (id, selectedProducts) => {
               try {
                 const res = await fetch(`${BASE}/api/admin/support-tickets/${id}/reenviar`, {
                   method: "POST",
                   headers: authHeaders(),
+                  body: JSON.stringify({ products: selectedProducts }),
                 });
-                const data = await res.json() as { message?: string; reshipment?: { status?: string } };
+                const data = await res.json() as {
+                  message?: string;
+                  reshipment?: { status?: string };
+                  childOrderNumber?: number | null;
+                };
                 if (!res.ok) {
                   toast.error(data?.message || "Erro ao autorizar reenvio.");
                   return;
@@ -5393,11 +5406,16 @@ export default function Admin() {
                 )));
                 fetchOrders(true);
                 fetchInventoryOverview();
+                const childRef = data?.childOrderNumber != null ? `#${data.childOrderNumber}` : null;
                 const st = data?.reshipment?.status;
                 if (st === "reenvio_aguardando_estoque") {
-                  toast.success("Reenvio criado e aguardando estoque.");
+                  toast.success(childRef
+                    ? `Reenvio criado: pedido ${childRef} (aguardando estoque).`
+                    : "Reenvio criado e aguardando estoque.");
                 } else {
-                  toast.success("Reenvio autorizado e pronto para envio.");
+                  toast.success(childRef
+                    ? `Reenvio criado: pedido ${childRef}.`
+                    : "Reenvio autorizado e pronto para envio.");
                 }
               } catch {
                 toast.error("Erro ao autorizar reenvio.");
@@ -7980,6 +7998,7 @@ export default function Admin() {
 function SupportTicketsPanel({
   tickets,
   loading,
+  catalogProducts,
   onRefresh,
   onSetStatus,
   onDelete,
@@ -7987,11 +8006,58 @@ function SupportTicketsPanel({
 }: {
   tickets: SupportTicketRecord[];
   loading: boolean;
+  catalogProducts: Array<{ id: string; name: string; price?: number | string; promoPrice?: number | string | null }>;
   onRefresh: () => void;
   onSetStatus: (id: string, status: "open" | "resolved") => void;
   onDelete: (id: string) => void;
-  onReenviar: (id: string) => void;
+  onReenviar: (id: string, products: Array<{ id: string; name: string; quantity: number; price: number }>) => void | Promise<void>;
 }) {
+  const [reenviarTicket, setReenviarTicket] = useState<SupportTicketRecord | null>(null);
+  const [reenviarItems, setReenviarItems] = useState<Array<{ id: string; name: string; quantity: number; price: number }>>([]);
+  const [reenviarSearch, setReenviarSearch] = useState("");
+  const [reenviarSubmitting, setReenviarSubmitting] = useState(false);
+
+  const openReenviarModal = (ticket: SupportTicketRecord) => {
+    const seed = (ticket.orderProducts || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      quantity: Math.max(1, Number(p.quantity) || 1),
+      price: Number(p.price) || 0,
+    }));
+    setReenviarItems(seed);
+    setReenviarSearch("");
+    setReenviarTicket(ticket);
+  };
+
+  const closeReenviarModal = () => {
+    if (reenviarSubmitting) return;
+    setReenviarTicket(null);
+    setReenviarItems([]);
+    setReenviarSearch("");
+  };
+
+  const confirmReenviar = async () => {
+    if (!reenviarTicket) return;
+    const products = reenviarItems.filter((item) => item.id && item.quantity > 0);
+    if (products.length === 0) {
+      toast.error("Inclua ao menos um item no reenvio.");
+      return;
+    }
+    setReenviarSubmitting(true);
+    try {
+      await onReenviar(reenviarTicket.id, products);
+      setReenviarTicket(null);
+      setReenviarItems([]);
+      setReenviarSearch("");
+    } finally {
+      setReenviarSubmitting(false);
+    }
+  };
+
+  const catalogFiltered = catalogProducts
+    .filter((p) => String(p.name || "").toLowerCase().includes(reenviarSearch.trim().toLowerCase()))
+    .slice(0, 8);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-4">
@@ -8039,7 +8105,7 @@ function SupportTicketsPanel({
                   {ticket.status !== "resolved" ? (
                     <>
                       <Button size="sm" onClick={() => onSetStatus(ticket.id, "resolved")}>Marcar resolvido</Button>
-                      <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onReenviar(ticket.id)}>
+                      <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => openReenviarModal(ticket)}>
                         Reenviar
                       </Button>
                       <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onDelete(ticket.id)}>
@@ -8085,6 +8151,126 @@ function SupportTicketsPanel({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {reenviarTicket && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closeReenviarModal(); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
+              <div>
+                <h3 className="text-lg font-bold">Reenviar — pedido filho</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Ajuste os itens. O original não muda; nasce um pedido novo com frete Reenvio.
+                </p>
+              </div>
+              <Button size="icon" variant="ghost" onClick={closeReenviarModal} disabled={reenviarSubmitting}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Adicionar produto do catálogo
+                </label>
+                <div className="relative">
+                  <input
+                    value={reenviarSearch}
+                    onChange={(e) => setReenviarSearch(e.target.value)}
+                    placeholder="Digite o nome do produto..."
+                    className="w-full h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary"
+                  />
+                  {reenviarSearch.trim().length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-10 bg-white border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
+                      {catalogFiltered.map((p) => {
+                        const price = Number(p.promoPrice ?? p.price) || 0;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="w-full px-3 py-2 text-sm text-left hover:bg-muted/50 flex justify-between items-center"
+                            onClick={() => {
+                              setReenviarItems((prev) => {
+                                const exists = prev.find((i) => i.id === p.id);
+                                if (exists) {
+                                  return prev.map((i) => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i);
+                                }
+                                return [...prev, { id: p.id, name: p.name, quantity: 1, price }];
+                              });
+                              setReenviarSearch("");
+                            }}
+                          >
+                            <span>{p.name}</span>
+                            <span className="text-muted-foreground text-xs">{formatCurrency(price)}</span>
+                          </button>
+                        );
+                      })}
+                      {catalogFiltered.length === 0 && (
+                        <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum produto encontrado</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
+                  Itens do reenvio
+                </label>
+                {reenviarItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum item. Adicione acima ou mantenha os do pedido.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {reenviarItems.map((item, idx) => (
+                      <div key={`${item.id}-${idx}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} × {item.quantity}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="w-7 h-7 rounded-lg border border-border hover:bg-muted flex items-center justify-center text-base"
+                            onClick={() => {
+                              if (item.quantity <= 1) return;
+                              setReenviarItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity - 1 } : i));
+                            }}
+                          >−</button>
+                          <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
+                          <button
+                            type="button"
+                            className="w-7 h-7 rounded-lg border border-border hover:bg-muted flex items-center justify-center text-base"
+                            onClick={() => {
+                              setReenviarItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity + 1 } : i));
+                            }}
+                          >+</button>
+                          <button
+                            type="button"
+                            className="w-7 h-7 ml-1 rounded-lg hover:bg-red-50 text-red-500 flex items-center justify-center"
+                            onClick={() => setReenviarItems((prev) => prev.filter((_, j) => j !== idx))}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t shrink-0">
+              <Button variant="outline" onClick={closeReenviarModal} disabled={reenviarSubmitting}>Cancelar</Button>
+              <Button onClick={confirmReenviar} disabled={reenviarSubmitting || reenviarItems.length === 0} className="gap-1.5">
+                {reenviarSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Confirmar reenvio
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

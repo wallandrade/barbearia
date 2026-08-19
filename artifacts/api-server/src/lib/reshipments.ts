@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
+  pool,
   inventoryBalancesTable,
   inventoryMovementsTable,
   inventoryMotoboyBalancesTable,
@@ -445,6 +446,251 @@ export async function createOrRefreshReshipment(params: {
     id: reshipmentId,
     status: nextStatus,
     missingProducts,
+  };
+}
+
+export type ReshipmentAddressOverride = {
+  cep: string;
+  street: string;
+  number: string;
+  complement?: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+};
+
+type PricedOrderProduct = {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  costPrice?: number;
+  image?: string | null;
+};
+
+function toPricedProducts(raw: unknown): PricedOrderProduct[] {
+  const list = Array.isArray(raw)
+    ? (raw as Array<Record<string, unknown>>)
+    : typeof raw === "string"
+      ? (() => {
+          try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? (parsed as Array<Record<string, unknown>>) : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+  const merged = new Map<string, PricedOrderProduct>();
+  for (const item of list) {
+    const id = String(item?.id || "").trim();
+    if (!id) continue;
+    const quantity = Number(item?.quantity) || 0;
+    if (quantity <= 0) continue;
+    const name = String(item?.name || "Produto").trim() || "Produto";
+    const price = Number(item?.price);
+    const costPriceRaw = Number(item?.costPrice);
+    const image = item?.image == null ? null : String(item.image);
+    const existing = merged.get(id);
+    if (existing) {
+      existing.quantity += quantity;
+      if (Number.isFinite(price) && price >= 0) existing.price = price;
+      continue;
+    }
+    merged.set(id, {
+      id,
+      name,
+      quantity,
+      price: Number.isFinite(price) && price >= 0 ? price : 0,
+      ...(Number.isFinite(costPriceRaw) ? { costPrice: costPriceRaw } : {}),
+      ...(image ? { image } : {}),
+    });
+  }
+  return Array.from(merged.values());
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Cria pedido filho (reenvio) a partir do pedido do chamado e coloca a fila
+ * `reshipments` no filho — o pedido pai não recebe badge de reenvio novo.
+ */
+export async function createReshipmentChildOrder(params: {
+  parentOrderId: string;
+  supportTicketId: string;
+  productsRaw: unknown;
+  addressOverride?: ReshipmentAddressOverride | null;
+}): Promise<{
+  childOrderId: string;
+  childOrderNumber: number | null;
+  total: number;
+  reshipment: { id: string; status: ReshipmentStatus; missingProducts: string[] };
+}> {
+  const parentRows = await db
+    .select()
+    .from(ordersTable)
+    .where(eq(ordersTable.id, params.parentOrderId))
+    .limit(1);
+
+  const parent = parentRows[0];
+  if (!parent) {
+    throw new Error("Pedido do chamado não encontrado.");
+  }
+
+  const requested = toPricedProducts(params.productsRaw);
+  if (requested.length === 0) {
+    throw new Error("Informe ao menos um item válido para o reenvio.");
+  }
+
+  const productIds = Array.from(new Set(requested.map((item) => item.id)));
+  const catalogRows = await db
+    .select({
+      id: productsTable.id,
+      name: productsTable.name,
+      price: productsTable.price,
+      costPrice: productsTable.costPrice,
+      promoPrice: productsTable.promoPrice,
+      image: productsTable.image,
+      isActive: productsTable.isActive,
+    })
+    .from(productsTable)
+    .where(inArray(productsTable.id, productIds));
+
+  type CatalogRow = {
+    id: string;
+    name: string;
+    price: string | number | null;
+    costPrice: string | number | null;
+    promoPrice: string | number | null;
+    image: string | null;
+    isActive: boolean | null;
+  };
+  const catalogById = new Map<string, CatalogRow>(
+    catalogRows.map((row) => [String(row.id), row as CatalogRow]),
+  );
+  const parentItems = toPricedProducts(parent.products);
+  const parentQtyById = new Map(parentItems.map((item) => [item.id, item.quantity]));
+  const parentPriceById = new Map(parentItems.map((item) => [item.id, item.price]));
+
+  const childProducts: PricedOrderProduct[] = [];
+  let billableSubtotal = 0;
+
+  for (const item of requested) {
+    const catalog = catalogById.get(item.id);
+    if (!catalog) {
+      throw new Error(`Produto inválido no reenvio: ${item.name || item.id}`);
+    }
+
+    const unitFromCatalog = Number(catalog.promoPrice ?? catalog.price);
+    const unitPrice = item.price > 0
+      ? item.price
+      : (parentPriceById.get(item.id) || (Number.isFinite(unitFromCatalog) ? unitFromCatalog : 0));
+    const costPrice = Number(catalog.costPrice);
+    const parentQty = parentQtyById.get(item.id) || 0;
+    const extraQty = Math.max(0, item.quantity - parentQty);
+    billableSubtotal += extraQty * unitPrice;
+
+    childProducts.push({
+      id: catalog.id,
+      name: catalog.name || item.name,
+      quantity: item.quantity,
+      price: roundMoney(unitPrice),
+      ...(Number.isFinite(costPrice) ? { costPrice } : {}),
+      ...(catalog.image ? { image: String(catalog.image) } : {}),
+    });
+  }
+
+  billableSubtotal = roundMoney(billableSubtotal);
+  const childOrderId = crypto.randomBytes(8).toString("hex");
+  const guestAccessToken = crypto.randomBytes(16).toString("hex");
+  const parentRef = parent.orderNumber != null ? String(parent.orderNumber) : parent.id;
+  const observation = `REENVIO DO PEDIDO ${parentRef} · TICKET ${params.supportTicketId}`;
+
+  const address = params.addressOverride
+    ? {
+        addressCep: params.addressOverride.cep,
+        addressStreet: params.addressOverride.street,
+        addressNumber: params.addressOverride.number,
+        addressComplement: params.addressOverride.complement || null,
+        addressNeighborhood: params.addressOverride.neighborhood,
+        addressCity: params.addressOverride.city,
+        addressState: params.addressOverride.state,
+      }
+    : {
+        addressCep: parent.addressCep,
+        addressStreet: parent.addressStreet,
+        addressNumber: parent.addressNumber,
+        addressComplement: parent.addressComplement,
+        addressNeighborhood: parent.addressNeighborhood,
+        addressCity: parent.addressCity,
+        addressState: parent.addressState,
+      };
+
+  await db.insert(ordersTable).values({
+    id: childOrderId,
+    parentOrderId: parent.id,
+    userId: parent.userId,
+    guestAccessToken,
+    affiliateUserId: parent.affiliateUserId,
+    affiliateCode: parent.affiliateCode,
+    clientName: parent.clientName,
+    clientEmail: parent.clientEmail,
+    clientPhone: parent.clientPhone,
+    clientDocument: parent.clientDocument,
+    purchaseIp: parent.purchaseIp,
+    ipCity: parent.ipCity,
+    ipRegion: parent.ipRegion,
+    ipIsp: parent.ipIsp,
+    ipIsProxy: parent.ipIsProxy,
+    ...address,
+    products: childProducts,
+    shippingType: "Reenvio",
+    includeInsurance: false,
+    subtotal: String(billableSubtotal),
+    shippingCost: "0.00",
+    insuranceAmount: "0.00",
+    total: String(billableSubtotal),
+    status: "paid",
+    paymentMethod: parent.paymentMethod || "pix",
+    sellerCode: parent.sellerCode,
+    whatsappGroup: parent.whatsappGroup,
+    sellerCommissionRateSnapshot: parent.sellerCommissionRateSnapshot,
+    observation,
+    paidAmount: String(billableSubtotal),
+    enviado: false,
+    inventoryReserved: false,
+  });
+
+  try {
+    await pool.query(
+      "UPDATE orders SET is_prioridade = 1, updated_at = NOW() WHERE id = ?",
+      [childOrderId],
+    );
+  } catch {
+    // Coluna is_prioridade pode não existir em ambientes antigos — pedido filho segue sem prioridade.
+  }
+
+  const [created] = await db
+    .select({ orderNumber: ordersTable.orderNumber })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, childOrderId))
+    .limit(1);
+
+  const reshipment = await createOrRefreshReshipment({
+    orderId: childOrderId,
+    supportTicketId: params.supportTicketId,
+    productsRaw: childProducts,
+    resolvedReason: "reenvio_autorizado",
+  });
+
+  return {
+    childOrderId,
+    childOrderNumber: created?.orderNumber ?? null,
+    total: billableSubtotal,
+    reshipment,
   };
 }
 

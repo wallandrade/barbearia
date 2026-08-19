@@ -5,6 +5,8 @@ import { z } from "zod/v4";
 export const ordersTable = mysqlTable("orders", {
   id: varchar("id", { length: 255 }).primaryKey(),
   orderNumber: bigint("order_number", { mode: "number", unsigned: true }).autoincrement().notNull().unique(),
+  /** Pedido pai quando este é um reenvio (filho) criado pelo suporte */
+  parentOrderId: varchar("parent_order_id", { length: 255 }),
   userId: varchar("user_id", { length: 255 }),
   guestAccessToken: varchar("guest_access_token", { length: 255 }).unique(),
   affiliateUserId: varchar("affiliate_user_id", { length: 255 }),

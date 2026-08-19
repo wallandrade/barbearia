@@ -2254,6 +2254,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
   return {
     id:                  o.id,
     orderNumber:         o.orderNumber ?? null,
+    parentOrderId:       o.parentOrderId ?? null,
     clientName:          o.clientName,
     clientEmail:         o.clientEmail,
     clientPhone:         o.clientPhone,

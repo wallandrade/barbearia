@@ -169,6 +169,7 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "bank_deposit_payer_name", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_payer_name VARCHAR(255) NULL" },
     { name: "bank_deposit_posted_at", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_posted_at VARCHAR(10) NULL" },
     { name: "bank_deposit_matched_at", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_matched_at TIMESTAMP NULL" },
+    { name: "parent_order_id", sql: "ALTER TABLE orders ADD COLUMN parent_order_id VARCHAR(255) NULL" },
   ];
 
   for (const definition of definitions) {
@@ -208,6 +209,10 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     {
       name: "orders_bank_deposit_fitid_idx",
       sql: "ALTER TABLE orders ADD KEY orders_bank_deposit_fitid_idx (bank_deposit_fitid)",
+    },
+    {
+      name: "orders_parent_order_id_idx",
+      sql: "ALTER TABLE orders ADD KEY orders_parent_order_id_idx (parent_order_id)",
     },
   ];
 
