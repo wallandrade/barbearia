@@ -4885,8 +4885,10 @@ export default function Admin() {
                   } else {
                     toast.success("Reenvio enviado cancelado.");
                   }
+                } else if (status === "reenvio_resolvido_sem_entrada") {
+                  toast.success("Reenvio cancelado. Pedido sai da fila de reenvio.");
                 } else {
-                  toast.success(status === "reenvio_enviado" ? "Reenvio marcado como enviado." : "Status do reenvio atualizado.");
+                  toast.success("Status do reenvio atualizado.");
                 }
               } catch {
                 toast.error("Erro ao atualizar reenvio.");
@@ -9268,7 +9270,7 @@ function OrdersPanel({
   onSetOrderEnviado: (id: string, enviado: boolean) => void;
   onSetOrderPatched: (order: AdminOrder) => void;
   availableWhatsappGroups: string[];
-  onSetReshipmentStatus: (reshipmentId: string, status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_enviado") => void;
+  onSetReshipmentStatus: (reshipmentId: string, status: "reenvio_aguardando_estoque" | "reenvio_pronto_para_envio" | "reenvio_resolvido_sem_entrada" | "reenvio_enviado") => void;
   onRemoveOrder: (id: string) => void;
   shippingQueueMap: Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }>;
   onRefreshInventory: () => void;
@@ -11572,14 +11574,27 @@ function OrdersPanel({
                   </Button>
                 )}
                 {(order as any)?.reshipment?.id && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as any)?.reshipment?.status || "")) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50"
-                    onClick={() => onSetReshipmentStatus((order as any).reshipment.id, "reenvio_enviado")}
-                  >
-                    <Truck className="w-3.5 h-3.5" />Marcar Reenvio Enviado
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50"
+                      onClick={() => onSetReshipmentStatus((order as any).reshipment.id, "reenvio_enviado")}
+                    >
+                      <Truck className="w-3.5 h-3.5" />Marcar Reenvio Enviado
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-slate-700 border-slate-300 hover:bg-slate-50"
+                      onClick={() => {
+                        if (!window.confirm("Cancelar este reenvio? O badge some e o pedido deixa de ficar fixo na lista de hoje.")) return;
+                        onSetReshipmentStatus((order as any).reshipment.id, "reenvio_resolvido_sem_entrada");
+                      }}
+                    >
+                      <X className="w-3.5 h-3.5" />Cancelar reenvio
+                    </Button>
+                  </>
                 )}
                 {(order as any)?.reshipment?.id && String((order as any)?.reshipment?.status || "") === "reenvio_enviado" && (
                   <Button
