@@ -777,12 +777,15 @@ export async function resolveLiveShipmentRefs(input: {
     if (fresh) found = fresh;
   }
 
+  const statusHistory = Array.isArray(found?.statusHistory) ? found!.statusHistory! : [];
+  const effectiveStatus = pickEffectiveShipmentStatus(found?.status || null, statusHistory);
+
   return {
     barcode: pickBestBarcode([found?.barcode, barcode]) || barcode || null,
     shipmentId: found?.shipmentId || shipmentId || null,
     trackingKey: found?.trackingKey || trackingKey || null,
-    status: found?.status || null,
-    statusHistory: Array.isArray(found?.statusHistory) ? found!.statusHistory! : [],
+    status: effectiveStatus,
+    statusHistory,
     deliveryMode: found?.deliveryMode || null,
     raw: found?.raw || null,
   };
@@ -1230,6 +1233,37 @@ export function isLabelReadyStatus(status: string): boolean {
     s.includes("dc-e emitida") ||
     s.includes("dce emitida")
   );
+}
+
+/** Ranking operacional: entregue > coletado/trânsito > etiqueta/pronto > pagamento. */
+export function shipmentStatusRank(status: string | null | undefined): number {
+  const s = String(status || "").trim();
+  if (!s) return 0;
+  if (isDeliveredStatus(s)) return 50;
+  if (isInTransitStatus(s)) return 40;
+  if (isLabelReadyStatus(s)) return 20;
+  if (/envio criado|^created$/i.test(s)) return 15;
+  if (isAwaitingPaymentStatus(s)) return 10;
+  return 5;
+}
+
+/**
+ * Campo `status` do envio às vezes fica em "Pronto para envio" enquanto o
+ * status_history já tem "Coletado". Prefere o mais avançado entre os dois.
+ */
+export function pickEffectiveShipmentStatus(
+  fieldStatus: string | null | undefined,
+  history: StatusHistoryEntry[] | null | undefined,
+): string | null {
+  const field = String(fieldStatus || "").trim() || null;
+  const lastHist =
+    Array.isArray(history) && history.length
+      ? String(history[history.length - 1]?.status || "").trim() || null
+      : null;
+  if (!field && !lastHist) return null;
+  if (!field) return lastHist;
+  if (!lastHist) return field;
+  return shipmentStatusRank(lastHist) >= shipmentStatusRank(field) ? lastHist : field;
 }
 
 export function buildIdempotencyKey(barcode: string, status: string, updatedAt?: string | null): string {

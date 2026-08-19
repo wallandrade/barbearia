@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-19 | Sync EE: status efetivo = max(`status`, último `status_history`) | Coletado não fica preso em Pronto para envio | Webhook / create iguais |
 | 2026-08-18 | Extrato: **Buscar no extrato** + vincular PIX → nº pedido | Acha depósito por nome (ex. terceiro) | Match automático / apply lote iguais |
 | 2026-08-18 | Rastreios: grupo/card **Aguardando ser coletado** (etiqueta pronta) | Conta etiquetas ainda não coletadas | Em trânsito / webhook iguais |
 | 2026-08-18 | Extrato: ajuda em **Pedido sem depósito no extrato** | Explica marca pending vs paid | Pré-seleção/apply iguais |
