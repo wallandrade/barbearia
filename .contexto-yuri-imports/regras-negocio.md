@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-19 | Suporte cliente: **Pedido veio faltando** vs **Outro problema** + seleção de itens; ticket guarda `missing_products_json`; Reenviar pré-preenche só o faltante | Filho de reenvio só com o que faltou | Reenvio manual estoque igual |
 | 2026-08-19 | Suporte **Reenviar** cria **pedido filho** (`parent_order_id`, frete Reenvio, pago, fila no filho) + modal de itens | Original intacto; total só qty extra | Reenvios antigos no pai; `manual_reshipments` |
 | 2026-08-19 | Rastreios: clique na linha expande timeline completa | Histórico do 1º ao último evento | Sync / grupos iguais |
 | 2026-08-19 | Rastreios: Sync linha manda `shipment_id`; lote prioriza Pronto/coleta | Alinha com Sync do card; não some no filtro | Endpoint `/orders/:id/sync` igual |
@@ -116,7 +117,8 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 ## Suporte, reenvios, estoque
 
 - Tickets (`support_tickets`) por CPF/pedido.
-- **Reenviar (Suporte):** modal de itens (default = todos do pedido do chamado) → cria **pedido filho** em `orders` com `parent_order_id`, `shippingType = "Reenvio"`, `status = paid`, prioridade, observação `REENVIO DO PEDIDO {#pai} · TICKET {id}`; **não** gera PIX novo; total = só quantidade **extra** vs pai (pode ser R$ 0). Fila `reshipments` fica no **filho**. Endereço novo do chamado (se mais recente) aplica-se só no filho. Ticket → Resolvido · Reenvio (continua apontando o pedido original). Reenvios **já** ligados ao pedido pai permanecem como estão.
+- **Abertura (cliente):** após escolher o pedido, escolhe **Pedido veio faltando** (marca produtos/qtd) ou **Outro problema**. Itens faltantes vão em `missing_products_json` (+ `problem_type`).
+- **Reenviar (Suporte):** modal de itens (default = faltantes do ticket se houver, senão todos do pedido) → cria **pedido filho** em `orders` com `parent_order_id`, `shippingType = "Reenvio"`, `status = paid`, prioridade, observação `REENVIO DO PEDIDO {#pai} · TICKET {id}`; **não** gera PIX novo; total = só quantidade **extra** vs pai (pode ser R$ 0). Fila `reshipments` fica no **filho**. Endereço novo do chamado (se mais recente) aplica-se só no filho. Ticket → Resolvido · Reenvio (continua apontando o pedido original). Reenvios **já** ligados ao pedido pai permanecem como estão.
 - Reenvios manuais (`manual_reshipments`) da aba estoque — fluxo separado.
 - Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
 - **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado** **ou** no botão **Dar baixa agora** (`reserveNow` → `inventory_reserved`). **Loja** continua reservando na escolha. Com reserva feita, Coletado EE / Marcar Enviado **não** baixam de novo. Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.

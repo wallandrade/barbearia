@@ -605,6 +605,8 @@ async function ensureSupportTicketsTable(databaseName: string): Promise<void> {
     { name: "resolved_at", sql: "ALTER TABLE support_tickets ADD COLUMN resolved_at TIMESTAMP NULL" },
     { name: "resolution_reason", sql: "ALTER TABLE support_tickets ADD COLUMN resolution_reason VARCHAR(64) NULL" },
     { name: "address_change_json", sql: "ALTER TABLE support_tickets ADD COLUMN address_change_json MEDIUMTEXT NULL" },
+    { name: "problem_type", sql: "ALTER TABLE support_tickets ADD COLUMN problem_type VARCHAR(32) NULL" },
+    { name: "missing_products_json", sql: "ALTER TABLE support_tickets ADD COLUMN missing_products_json MEDIUMTEXT NULL" },
   ];
 
   for (const definition of definitions) {

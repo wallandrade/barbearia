@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -9,8 +9,10 @@ import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type SupportOrderItem = {
+  id: string;
   name: string;
   quantity: number;
+  price?: number;
 };
 
 type SupportOrder = {
@@ -31,6 +33,16 @@ type AddressChangePayload = {
   neighborhood: string;
   city: string;
   state: string;
+};
+
+type ProblemType = "missing_items" | "other" | "";
+
+type MissingSelection = {
+  id: string;
+  name: string;
+  maxQuantity: number;
+  quantity: number;
+  selected: boolean;
 };
 
 function digitsOnly(value: string): string {
@@ -57,11 +69,26 @@ function formatCep(value: string): string {
   return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 }
 
+function buildMissingSelections(order: SupportOrder | null): MissingSelection[] {
+  if (!order) return [];
+  return (order.products || [])
+    .filter((p) => p.id && p.quantity > 0)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      maxQuantity: Math.max(1, Number(p.quantity) || 1),
+      quantity: Math.max(1, Number(p.quantity) || 1),
+      selected: false,
+    }));
+}
+
 export default function Support() {
   const [cpf, setCpf] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
   const [orders, setOrders] = useState<SupportOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+  const [problemType, setProblemType] = useState<ProblemType>("");
+  const [missingSelections, setMissingSelections] = useState<MissingSelection[]>([]);
   const [trackingCode, setTrackingCode] = useState("");
   const [description, setDescription] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
@@ -84,6 +111,24 @@ export default function Support() {
     [orders, selectedOrderId],
   );
 
+  useEffect(() => {
+    setProblemType("");
+    const order = orders.find((row) => row.id === selectedOrderId) ?? null;
+    setMissingSelections(buildMissingSelections(order));
+    setDescription("");
+  }, [selectedOrderId, orders]);
+
+  const selectedMissingProducts = useMemo(
+    () => missingSelections
+      .filter((item) => item.selected && item.quantity > 0)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: Math.min(item.quantity, item.maxQuantity),
+      })),
+    [missingSelections],
+  );
+
   const handleLookup = async () => {
     const cpfDigits = digitsOnly(cpf);
     if (cpfDigits.length !== 11) {
@@ -104,14 +149,25 @@ export default function Support() {
         return;
       }
 
-      const found = data.orders || [];
+      const found = (data.orders || []).map((order) => ({
+        ...order,
+        products: (order.products || [])
+          .map((p) => ({
+            id: String(p.id || "").trim(),
+            name: String(p.name || "Produto"),
+            quantity: Number(p.quantity) || 0,
+            price: Number(p.price) || 0,
+          }))
+          .filter((p) => p.id && p.quantity > 0),
+      }));
       setOrders(found);
       setSelectedOrderId(found.length === 1 ? found[0].id : "");
+      setProblemType("");
 
       if (found.length === 0) {
         toast.info("Nao encontramos pedidos pagos para este CPF.");
       } else if (found.length === 1) {
-        toast.success("Pedido localizado. Agora descreva o problema.");
+        toast.success("Pedido localizado. Escolha o tipo de problema.");
       } else {
         toast.success("Escolha o pedido que voce quer reportar.");
       }
@@ -187,11 +243,19 @@ export default function Support() {
       toast.error("Selecione o pedido correto.");
       return;
     }
+    if (!problemType) {
+      toast.error("Escolha o tipo de problema.");
+      return;
+    }
     if (cpfDigits.length !== 11) {
       toast.error("CPF invalido.");
       return;
     }
-    if (description.trim().length < 10) {
+    if (problemType === "missing_items" && selectedMissingProducts.length === 0) {
+      toast.error("Marque ao menos um produto que faltou.");
+      return;
+    }
+    if (problemType === "other" && description.trim().length < 10) {
       toast.error("Descreva o problema com pelo menos 10 caracteres.");
       return;
     }
@@ -239,6 +303,8 @@ export default function Support() {
           description: description.trim(),
           imageData,
           addressChange,
+          problemType,
+          missingProducts: problemType === "missing_items" ? selectedMissingProducts : [],
         }),
       });
       const data = (await res.json()) as { ok?: boolean; ticketId?: string; message?: string };
@@ -258,6 +324,8 @@ export default function Support() {
   const restart = () => {
     setOrders([]);
     setSelectedOrderId("");
+    setProblemType("");
+    setMissingSelections([]);
     setTrackingCode("");
     setDescription("");
     setImageData(null);
@@ -273,6 +341,8 @@ export default function Support() {
     });
     setTicketId(null);
   };
+
+  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
 
   return (
     <AppLayout>
@@ -305,14 +375,16 @@ export default function Support() {
               <div className="space-y-6">
                 <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                   <p className="text-sm font-semibold text-slate-800">1. Identificacao</p>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-2">
                     <input
                       value={cpf}
                       onChange={(e) => setCpf(formatCpf(e.target.value))}
                       placeholder="CPF do titular do pedido"
-                      className="h-11 flex-1 rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      className="h-14 sm:h-11 w-full flex-1 rounded-xl border border-slate-300 px-4 text-base sm:text-sm outline-none focus:border-amber-500"
                     />
-                    <Button onClick={handleLookup} disabled={lookupLoading} className="h-11 gap-2">
+                    <Button onClick={handleLookup} disabled={lookupLoading} className="h-14 sm:h-11 w-full sm:w-auto gap-2 text-base sm:text-sm">
                       {lookupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                       Buscar pedidos
                     </Button>
@@ -362,20 +434,126 @@ export default function Support() {
 
                 {selectedOrder && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
-                    <p className="text-sm font-semibold text-slate-800">3. Descreva o problema</p>
+                    <p className="text-sm font-semibold text-slate-800">3. Qual o problema?</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setProblemType("missing_items")}
+                        className={`rounded-xl border px-4 py-4 text-left transition ${
+                          problemType === "missing_items"
+                            ? "border-amber-500 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">Pedido veio faltando</p>
+                        <p className="text-xs text-slate-500 mt-1">Selecionar quais produtos nao chegaram</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProblemType("other")}
+                        className={`rounded-xl border px-4 py-4 text-left transition ${
+                          problemType === "other"
+                            ? "border-amber-500 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">Outro problema</p>
+                        <p className="text-xs text-slate-500 mt-1">Atraso, avaria, endereco e demais casos</p>
+                      </button>
+                    </div>
+
+                    {problemType === "missing_items" && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 space-y-2">
+                        <p className="text-sm font-semibold text-slate-800">Selecione o que faltou</p>
+                        <p className="text-xs text-slate-600">Marque os produtos e, se quiser, ajuste a quantidade faltante.</p>
+                        {missingSelections.length === 0 ? (
+                          <p className="text-sm text-slate-500">Este pedido nao tem itens para selecionar.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {missingSelections.map((item) => (
+                              <div
+                                key={item.id}
+                                className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${
+                                  item.selected ? "border-amber-500 bg-white" : "border-slate-200 bg-white"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={item.selected}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setMissingSelections((prev) =>
+                                      prev.map((row) => row.id === item.id ? { ...row, selected: checked } : row),
+                                    );
+                                  }}
+                                  className="rounded h-5 w-5"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-slate-900 truncate">{item.name}</p>
+                                  <p className="text-xs text-slate-500">No pedido: {item.maxQuantity}x</p>
+                                </div>
+                                {item.selected && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      className="w-8 h-8 rounded-lg border border-slate-300 text-base"
+                                      onClick={() => {
+                                        setMissingSelections((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, quantity: Math.max(1, row.quantity - 1) }
+                                              : row,
+                                          ),
+                                        );
+                                      }}
+                                    >−</button>
+                                    <span className="w-7 text-center text-sm font-semibold">{item.quantity}</span>
+                                    <button
+                                      type="button"
+                                      className="w-8 h-8 rounded-lg border border-slate-300 text-base"
+                                      onClick={() => {
+                                        setMissingSelections((prev) =>
+                                          prev.map((row) =>
+                                            row.id === item.id
+                                              ? { ...row, quantity: Math.min(row.maxQuantity, row.quantity + 1) }
+                                              : row,
+                                          ),
+                                        );
+                                      }}
+                                    >+</button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {showDetailsStep && problemType && (problemType === "other" || selectedMissingProducts.length > 0) && (
+                  <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">
+                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : "4. Descreva o problema"}
+                    </p>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Explique o que aconteceu com sua entrega."
+                      placeholder={
+                        problemType === "missing_items"
+                          ? "Algo mais que queira informar? (opcional)"
+                          : "Explique o que aconteceu com sua entrega."
+                      }
                       rows={5}
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-500"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base sm:text-sm outline-none focus:border-amber-500"
                     />
-                    <p className="text-sm font-semibold text-slate-800 mt-4">4. Numero de rastreio</p>
+                    <p className="text-sm font-semibold text-slate-800 mt-4">5. Numero de rastreio</p>
                     <input
                       value={trackingCode}
                       onChange={(e) => setTrackingCode(e.target.value)}
                       placeholder="Numero de rastreio do pedido"
-                      className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-amber-500"
+                      className="h-12 sm:h-11 w-full rounded-xl border border-slate-300 px-3 text-base sm:text-sm outline-none focus:border-amber-500"
                     />
                     <p className="text-xs text-slate-500">Informe o codigo de rastreio para agilizar o atendimento.</p>
 
@@ -463,7 +641,15 @@ export default function Support() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" onClick={() => setSelectedOrderId("")}>Trocar pedido</Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedOrderId("");
+                          setProblemType("");
+                        }}
+                      >
+                        Trocar pedido
+                      </Button>
                       <Button onClick={submitTicket} disabled={submitting} className="gap-2">
                         {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
                         Enviar chamado

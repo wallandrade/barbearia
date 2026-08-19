@@ -93,6 +93,52 @@ function normalizeTicketOrderProducts(raw: unknown): Array<{ id: string; name: s
     .filter((p) => p.id && p.quantity > 0);
 }
 
+type MissingProductPayload = { id: string; name: string; quantity: number };
+
+function parseMissingProductsJson(raw: unknown): MissingProductPayload[] {
+  if (raw == null || raw === "") return [];
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return {
+        id: String(row?.id ?? "").trim(),
+        name: String(row?.name ?? "Produto").trim() || "Produto",
+        quantity: Number(row?.quantity) || 0,
+      };
+    })
+    .filter((item) => item.id && item.quantity > 0);
+}
+
+function normalizeMissingProductsInput(
+  raw: unknown,
+  orderProducts: Array<{ id: string; name: string; quantity: number; price: number }>,
+): MissingProductPayload[] {
+  const requested = parseMissingProductsJson(raw);
+  if (requested.length === 0) return [];
+  const byId = new Map(orderProducts.map((p) => [p.id, p]));
+  const result: MissingProductPayload[] = [];
+  for (const item of requested) {
+    const orderItem = byId.get(item.id);
+    if (!orderItem) continue;
+    const quantity = Math.min(Math.max(1, item.quantity), orderItem.quantity);
+    result.push({
+      id: orderItem.id,
+      name: orderItem.name,
+      quantity,
+    });
+  }
+  return result;
+}
+
 async function loadOrderProductsByIds(orderIds: string[]): Promise<Map<string, Array<{ id: string; name: string; quantity: number; price: number }>>> {
   const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
   const map = new Map<string, Array<{ id: string; name: string; quantity: number; price: number }>>();
@@ -199,9 +245,11 @@ router.post("/support/orders-by-cpf", async (req, res) => {
       status: row.status,
       createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
       products: getOrderProducts(row.products).map((p) => ({
+        id: String(p?.id ?? "").trim(),
         name: String(p?.name ?? "Produto"),
         quantity: Number(p?.quantity) || 0,
-      })),
+        price: Number(p?.price) || 0,
+      })).filter((p) => p.id && p.quantity > 0),
     }));
 
     res.json({ orders });
@@ -218,18 +266,17 @@ router.post("/support/tickets", async (req, res) => {
   try {
     const cpf = onlyDigits(req.body?.cpf);
     const orderId = String(req.body?.orderId ?? "").trim();
-    const description = String(req.body?.description ?? "").trim();
+    let description = String(req.body?.description ?? "").trim();
     const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const imageData = req.body?.imageData == null ? null : String(req.body.imageData);
+    const problemTypeRaw = String(req.body?.problemType ?? "").trim().toLowerCase();
+    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other"
+      ? problemTypeRaw
+      : "other";
     let addressChange: AddressChangePayload | null = null;
 
-    if (cpf.length !== 11 || !orderId || description.length < 10) {
+    if (cpf.length !== 11 || !orderId) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Dados invalidos para abertura do chamado." });
-      return;
-    }
-
-    if (description.length > 3000) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Descricao muito longa." });
       return;
     }
 
@@ -257,6 +304,7 @@ router.post("/support/tickets", async (req, res) => {
         clientName: ordersTable.clientName,
         total: ordersTable.total,
         createdAt: ordersTable.createdAt,
+        products: ordersTable.products,
       })
       .from(ordersTable)
       .where(
@@ -273,6 +321,36 @@ router.post("/support/tickets", async (req, res) => {
       return;
     }
 
+    const orderProducts = normalizeTicketOrderProducts(order.products);
+    const missingProducts = problemType === "missing_items"
+      ? normalizeMissingProductsInput(req.body?.missingProducts, orderProducts)
+      : [];
+
+    if (problemType === "missing_items" && missingProducts.length === 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Selecione ao menos um produto que faltou." });
+      return;
+    }
+
+    if (problemType === "missing_items") {
+      const lines = missingProducts.map((p) => `- ${p.quantity}x ${p.name}`);
+      const autoBlock = `Pedido veio faltando:\n${lines.join("\n")}`;
+      if (!description) {
+        description = autoBlock;
+      } else if (!description.toLowerCase().includes("faltando")) {
+        description = `${autoBlock}\n\n${description}`;
+      }
+    }
+
+    if (description.length < 10) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Descreva o problema com pelo menos 10 caracteres." });
+      return;
+    }
+
+    if (description.length > 3000) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Descricao muito longa." });
+      return;
+    }
+
     const id = crypto.randomBytes(8).toString("hex");
     await db.insert(supportTicketsTable).values({
       id,
@@ -283,6 +361,8 @@ router.post("/support/tickets", async (req, res) => {
       description,
       imageUrl: imageData,
       addressChangeJson: addressChange ? JSON.stringify(addressChange) : null,
+      problemType,
+      missingProductsJson: missingProducts.length > 0 ? JSON.stringify(missingProducts) : null,
       status: "open",
       resolutionReason: null,
       orderTotal: String(order.total),
@@ -292,7 +372,7 @@ router.post("/support/tickets", async (req, res) => {
 
     broadcastNotification({
       type: "support_ticket_created",
-      data: { id, orderId: order.id, clientName: order.clientName },
+      data: { id, orderId: order.id, clientName: order.clientName, problemType },
     });
 
     res.status(201).json({ ok: true, ticketId: id });
@@ -360,6 +440,8 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
           createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
           updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
           orderProducts: productsByOrder.get(row.orderId) || [],
+          problemType: row.problemType || null,
+          missingProducts: parseMissingProductsJson(row.missingProductsJson),
         };
       });
 
@@ -402,6 +484,8 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
         updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
         orderProducts: productsByOrder.get(row.orderId) || [],
+        problemType: row.problemType || null,
+        missingProducts: parseMissingProductsJson(row.missingProductsJson),
       };
     });
 
@@ -459,7 +543,10 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
     }
 
     const bodyProducts = Array.isArray(req.body?.products) ? req.body.products : null;
-    const productsRaw = bodyProducts && bodyProducts.length > 0 ? bodyProducts : order.products;
+    const ticketMissing = parseMissingProductsJson(ticket.missingProductsJson);
+    const productsRaw = bodyProducts && bodyProducts.length > 0
+      ? bodyProducts
+      : (ticketMissing.length > 0 ? ticketMissing : order.products);
 
     const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
     const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;

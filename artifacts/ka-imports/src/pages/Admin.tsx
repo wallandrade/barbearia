@@ -1193,6 +1193,8 @@ interface SupportTicketRecord {
   createdAt: string;
   updatedAt: string;
   orderProducts?: Array<{ id: string; name: string; quantity: number; price: number }>;
+  problemType?: "missing_items" | "other" | string | null;
+  missingProducts?: Array<{ id: string; name: string; quantity: number }>;
 }
 
 interface ReshipmentRecord {
@@ -8018,13 +8020,25 @@ function SupportTicketsPanel({
   const [reenviarSubmitting, setReenviarSubmitting] = useState(false);
 
   const openReenviarModal = (ticket: SupportTicketRecord) => {
-    const seed = (ticket.orderProducts || []).map((p) => ({
-      id: p.id,
-      name: p.name,
-      quantity: Math.max(1, Number(p.quantity) || 1),
-      price: Number(p.price) || 0,
-    }));
-    setReenviarItems(seed);
+    const orderProducts = ticket.orderProducts || [];
+    const missing = ticket.missingProducts || [];
+    const seedSource = missing.length > 0
+      ? missing.map((m) => {
+          const fromOrder = orderProducts.find((p) => p.id === m.id);
+          return {
+            id: m.id,
+            name: m.name || fromOrder?.name || "Produto",
+            quantity: Math.max(1, Number(m.quantity) || 1),
+            price: Number(fromOrder?.price) || 0,
+          };
+        })
+      : orderProducts.map((p) => ({
+          id: p.id,
+          name: p.name,
+          quantity: Math.max(1, Number(p.quantity) || 1),
+          price: Number(p.price) || 0,
+        }));
+    setReenviarItems(seedSource.filter((p) => p.id));
     setReenviarSearch("");
     setReenviarTicket(ticket);
   };
@@ -8100,6 +8114,21 @@ function SupportTicketsPanel({
                   {ticket.orderTotal != null && (
                     <p className="text-xs text-muted-foreground">Valor pedido: {formatCurrency(ticket.orderTotal)}</p>
                   )}
+                  {ticket.problemType === "missing_items" && (
+                    <p className="text-xs font-semibold text-amber-700 mt-1">Tipo: Pedido veio faltando</p>
+                  )}
+                  {ticket.problemType === "other" && (
+                    <p className="text-xs font-semibold text-slate-600 mt-1">Tipo: Outro problema</p>
+                  )}
+                  {(ticket.missingProducts || []).length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {(ticket.missingProducts || []).map((p) => (
+                        <span key={`${ticket.id}-${p.id}`} className="inline-flex text-[11px] rounded-full bg-amber-100 text-amber-900 px-2 py-0.5">
+                          Faltou: {p.quantity}x {p.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {ticket.status !== "resolved" ? (
@@ -8164,7 +8193,9 @@ function SupportTicketsPanel({
               <div>
                 <h3 className="text-lg font-bold">Reenviar — pedido filho</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Ajuste os itens. O original não muda; nasce um pedido novo com frete Reenvio.
+                  {(reenviarTicket.missingProducts || []).length > 0
+                    ? "Itens pré-preenchidos com o que o cliente marcou como faltando. Ajuste se precisar."
+                    : "Ajuste os itens. O original não muda; nasce um pedido novo com frete Reenvio."}
                 </p>
               </div>
               <Button size="icon" variant="ghost" onClick={closeReenviarModal} disabled={reenviarSubmitting}>

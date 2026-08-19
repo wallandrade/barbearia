@@ -11,6 +11,10 @@ export const supportTicketsTable = mysqlTable("support_tickets", {
   description: text("description").notNull(),
   imageUrl: mediumtext("image_url"),
   addressChangeJson: mediumtext("address_change_json"),
+  /** missing_items | other */
+  problemType: varchar("problem_type", { length: 32 }),
+  /** JSON: [{ id, name, quantity }] itens que o cliente marcou como faltando */
+  missingProductsJson: mediumtext("missing_products_json"),
   status: varchar("status", { length: 32 }).notNull().default("open"),
   resolutionReason: varchar("resolution_reason", { length: 64 }),
   orderTotal: decimal("order_total", { precision: 10, scale: 2 }),
