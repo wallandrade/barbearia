@@ -83,6 +83,9 @@ type OfxCreditLite = {
   name: string | null;
   memo: string | null;
   alreadyUsed?: boolean;
+  linkedOrderId?: string | null;
+  linkedOrderNumber?: number | null;
+  linkedOrderCreatedAt?: string | null;
 };
 
 type LinkableOrder = {
@@ -665,7 +668,23 @@ export default function AdminBankStatementPanel({ authHeaders, onUnauthorized, o
                               <div className="text-[11px] text-muted-foreground truncate max-w-[220px]">{c.memo}</div>
                             ) : null}
                             {c.alreadyUsed ? (
-                              <div className="text-[11px] text-amber-700 font-medium mt-0.5">Já vinculado (pode religar)</div>
+                              <div className="text-[11px] text-amber-700 font-medium mt-0.5">
+                                {c.linkedOrderId ? (
+                                  <>
+                                    Já vinculado a{" "}
+                                    <button
+                                      type="button"
+                                      className="underline hover:text-amber-900"
+                                      onClick={() => onGoToOrder?.(c.linkedOrderId!, c.linkedOrderCreatedAt)}
+                                    >
+                                      #{c.linkedOrderNumber ?? c.linkedOrderId.slice(0, 8)}
+                                    </button>
+                                    {" "}(pode religar)
+                                  </>
+                                ) : (
+                                  "Já vinculado (pode religar)"
+                                )}
+                              </div>
                             ) : null}
                           </td>
                           <td className="py-2.5 pr-3 font-semibold">{formatCurrency(c.amount)}</td>

@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-19
+> **Última atualização:** 2026-08-20
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-20 | Extrato busca manual: “Já vinculado” mostra **#pedido** (clicável) | Sabe qual pedido tem o FITID | Religar / apply iguais |
 | 2026-08-19 | Card: botão **Cancelar reenvio** (`reenvio_resolvido_sem_entrada`) em aguardando/pronto | Tira badge e pin da lista de hoje | Marcar enviado / Cancelar enviado iguais |
 | 2026-08-19 | Faturamento líquido: API ignora custo/taxa/comissão de pedido filho de reenvio | Líquido volta a bater sem “custo duplicado” do faltante | Total pago / marketing iguais |
 | 2026-08-19 | Lucro est. = R$ 0 também em **cancelado**; reenvio detecta observação `REENVIO DO PEDIDO` | #748 e filhos antigos sem badge negativo | Pedidos pagos normais iguais |

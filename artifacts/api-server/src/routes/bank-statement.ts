@@ -222,7 +222,12 @@ router.post("/admin/bank-statement/analyze", requireAdminAuth, async (req, res) 
     );
 
     const usedFitidRows = await db
-      .select({ fitid: ordersTable.bankDepositFitid })
+      .select({
+        fitid: ordersTable.bankDepositFitid,
+        orderId: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
+        createdAt: ordersTable.createdAt,
+      })
       .from(ordersTable)
       .where(
         and(
@@ -237,6 +242,19 @@ router.post("/admin/bank-statement/analyze", requireAdminAuth, async (req, res) 
     const usedFitids = new Set(
       usedFitidRows.map((r) => String(r.fitid || "").trim()).filter(Boolean),
     );
+    const linkedByFitid = new Map<
+      string,
+      { orderId: string; orderNumber: number | null; createdAt: string | null }
+    >();
+    for (const row of usedFitidRows) {
+      const fitid = String(row.fitid || "").trim();
+      if (!fitid || linkedByFitid.has(fitid)) continue;
+      linkedByFitid.set(fitid, {
+        orderId: row.orderId,
+        orderNumber: row.orderNumber ?? null,
+        createdAt: row.createdAt?.toISOString?.() ?? null,
+      });
+    }
 
     const creditsFresh = parsed.credits.filter((c) => !usedFitids.has(c.fitid));
     const skippedDuplicateCredits = parsed.credits.length - creditsFresh.length;
@@ -279,14 +297,20 @@ router.post("/admin/bank-statement/analyze", requireAdminAuth, async (req, res) 
       creditsTotal: parsed.credits.length,
       creditsNew: creditsFresh.length,
       /** Todos os créditos do OFX (novos + já usados) p/ busca manual por nome. */
-      credits: parsed.credits.map((c) => ({
-        fitid: c.fitid,
-        amount: c.amount,
-        postedAt: c.postedAt,
-        name: c.name,
-        memo: c.memo,
-        alreadyUsed: usedFitids.has(c.fitid),
-      })),
+      credits: parsed.credits.map((c) => {
+        const linked = linkedByFitid.get(c.fitid) || null;
+        return {
+          fitid: c.fitid,
+          amount: c.amount,
+          postedAt: c.postedAt,
+          name: c.name,
+          memo: c.memo,
+          alreadyUsed: Boolean(linked),
+          linkedOrderId: linked?.orderId ?? null,
+          linkedOrderNumber: linked?.orderNumber ?? null,
+          linkedOrderCreatedAt: linked?.createdAt ?? null,
+        };
+      }),
       /** Pedidos manuais no período (p/ vincular busca → pedido). */
       linkableOrders,
       report,
