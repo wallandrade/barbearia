@@ -102,6 +102,7 @@ class AppErrorBoundary extends Component<
 }
 
 const Checkout            = lazy(() => import("@/pages/Checkout"));
+const MotoboyPortal       = lazy(() => import("@/pages/MotoboyPortal"));
 const PixPayment          = lazy(() => import("@/pages/PixPayment"));
 const Success             = lazy(() => import("@/pages/Success"));
 const AdminLogin          = lazy(() => import("@/pages/AdminLogin"));
@@ -187,6 +188,7 @@ function Router() {
         <Route path="/success"          component={Success} />
         <Route path="/admin/login"      component={AdminLogin} />
         <Route path="/admin"            component={Admin} />
+        <Route path="/motoboy"          component={MotoboyPortal} />
         <Route path="/login"            component={CustomerLogin} />
         <Route path="/minha-conta/pedidos" component={CustomerOrders} />
         <Route path="/r/:code"          component={ReferralShortLink} />
@@ -215,6 +217,7 @@ function Router() {
 function AppInner() {
   const [location] = useLocation();
   const isAdmin = location.startsWith("/admin");
+  const isMotoboy = location.startsWith("/motoboy");
 
   useEffect(() => {
     captureReferralFromCurrentUrl();
@@ -225,7 +228,7 @@ function AppInner() {
       <SitePasswordGate>
         <Router />
       </SitePasswordGate>
-      {!isAdmin && <SocialProofWidget />}
+      {!isAdmin && !isMotoboy && <SocialProofWidget />}
     </AppErrorBoundary>
   );
 }

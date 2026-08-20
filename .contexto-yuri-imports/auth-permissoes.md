@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-08-12
+> **Última atualização:** 2026-08-20
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-20 | Portal Motoboy: auth por `MOTOBOY_PORTAL_TOKEN` (query `k` / header `X-Motoboy-Token`); propostas aprovadas só por `requirePrimaryAdmin` | Motoboy sem login admin | Sessões admin/cliente iguais |
 | 2026-08-12 | Admin pode redefinir senha de cliente (`POST /api/admin/customers/:id/set-password`) e ver/copiar a nova senha no painel | Suporte a login do cliente sem recuperar hash | Impersonate e listagem de clientes iguais |
 | 2026-08-11 | Baseline auth | Orientação de escopos | Sem mudança de código |
 
@@ -26,6 +27,14 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Admin não primário → precisa de seller vinculado via env `ADMIN_SELLER_SCOPE_MAP` (JSON `{"usuario":"seller-slug"}`). Sem vínculo → erro pedindo configuração do mapa.
 - Gestão de usuários admin (criar, promoção `isPrimary`, senha): rotas sob `/api/admin/users*` com `requirePrimaryAdmin` onde aplicável.
 - **Não** há multi-tenant por `tenant_id`; isolamento = `sellerCode` + escopo.
+
+## Portal Motoboy (link secreto)
+
+- Env API: `MOTOBOY_PORTAL_TOKEN` (obrigatório; sem ele o portal responde 503).
+- FE: `/motoboy?k=<token>` (também header `X-Motoboy-Token`).
+- Rotas públicas autenticadas pelo token: `GET/POST /api/motoboy-portal/*`.
+- Aprovar/rejeitar: `POST /api/admin/motoboy-proposals/:id/approve|reject` com `requirePrimaryAdmin`.
+- Propostas não alteram preços até aprovação.
 
 ## Cliente (customer)
 

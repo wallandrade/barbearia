@@ -965,6 +965,27 @@ async function ensureMarketingExpensesColumns(databaseName: string): Promise<voi
   }
 }
 
+async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<void> {
+  if (await tableExists(databaseName, "motoboy_price_proposals")) return;
+  await pool.execute(`
+    CREATE TABLE \`motoboy_price_proposals\` (
+      \`id\` VARCHAR(255) NOT NULL PRIMARY KEY,
+      \`kind\` VARCHAR(64) NOT NULL,
+      \`target_id\` VARCHAR(255) NULL,
+      \`payload\` TEXT NOT NULL,
+      \`status\` VARCHAR(32) NOT NULL DEFAULT 'pending',
+      \`note\` TEXT NULL,
+      \`review_note\` TEXT NULL,
+      \`created_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`reviewed_at\` TIMESTAMP NULL,
+      \`reviewed_by\` VARCHAR(255) NULL,
+      INDEX \`idx_motoboy_proposals_status\` (\`status\`),
+      INDEX \`idx_motoboy_proposals_created\` (\`created_at\`)
+    )
+  `);
+  console.log("[RuntimeSchema] Created table motoboy_price_proposals");
+}
+
 export async function ensureRuntimeSchema(): Promise<void> {
   try {
     const databaseName = getDatabaseName();
@@ -990,6 +1011,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);
     await ensureSellerCommissionBatchesTable(databaseName);
+    await ensureMotoboyPriceProposalsTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

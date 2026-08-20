@@ -5784,6 +5784,7 @@ export default function Admin() {
               } catch { toast.error("Erro ao excluir."); }
               finally { setCepRangeDeleting(null); }
             }}
+            onMotoboyCatalogRefresh={() => { fetchMotoboyNeighborhoods(); fetchCepRanges(); }}
           />
         ) : tab === "orderBumps" ? (
           <OrderBumpsPanel
@@ -16650,11 +16651,37 @@ interface FretePanelProps {
   onCepRangeCreate: () => void;
   onCepRangeUpdate: (id: string, patch: Partial<MotoboyCepRange>) => void;
   onCepRangeDelete: (id: string) => void;
+  onMotoboyCatalogRefresh?: () => void;
 }
 
-function FretePanel({ options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete, motoboyNeighborhoods, motoboyForm, setMotoboyForm, motoboyCreating, motoboyDeleting, motoboyEditing, setMotoboyEditing, motoboyUpdating, onMotoboyCreate, onMotoboyUpdate, onMotoboyDelete, cepRanges, cepRangeForm, setCepRangeForm, cepRangeCreating, cepRangeDeleting, cepRangeUpdating, onCepRangeCreate, onCepRangeUpdate, onCepRangeDelete }: FretePanelProps) {
+function FretePanel({ options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete, motoboyNeighborhoods, motoboyForm, setMotoboyForm, motoboyCreating, motoboyDeleting, motoboyEditing, setMotoboyEditing, motoboyUpdating, onMotoboyCreate, onMotoboyUpdate, onMotoboyDelete, cepRanges, cepRangeForm, setCepRangeForm, cepRangeCreating, cepRangeDeleting, cepRangeUpdating, onCepRangeCreate, onCepRangeUpdate, onCepRangeDelete, onMotoboyCatalogRefresh }: FretePanelProps) {
   const [editForm, setEditForm] = useState({ name: "", description: "", price: "", sortOrder: "0" });
   const [mbEditForm, setMbEditForm] = useState({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" });
+  const [motoboyProposals, setMotoboyProposals] = useState<Array<{
+    id: string;
+    kind: string;
+    targetId: string | null;
+    payload: Record<string, unknown>;
+    status: string;
+    note: string | null;
+    createdAt: string;
+  }>>([]);
+  const [proposalBusy, setProposalBusy] = useState<string | null>(null);
+
+  const fetchMotoboyProposals = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/motoboy-proposals?status=pending`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json() as { proposals: typeof motoboyProposals };
+      setMotoboyProposals(data.proposals || []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchMotoboyProposals();
+  }, [fetchMotoboyProposals]);
 
   const startEdit = (o: ShippingOption) => {
     setEditing(o);
@@ -16666,8 +16693,91 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
     setMbEditForm({ neighborhoodName: o.neighborhoodName, city: o.city ?? "", price: String(o.price), sortOrder: String(o.sortOrder), notes: o.notes ?? "" });
   };
 
+  const describeProposal = (p: (typeof motoboyProposals)[0]) => {
+    const pl = p.payload || {};
+    if (p.kind === "update_neighborhood") {
+      const cur = pl.current as { neighborhoodName?: string; price?: number } | undefined;
+      return `Bairro “${cur?.neighborhoodName || "?"}”: ${formatCurrency(Number(cur?.price || 0))} → ${formatCurrency(Number(pl.proposedPrice))}`;
+    }
+    if (p.kind === "update_cep_range") {
+      const cur = pl.current as { label?: string; price?: number } | undefined;
+      return `Faixa “${cur?.label || "?"}”: ${formatCurrency(Number(cur?.price || 0))} → ${formatCurrency(Number(pl.proposedPrice))}`;
+    }
+    if (p.kind === "create_neighborhood") {
+      return `Novo bairro: ${pl.neighborhoodName} (${pl.city}) — ${formatCurrency(Number(pl.price))}`;
+    }
+    if (p.kind === "create_cep_range") {
+      return `Nova faixa: ${pl.label} (${pl.city}) — ${formatCurrency(Number(pl.price))}`;
+    }
+    return p.kind;
+  };
+
+  const reviewProposal = async (id: string, action: "approve" | "reject") => {
+    setProposalBusy(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/motoboy-proposals/${id}/${action}`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        toast.error(action === "approve" ? "Erro ao aprovar." : "Erro ao rejeitar.");
+        return;
+      }
+      toast.success(action === "approve" ? "Proposta aprovada e aplicada." : "Proposta rejeitada.");
+      await fetchMotoboyProposals();
+      if (action === "approve") onMotoboyCatalogRefresh?.();
+    } catch {
+      toast.error("Erro ao revisar proposta.");
+    } finally {
+      setProposalBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {motoboyProposals.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 space-y-3">
+          <h3 className="font-semibold text-base flex items-center gap-2 text-amber-900">
+            <IconLucide name="Bike" className="w-4 h-4" />
+            Propostas Motoboy ({motoboyProposals.length})
+          </h3>
+          <p className="text-xs text-amber-800">
+            Enviadas pelo painel <code className="text-[11px]">/motoboy?k=TOKEN</code>. Aprovar aplica no catálogo oficial.
+          </p>
+          <div className="space-y-2">
+            {motoboyProposals.map((p) => (
+              <div key={p.id} className="bg-white rounded-xl border border-amber-100 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{describeProposal(p)}</p>
+                  {p.note && <p className="text-xs text-muted-foreground mt-0.5">Obs. Motoboy: {p.note}</p>}
+                  <p className="text-[11px] text-muted-foreground mt-1">{new Date(p.createdAt).toLocaleString("pt-BR")}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    disabled={proposalBusy === p.id}
+                    onClick={() => reviewProposal(p.id, "approve")}
+                  >
+                    {proposalBusy === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 mr-1" />}
+                    Aprovar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={proposalBusy === p.id}
+                    onClick={() => reviewProposal(p.id, "reject")}
+                  >
+                    <X className="w-3.5 h-3.5 mr-1" />
+                    Rejeitar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Add new frete */}
       <div className="bg-white rounded-2xl shadow-sm border border-border p-6">
         <h3 className="font-semibold text-base mb-4 flex items-center gap-2">

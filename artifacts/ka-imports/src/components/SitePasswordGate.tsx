@@ -124,8 +124,9 @@ export function SitePasswordGate({ children }: { children: ReactNode }) {
 
   const isAdminPath   = location.startsWith("/admin");
   const isKycPath     = location.startsWith("/kyc");
+  const isMotoboyPath = location.startsWith("/motoboy");
   const isPmtPath     = isPaymentPath(location);
-  const isExemptPath  = isAdminPath || isKycPath || isPmtPath;
+  const isExemptPath  = isAdminPath || isKycPath || isPmtPath || isMotoboyPath;
 
   // Read sessionStorage synchronously so authenticated users see content immediately
   // (no race condition where form appears then password screen replaces it mid-session)
