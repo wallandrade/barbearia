@@ -17004,8 +17004,9 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
           <li>Quando o cliente informa o CEP no checkout, o sistema consulta a ViaCEP para identificar o bairro.</li>
           <li>Se o bairro estiver cadastrado aqui e <strong>ativo</strong>, a opção "Motoboy" aparecerá automaticamente com o valor correto.</li>
           <li>O match ignora acentos e sufixos entre parênteses (ex.: ViaCEP manda “Jardim Imperador (Zona Leste)” e o cadastro pode ser “Jardim Imperador”).</li>
-          <li>Se o bairro não estiver na lista, o sistema usa a <strong>faixa de CEP</strong> abaixo (rede de segurança da região — ex. microbairros de São Mateus na faixa 039xxxxx).</li>
-          <li>Prefira cadastrar <strong>faixas de CEP por região</strong> em vez de dezenas de microbairros do Correios.</li>
+          <li>Se o bairro não estiver na lista, o sistema usa a <strong>faixa de CEP</strong> abaixo (rede de segurança da região — prefixos Correios da capital).</li>
+          <li>Prefira <strong>faixas de CEP por região</strong> (seed `seed-motoboy-cep-ranges-regioes.sql`) em vez de dezenas de microbairros. A faixa <strong>mais estreita</strong> ganha da “São Paulo — Geral”.</li>
+          <li>Quando uma faixa Correios cobre vários distritos, o seed usa o <strong>maior</strong> preço Motoboy da zona (não cobra a menos).</li>
         </ul>
       </div>
 

@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-20 | Motoboy: seed regional completo SP capital (`seed-motoboy-cep-ranges-regioes.sql` — prefixos Correios 010–058 + 080–084); preço = max dos distritos da zona; API escolhe faixa mais estreita | Microbairros ViaCEP não caem no Geral R$70 quando há faixa | Lista de bairros Motoboy; EnvioEcom; SA/SBC |
 | 2026-08-20 | Motoboy: lookup de bairro normaliza acento + remove `(…)`; faixa CEP escolhe a mais específica; seed `seed-motoboy-cep-ranges-regioes.sql` (São Mateus 039 / Vila Jacuí 08050–08069 @ R$80) | Microbairros Correios (ex. Jardim Imperador) cobram preço da região | Preços dos distritos na lista de bairros; EnvioEcom |
 | 2026-08-20 | Extrato busca manual: “Já vinculado” mostra **#pedido** (clicável) | Sabe qual pedido tem o FITID | Religar / apply iguais |
 | 2026-08-19 | Card: botão **Cancelar reenvio** (`reenvio_resolvido_sem_entrada`) em aguardando/pronto | Tira badge e pin da lista de hoje | Marcar enviado / Cancelar enviado iguais |
@@ -101,8 +102,8 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Opções de frete: `shipping_options`; seguro (+% no fluxo de checkout, documentado no produto).
 - Fila de envio (`shipping_queue`): aloca slots para pedidos pagos com frete padrão — `lib/shipping-queue-allocator.ts`.
 - Motoboy: bairros (`motoboy_neighborhoods`) + faixas de CEP (`motoboy_cep_ranges`) + slots/bookings — schemas/rotas `motoboy-*`.
-- Checkout Motoboy: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span) que cobre o CEP.
-- Seed regional: `scripts/seed-motoboy-cep-ranges-regioes.sql` — São Mateus e região **039xxxxx** (3900000–3999999) R$80; Vila Jacuí **08050–08069** R$80. Aplicar no MySQL (não sobe só com deploy FE/API).
+- Checkout Motoboy: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span) que cobre o CEP — assim `cr_sp_geral` (R$70) só vale onde não há faixa regional.
+- Seed regional capital: `scripts/seed-motoboy-cep-ranges-regioes.sql` — prefixos Correios **010–058** e **080–084** (incl. São Mateus 039/083, Vila Jacuí 08050–08069, Perus 052). Preço da faixa = **máximo** dos preços Motoboy dos distritos cobertos pela zona. Aplicar no MySQL (não sobe só com deploy FE/API).
 - Anti-padrão: cadastrar dezenas de microbairros do Correios; preferir **faixa de CEP por região** no Admin → Fretes.
 
 ## Vendedores e comissões
