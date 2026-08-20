@@ -4005,6 +4005,25 @@ export default function Admin() {
       return aCreated - bCreated;
     });
 
+  /** Motoboy agendado entra na cópia mesmo se PIX ainda pendente (desde que não cancelado/enviado). */
+  const isMotoboyOrder = (o: AdminOrder) =>
+    String((o as { shippingType?: string }).shippingType || "").toLowerCase().trim() === "motoboy";
+
+  const motoboyOrdersParaCopiar = orders
+    .filter((o) => {
+      if (!isMotoboyOrder(o)) return false;
+      if (isCancelledOrderStatus(o.status)) return false;
+      if (isExcludedFromShippingCopyList(o as { enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null })) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const aCreated = new Date(a.createdAt || 0).getTime();
+      const bCreated = new Date(b.createdAt || 0).getTime();
+      return aCreated - bCreated;
+    });
+
   const copyShoppingList = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     event?.preventDefault();
     event?.stopPropagation();
@@ -4520,11 +4539,11 @@ export default function Admin() {
                 {/* Copy buttons per queue deadline */}
                 {(() => {
                   const groups: Record<number, { orders: typeof ordersParaEnviar; queueDate: string }> = {};
-                  const motoboyOrders: typeof ordersParaEnviar = [];
+                  const motoboyOrders = motoboyOrdersParaCopiar;
                   const noQueue: typeof ordersParaEnviar = [];
                   ordersParaEnviar.forEach((o) => {
-                    const shippingType = String((o as any).shippingType || "").toLowerCase();
-                    if (shippingType === "motoboy") { motoboyOrders.push(o); return; }
+                    const shippingType = String((o as { shippingType?: string }).shippingType || "").toLowerCase();
+                    if (shippingType === "motoboy") return; // Motoboy no botão dedicado (inclui PIX pendente)
                     if (shippingType === "retirada" || shippingType === "pickup") return; // retirada não entra na fila de envio
                     const q = shippingQueueMap[o.id];
                     if (q) {
@@ -4611,24 +4630,28 @@ export default function Admin() {
                         <button type="button"
                           onClick={async (e) => {
                             e.preventDefault(); e.stopPropagation();
-                            const lines = motoboyOrders.map((order, i) => {
+                            const lines = motoboyOrders.map((order) => {
                               const products = getOrderProducts(order?.products);
                               const ref = getOrderReference(order);
                               const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
                               const resumo = products.map((p) => `• ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n");
+                              const paid = order.status === "paid" || order.status === "completed";
                               return [
                                 `📦 ENTREGA #${ref}`,
+                                paid ? "✅ Pagamento: confirmado" : "⚠️ Pagamento: PENDENTE",
                                 `👤 Cliente: ${order?.clientName || "-"}`,
                                 `📍 Endereço: ${rua}`,
                                 `🏘️ Bairro: ${order?.addressNeighborhood || "-"}`,
+                                `🏙️ Cidade: ${order?.addressCity || "-"} / ${order?.addressState || "-"}`,
                                 `📮 CEP: ${order?.addressCep || "-"}`,
+                                `📞 Tel: ${order?.clientPhone || "-"}`,
                                 ``,
                                 `📦 Itens:`,
-                                resumo,
+                                resumo || "• Sem itens",
                                 `━━━━━━━━━━━━━━━━━━`,
                               ].join("\n");
                             });
-                            const text = `🛵 ENTREGAS DE HOJE — MOTOBOY\n━━━━━━━━━━━━━━━━━━\n\n` + lines.join("\n\n");
+                            const text = `🛵 ENTREGAS MOTOBOY\n━━━━━━━━━━━━━━━━━━\n\n` + lines.join("\n\n");
                             try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `Motoboy copiado (${motoboyOrders.length} pedidos).`); }
                             catch { toast.error("Erro ao copiar."); }
                           }}
@@ -4640,29 +4663,38 @@ export default function Admin() {
                     </>
                   );
                 })()}
-                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">{ordersParaEnviar.length}</span>
+                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                  {ordersParaEnviar.filter((o) => !isMotoboyOrder(o)).length + motoboyOrdersParaCopiar.length}
+                </span>
               </div>
             </div>
-            {ordersParaEnviar.length === 0 ? (
+            {ordersParaEnviar.length === 0 && motoboyOrdersParaCopiar.length === 0 ? (
               <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
                 <CheckCircle className="w-4 h-4 text-green-500" /> Todos os pedidos pagos já foram enviados!
               </p>
             ) : (
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {ordersParaEnviar.slice(0, 5).map((o) => (
+                {[
+                  ...ordersParaEnviar.filter((o) => !isMotoboyOrder(o)),
+                  ...motoboyOrdersParaCopiar.filter((o) => !ordersParaEnviar.some((p) => p.id === o.id)),
+                ].slice(0, 5).map((o) => (
                   <div key={o.id} className="flex items-center justify-between rounded-lg bg-white/70 border border-amber-100 px-3 py-1.5">
                     <div className="min-w-0 pr-2">
-                      <p className="text-sm font-medium text-amber-900 truncate">{o.clientName}</p>
-                      <p className="text-xs text-amber-700/80">#{o.id} · {formatDateBR(o.createdAt)}</p>
+                      <p className="text-sm font-medium text-amber-900 truncate">
+                        {o.clientName}
+                        {isMotoboyOrder(o) ? " · 🏍️" : ""}
+                        {isMotoboyOrder(o) && o.status !== "paid" && o.status !== "completed" ? " · PIX pendente" : ""}
+                      </p>
+                      <p className="text-xs text-amber-700/80">#{getOrderReference(o)} · {formatDateBR(o.createdAt)}</p>
                     </div>
                     <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                       {formatCurrency(Number(o.total))}
                     </span>
                   </div>
                 ))}
-                {ordersParaEnviar.length > 5 && (
+                {(ordersParaEnviar.filter((o) => !isMotoboyOrder(o)).length + motoboyOrdersParaCopiar.filter((o) => !ordersParaEnviar.some((p) => p.id === o.id)).length) > 5 && (
                   <p className="text-xs text-amber-700 font-semibold text-center mt-1">
-                    +{ordersParaEnviar.length - 5} pedidos a enviar
+                    +mais pedidos a enviar
                   </p>
                 )}
               </div>
