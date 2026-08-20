@@ -17003,8 +17003,9 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
         <ul className="list-disc list-inside space-y-0.5">
           <li>Quando o cliente informa o CEP no checkout, o sistema consulta a ViaCEP para identificar o bairro.</li>
           <li>Se o bairro estiver cadastrado aqui e <strong>ativo</strong>, a opção "Motoboy" aparecerá automaticamente com o valor correto.</li>
-          <li>O nome do bairro deve ser <strong>exatamente igual</strong> ao que a ViaCEP retorna (incluindo acentos).</li>
-          <li>CEPs de logradouros específicos podem não retornar bairro — nesses casos o sistema tenta a <strong>faixa de CEP</strong> abaixo.</li>
+          <li>O match ignora acentos e sufixos entre parênteses (ex.: ViaCEP manda “Jardim Imperador (Zona Leste)” e o cadastro pode ser “Jardim Imperador”).</li>
+          <li>Se o bairro não estiver na lista, o sistema usa a <strong>faixa de CEP</strong> abaixo (rede de segurança da região — ex. microbairros de São Mateus na faixa 039xxxxx).</li>
+          <li>Prefira cadastrar <strong>faixas de CEP por região</strong> em vez de dezenas de microbairros do Correios.</li>
         </ul>
       </div>
 
@@ -17014,7 +17015,10 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
           <IconLucide name="MapPin" className="w-4 h-4 text-primary" />
           Faixas de CEP (Fallback)
         </h3>
-        <p className="text-xs text-muted-foreground mb-4">Quando o bairro da ViaCEP não for encontrado, o sistema verifica se o CEP cai em alguma faixa aqui cadastrada. Ideal para regiões onde a ViaCEP retorna sub-bairros diferentes do esperado.</p>
+        <p className="text-xs text-muted-foreground mb-4">
+          Quando o bairro da ViaCEP não for encontrado na lista acima, o sistema usa a faixa de CEP mais específica que cobrir o CEP.
+          Ex.: CEP 03935-080 (Jardim Imperador) cai em “São Mateus e região” e cobra o mesmo preço do distrito — sem cadastrar cada microbairro.
+        </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">

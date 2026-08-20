@@ -15,5 +15,8 @@ CREATE TABLE IF NOT EXISTS `motoboy_cep_ranges` (
 
 -- Exemplos de faixas para São Paulo (ajuste os valores conforme necessário)
 -- Pirituba / Jardim Íris e região: CEPs 05100000 a 05299999
+--
+-- Preferir o seed regional completo (São Mateus, Vila Jacuí, Pirituba):
+--   scripts/seed-motoboy-cep-ranges-regioes.sql
 INSERT INTO `motoboy_cep_ranges` (`id`,`label`,`city`,`cep_start`,`cep_end`,`price`,`interval_hours`,`is_active`,`sort_order`)
 VALUES ('cr_sp_pirituba','Pirituba e região','São Paulo',5100000,5299999,'80.00',2,1,1);

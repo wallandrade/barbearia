@@ -31,10 +31,19 @@ router.get("/motoboy-cep-ranges/lookup", async (req, res) => {
         eq(motoboyCepRangesTable.isActive, true),
         lte(motoboyCepRangesTable.cepStart, cepNum),
         gte(motoboyCepRangesTable.cepEnd, cepNum),
-      ))
-      .limit(1);
+      ));
 
-    res.json({ range: rows[0] ?? null });
+    // Prefer the most specific (narrowest) range; tie-break by sortOrder ascending.
+    const best = rows.length === 0
+      ? null
+      : [...rows].sort((a, b) => {
+          const spanA = a.cepEnd - a.cepStart;
+          const spanB = b.cepEnd - b.cepStart;
+          if (spanA !== spanB) return spanA - spanB;
+          return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        })[0];
+
+    res.json({ range: best });
   } catch (err) {
     console.error("[MotoboyCepRanges] lookup error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });

@@ -9,6 +9,14 @@ function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+/** Accent-insensitive + strip "(Zona Leste)" etc. + collapse spaces — ViaCEP often appends region suffixes. */
+function normalizeNeighborhoodName(s: string): string {
+  return stripAccents(s)
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const router: IRouter = Router();
 
 // ---------------------------------------------------------------------------
@@ -25,7 +33,7 @@ router.get("/motoboy-neighborhoods/lookup", async (req, res) => {
       return;
     }
 
-    const normalizedBairro = stripAccents(bairro);
+    const normalizedBairro = normalizeNeighborhoodName(bairro);
     const normalizedCidade = stripAccents(cidade);
 
     const rows = await db
@@ -33,10 +41,10 @@ router.get("/motoboy-neighborhoods/lookup", async (req, res) => {
       .from(motoboyNeighborhoodsTable)
       .where(eq(motoboyNeighborhoodsTable.isActive, true));
 
-    // Match by neighborhood name (accent-insensitive).
+    // Match by neighborhood name (accent-insensitive, parentheses stripped).
     // If city is provided, also require city match to avoid cross-city false positives.
     const match = rows.find((r) => {
-      const nameMatch = stripAccents(r.neighborhoodName) === normalizedBairro;
+      const nameMatch = normalizeNeighborhoodName(r.neighborhoodName) === normalizedBairro;
       if (!nameMatch) return false;
       if (!normalizedCidade || !r.city) return true; // no city info — allow match
       return stripAccents(r.city) === normalizedCidade;
