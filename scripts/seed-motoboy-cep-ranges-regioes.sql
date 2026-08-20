@@ -4,23 +4,10 @@
 -- Idempotente: ids fixos + ON DUPLICATE KEY UPDATE.
 -- CEPs como INT (03935080 → 3935080).
 --
--- Railway Query: este arquivo é UM único INSERT (pode colar inteiro de uma vez).
+-- Railway Query: cole SOMENTE a partir do INSERT abaixo (1 statement).
+-- A tabela motoboy_cep_ranges já existe em produção — não inclua CREATE TABLE.
 -- Depois do deploy da API (lookup “faixa mais estreita”), cr_sp_geral (R$70) só ganha
 -- onde NÃO houver faixa regional abaixo.
-
-CREATE TABLE IF NOT EXISTS `motoboy_cep_ranges` (
-  `id`             VARCHAR(255) NOT NULL PRIMARY KEY,
-  `label`          VARCHAR(255) NOT NULL,
-  `city`           VARCHAR(255) NOT NULL,
-  `cep_start`      INT NOT NULL,
-  `cep_end`        INT NOT NULL,
-  `price`          VARCHAR(20) NOT NULL,
-  `interval_hours` INT NOT NULL DEFAULT 2,
-  `is_active`      BOOLEAN NOT NULL DEFAULT TRUE,
-  `sort_order`     INT NOT NULL DEFAULT 0,
-  `notes`          TEXT,
-  `created_at`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 
 INSERT INTO `motoboy_cep_ranges`
   (`id`,`label`,`city`,`cep_start`,`cep_end`,`price`,`interval_hours`,`is_active`,`sort_order`,`notes`)
