@@ -439,6 +439,8 @@ export function orderToPostPaymentText(order: any, deadlineHours: number = 48): 
   return [
     `🎉 **Parabéns, ${firstName}! Sua compra foi confirmada com sucesso!** ✅📦`,
     "",
+    `📦 **Pedido #${getOrderReference(order)}**`,
+    "",
     "Seu pagamento já foi aprovado e o seu pedido foi registrado em nosso sistema. Agora ele segue para a etapa de preparação e envio. 🚀",
     "",
     "📋 **Resumo do pedido:**",
