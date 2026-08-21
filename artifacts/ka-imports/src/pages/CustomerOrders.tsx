@@ -840,40 +840,91 @@ export default function CustomerOrders() {
                                 <p className="text-xs font-mono text-blue-950 break-all">Código: {trackingCode}</p>
                               )}
                               {getOrderTrackingHistory(order).length > 0 ? (
-                                <div className="space-y-2 pt-1 border-t border-blue-100/80">
-                                  <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Eventos</p>
-                                  <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
-                                    {[...getOrderTrackingHistory(order)].reverse().map((event, idx) => {
-                                      const when = formatTrackingWhen(event);
-                                      const desc = String(event.description || "").trim();
-                                      const statusText = String(event.status || "").trim();
-                                      const showDescription =
-                                        !!desc &&
-                                        desc.toLowerCase() !== statusText.toLowerCase() &&
-                                        !isInternalTrackingDescription(desc);
-                                      return (
-                                        <div
-                                          key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
-                                          className="rounded-lg border border-blue-100 bg-white/70 px-3 py-2"
-                                        >
-                                          <p className="text-sm font-semibold text-blue-950">
-                                            {toCustomerFriendlyShippingLabel(event.status) || event.status}
-                                          </p>
-                                          {event.location &&
-                                            event.location.trim().toLowerCase() !== statusText.toLowerCase() && (
-                                            <p className="text-xs text-blue-900/80 mt-0.5">{event.location}</p>
-                                          )}
-                                          {showDescription && (
-                                            <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">
-                                              {event.description}
-                                            </p>
-                                          )}
-                                          {when && (
-                                            <p className="text-[11px] text-muted-foreground mt-1">{when}</p>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
+                                <div className="pt-2 border-t border-blue-100/80">
+                                  <div className="rounded-xl border border-border/60 bg-white p-3">
+                                    <div className="mb-3">
+                                      <p className="text-sm font-bold text-slate-900">Status do envio</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Movimentações do pacote · mais recente em cima
+                                      </p>
+                                    </div>
+                                    <ol className="relative space-y-0 max-h-80 overflow-y-auto pr-0.5">
+                                      {[...getOrderTrackingHistory(order)].reverse().map((event, idx, arr) => {
+                                        const when = formatTrackingWhen(event);
+                                        const statusRaw = String(event.status || "").trim();
+                                        const statusLabel =
+                                          toCustomerFriendlyShippingLabel(event.status) || statusRaw || "Atualização";
+                                        const desc = String(event.description || "").trim();
+                                        const loc = String(event.location || "").trim();
+                                        const showDescription =
+                                          !!desc &&
+                                          desc.toLowerCase() !== statusRaw.toLowerCase() &&
+                                          desc.toLowerCase() !== statusLabel.toLowerCase() &&
+                                          !isInternalTrackingDescription(desc);
+                                        const showLocation =
+                                          !!loc &&
+                                          loc.toLowerCase() !== statusRaw.toLowerCase() &&
+                                          loc.toLowerCase() !== statusLabel.toLowerCase();
+                                        const detail = [
+                                          showLocation ? loc : "",
+                                          showDescription ? desc : "",
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" · ");
+                                        const isFirst = idx === 0;
+                                        const isDone =
+                                          /entregue|dc-e emitida|dce emitida/i.test(statusRaw) ||
+                                          /entregue/i.test(statusLabel);
+                                        return (
+                                          <li
+                                            key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
+                                            className="relative flex gap-3 pb-5 last:pb-0"
+                                          >
+                                            {idx < arr.length - 1 && (
+                                              <span
+                                                className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200"
+                                                aria-hidden
+                                              />
+                                            )}
+                                            <span
+                                              className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                                                isDone
+                                                  ? "bg-emerald-500 border-emerald-500 text-white"
+                                                  : isFirst
+                                                    ? "bg-sky-500 border-sky-500 text-white"
+                                                    : "bg-white border-sky-300 text-sky-600"
+                                              }`}
+                                            >
+                                              {isDone ? (
+                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                              ) : (
+                                                <Package className="w-3 h-3" />
+                                              )}
+                                            </span>
+                                            <div className="min-w-0 flex-1 pt-0.5">
+                                              <p
+                                                className={`text-sm font-semibold ${
+                                                  isDone ? "text-emerald-700" : "text-sky-700"
+                                                }`}
+                                              >
+                                                {statusLabel}
+                                              </p>
+                                              {detail ? (
+                                                <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">
+                                                  {detail}
+                                                </p>
+                                              ) : null}
+                                              {when ? (
+                                                <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                                                  <Clock className="w-3 h-3" />
+                                                  {when}
+                                                </p>
+                                              ) : null}
+                                            </div>
+                                          </li>
+                                        );
+                                      })}
+                                    </ol>
                                   </div>
                                 </div>
                               ) : (
