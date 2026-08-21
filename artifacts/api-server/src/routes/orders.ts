@@ -2300,6 +2300,10 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipIsProxy:              o.ipIsProxy ?? null,
     isPrioridade:           !!(o as any).isPrioridade,
     enviado:                !!o.enviado,
+    enviadoAt:              (o as { enviadoAt?: Date | null }).enviadoAt?.toISOString?.()
+      ?? (o as { enviadoAt?: string | null }).enviadoAt
+      ?? null,
+    updatedAt:              o.updatedAt?.toISOString?.() ?? null,
     inventoryPool:          (() => {
       const raw = String((o as any).inventoryPool || "").toLowerCase().trim();
       return raw === "motoboy" || raw === "loja" ? raw : null;
@@ -2704,9 +2708,13 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       }
     }
 
+    const existingEnviadoAt = (order as { enviadoAt?: Date | null }).enviadoAt ?? null;
     await db.update(ordersTable)
       .set({
         enviado,
+        enviadoAt: enviado
+          ? (wasEnviado ? existingEnviadoAt ?? new Date() : new Date())
+          : null,
         inventoryPool,
         // Mantém reserva se já havia; se baixou no envio sem reserva prévia, marca pool sem reserved
         ...(enviado && !alreadyReserved ? { inventoryReserved: false } : {}),

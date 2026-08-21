@@ -295,6 +295,10 @@ async function applyShipmentStatusToOrder(params: {
   // Sync/webhook/etiqueta não podem voltar a pendente (risco de reenvio).
   if (isInTransitStatus(params.status) || isDeliveredStatus(params.status)) {
     patch.enviado = true;
+    if (!order.enviado) {
+      const existingAt = (order as { enviadoAt?: Date | null }).enviadoAt;
+      patch.enviadoAt = existingAt ?? new Date();
+    }
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {
     patch.status = "completed";

@@ -23,6 +23,9 @@ type CustomerOrder = {
   total: number;
   status: string;
   enviado?: boolean;
+  /** ISO — quando `enviado` virou true (manual ou EE). */
+  enviadoAt?: string | null;
+  updatedAt?: string | null;
   paymentMethod: string;
   createdAt: string;
   clientName?: string;
@@ -179,7 +182,37 @@ function isShippingInTransit(status: string): boolean {
   );
 }
 
-/** Situação visível ao cliente: prioriza status EnvioEcom quando houver envio. */
+const MANUAL_DELIVERED_AFTER_MS = 15 * 24 * 60 * 60 * 1000;
+
+/** Pedido com vínculo EnvioEcom — “Entregue” só quando a API disser entregue. */
+function hasEnvioEcomLink(order: CustomerOrder): boolean {
+  return Boolean(
+    order.envioecomShipmentId ||
+      order.envioecomTrackingKey ||
+      order.envioecomBarcode ||
+      order.envioecomStatus ||
+      (Array.isArray(order.envioecomStatusHistory) && order.envioecomStatusHistory.length > 0),
+  );
+}
+
+function isEnvioEcomDelivered(order: CustomerOrder): boolean {
+  const current = normalizeShippingStatus(order.envioecomStatus);
+  if (current && isShippingDelivered(current)) return true;
+  const history = Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
+  return history.some((ev) => isShippingDelivered(String(ev.status || "")));
+}
+
+/** Envio manual (sem EE): Entregue após 15 dias do marco de enviado. */
+function isManualDeliveredByAge(order: CustomerOrder): boolean {
+  if (!order.enviado) return false;
+  const raw = order.enviadoAt || order.updatedAt || order.createdAt;
+  if (!raw) return false;
+  const t = new Date(raw).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t >= MANUAL_DELIVERED_AFTER_MS;
+}
+
+/** Situação visível ao cliente: EE segue a API; manual usa 15 dias após enviado. */
 function getCustomerSituation(order: CustomerOrder): {
   label: string;
   kind: "paid" | "processing" | "shipping" | "delivered" | "cancelled" | "pending";
@@ -189,35 +222,45 @@ function getCustomerSituation(order: CustomerOrder): {
     return { label: "Cancelado", kind: "cancelled" };
   }
 
-  const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
-  if (shippingStatus) {
-    if (isShippingDelivered(shippingStatus) || order.status === "completed") {
-      return { label: toCustomerFriendlyShippingLabel(shippingStatus), kind: "delivered" };
+  if (hasEnvioEcomLink(order)) {
+    if (isEnvioEcomDelivered(order)) {
+      const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
+      return {
+        label: shippingStatus ? toCustomerFriendlyShippingLabel(shippingStatus) : "Entregue",
+        kind: "delivered",
+      };
     }
-    if (/cancelad/i.test(shippingStatus)) {
-      return { label: shippingStatus, kind: "cancelled" };
-    }
-    if (/aguardando pagamento/i.test(shippingStatus) || isPackingBeforePostStatus(shippingStatus)) {
+    const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
+    if (shippingStatus) {
+      if (/cancelad/i.test(shippingStatus)) {
+        return { label: shippingStatus, kind: "cancelled" };
+      }
+      if (/aguardando pagamento/i.test(shippingStatus) || isPackingBeforePostStatus(shippingStatus)) {
+        return {
+          label: toCustomerFriendlyShippingLabel(shippingStatus),
+          kind: "processing",
+          hint: customerShippingHint(shippingStatus),
+        };
+      }
       return {
         label: toCustomerFriendlyShippingLabel(shippingStatus),
-        kind: "processing",
+        kind: isShippingInTransit(shippingStatus) ? "shipping" : "processing",
         hint: customerShippingHint(shippingStatus),
       };
     }
-    return {
-      label: toCustomerFriendlyShippingLabel(shippingStatus),
-      kind: isShippingInTransit(shippingStatus) ? "shipping" : "processing",
-      hint: customerShippingHint(shippingStatus),
-    };
+    if (order.enviado) {
+      return { label: "Enviado", kind: "shipping" };
+    }
   }
 
-  if (order.status === "completed") {
-    return { label: "Entregue", kind: "delivered" };
-  }
   if (order.enviado) {
+    if (isManualDeliveredByAge(order)) {
+      return { label: "Entregue", kind: "delivered" };
+    }
     return { label: "Enviado", kind: "shipping" };
   }
-  if (order.status === "paid") {
+
+  if (order.status === "paid" || order.status === "completed") {
     return { label: "Processando", kind: "processing" };
   }
   if (order.status === "awaiting_payment" || order.status === "pending") {
@@ -675,7 +718,7 @@ export default function CustomerOrders() {
                       <div className="rounded-xl border border-border p-3 bg-slate-50/60">
                         <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Entregues</p>
                         <p className="text-2xl font-bold text-green-600 mt-1">
-                          {orders.filter((o) => o.status === "completed" || o.enviado).length}
+                          {orders.filter((o) => isDeliveredSituation(o)).length}
                         </p>
                       </div>
                       <div className="rounded-xl border border-border p-3 bg-slate-50/60">

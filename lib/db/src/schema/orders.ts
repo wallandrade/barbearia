@@ -56,6 +56,8 @@ export const ordersTable = mysqlTable("orders", {
   pixCode: mediumtext("pix_code"),
   pixBase64: mediumtext("pix_base64"),
   enviado: boolean("enviado").notNull().default(false),
+  /** Momento em que `enviado` passou a true (manual ou EE). Usado p/ “Entregue” após 15 dias no envio manual. */
+  enviadoAt: timestamp("enviado_at"),
   inventoryPool: varchar("inventory_pool", { length: 16 }),
   inventoryReserved: boolean("inventory_reserved").notNull().default(false),
   trackingCode: varchar("tracking_code", { length: 255 }),

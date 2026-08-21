@@ -11,7 +11,7 @@ import crypto from "crypto";
 const router: IRouter = Router();
 
 const SLOT_START = 10; // 10:00
-const SLOT_END   = 20; // last slot starts at 19:00 (1h) or 18:00 (2h)
+const SLOT_LAST_START = 20; // última opção: 20:00 (entrega até 20h)
 const RANGE_ID_PREFIX = "range_";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
@@ -76,9 +76,9 @@ router.get("/motoboy-slots/available", async (req, res) => {
       return;
     }
 
-    // Generate candidate slots for this interval type
+    // Generate candidate slots (10:00 … 20:00, de intervalHours em intervalHours)
     const candidates: string[] = [];
-    for (let h = SLOT_START; h + intervalHours <= SLOT_END; h += intervalHours) {
+    for (let h = SLOT_START; h <= SLOT_LAST_START; h += intervalHours) {
       candidates.push(`${pad(h)}:00`);
     }
 
