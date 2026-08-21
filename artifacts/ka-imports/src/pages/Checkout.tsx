@@ -41,6 +41,14 @@ function genId() {
   return Math.random().toString(36).slice(2, 12);
 }
 
+/** YYYY-MM-DD em fuso local — evita min/max do Motoboy “pular” um dia com toISOString (UTC). */
+function toLocalYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function safeReadStorage(key: string): string | null {
   try {
     return localStorage.getItem(key) ?? sessionStorage.getItem(key);
@@ -2125,12 +2133,12 @@ export default function Checkout() {
                           if (d.getHours() >= 18) d.setDate(d.getDate() + 1);
                           // Skip Sunday (0)
                           if (d.getDay() === 0) d.setDate(d.getDate() + 1);
-                          return d.toISOString().split("T")[0];
+                          return toLocalYmd(d);
                         })()}
                         max={(() => {
                           const d = new Date();
                           d.setDate(d.getDate() + 14);
-                          return d.toISOString().split("T")[0];
+                          return toLocalYmd(d);
                         })()}
                         value={motoboySlotDate}
                         onChange={async (e) => {
@@ -2140,7 +2148,7 @@ export default function Checkout() {
                             // Auto-advance Sunday to Monday
                             if (d.getDay() === 0) {
                               d.setDate(d.getDate() + 1);
-                              date = d.toISOString().split("T")[0];
+                              date = toLocalYmd(d);
                             }
                           }
                           setMotoboySlotDate(date);
