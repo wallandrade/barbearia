@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-20 | Slots Motoboy: `neighborhood_id` `range_<id>` resolve `intervalHours` em `motoboy_cep_ranges` (available + book) | Checkout com preço por faixa CEP volta a listar horários | Domingos bloqueados; overlap de bookings iguais |
 | 2026-08-20 | Cliente Meus pedidos: histórico de rastreio em **timeline** (igual Admin Rastreios — Status do envio, ícones, mais recente em cima) | Visual mais claro da movimentação | Soft-sync / labels amigáveis iguais |
 | 2026-08-20 | Cópia Motoboy: pedidos `shippingType=motoboy` entram no botão **Motoboy** mesmo com PIX pendente (não cancelado/enviado) | Agendado Motoboy aparece na lista de copiar | Fila 48h/Outros só pedidos pagos |
 | 2026-08-20 | Portal Motoboy `/motoboy?k=TOKEN` (link secreto): editar preço bairro/CEP + propor novos; Admin Fretes aprova/rejeita (`motoboy_price_proposals`, `MOTOBOY_PORTAL_TOKEN`) | Motoboy sugere preços sem aplicar direto | Checkout Motoboy / faixas CEP iguais |
@@ -106,7 +107,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Fila de envio (`shipping_queue`): aloca slots para pedidos pagos com frete padrão — `lib/shipping-queue-allocator.ts`.
 - Motoboy: bairros (`motoboy_neighborhoods`) + faixas de CEP (`motoboy_cep_ranges`) + slots/bookings — schemas/rotas `motoboy-*`.
 - Admin cópia **🏍️ Motoboy**: todos os pedidos `shippingType=motoboy` carregados, **incluindo PIX pendente**, desde que não cancelados/enviados/etiqueta EE. Texto marca pagamento confirmado vs pendente. Fila **48h/Outros** continua só pagos.
-- Checkout Motoboy: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span) que cobre o CEP — assim `cr_sp_geral` (R$70) só vale onde não há faixa regional.
+- Checkout Motoboy: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span) que cobre o CEP — assim `cr_sp_geral` (R$70) só vale onde não há faixa regional. Id de agendamento: bairro real **ou** `range_<cep_range_id>`; slots (`motoboy-slots/available` e `book`) resolvem `intervalHours` nas duas tabelas.
 - Seed regional capital: `scripts/seed-motoboy-cep-ranges-regioes.sql` — prefixos Correios **010–058** e **080–084** (incl. São Mateus 039/083, Vila Jacuí 08050–08069, Perus 052). Preço da faixa = **máximo** dos preços Motoboy dos distritos cobertos pela zona. Aplicar no MySQL (não sobe só com deploy FE/API).
 - Portal Motoboy (link secreto): FE `/motoboy?k=<MOTOBOY_PORTAL_TOKEN>`; API `motoboy-portal/*` + fila `admin/motoboy-proposals` (aprovar aplica em `motoboy_neighborhoods` / `motoboy_cep_ranges`). Tabela `motoboy_price_proposals` (runtime-schema). Subdomínio sugerido `motoboy.yury-imports.com` (CORS default + token na Railway).
 - Anti-padrão: cadastrar dezenas de microbairros do Correios; preferir **faixa de CEP por região** no Admin → Fretes.

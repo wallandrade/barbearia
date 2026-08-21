@@ -1,5 +1,10 @@
 import { Router, type IRouter } from "express";
-import { db, motoboyBookingsTable, motoboyNeighborhoodsTable } from "@workspace/db";
+import {
+  db,
+  motoboyBookingsTable,
+  motoboyCepRangesTable,
+  motoboyNeighborhoodsTable,
+} from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -7,6 +12,7 @@ const router: IRouter = Router();
 
 const SLOT_START = 10; // 10:00
 const SLOT_END   = 20; // last slot starts at 19:00 (1h) or 18:00 (2h)
+const RANGE_ID_PREFIX = "range_";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 function timeToMinutes(t: string) {
@@ -19,9 +25,34 @@ function overlaps(aStart: number, aInterval: number, bStart: number, bInterval: 
   return aStart < bStart + bInterval * 60 && bStart < aStart + aInterval * 60;
 }
 
+/**
+ * Checkout envia id de bairro OU `range_<id>` quando o preço veio de faixa CEP.
+ * Resolve intervalHours nas duas tabelas.
+ */
+async function resolveIntervalHours(neighborhoodId: string): Promise<number | null> {
+  if (neighborhoodId.startsWith(RANGE_ID_PREFIX)) {
+    const rangeId = neighborhoodId.slice(RANGE_ID_PREFIX.length);
+    const rows = await db
+      .select()
+      .from(motoboyCepRangesTable)
+      .where(eq(motoboyCepRangesTable.id, rangeId))
+      .limit(1);
+    if (rows.length === 0) return null;
+    return rows[0].intervalHours ?? 2;
+  }
+
+  const nbRows = await db
+    .select()
+    .from(motoboyNeighborhoodsTable)
+    .where(eq(motoboyNeighborhoodsTable.id, neighborhoodId))
+    .limit(1);
+  if (nbRows.length === 0) return null;
+  return nbRows[0].intervalHours ?? 1;
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/motoboy-slots/available?date=YYYY-MM-DD&neighborhood_id=X  (public)
-// Returns available time slots for a given date and neighborhood.
+// Returns available time slots for a given date and neighborhood / CEP range.
 // ---------------------------------------------------------------------------
 router.get("/motoboy-slots/available", async (req, res) => {
   try {
@@ -39,20 +70,11 @@ router.get("/motoboy-slots/available", async (req, res) => {
       return;
     }
 
-    // Load neighborhood to get intervalHours
-    const nbRows = await db
-      .select()
-      .from(motoboyNeighborhoodsTable)
-      .where(eq(motoboyNeighborhoodsTable.id, neighborhoodId))
-      .limit(1);
-
-    if (nbRows.length === 0) {
-      res.status(404).json({ error: "NOT_FOUND", message: "Bairro não encontrado." });
+    const intervalHours = await resolveIntervalHours(neighborhoodId);
+    if (intervalHours == null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Bairro ou faixa de CEP não encontrada." });
       return;
     }
-
-    const nb = nbRows[0];
-    const intervalHours = nb.intervalHours ?? 1;
 
     // Generate candidate slots for this interval type
     const candidates: string[] = [];
@@ -105,15 +127,10 @@ router.post("/motoboy-slots/book", async (req, res) => {
       return;
     }
 
-    // Get interval from neighborhood
     let intervalHours = 1;
     if (neighborhoodId) {
-      const nbRows = await db
-        .select()
-        .from(motoboyNeighborhoodsTable)
-        .where(eq(motoboyNeighborhoodsTable.id, neighborhoodId))
-        .limit(1);
-      if (nbRows.length > 0) intervalHours = nbRows[0].intervalHours ?? 1;
+      const resolved = await resolveIntervalHours(neighborhoodId);
+      if (resolved != null) intervalHours = resolved;
     }
 
     // Double-check availability (race condition guard)
