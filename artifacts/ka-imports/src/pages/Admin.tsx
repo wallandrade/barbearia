@@ -2907,7 +2907,7 @@ export default function Admin() {
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
     else if (tab === "expenses")   fetchExpenses();
-    else if (tab === "fretes")     { fetchShippingOptions(); fetchMotoboyNeighborhoods(); fetchCepRanges(); }
+    else if (tab === "fretes")     { fetchShippingOptions(); fetchMotoboyNeighborhoods(); fetchCepRanges(); fetchSettings(); }
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
@@ -5825,6 +5825,10 @@ export default function Admin() {
               finally { setCepRangeDeleting(null); }
             }}
             onMotoboyCatalogRefresh={() => { fetchMotoboyNeighborhoods(); fetchCepRanges(); }}
+            settings={settings}
+            settingsLoading={settingsLoading}
+            onSaveSetting={saveSetting}
+            onDeleteSetting={deleteSetting}
           />
         ) : tab === "orderBumps" ? (
           <OrderBumpsPanel
@@ -8519,12 +8523,22 @@ function InventoryPanel({
 
   const normalizedBalanceSearch = balanceSearch.trim().toLowerCase();
   const activeBalances = stockTab === "motoboy" ? motoboyBalances : balances;
-  const filteredBalances = normalizedBalanceSearch
+  const filteredBalances = (normalizedBalanceSearch
     ? activeBalances.filter((row) => {
         const productName = String(row.productName || "").toLowerCase();
         return productName.includes(normalizedBalanceSearch);
       })
-    : activeBalances;
+    : activeBalances
+  )
+    .slice()
+    .sort((a, b) => {
+      // Com estoque primeiro (Loja e Motoboy), depois maior qty, depois nome.
+      const aHas = Number(a.quantity) > 0 ? 1 : 0;
+      const bHas = Number(b.quantity) > 0 ? 1 : 0;
+      if (aHas !== bHas) return bHas - aHas;
+      if (Number(b.quantity) !== Number(a.quantity)) return Number(b.quantity) - Number(a.quantity);
+      return String(a.productName || "").localeCompare(String(b.productName || ""), "pt-BR");
+    });
 
   const motoboyLabelProjectionLines = labelProjectionOrders
     .filter((order) => orderHasPendingEnvioEcomLabel(order))
@@ -15788,7 +15802,6 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
   const [showOutboundSecret, setShowOutboundSecret] = useState(false);
-  const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
   const [storeWhatsappNumber, setStoreWhatsappNumber] = useState(settings["checkout_store_whatsapp_number"] ?? "");
   const [raffleWhatsappNumber, setRaffleWhatsappNumber] = useState(settings["checkout_raffle_whatsapp_number"] ?? "");
   const [siteName, setSiteName] = useState(settings["site_name"] ?? "");
@@ -15813,7 +15826,6 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   useEffect(() => {
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
-    setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
     setStoreWhatsappNumber(settings["checkout_store_whatsapp_number"] ?? "");
     setRaffleWhatsappNumber(settings["checkout_raffle_whatsapp_number"] ?? "");
     setSiteName(settings["site_name"] ?? "");
@@ -16343,58 +16355,6 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         </div>
       </div>
 
-      {/* ── Regra de Frete Grátis ────────────────────────────────────────── */}
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
-          <Truck className="w-5 h-5 text-primary" />
-          Frete Grátis por Valor Mínimo
-        </h2>
-        <p className="text-muted-foreground text-sm mb-5">
-          Defina o subtotal mínimo do carrinho para liberar frete grátis automático no checkout.
-        </p>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-3">
-          <label className="block text-xs font-medium">Valor mínimo (R$)</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={freeShippingMinSubtotal}
-              onChange={(e) => setFreeShippingMinSubtotal(e.target.value)}
-              placeholder="Ex: 2500"
-              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
-              disabled={!!loading["checkout_free_shipping_min_subtotal"]}
-            />
-            <Button
-              size="sm"
-              onClick={() => {
-                const raw = freeShippingMinSubtotal.trim();
-                if (!raw) {
-                  onDelete("checkout_free_shipping_min_subtotal");
-                  return;
-                }
-
-                const value = Number(raw);
-                if (!Number.isFinite(value) || value < 0) {
-                  toast.error("Valor inválido para frete grátis.");
-                  return;
-                }
-
-                onSave("checkout_free_shipping_min_subtotal", String(value));
-              }}
-              disabled={!!loading["checkout_free_shipping_min_subtotal"]}
-            >
-              {loading["checkout_free_shipping_min_subtotal"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            Deixe em branco para desativar a regra. Quando ativo, pedidos com subtotal igual ou maior que esse valor terão frete R$0.
-          </p>
-        </div>
-      </div>
-
       {/* ── Controle de Acesso ────────────────────────────────────────────── */}
       <div className="max-w-2xl">
         <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
@@ -16719,11 +16679,21 @@ interface FretePanelProps {
   onCepRangeUpdate: (id: string, patch: Partial<MotoboyCepRange>) => void;
   onCepRangeDelete: (id: string) => void;
   onMotoboyCatalogRefresh?: () => void;
+  settings: Record<string, string>;
+  settingsLoading: Record<string, boolean>;
+  onSaveSetting: (key: string, value: string) => void;
+  onDeleteSetting: (key: string) => void;
 }
 
-function FretePanel({ options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete, motoboyNeighborhoods, motoboyForm, setMotoboyForm, motoboyCreating, motoboyDeleting, motoboyEditing, setMotoboyEditing, motoboyUpdating, onMotoboyCreate, onMotoboyUpdate, onMotoboyDelete, cepRanges, cepRangeForm, setCepRangeForm, cepRangeCreating, cepRangeDeleting, cepRangeUpdating, onCepRangeCreate, onCepRangeUpdate, onCepRangeDelete, onMotoboyCatalogRefresh }: FretePanelProps) {
+function FretePanel({
+  options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete,
+  motoboyNeighborhoods, motoboyForm, setMotoboyForm, motoboyCreating, motoboyDeleting, motoboyEditing, setMotoboyEditing, motoboyUpdating, onMotoboyCreate, onMotoboyUpdate, onMotoboyDelete,
+  cepRanges, cepRangeForm, setCepRangeForm, cepRangeCreating, cepRangeDeleting, cepRangeUpdating, onCepRangeCreate, onCepRangeUpdate, onCepRangeDelete, onMotoboyCatalogRefresh,
+  settings, settingsLoading, onSaveSetting, onDeleteSetting,
+}: FretePanelProps) {
   const [editForm, setEditForm] = useState({ name: "", description: "", price: "", sortOrder: "0" });
   const [mbEditForm, setMbEditForm] = useState({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" });
+  const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
   const [motoboyProposals, setMotoboyProposals] = useState<Array<{
     id: string;
     kind: string;
@@ -16734,6 +16704,10 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
     createdAt: string;
   }>>([]);
   const [proposalBusy, setProposalBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
+  }, [settings]);
 
   const fetchMotoboyProposals = useCallback(async () => {
     try {
@@ -16803,6 +16777,52 @@ function FretePanel({ options, form, setForm, creating, deleting, editing, setEd
 
   return (
     <div className="space-y-6">
+      {/* Frete grátis por valor mínimo (setting checkout_free_shipping_min_subtotal) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-border p-6 max-w-2xl">
+        <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
+          <Truck className="w-4 h-4 text-primary" />
+          Frete Grátis por Valor Mínimo
+        </h3>
+        <p className="text-muted-foreground text-sm mb-4">
+          Defina o subtotal mínimo do carrinho para liberar frete grátis automático no checkout.
+        </p>
+        <label className="block text-xs font-medium mb-1">Valor mínimo (R$)</label>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={freeShippingMinSubtotal}
+            onChange={(e) => setFreeShippingMinSubtotal(e.target.value)}
+            placeholder="Ex: 2500"
+            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            disabled={!!settingsLoading["checkout_free_shipping_min_subtotal"]}
+          />
+          <Button
+            size="sm"
+            onClick={() => {
+              const raw = freeShippingMinSubtotal.trim();
+              if (!raw) {
+                onDeleteSetting("checkout_free_shipping_min_subtotal");
+                return;
+              }
+              const value = Number(raw);
+              if (!Number.isFinite(value) || value < 0) {
+                toast.error("Valor inválido para frete grátis.");
+                return;
+              }
+              onSaveSetting("checkout_free_shipping_min_subtotal", String(value));
+            }}
+            disabled={!!settingsLoading["checkout_free_shipping_min_subtotal"]}
+          >
+            {settingsLoading["checkout_free_shipping_min_subtotal"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Deixe em branco para desativar a regra. Quando ativo, pedidos com subtotal igual ou maior que esse valor terão frete R$0.
+        </p>
+      </div>
+
       {motoboyProposals.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 space-y-3">
           <h3 className="font-semibold text-base flex items-center gap-2 text-amber-900">

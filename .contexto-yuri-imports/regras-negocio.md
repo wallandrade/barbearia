@@ -10,6 +10,8 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-25 | Admin: **Frete Grátis por Valor Mínimo** saiu de Configurações e ficou no topo da aba **Fretes** | Config de frete junto das opções/Motoboy | Setting `checkout_free_shipping_min_subtotal` / checkout iguais |
+| 2026-08-25 | Admin Estoque (Loja + Motoboy): lista de saldo ordena **com estoque primeiro**, depois maior qty, depois nome | Produtos disponíveis aparecem no topo | Entrada/saída / copiar estoque iguais |
 | 2026-08-25 | Admin Editar Pedido: thumbnail na busca do catálogo e na lista de itens (snapshot ou `editCatalog.image`) | Identifica produto visualmente ao editar | Totais / desconto / salvar iguais |
 | 2026-08-20 | Meus pedidos: **Entregues** = situação real (EE só com status entregue; manual `enviado` só após **15 dias** via `enviado_at`) | Coletado/em trânsito não infla o contador | Badge do card / timeline EE iguais na fonte |
 | 2026-08-20 | Slots Motoboy: última opção de horário **20:00** (antes 18:00 em intervalo 2h / 19:00 em 1h) | Checkout oferece botão 20h | Domingos; overlap; faixa CEP iguais |
