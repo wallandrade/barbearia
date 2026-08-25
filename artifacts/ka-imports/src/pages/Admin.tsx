@@ -4642,7 +4642,22 @@ export default function Admin() {
                               const products = getOrderProducts(order?.products);
                               const ref = getOrderReference(order);
                               const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-                              const resumo = products.map((p) => `• ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n");
+                              const productsSubtotal = products.reduce(
+                                (sum, p) => sum + (Number(p?.quantity) || 0) * (Number(p?.price) || 0),
+                                0,
+                              );
+                              const motoboyFee = Math.max(0, Number(order?.shippingCost) || 0);
+                              const productsPlusMotoboy = productsSubtotal + motoboyFee;
+                              const resumo = products.length
+                                ? products
+                                    .map((p) => {
+                                      const qty = Number(p?.quantity) || 0;
+                                      const price = Number(p?.price) || 0;
+                                      const lineTotal = qty * price;
+                                      return `• ${qty}x ${p?.name || "Produto"} — ${formatCurrency(lineTotal)}`;
+                                    })
+                                    .join("\n")
+                                : "• Sem itens";
                               const paid = order.status === "paid" || order.status === "completed";
                               return [
                                 `📦 ENTREGA #${ref}`,
@@ -4652,10 +4667,13 @@ export default function Admin() {
                                 `🏘️ Bairro: ${order?.addressNeighborhood || "-"}`,
                                 `🏙️ Cidade: ${order?.addressCity || "-"} / ${order?.addressState || "-"}`,
                                 `📮 CEP: ${order?.addressCep || "-"}`,
-                                `📞 Tel: ${order?.clientPhone || "-"}`,
                                 ``,
                                 `📦 Itens:`,
-                                resumo || "• Sem itens",
+                                resumo,
+                                ``,
+                                `💰 Produtos: ${formatCurrency(productsSubtotal)}`,
+                                `🛵 Frete Motoboy: ${formatCurrency(motoboyFee)}`,
+                                `💵 Total (produtos + Motoboy): ${formatCurrency(productsPlusMotoboy)}`,
                                 `━━━━━━━━━━━━━━━━━━`,
                               ].join("\n");
                             });
