@@ -23,7 +23,7 @@ import { getReshipmentByOrderIds, getMotoboyStockMap, registerInventoryEntry, re
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
-import { parseFreeShippingMinSubtotalSetting, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
+import { parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
@@ -210,14 +210,20 @@ async function loadOrderPriorityMap(orderIds: string[]): Promise<Map<string, boo
   return map;
 }
 
-async function getFreeShippingMinSubtotal(): Promise<number | null> {
-  const row = await db
-    .select({ value: siteSettingsTable.value })
+async function getFreeShippingThresholds(): Promise<{ standardMin: number | null; motoboyMin: number | null }> {
+  const rows = await db
+    .select({ key: siteSettingsTable.key, value: siteSettingsTable.value })
     .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, "checkout_free_shipping_min_subtotal"))
-    .limit(1);
+    .where(inArray(siteSettingsTable.key, [
+      "checkout_free_shipping_min_subtotal",
+      "checkout_free_shipping_min_motoboy",
+    ]));
 
-  return parseFreeShippingMinSubtotalSetting(row[0]?.value ?? "");
+  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return {
+    standardMin: parseFreeShippingMinSubtotalSetting(map["checkout_free_shipping_min_subtotal"] ?? ""),
+    motoboyMin: parseFreeShippingMinSubtotalSetting(map["checkout_free_shipping_min_motoboy"] ?? ""),
+  };
 }
 
 type BulkDiscountTierInput = {
@@ -1239,7 +1245,12 @@ router.post("/orders", async (req, res) => {
       return acc + qty * price;
     }, 0);
     const shippingBaseCost = Math.max(0, Number(shippingCost) || 0);
-    const freeShippingMinSubtotal = await getFreeShippingMinSubtotal();
+    const freeShippingThresholds = await getFreeShippingThresholds();
+    const freeShippingMinSubtotal = pickFreeShippingMinSubtotal({
+      shippingType,
+      standardMin: freeShippingThresholds.standardMin,
+      motoboyMin: freeShippingThresholds.motoboyMin,
+    });
     const computedShippingCost = resolveShippingCostWithFreeThreshold({
       subtotal: computedSubtotal,
       shippingBaseCost,

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isMotoboyShippingType,
   parseFreeShippingMinSubtotalSetting,
+  pickFreeShippingMinSubtotal,
   resolveShippingCostWithFreeThreshold,
 } from "./free-shipping";
 
@@ -41,4 +43,17 @@ test("parser ignora valor invalido de configuracao", () => {
   assert.equal(parseFreeShippingMinSubtotalSetting("0"), null);
   assert.equal(parseFreeShippingMinSubtotalSetting("abc"), null);
   assert.equal(parseFreeShippingMinSubtotalSetting("2500"), 2500);
+});
+
+test("pick usa minimo Motoboy quando shippingType e Motoboy", () => {
+  assert.equal(
+    pickFreeShippingMinSubtotal({ shippingType: "Motoboy", standardMin: 1500, motoboyMin: 800 }),
+    800,
+  );
+  assert.equal(
+    pickFreeShippingMinSubtotal({ shippingType: "Padrão", standardMin: 1500, motoboyMin: 800 }),
+    1500,
+  );
+  assert.equal(isMotoboyShippingType("motoboy"), true);
+  assert.equal(isMotoboyShippingType("Expresso"), false);
 });

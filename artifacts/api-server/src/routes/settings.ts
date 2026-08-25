@@ -9,7 +9,7 @@ const router: IRouter = Router();
 const PUBLIC_KEYS  = [
   "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile", "site_name", "site_protected", "payment_protected",
   "logo_scale_pct",
-  "checkout_enable_pix", "checkout_enable_card", "checkout_enable_whatsapp", "checkout_pix_gateway", "checkout_free_shipping_min_subtotal",
+  "checkout_enable_pix", "checkout_enable_card", "checkout_enable_whatsapp", "checkout_pix_gateway", "checkout_free_shipping_min_subtotal", "checkout_free_shipping_min_motoboy",
   "checkout_store_enable_pix", "checkout_store_enable_card", "checkout_store_enable_whatsapp", "checkout_store_pix_gateway",
   "checkout_store_whatsapp_number",
   "checkout_raffle_enable_pix", "checkout_raffle_enable_card", "checkout_raffle_enable_whatsapp", "checkout_raffle_pix_gateway",

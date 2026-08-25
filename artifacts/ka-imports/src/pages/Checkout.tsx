@@ -177,7 +177,8 @@ export default function Checkout() {
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true, whatsapp: false });
   const [checkoutWhatsappNumber, setCheckoutWhatsappNumber] = useState("5535999768759");
-  const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState<number | null>(null);
+  const [freeShippingMinStandard, setFreeShippingMinStandard] = useState<number | null>(null);
+  const [freeShippingMinMotoboy, setFreeShippingMinMotoboy] = useState<number | null>(null);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
   const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
 
@@ -473,7 +474,8 @@ export default function Checkout() {
           if (storeWhatsappNumber) {
             setCheckoutWhatsappNumber(storeWhatsappNumber);
           }
-          setFreeShippingMinSubtotal(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
+          setFreeShippingMinStandard(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
+          setFreeShippingMinMotoboy(parseCurrency(data["checkout_free_shipping_min_motoboy"]));
           if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
         }
       } catch {
@@ -707,6 +709,8 @@ export default function Checkout() {
 
   const selectedShipping = shippingOptions.find((o) => o.id === selectedShippingId) ?? null;
   const shippingBaseCost = selectedShipping ? Number(selectedShipping.price) : 0;
+  const isMotoboySelected = Boolean(selectedShippingId?.startsWith("motoboy_"));
+  const freeShippingMinSubtotal = isMotoboySelected ? freeShippingMinMotoboy : freeShippingMinStandard;
   const isFreeShippingEligible = freeShippingMinSubtotal != null && subtotal >= freeShippingMinSubtotal;
   const shippingCost = isFreeShippingEligible ? 0 : shippingBaseCost;
   const shippingSavings = isFreeShippingEligible ? shippingBaseCost : 0;
@@ -2207,8 +2211,8 @@ export default function Checkout() {
                 {freeShippingMinSubtotal != null && (
                   <div className={`mt-3 rounded-xl border px-3 py-2 text-sm ${isFreeShippingEligible ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
                     {isFreeShippingEligible
-                      ? `Frete gratis aplicado para pedidos acima de ${formatCurrency(freeShippingMinSubtotal)}.`
-                      : `Faltam ${formatCurrency(missingForFreeShipping)} para liberar frete gratis (a partir de ${formatCurrency(freeShippingMinSubtotal)}).`}
+                      ? `Frete gratis (${isMotoboySelected ? "Motoboy" : "envio padrão"}) aplicado a partir de ${formatCurrency(freeShippingMinSubtotal)}.`
+                      : `Faltam ${formatCurrency(missingForFreeShipping)} para frete gratis no ${isMotoboySelected ? "Motoboy" : "envio padrão"} (a partir de ${formatCurrency(freeShippingMinSubtotal)}).`}
                   </div>
                 )}
               </div>

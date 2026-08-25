@@ -16694,6 +16694,7 @@ function FretePanel({
   const [editForm, setEditForm] = useState({ name: "", description: "", price: "", sortOrder: "0" });
   const [mbEditForm, setMbEditForm] = useState({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" });
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
+  const [freeShippingMinMotoboy, setFreeShippingMinMotoboy] = useState(settings["checkout_free_shipping_min_motoboy"] ?? "");
   const [motoboyProposals, setMotoboyProposals] = useState<Array<{
     id: string;
     kind: string;
@@ -16707,6 +16708,7 @@ function FretePanel({
 
   useEffect(() => {
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
+    setFreeShippingMinMotoboy(settings["checkout_free_shipping_min_motoboy"] ?? "");
   }, [settings]);
 
   const fetchMotoboyProposals = useCallback(async () => {
@@ -16777,50 +16779,90 @@ function FretePanel({
 
   return (
     <div className="space-y-6">
-      {/* Frete grátis por valor mínimo (setting checkout_free_shipping_min_subtotal) */}
-      <div className="bg-white rounded-2xl shadow-sm border border-border p-6 max-w-2xl">
-        <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
-          <Truck className="w-4 h-4 text-primary" />
-          Frete Grátis por Valor Mínimo
-        </h3>
-        <p className="text-muted-foreground text-sm mb-4">
-          Defina o subtotal mínimo do carrinho para liberar frete grátis automático no checkout.
-        </p>
-        <label className="block text-xs font-medium mb-1">Valor mínimo (R$)</label>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={freeShippingMinSubtotal}
-            onChange={(e) => setFreeShippingMinSubtotal(e.target.value)}
-            placeholder="Ex: 2500"
-            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
-            disabled={!!settingsLoading["checkout_free_shipping_min_subtotal"]}
-          />
-          <Button
-            size="sm"
-            onClick={() => {
-              const raw = freeShippingMinSubtotal.trim();
-              if (!raw) {
-                onDeleteSetting("checkout_free_shipping_min_subtotal");
-                return;
-              }
-              const value = Number(raw);
-              if (!Number.isFinite(value) || value < 0) {
-                toast.error("Valor inválido para frete grátis.");
-                return;
-              }
-              onSaveSetting("checkout_free_shipping_min_subtotal", String(value));
-            }}
-            disabled={!!settingsLoading["checkout_free_shipping_min_subtotal"]}
-          >
-            {settingsLoading["checkout_free_shipping_min_subtotal"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-          </Button>
+      {/* Frete grátis: mínimos separados (padrão vs Motoboy) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-border p-6 max-w-2xl space-y-5">
+        <div>
+          <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
+            <Truck className="w-4 h-4 text-primary" />
+            Frete Grátis por Valor Mínimo
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            Defina mínimos separados para envio padrão e Motoboy. Em branco = regra desativada naquele frete.
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          Deixe em branco para desativar a regra. Quando ativo, pedidos com subtotal igual ou maior que esse valor terão frete R$0.
-        </p>
+
+        <div className="space-y-3">
+          <label className="block text-xs font-medium">Envio padrão — valor mínimo (R$)</label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={freeShippingMinSubtotal}
+              onChange={(e) => setFreeShippingMinSubtotal(e.target.value)}
+              placeholder="Ex: 1500"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              disabled={!!settingsLoading["checkout_free_shipping_min_subtotal"]}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const raw = freeShippingMinSubtotal.trim();
+                if (!raw) {
+                  onDeleteSetting("checkout_free_shipping_min_subtotal");
+                  return;
+                }
+                const value = Number(raw);
+                if (!Number.isFinite(value) || value < 0) {
+                  toast.error("Valor inválido para frete grátis (padrão).");
+                  return;
+                }
+                onSaveSetting("checkout_free_shipping_min_subtotal", String(value));
+              }}
+              disabled={!!settingsLoading["checkout_free_shipping_min_subtotal"]}
+            >
+              {settingsLoading["checkout_free_shipping_min_subtotal"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-2 border-t border-border">
+          <label className="block text-xs font-medium">Motoboy — valor mínimo (R$)</label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={freeShippingMinMotoboy}
+              onChange={(e) => setFreeShippingMinMotoboy(e.target.value)}
+              placeholder="Ex: 800"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              disabled={!!settingsLoading["checkout_free_shipping_min_motoboy"]}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const raw = freeShippingMinMotoboy.trim();
+                if (!raw) {
+                  onDeleteSetting("checkout_free_shipping_min_motoboy");
+                  return;
+                }
+                const value = Number(raw);
+                if (!Number.isFinite(value) || value < 0) {
+                  toast.error("Valor inválido para frete grátis (Motoboy).");
+                  return;
+                }
+                onSaveSetting("checkout_free_shipping_min_motoboy", String(value));
+              }}
+              disabled={!!settingsLoading["checkout_free_shipping_min_motoboy"]}
+            >
+              {settingsLoading["checkout_free_shipping_min_motoboy"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Cada regra vale só para o frete correspondente. Pedidos com Motoboy não usam o mínimo do envio padrão e vice-versa.
+          </p>
+        </div>
       </div>
 
       {motoboyProposals.length > 0 && (

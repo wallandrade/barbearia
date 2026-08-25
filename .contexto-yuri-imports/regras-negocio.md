@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-25 | Frete grátis: mínimos **separados** — `checkout_free_shipping_min_subtotal` (padrão) e `checkout_free_shipping_min_motoboy`; checkout/API escolhem pelo frete | Motoboy e envio padrão não compartilham o mesmo limiar | Em branco = desativado naquele frete |
 | 2026-08-25 | Admin: **Frete Grátis por Valor Mínimo** saiu de Configurações e ficou no topo da aba **Fretes** | Config de frete junto das opções/Motoboy | Setting `checkout_free_shipping_min_subtotal` / checkout iguais |
 | 2026-08-25 | Admin Estoque (Loja + Motoboy): lista de saldo ordena **com estoque primeiro**, depois maior qty, depois nome | Produtos disponíveis aparecem no topo | Entrada/saída / copiar estoque iguais |
 | 2026-08-25 | Admin Editar Pedido: thumbnail na busca do catálogo e na lista de itens (snapshot ou `editCatalog.image`) | Identifica produto visualmente ao editar | Totais / desconto / salvar iguais |
@@ -109,7 +110,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 - Cupons: `%` ou valor fixo, mínimo, limite de usos, elegibilidade — `coupons.ts` / schema `coupons`.
 - Order bumps: ofertas no checkout — `order-bumps`.
-- Opções de frete: `shipping_options`; seguro (+% no fluxo de checkout, documentado no produto).
+- Opções de frete: `shipping_options`; seguro (+% no fluxo de checkout, documentado no produto). Frete grátis por valor mínimo: settings `checkout_free_shipping_min_subtotal` (envio padrão) e `checkout_free_shipping_min_motoboy` (Motoboy); checkout/API escolhem pelo `shippingType` / opção selecionada. Em branco = desativado naquele frete.
 - Fila de envio (`shipping_queue`): aloca slots para pedidos pagos com frete padrão — `lib/shipping-queue-allocator.ts`.
 - Motoboy: bairros (`motoboy_neighborhoods`) + faixas de CEP (`motoboy_cep_ranges`) + slots/bookings — schemas/rotas `motoboy-*`.
 - Admin cópia **🏍️ Motoboy**: todos os pedidos `shippingType=motoboy` carregados, **incluindo PIX pendente**, desde que não cancelados/enviados/etiqueta EE. Texto marca pagamento confirmado vs pendente. Fila **48h/Outros** continua só pagos.
