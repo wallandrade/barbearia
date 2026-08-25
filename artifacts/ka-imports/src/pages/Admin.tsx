@@ -1467,7 +1467,7 @@ export default function Admin() {
   const [webhookCopied, setWebhookCopied] = useState(false);
   // Order editing
   const [editOrderModal, setEditOrderModal] = useState<AdminOrder | null>(null);
-  const [editItems, setEditItems] = useState<Array<{ id: string; name: string; quantity: number; price: number }>>([]);
+  const [editItems, setEditItems] = useState<Array<{ id: string; name: string; quantity: number; price: number; image?: string | null }>>([]);
   const [editAddress, setEditAddress] = useState({
     cep: "",
     street: "",
@@ -3409,7 +3409,13 @@ export default function Admin() {
   // Order editing
   const openEditOrder = async (order: AdminOrder) => {
     setEditOrderModal(order);
-    setEditItems(getOrderProducts(order.products).map((p) => ({ id: p.id, name: p.name, quantity: p.quantity, price: p.price })));
+    setEditItems(getOrderProducts(order.products).map((p) => ({
+      id: p.id,
+      name: p.name,
+      quantity: p.quantity,
+      price: p.price,
+      image: p.image ?? null,
+    })));
     setEditDiscount(order.discountAmount || 0);
     setEditAddress({
       cep: String(order.addressCep || ""),
@@ -7511,21 +7517,34 @@ export default function Admin() {
                         {editProductSearch.trim().length > 0 && (
                           <div className="absolute top-full left-0 right-0 z-10 bg-white border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
                             {editCatalog.filter((p) => p.name.toLowerCase().includes(editProductSearch.toLowerCase())).slice(0, 8).map((p) => (
-                              <button key={p.id} className="w-full px-3 py-2 text-sm text-left hover:bg-muted/50 flex justify-between items-center"
+                              <button key={p.id} className="w-full px-3 py-2 text-sm text-left hover:bg-muted/50 flex items-center gap-2"
                                 onClick={() => {
+                                  const catalogImage = String((p as { image?: string | null }).image || "").trim() || null;
                                   const exists = editItems.find((i) => i.id === p.id);
                                   if (exists) {
                                     const newQty = exists.quantity + 1;
                                     const newPrice = resolveEditItemPrice(p, newQty);
-                                    setEditItems((prev) => prev.map((i) => i.id === p.id ? { ...i, quantity: newQty, price: newPrice } : i));
+                                    setEditItems((prev) => prev.map((i) => i.id === p.id ? { ...i, quantity: newQty, price: newPrice, image: i.image || catalogImage } : i));
                                   } else {
                                     const newPrice = resolveEditItemPrice(p, 1);
-                                    setEditItems((prev) => [...prev, { id: p.id, name: p.name, quantity: 1, price: newPrice }]);
+                                    setEditItems((prev) => [...prev, { id: p.id, name: p.name, quantity: 1, price: newPrice, image: catalogImage }]);
                                   }
                                   setEditProductSearch("");
                                 }}>
-                                <span>{p.name}</span>
-                                <span className="text-muted-foreground text-xs">{formatCurrency(p.promoPrice ?? p.price)}</span>
+                                {String((p as { image?: string | null }).image || "").trim() ? (
+                                  <img
+                                    src={String((p as { image?: string | null }).image)}
+                                    alt=""
+                                    className="w-8 h-8 rounded-md object-cover flex-shrink-0 border border-border"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <span className="w-8 h-8 rounded-md bg-muted border border-border flex-shrink-0 flex items-center justify-center text-[10px] text-muted-foreground">
+                                    —
+                                  </span>
+                                )}
+                                <span className="flex-1 min-w-0 truncate">{p.name}</span>
+                                <span className="text-muted-foreground text-xs shrink-0">{formatCurrency(p.promoPrice ?? p.price)}</span>
                               </button>
                             ))}
                             {editCatalog.filter((p) => p.name.toLowerCase().includes(editProductSearch.toLowerCase())).length === 0 && (
@@ -7543,8 +7562,23 @@ export default function Admin() {
                       <p className="text-sm text-muted-foreground">Nenhum produto. Adicione acima.</p>
                     ) : (
                       <div className="space-y-2">
-                        {editItems.map((item, idx) => (
+                        {editItems.map((item, idx) => {
+                          const catalog = editCatalog.find((c) => c.id === item.id);
+                          const thumb = String(item.image || (catalog as { image?: string | null } | undefined)?.image || "").trim();
+                          return (
                           <div key={idx} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+                            {thumb ? (
+                              <img
+                                src={thumb}
+                                alt=""
+                                className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-border"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <span className="w-10 h-10 rounded-lg bg-muted border border-border flex-shrink-0 flex items-center justify-center text-xs text-muted-foreground">
+                                —
+                              </span>
+                            )}
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{item.name}</p>
                               <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} × {item.quantity} = {formatCurrency(item.price * item.quantity)}</p>
@@ -7554,7 +7588,6 @@ export default function Admin() {
                                 onClick={() => {
                                   if (item.quantity <= 1) return;
                                   const newQty = item.quantity - 1;
-                                  const catalog = editCatalog.find((c) => c.id === item.id);
                                   const newPrice = catalog ? resolveEditItemPrice(catalog, newQty) : item.price;
                                   setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: newQty, price: newPrice } : i));
                                 }}>−</button>
@@ -7562,7 +7595,6 @@ export default function Admin() {
                               <button className="w-7 h-7 rounded-lg border border-border hover:bg-muted flex items-center justify-center text-base"
                                 onClick={() => {
                                   const newQty = item.quantity + 1;
-                                  const catalog = editCatalog.find((c) => c.id === item.id);
                                   const newPrice = catalog ? resolveEditItemPrice(catalog, newQty) : item.price;
                                   setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: newQty, price: newPrice } : i));
                                 }}>+</button>
@@ -7570,7 +7602,8 @@ export default function Admin() {
                                 onClick={() => setEditItems((prev) => prev.filter((_, j) => j !== idx))}><X className="w-4 h-4" /></button>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-20
+> **Última atualização:** 2026-08-25
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-25 | Admin Editar Pedido: thumbnail na busca do catálogo e na lista de itens (snapshot ou `editCatalog.image`) | Identifica produto visualmente ao editar | Totais / desconto / salvar iguais |
 | 2026-08-20 | Meus pedidos: **Entregues** = situação real (EE só com status entregue; manual `enviado` só após **15 dias** via `enviado_at`) | Coletado/em trânsito não infla o contador | Badge do card / timeline EE iguais na fonte |
 | 2026-08-20 | Slots Motoboy: última opção de horário **20:00** (antes 18:00 em intervalo 2h / 19:00 em 1h) | Checkout oferece botão 20h | Domingos; overlap; faixa CEP iguais |
 | 2026-08-20 | Checkout Motoboy: `min`/`max`/ajuste domingo usam data **local** (`toLocalYmd`), não `toISOString` | Após 18h no BR, sexta (e o “amanhã”) deixa de sumir do calendário | Regra ≥18h → amanhã; domingo sem entrega |
