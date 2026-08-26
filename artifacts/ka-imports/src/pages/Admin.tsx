@@ -5843,7 +5843,7 @@ export default function Admin() {
               finally { setCepRangeDeleting(null); }
             }}
             onMotoboyCatalogRefresh={() => { fetchMotoboyNeighborhoods(); fetchCepRanges(); }}
-            products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name, isActive: p.isActive !== false }))}
+            products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name, image: p.image ?? null, isActive: p.isActive !== false }))}
             settings={settings}
             settingsLoading={settingsLoading}
             onSaveSetting={saveSetting}
@@ -16698,7 +16698,7 @@ interface FretePanelProps {
   onCepRangeUpdate: (id: string, patch: Partial<MotoboyCepRange>) => void;
   onCepRangeDelete: (id: string) => void;
   onMotoboyCatalogRefresh?: () => void;
-  products: Array<{ id: string; name: string; isActive?: boolean }>;
+  products: Array<{ id: string; name: string; image?: string | null; isActive?: boolean }>;
   settings: Record<string, string>;
   settingsLoading: Record<string, boolean>;
   onSaveSetting: (key: string, value: string) => void;
@@ -17119,10 +17119,11 @@ function FretePanel({
           ) : (
             products.map((p) => {
               const checked = motoboyEligibleProductIds.includes(p.id);
+              const imageUrl = String(p.image || "").trim();
               return (
                 <label
                   key={p.id}
-                  className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer ${p.isActive === false ? "opacity-50" : ""}`}
+                  className={`flex items-center gap-2.5 text-sm px-2 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer ${p.isActive === false ? "opacity-50" : ""}`}
                 >
                   <input
                     type="checkbox"
@@ -17136,7 +17137,18 @@ function FretePanel({
                       );
                     }}
                   />
-                  <span className="truncate">{p.name}</span>
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      className="w-9 h-9 rounded-lg object-cover border border-border shrink-0 bg-muted"
+                    />
+                  ) : (
+                    <span className="w-9 h-9 rounded-lg bg-muted border border-border shrink-0 flex items-center justify-center">
+                      <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                    </span>
+                  )}
+                  <span className="truncate min-w-0 flex-1">{p.name}</span>
                   {p.isActive === false && (
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">inativo</span>
                   )}
