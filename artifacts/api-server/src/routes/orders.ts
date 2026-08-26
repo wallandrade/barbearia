@@ -23,7 +23,8 @@ import { getReshipmentByOrderIds, getMotoboyStockMap, registerInventoryEntry, re
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
-import { parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
+import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
+import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 
 const router: IRouter = Router();
@@ -224,6 +225,15 @@ async function getFreeShippingThresholds(): Promise<{ standardMin: number | null
     standardMin: parseFreeShippingMinSubtotalSetting(map["checkout_free_shipping_min_subtotal"] ?? ""),
     motoboyMin: parseFreeShippingMinSubtotalSetting(map["checkout_free_shipping_min_motoboy"] ?? ""),
   };
+}
+
+async function getMotoboyEligibleProductIds(): Promise<string[]> {
+  const rows = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "motoboy_eligible_product_ids"))
+    .limit(1);
+  return parseMotoboyEligibleProductIds(rows[0]?.value ?? "");
 }
 
 type BulkDiscountTierInput = {
@@ -1237,6 +1247,18 @@ router.post("/orders", async (req, res) => {
         items: priceChanges,
       });
       return;
+    }
+
+    if (isMotoboyShippingType(shippingType)) {
+      const eligibleIds = await getMotoboyEligibleProductIds();
+      const cartIds = orderProducts.map((p: { id: string }) => p.id);
+      if (!isCartEligibleForMotoboy(cartIds, eligibleIds)) {
+        res.status(400).json({
+          error: "MOTOBOY_NOT_ELIGIBLE",
+          message: "Um ou mais produtos do carrinho não podem ser entregues por Motoboy. Escolha o frete padrão da loja.",
+        });
+        return;
+      }
     }
 
     const computedSubtotal = orderProducts.reduce((acc: number, p: { quantity?: number; price?: number }) => {

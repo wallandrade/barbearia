@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-25
+> **Última atualização:** 2026-08-26
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-26 | Motoboy: whitelist de produtos via setting `motoboy_eligible_product_ids` (Admin Fretes); lista vazia = todos; carrinho misto bloqueia Motoboy; API valida no checkout/orders | Só produtos marcados oferecem Motoboy | Bairros/CEP/slots; frete grátis Motoboy iguais |
 | 2026-08-25 | Cópia Motoboy: sem telefone; itens com valor; produtos + frete Motoboy + total (produtos+Motoboy) | Motoboy vê quanto cobrar por entrega | Fila 48h/Outros; PIX pendente na lista iguais |
 | 2026-08-25 | Frete grátis: mínimos **separados** — `checkout_free_shipping_min_subtotal` (padrão) e `checkout_free_shipping_min_motoboy`; checkout/API escolhem pelo frete | Motoboy e envio padrão não compartilham o mesmo limiar | Em branco = desativado naquele frete |
 | 2026-08-25 | Admin: **Frete Grátis por Valor Mínimo** saiu de Configurações e ficou no topo da aba **Fretes** | Config de frete junto das opções/Motoboy | Setting `checkout_free_shipping_min_subtotal` / checkout iguais |
@@ -112,6 +113,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Cupons: `%` ou valor fixo, mínimo, limite de usos, elegibilidade — `coupons.ts` / schema `coupons`.
 - Order bumps: ofertas no checkout — `order-bumps`.
 - Opções de frete: `shipping_options`; seguro (+% no fluxo de checkout, documentado no produto). Frete grátis por valor mínimo: settings `checkout_free_shipping_min_subtotal` (envio padrão) e `checkout_free_shipping_min_motoboy` (Motoboy); checkout/API escolhem pelo `shippingType` / opção selecionada. Em branco = desativado naquele frete.
+- **Produtos elegíveis Motoboy:** setting público `motoboy_eligible_product_ids` (JSON de IDs) em Admin → Fretes. Vazio = todos os produtos. Com lista: Motoboy só aparece se **todos** os itens do carrinho estiverem na lista; senão só frete padrão. API rejeita Motoboy com `MOTOBOY_NOT_ELIGIBLE` se o carrinho não for elegível (`lib/motoboy-eligible-products.ts`).
 - Fila de envio (`shipping_queue`): aloca slots para pedidos pagos com frete padrão — `lib/shipping-queue-allocator.ts`.
 - Motoboy: bairros (`motoboy_neighborhoods`) + faixas de CEP (`motoboy_cep_ranges`) + slots/bookings — schemas/rotas `motoboy-*`.
 - Admin cópia **🏍️ Motoboy**: todos os pedidos `shippingType=motoboy` carregados, **incluindo PIX pendente**, desde que não cancelados/enviados/etiqueta EE. Texto: pagamento confirmado/pendente, endereço **sem telefone**, itens com valor, **Produtos** + **Frete Motoboy** (`shippingCost`) + **Total (produtos + Motoboy)**. Fila **48h/Outros** continua só pagos.

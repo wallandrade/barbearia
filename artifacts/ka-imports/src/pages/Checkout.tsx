@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -179,6 +179,8 @@ export default function Checkout() {
   const [checkoutWhatsappNumber, setCheckoutWhatsappNumber] = useState("5535999768759");
   const [freeShippingMinStandard, setFreeShippingMinStandard] = useState<number | null>(null);
   const [freeShippingMinMotoboy, setFreeShippingMinMotoboy] = useState<number | null>(null);
+  const [motoboyEligibleProductIds, setMotoboyEligibleProductIds] = useState<string[]>([]);
+  const cartMotoboyEligibleRef = useRef(true);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
   const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
 
@@ -476,6 +478,21 @@ export default function Checkout() {
           }
           setFreeShippingMinStandard(parseCurrency(data["checkout_free_shipping_min_subtotal"]));
           setFreeShippingMinMotoboy(parseCurrency(data["checkout_free_shipping_min_motoboy"]));
+          {
+            const rawEligible = String(data["motoboy_eligible_product_ids"] ?? "").trim();
+            let ids: string[] = [];
+            if (rawEligible) {
+              try {
+                const parsed = JSON.parse(rawEligible) as unknown;
+                if (Array.isArray(parsed)) {
+                  ids = [...new Set(parsed.map((v) => String(v ?? "").trim()).filter(Boolean))];
+                }
+              } catch {
+                ids = [...new Set(rawEligible.split(",").map((v) => v.trim()).filter(Boolean))];
+              }
+            }
+            setMotoboyEligibleProductIds(ids);
+          }
           if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
         }
       } catch {
@@ -702,10 +719,38 @@ export default function Checkout() {
       eligibleSet.has(p.id) ? acc + p.regularPrice * p.quantity : acc
     ), 0);
   }, [appliedCoupon, couponProductsPayload]);
-  // Merge regular options with motoboy option when available
-  const shippingOptions: ShippingOption[] = motoboyShippingOption
-    ? [...baseShippingOptions, motoboyShippingOption]
-    : baseShippingOptions;
+
+  const isCartEligibleForMotoboyDelivery = useMemo(() => {
+    if (motoboyEligibleProductIds.length === 0) return true;
+    const cartIds = [...new Set(couponProductsPayload.map((p) => String(p.id || "").trim()).filter(Boolean))];
+    if (cartIds.length === 0) return false;
+    const allowed = new Set(motoboyEligibleProductIds);
+    return cartIds.every((id) => allowed.has(id));
+  }, [couponProductsPayload, motoboyEligibleProductIds]);
+
+  cartMotoboyEligibleRef.current = isCartEligibleForMotoboyDelivery;
+
+  // Merge regular options with motoboy option when available AND cart products are eligible
+  const shippingOptions: ShippingOption[] =
+    motoboyShippingOption && isCartEligibleForMotoboyDelivery
+      ? [...baseShippingOptions, motoboyShippingOption]
+      : baseShippingOptions;
+
+  useEffect(() => {
+    if (isCartEligibleForMotoboyDelivery) return;
+    if (motoboyShippingOption) {
+      setMotoboyShippingOption(null);
+      setMotoboyNeighborhoodId(null);
+      setMotoboySlotDate("");
+      setMotoboySlotTime("");
+    }
+    if (selectedShippingId?.startsWith("motoboy_")) {
+      setSelectedShippingId(null);
+    }
+    if (fastModeStep === "motoboy") {
+      setFastModeStep("nomotoboy");
+    }
+  }, [isCartEligibleForMotoboyDelivery, motoboyShippingOption, selectedShippingId, fastModeStep]);
 
   const selectedShipping = shippingOptions.find((o) => o.id === selectedShippingId) ?? null;
   const shippingBaseCost = selectedShipping ? Number(selectedShipping.price) : 0;
@@ -870,6 +915,10 @@ export default function Checkout() {
           // Check if motoboy delivers to this neighborhood
           if (data.bairro) {
             try {
+              if (!cartMotoboyEligibleRef.current) {
+                setMotoboyNeighborhoodId(null);
+                setMotoboyShippingOption(null);
+              } else {
               const mbRes = await fetch(`${BASE}/api/motoboy-neighborhoods/lookup?bairro=${encodeURIComponent(data.bairro)}&cidade=${encodeURIComponent(data.localidade ?? "")}`);
               const mbData = await mbRes.json() as { neighborhood?: { id: string; neighborhoodName: string; price: string | number; notes?: string | null } | null };
               if (mbData.neighborhood) {
@@ -900,6 +949,7 @@ export default function Checkout() {
                   setMotoboyNeighborhoodId(null);
                   setMotoboyShippingOption(null);
                 }
+              }
               }
             } catch {
               setMotoboyShippingOption(null);
@@ -1572,6 +1622,12 @@ export default function Checkout() {
                               const viaRes = await fetch(`https://viacep.com.br/ws/${raw}/json/`);
                               const viaData = await viaRes.json() as { erro?: boolean; bairro?: string; localidade?: string; logradouro?: string; uf?: string };
                               if (viaData.erro) { setFastModeStep("nomotoboy"); return; }
+                              if (!cartMotoboyEligibleRef.current) {
+                                setMotoboyNeighborhoodId(null);
+                                setMotoboyShippingOption(null);
+                                setFastModeStep("nomotoboy");
+                                return;
+                              }
                               const mbRes = await fetch(`${BASE}/api/motoboy-neighborhoods/lookup?bairro=${encodeURIComponent(viaData.bairro ?? "")}&cidade=${encodeURIComponent(viaData.localidade ?? "")}`);
                               const mbData = await mbRes.json() as { neighborhood?: { id: string; neighborhoodName: string; price: string | number; notes?: string | null } | null };
                               if (mbData.neighborhood) {

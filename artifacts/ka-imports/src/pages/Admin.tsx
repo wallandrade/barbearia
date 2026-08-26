@@ -2907,7 +2907,7 @@ export default function Admin() {
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
     else if (tab === "expenses")   fetchExpenses();
-    else if (tab === "fretes")     { fetchShippingOptions(); fetchMotoboyNeighborhoods(); fetchCepRanges(); fetchSettings(); }
+    else if (tab === "fretes")     { fetchShippingOptions(); fetchMotoboyNeighborhoods(); fetchCepRanges(); fetchSettings(); fetchProducts(); }
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
@@ -5843,6 +5843,7 @@ export default function Admin() {
               finally { setCepRangeDeleting(null); }
             }}
             onMotoboyCatalogRefresh={() => { fetchMotoboyNeighborhoods(); fetchCepRanges(); }}
+            products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name, isActive: p.isActive !== false }))}
             settings={settings}
             settingsLoading={settingsLoading}
             onSaveSetting={saveSetting}
@@ -16697,22 +16698,41 @@ interface FretePanelProps {
   onCepRangeUpdate: (id: string, patch: Partial<MotoboyCepRange>) => void;
   onCepRangeDelete: (id: string) => void;
   onMotoboyCatalogRefresh?: () => void;
+  products: Array<{ id: string; name: string; isActive?: boolean }>;
   settings: Record<string, string>;
   settingsLoading: Record<string, boolean>;
   onSaveSetting: (key: string, value: string) => void;
   onDeleteSetting: (key: string) => void;
 }
 
+function parseMotoboyEligibleProductIdsSetting(raw: string | undefined): string[] {
+  const str = String(raw ?? "").trim();
+  if (!str) return [];
+  try {
+    const parsed = JSON.parse(str) as unknown;
+    if (Array.isArray(parsed)) {
+      return [...new Set(parsed.map((v) => String(v ?? "").trim()).filter(Boolean))];
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...new Set(str.split(",").map((v) => v.trim()).filter(Boolean))];
+}
+
 function FretePanel({
   options, form, setForm, creating, deleting, editing, setEditing, updating, onCreate, onUpdate, onDelete,
   motoboyNeighborhoods, motoboyForm, setMotoboyForm, motoboyCreating, motoboyDeleting, motoboyEditing, setMotoboyEditing, motoboyUpdating, onMotoboyCreate, onMotoboyUpdate, onMotoboyDelete,
   cepRanges, cepRangeForm, setCepRangeForm, cepRangeCreating, cepRangeDeleting, cepRangeUpdating, onCepRangeCreate, onCepRangeUpdate, onCepRangeDelete, onMotoboyCatalogRefresh,
+  products,
   settings, settingsLoading, onSaveSetting, onDeleteSetting,
 }: FretePanelProps) {
   const [editForm, setEditForm] = useState({ name: "", description: "", price: "", sortOrder: "0" });
   const [mbEditForm, setMbEditForm] = useState({ neighborhoodName: "", city: "", price: "", sortOrder: "0", notes: "" });
   const [freeShippingMinSubtotal, setFreeShippingMinSubtotal] = useState(settings["checkout_free_shipping_min_subtotal"] ?? "");
   const [freeShippingMinMotoboy, setFreeShippingMinMotoboy] = useState(settings["checkout_free_shipping_min_motoboy"] ?? "");
+  const [motoboyEligibleProductIds, setMotoboyEligibleProductIds] = useState<string[]>(() =>
+    parseMotoboyEligibleProductIdsSetting(settings["motoboy_eligible_product_ids"]),
+  );
   const [motoboyProposals, setMotoboyProposals] = useState<Array<{
     id: string;
     kind: string;
@@ -16727,6 +16747,7 @@ function FretePanel({
   useEffect(() => {
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
     setFreeShippingMinMotoboy(settings["checkout_free_shipping_min_motoboy"] ?? "");
+    setMotoboyEligibleProductIds(parseMotoboyEligibleProductIdsSetting(settings["motoboy_eligible_product_ids"]));
   }, [settings]);
 
   const fetchMotoboyProposals = useCallback(async () => {
@@ -17078,6 +17099,85 @@ function FretePanel({
           <li>Use a ordem de exibição para controlar qual frete aparece primeiro.</li>
           <li>O valor do frete é somado ao total do pedido e exibido no QR Code PIX.</li>
         </ul>
+      </div>
+
+      {/* Produtos elegíveis Motoboy */}
+      <div className="bg-white rounded-2xl shadow-sm border border-border p-6 max-w-2xl space-y-4">
+        <div>
+          <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
+            <IconLucide name="Bike" className="w-4 h-4 text-primary" />
+            Produtos com entrega Motoboy
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            Marque quais produtos podem oferecer Motoboy no checkout. Vazio = todos os produtos. Se o carrinho tiver qualquer item fora da lista, só aparece o frete normal da loja.
+          </p>
+        </div>
+
+        <div className="max-h-56 overflow-auto rounded-xl border border-border bg-muted/20 p-2 space-y-1">
+          {products.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-2 py-2">Nenhum produto carregado. Abra a aba Produtos ou aguarde o carregamento.</p>
+          ) : (
+            products.map((p) => {
+              const checked = motoboyEligibleProductIds.includes(p.id);
+              return (
+                <label
+                  key={p.id}
+                  className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer ${p.isActive === false ? "opacity-50" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={!!settingsLoading["motoboy_eligible_product_ids"]}
+                    onChange={(e) => {
+                      setMotoboyEligibleProductIds((prev) =>
+                        e.target.checked
+                          ? [...prev, p.id]
+                          : prev.filter((id) => id !== p.id),
+                      );
+                    }}
+                  />
+                  <span className="truncate">{p.name}</span>
+                  {p.isActive === false && (
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">inativo</span>
+                  )}
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 justify-between">
+          <p className="text-xs text-muted-foreground">
+            {motoboyEligibleProductIds.length === 0
+              ? "Nenhum filtro — Motoboy disponível para todos os produtos (se o CEP for atendido)."
+              : `${motoboyEligibleProductIds.length} produto(s) selecionado(s).`}
+          </p>
+          <div className="flex items-center gap-2">
+            {motoboyEligibleProductIds.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!!settingsLoading["motoboy_eligible_product_ids"]}
+                onClick={() => setMotoboyEligibleProductIds([])}
+              >
+                Limpar
+              </Button>
+            )}
+            <Button
+              size="sm"
+              disabled={!!settingsLoading["motoboy_eligible_product_ids"]}
+              onClick={() => {
+                if (motoboyEligibleProductIds.length === 0) {
+                  onDeleteSetting("motoboy_eligible_product_ids");
+                  return;
+                }
+                onSaveSetting("motoboy_eligible_product_ids", JSON.stringify(motoboyEligibleProductIds));
+              }}
+            >
+              {settingsLoading["motoboy_eligible_product_ids"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* ------------------------------------------------------------------ */}
