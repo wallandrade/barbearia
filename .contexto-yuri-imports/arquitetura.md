@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-08-19
+> **Última atualização:** 2026-08-26
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-26 | Deploy API Railway: repo Git **`wallandrade/barbearia`** / `main` (auto-deploy). Remote `oficialkaimports` é paralelo/legado | Redeploy do mesmo commit antigo não puxa whitelist Motoboy | Domínio `api.yury-imports.com` igual |
 | 2026-08-19 | `support_tickets.problem_type` + `missing_products_json` | Cliente marca itens faltantes; admin reenvia só esses | Auth/deploy iguais |
 | 2026-08-19 | `orders.parent_order_id` (+ runtime) para reenvio como pedido filho | Liga filho → pai no suporte | Stack/deploy iguais |
 | 2026-08-18 | Rotas `bank-statement` + campos `bank_deposit_*` em `orders` | Conciliação extrato OFX no admin | Stack/deploy iguais |
@@ -61,9 +62,10 @@ APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, 
 
 ## Deploy
 
-- **API:** Railway + Nixpacks — `railway.json` (`pnpm --filter @workspace/api-server start`), `nixpacks.toml`.
+- **API:** Railway + Nixpacks — serviço `@workspace/api-server` ligado a GitHub **`wallandrade/barbearia`** / branch **`main`** (auto-deploy on push). Start: `railway.json` + `nixpacks.toml`.
 - **FE:** Vercel — `vercel.json` / `artifacts/ka-imports/vercel.json` reescreve `/api/*` → `https://api.yury-imports.com/api/:path*`.
-- Replit metadata ainda presente (legado de ambiente).
+- Remote **`oficialkaimports`** existe em paralelo (histórico divergente); **não** é o source do Railway deste serviço.
+- Anti-padrão: no Railway, **Redeploy** do deployment antigo (ex. frete grátis) sem puxar a `main` nova — a API fica sem settings novas (ex. `motoboy_eligible_product_ids` → 400 `INVALID_KEY`). Preferir deploy da `main` atual (push novo ou Deploy latest).
 
 ## Áreas caras / leitura seletiva
 

@@ -971,8 +971,9 @@ async function ensureMarketingExpensesColumns(databaseName: string): Promise<voi
 
 async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<void> {
   if (await tableExists(databaseName, "motoboy_price_proposals")) return;
-  await pool.execute(`
-    CREATE TABLE \`motoboy_price_proposals\` (
+  try {
+    await pool.execute(`
+    CREATE TABLE IF NOT EXISTS \`motoboy_price_proposals\` (
       \`id\` VARCHAR(255) NOT NULL PRIMARY KEY,
       \`kind\` VARCHAR(64) NOT NULL,
       \`target_id\` VARCHAR(255) NULL,
@@ -987,7 +988,12 @@ async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<v
       INDEX \`idx_motoboy_proposals_created\` (\`created_at\`)
     )
   `);
-  console.log("[RuntimeSchema] Created table motoboy_price_proposals");
+    console.log("[RuntimeSchema] Created table motoboy_price_proposals");
+  } catch (err) {
+    const code = String((err as { code?: string })?.code || "");
+    if (code === "ER_TABLE_EXISTS_ERROR") return;
+    throw err;
+  }
 }
 
 export async function ensureRuntimeSchema(): Promise<void> {
