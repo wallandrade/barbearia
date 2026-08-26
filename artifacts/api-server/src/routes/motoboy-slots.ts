@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
+import { isMotoboySlotInPast, timeToMinutes } from "../lib/motoboy-slot-time";
 
 const router: IRouter = Router();
 
@@ -15,10 +16,6 @@ const SLOT_LAST_START = 20; // última opção: 20:00 (entrega até 20h)
 const RANGE_ID_PREFIX = "range_";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
-function timeToMinutes(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + (m || 0);
-}
 
 /** Returns true if [aStart, aStart+aInterval) overlaps [bStart, bStart+bInterval) */
 function overlaps(aStart: number, aInterval: number, bStart: number, bInterval: number) {
@@ -91,8 +88,9 @@ router.get("/motoboy-slots/available", async (req, res) => {
         eq(motoboyBookingsTable.isReleased, false),
       ));
 
-    // Filter out slots that overlap with any booking
+    // Filter out slots that overlap with any booking or already passed (today, SP)
     const available = candidates.filter((slot) => {
+      if (isMotoboySlotInPast(date, slot)) return false;
       const slotMin = timeToMinutes(slot);
       return !bookings.some((b) =>
         overlaps(slotMin, intervalHours, timeToMinutes(b.slotTime), b.intervalHours)
@@ -124,6 +122,14 @@ router.post("/motoboy-slots/book", async (req, res) => {
 
     if (!slotDate || !slotTime || !neighborhoodName) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campos obrigatórios faltando." });
+      return;
+    }
+
+    if (isMotoboySlotInPast(slotDate, slotTime)) {
+      res.status(400).json({
+        error: "SLOT_IN_PAST",
+        message: "Este horário já passou. Escolha outro horário ou outra data.",
+      });
       return;
     }
 
