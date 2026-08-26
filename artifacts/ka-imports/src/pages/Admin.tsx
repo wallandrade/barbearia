@@ -2522,7 +2522,15 @@ export default function Admin() {
       const res = await fetch(`${BASE}/api/admin/settings/${key}`, {
         method: "PUT", headers: authHeaders(), body: JSON.stringify({ value }),
       });
-      if (!res.ok) { toast.error("Erro ao salvar configuração."); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { error?: string; message?: string }));
+        if (data.error === "INVALID_KEY") {
+          toast.error("API desatualizada: chave de configuração não aceita. Redeploy a API (Railway).");
+        } else {
+          toast.error(data.message || data.error || "Erro ao salvar configuração.");
+        }
+        return;
+      }
       setSettings((p) => ({ ...p, [key]: value }));
       toast.success("Configuração salva!");
     } catch { toast.error("Erro ao salvar configuração."); }
