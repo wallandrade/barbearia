@@ -29,6 +29,7 @@ import motoboyNeighborhoodsRouter from "./motoboy-neighborhoods";
 import motoboySlots from "./motoboy-slots";
 import motoboyCepRangesRouter from "./motoboy-cep-ranges";
 import motoboyProposalsRouter from "./motoboy-proposals";
+import motoboyCoverageSyncRouter from "./motoboy-coverage-sync";
 import shippingQueueRouter from "./shipping-queue";
 
 import brevoRouter from "./brevo";
@@ -66,6 +67,7 @@ router.use(motoboyNeighborhoodsRouter);
 router.use(motoboySlots);
 router.use(motoboyCepRangesRouter);
 router.use(motoboyProposalsRouter);
+router.use(motoboyCoverageSyncRouter);
 router.use(shippingQueueRouter);
 router.use(brevoRouter);
 router.use(envioecomRouter);

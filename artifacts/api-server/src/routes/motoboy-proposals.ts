@@ -8,6 +8,13 @@ import {
 import { eq, desc, asc } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
+import {
+  cepRangeEventType,
+  neighborhoodEventType,
+  notifyMotoboyCoverageChange,
+  serializeCepRange,
+  serializeNeighborhood,
+} from "../lib/motoboy-coverage-sync";
 
 const router: IRouter = Router();
 
@@ -319,17 +326,21 @@ router.post("/admin/motoboy-proposals/:id/approve", requirePrimaryAdmin, async (
 
     const payload = parsePayload(proposal.payload);
     const kind = proposal.kind as ProposalKind;
+    let notifyNeighborhoodId: string | null = null;
+    let notifyCepRangeId: string | null = null;
 
     if (kind === "update_neighborhood" && proposal.targetId) {
       await db
         .update(motoboyNeighborhoodsTable)
-        .set({ price: String(Number(payload.proposedPrice).toFixed(2)) })
+        .set({ price: String(Number(payload.proposedPrice).toFixed(2)), updatedAt: new Date() })
         .where(eq(motoboyNeighborhoodsTable.id, proposal.targetId));
+      notifyNeighborhoodId = proposal.targetId;
     } else if (kind === "update_cep_range" && proposal.targetId) {
       await db
         .update(motoboyCepRangesTable)
         .set({ price: String(Number(payload.proposedPrice).toFixed(2)) })
         .where(eq(motoboyCepRangesTable.id, proposal.targetId));
+      notifyCepRangeId = proposal.targetId;
     } else if (kind === "create_neighborhood") {
       const newId = crypto.randomBytes(8).toString("hex");
       await db.insert(motoboyNeighborhoodsTable).values({
@@ -341,6 +352,7 @@ router.post("/admin/motoboy-proposals/:id/approve", requirePrimaryAdmin, async (
         isActive: true,
         notes: payload.notes != null ? String(payload.notes) : null,
       });
+      notifyNeighborhoodId = newId;
     } else if (kind === "create_cep_range") {
       const newId = `cr_${crypto.randomBytes(6).toString("hex")}`;
       await db.insert(motoboyCepRangesTable).values({
@@ -355,6 +367,7 @@ router.post("/admin/motoboy-proposals/:id/approve", requirePrimaryAdmin, async (
         sortOrder: 0,
         notes: payload.notes != null ? String(payload.notes) : null,
       });
+      notifyCepRangeId = newId;
     } else {
       res.status(400).json({ error: "INVALID_KIND" });
       return;
@@ -369,6 +382,27 @@ router.post("/admin/motoboy-proposals/:id/approve", requirePrimaryAdmin, async (
         reviewNote,
       })
       .where(eq(motoboyPriceProposalsTable.id, id));
+
+    if (notifyNeighborhoodId) {
+      const rows = await db
+        .select()
+        .from(motoboyNeighborhoodsTable)
+        .where(eq(motoboyNeighborhoodsTable.id, notifyNeighborhoodId))
+        .limit(1);
+      if (rows[0]) {
+        notifyMotoboyCoverageChange(neighborhoodEventType(rows[0]), serializeNeighborhood(rows[0]));
+      }
+    }
+    if (notifyCepRangeId) {
+      const rows = await db
+        .select()
+        .from(motoboyCepRangesTable)
+        .where(eq(motoboyCepRangesTable.id, notifyCepRangeId))
+        .limit(1);
+      if (rows[0]) {
+        notifyMotoboyCoverageChange(cepRangeEventType(rows[0]), serializeCepRange(rows[0]));
+      }
+    }
 
     res.json({ ok: true });
   } catch (err) {

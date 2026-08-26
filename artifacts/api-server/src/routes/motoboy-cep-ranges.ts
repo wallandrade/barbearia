@@ -3,6 +3,11 @@ import { db, motoboyCepRangesTable } from "@workspace/db";
 import { eq, and, lte, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
+import {
+  cepRangeEventType,
+  notifyMotoboyCoverageChange,
+  serializeCepRange,
+} from "../lib/motoboy-coverage-sync";
 
 const router: IRouter = Router();
 
@@ -95,6 +100,9 @@ router.post("/admin/motoboy-cep-ranges", requirePrimaryAdmin, async (req, res) =
     });
 
     const created = await db.select().from(motoboyCepRangesTable).where(eq(motoboyCepRangesTable.id, id)).limit(1);
+    if (created[0]) {
+      notifyMotoboyCoverageChange(cepRangeEventType(created[0]), serializeCepRange(created[0]));
+    }
     res.status(201).json({ range: created[0] });
   } catch (err) {
     console.error("[MotoboyCepRanges] create error:", err);
@@ -125,6 +133,9 @@ router.patch("/admin/motoboy-cep-ranges/:id", requirePrimaryAdmin, async (req, r
 
     await db.update(motoboyCepRangesTable).set(updates).where(eq(motoboyCepRangesTable.id, id));
     const updated = await db.select().from(motoboyCepRangesTable).where(eq(motoboyCepRangesTable.id, id)).limit(1);
+    if (updated[0]) {
+      notifyMotoboyCoverageChange(cepRangeEventType(updated[0]), serializeCepRange(updated[0]));
+    }
     res.json({ range: updated[0] ?? null });
   } catch (err) {
     console.error("[MotoboyCepRanges] update error:", err);
@@ -140,6 +151,7 @@ router.delete("/admin/motoboy-cep-ranges/:id", requirePrimaryAdmin, async (req, 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
     await db.delete(motoboyCepRangesTable).where(eq(motoboyCepRangesTable.id, id));
+    notifyMotoboyCoverageChange("motoboy.cep_range.deleted", { id });
     res.json({ ok: true });
   } catch (err) {
     console.error("[MotoboyCepRanges] delete error:", err);

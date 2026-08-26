@@ -3,6 +3,11 @@ import { db, motoboyNeighborhoodsTable } from "@workspace/db";
 import { eq, asc } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
+import {
+  neighborhoodEventType,
+  notifyMotoboyCoverageChange,
+  serializeNeighborhood,
+} from "../lib/motoboy-coverage-sync";
 
 // Removes diacritics so "Brasilândia" === "Brasilia", "Butantã" === "Butanta", etc.
 function stripAccents(s: string): string {
@@ -117,6 +122,13 @@ router.post("/admin/motoboy-neighborhoods", requirePrimaryAdmin, async (req, res
       .where(eq(motoboyNeighborhoodsTable.id, id))
       .limit(1);
 
+    if (created[0]) {
+      notifyMotoboyCoverageChange(
+        neighborhoodEventType(created[0]),
+        serializeNeighborhood(created[0]),
+      );
+    }
+
     res.status(201).json({ neighborhood: created[0] });
   } catch (err) {
     console.error("[MotoboyNeighborhoods] create error:", err);
@@ -169,6 +181,11 @@ router.patch("/admin/motoboy-neighborhoods/:id", requirePrimaryAdmin, async (req
       return;
     }
 
+    notifyMotoboyCoverageChange(
+      neighborhoodEventType(updated[0]),
+      serializeNeighborhood(updated[0]),
+    );
+
     res.json({ neighborhood: updated[0] });
   } catch (err) {
     console.error("[MotoboyNeighborhoods] update error:", err);
@@ -188,6 +205,8 @@ router.delete("/admin/motoboy-neighborhoods/:id", requirePrimaryAdmin, async (re
     await db
       .delete(motoboyNeighborhoodsTable)
       .where(eq(motoboyNeighborhoodsTable.id, id));
+
+    notifyMotoboyCoverageChange("motoboy.neighborhood.deleted", { id });
 
     res.json({ success: true });
   } catch (err) {

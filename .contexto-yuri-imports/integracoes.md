@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-18
+> **Última atualização:** 2026-08-26
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-26 | Sync cobertura Motoboy → espelho: `GET /api/integrations/motoboy/coverage` + webhook HMAC (`MOTOBOY_SYNC_*`) em CRUD bairros/faixas e aprovação portal | KA Imports (ou outro) puxa/recebe bairros+CEP | Checkout Motoboy / slots / estoque iguais |
 | 2026-08-19 | tracking-board: campo `events` (histórico completo) + UI expand | Timeline no painel admin | Webhook / soft-sync iguais |
 | 2026-08-19 | tracking-board sync: prioridade Pronto + body shipment_id na linha | Lote/linha alinhados ao Sync do card | Cotação/create iguais |
 | 2026-08-19 | `pickEffectiveShipmentStatus` no resolveLiveShipmentRefs | Sync/soft-sync usam Coletado do histórico | Payload API igual |
@@ -71,6 +72,17 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Sync/soft-sync: `pickEffectiveShipmentStatus` — se `status` do envio ficar em Pronto/etiqueta mas o último `status_history` for Coletado/trânsito/entregue, grava o do histórico
 - Distância aproximada (pós-coleta): `geo-distance.ts` geocodifica último `location` do histórico (Nominatim) e cidade do cliente (BrasilAPI CEP v2 ou Nominatim); Haversine → `distanceKmFromCustomerCity` no payload de tracking; UI: “Está a cerca de X km da sua cidade” (não mostra em embalagem/entregue/sem local)
 - Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
+
+## Motoboy cobertura → espelho (KA Imports)
+
+Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `motoboy_cep_ranges`). Sync **só cobertura** (não pedidos/agenda/estoque).
+
+- **Pull:** `GET /api/integrations/motoboy/coverage` — Bearer ou `X-Api-Key` = `MOTOBOY_SYNC_TOKEN`. Sem token → 503. Resposta: `{ syncedAt, neighborhoods[], cepRanges[] }` (inclui inativos).
+- **Push:** env `MOTOBOY_SYNC_WEBHOOK_URL` + `MOTOBOY_SYNC_WEBHOOK_SECRET`. Em create/patch/delete admin e aprovação de propostas do portal dispara evento fire-and-forget (3 tentativas).
+- **Headers webhook:** `X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp` (unix sec). HMAC-SHA256 do **JSON cru**.
+- **Eventos:** `motoboy.neighborhood.upserted|deactivated|deleted`, `motoboy.cep_range.upserted|deactivated|deleted`.
+- Lib: `lib/motoboy-coverage-sync.ts`; rota: `routes/motoboy-coverage-sync.ts`.
+- Fase 2 (proposta do espelho → Yury) **não** implementada.
 
 ## Storage
 
