@@ -1679,7 +1679,14 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
     if (cardTotalActual !== undefined) updates.cardTotalActual = String(cardTotalActual);
 
     const existing = await db
-      .select({ status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+      .select({
+        status: ordersTable.status,
+        couponCode: ordersTable.couponCode,
+        total: ordersTable.total,
+        paidAmount: ordersTable.paidAmount,
+        clientName: ordersTable.clientName,
+        shippingType: ordersTable.shippingType,
+      })
       .from(ordersTable)
       .where(buildAdminOrderWhere(id, adminScope))
       .limit(1);
@@ -1752,6 +1759,15 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
     }
 
     broadcastNotification({ type: "order_status_updated", data: { id, status } });
+    if (isBeingPaid && !wasAlreadyPaid) {
+      void sendOutboundWebhook("order_paid", {
+        id,
+        status: nextStatus,
+        clientName: existing[0]?.clientName,
+        total: existing[0]?.total,
+        source: "admin_manual",
+      });
+    }
     res.json({ ok: true, id, status });
   } catch (err) {
     console.error("Update order status error:", err);
@@ -1846,7 +1862,14 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
     }
 
     const existing = await db
-      .select({ proofUrl: ordersTable.proofUrl, proofUrls: ordersTable.proofUrls, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+      .select({
+        proofUrl: ordersTable.proofUrl,
+        proofUrls: ordersTable.proofUrls,
+        total: ordersTable.total,
+        paidAmount: ordersTable.paidAmount,
+        status: ordersTable.status,
+        clientName: ordersTable.clientName,
+      })
       .from(ordersTable)
       .where(buildAdminOrderWhere(id, adminScope))
       .limit(1);
@@ -1876,6 +1899,17 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
     await ensureOrderCommission(id);
 
     broadcastNotification({ type: "order_status_updated", data: { id, status: "completed" } });
+    const previousStatus = String(existing[0]?.status || "").trim().toLowerCase();
+    const wasAlreadyPaid = previousStatus === "paid" || previousStatus === "completed";
+    if (!wasAlreadyPaid) {
+      void sendOutboundWebhook("order_paid", {
+        id,
+        status: "completed",
+        clientName: existing[0]?.clientName,
+        total: existing[0]?.total,
+        source: "admin_proof",
+      });
+    }
     res.json({ ok: true, proofUrls: urls });
   } catch (err) {
     console.error("Upload proof error:", err);
