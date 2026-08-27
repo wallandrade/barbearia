@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { allocateShippingSlot, releaseShippingSlot } from "./shipping-queue-allocator";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -1096,6 +1097,8 @@ export async function setReshipmentStatus(id: string, status: ReshipmentStatus):
   const orderId = String(rows[0].orderId || "").trim();
   if (orderId) {
     const sent = status === "reenvio_enviado";
+    const closed = sent || status === "reenvio_resolvido_sem_entrada";
+    const wasSent = String(rows[0].status || "") === "reenvio_enviado";
     await db
       .update(ordersTable)
       .set({
@@ -1104,6 +1107,11 @@ export async function setReshipmentStatus(id: string, status: ReshipmentStatus):
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, orderId));
+    if (closed) {
+      void releaseShippingSlot(orderId);
+    } else if (wasSent) {
+      void allocateShippingSlot(orderId);
+    }
   }
 
   return true;

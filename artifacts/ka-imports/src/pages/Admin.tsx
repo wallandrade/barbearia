@@ -4003,7 +4003,7 @@ export default function Admin() {
   const isActiveReshipmentOrder = (order: AdminOrder): boolean => {
     if (isCancelledOrderStatus(order.status)) return false;
     return Boolean((order as { reshipment?: { id?: string; status?: string } }).reshipment?.id)
-      && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String((order as { reshipment?: { status?: string } }).reshipment?.status || ""));
+      && !isClosedReshipmentStatus((order as { reshipment?: { status?: string } }).reshipment?.status);
   };
   const priorityDelayDays = (order: AdminOrder): number => Math.max(0, daysSince(order.createdAt));
 
@@ -4012,7 +4012,12 @@ export default function Admin() {
       const isActiveReshipment = isActiveReshipmentOrder(o);
       const isPendingNormalShipment =
         (o.status === "paid" || o.status === "completed")
-        && !isExcludedFromShippingCopyList(o as { enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null });
+        && !isExcludedFromShippingCopyList({
+          enviado: (o as { enviado?: boolean | null }).enviado,
+          envioecomStatus: (o as { envioecomStatus?: string | null }).envioecomStatus,
+          envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
+          reshipmentStatus: (o as { reshipment?: { status?: string } }).reshipment?.status,
+        });
       return isPendingNormalShipment || isActiveReshipment;
     })
     .sort((a, b) => {
@@ -4041,7 +4046,12 @@ export default function Admin() {
     .filter((o) => {
       if (!isMotoboyOrder(o)) return false;
       if (isCancelledOrderStatus(o.status)) return false;
-      if (isExcludedFromShippingCopyList(o as { enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null })) {
+      if (isExcludedFromShippingCopyList({
+        enviado: (o as { enviado?: boolean | null }).enviado,
+        envioecomStatus: (o as { envioecomStatus?: string | null }).envioecomStatus,
+        envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
+        reshipmentStatus: (o as { reshipment?: { status?: string } }).reshipment?.status,
+      })) {
         return false;
       }
       return true;
@@ -9205,12 +9215,19 @@ function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean
 }
 
 /** Sai da lista "copiar pedidos para enviar" sem precisar de badge Enviado. */
+function isClosedReshipmentStatus(status?: string | null): boolean {
+  const s = String(status || "").trim().toLowerCase();
+  return s === "reenvio_enviado" || s === "reenvio_resolvido_sem_entrada";
+}
+
 function isExcludedFromShippingCopyList(order: {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  reshipmentStatus?: string | null;
 }): boolean {
   if (order.enviado) return true;
+  if (isClosedReshipmentStatus(order.reshipmentStatus)) return true;
   // Etiqueta pronta OU já coletado/expedido/etc. — não volta na cópia 48h.
   if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
   if (isEnvioEcomPostedStatus(order.envioecomStatus)) return true;
@@ -11165,6 +11182,7 @@ function OrdersPanel({
               enviado: enviados[order.id] || reshipmentIsSent,
               envioecomStatus,
               envioecomLabelUrl: (order as any).envioecomLabelUrl,
+              reshipmentStatus: String(order?.reshipment?.status || ""),
             }) && (() => {
               const q = shippingQueueMap[order.id];
               const deadlineDate = new Date(q.postingDeadlineAt);
