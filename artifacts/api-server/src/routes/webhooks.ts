@@ -20,6 +20,7 @@ import { fetchTransactionStatus, isPaymentConfirmed } from "../gateway";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
 import { requirePrimaryAdmin } from "./admin-auth";
 
 const router: IRouter = Router();
@@ -84,7 +85,7 @@ async function handleCallback(body: GatewayCallback) {
 
   if (transactionId) {
     const existing = await db
-      .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+      .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
       .from(ordersTable)
       .where(eq(ordersTable.transactionId, transactionId))
       .limit(1);
@@ -118,6 +119,8 @@ async function handleCallback(body: GatewayCallback) {
               id: row.id,
               transactionId,
               status: newStatus,
+              clientName: row.clientName,
+              total: row.total,
             });
           }
 
@@ -172,7 +175,7 @@ async function handleCallback(body: GatewayCallback) {
           // If this charge is linked to an order (difference charge), propagate payment to the parent order
           if (confirmed && row.orderId) {
             const parentOrder = await db
-              .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+              .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
               .from(ordersTable)
               .where(eq(ordersTable.id, row.orderId))
               .limit(1);
@@ -200,6 +203,8 @@ async function handleCallback(body: GatewayCallback) {
                 void sendOutboundWebhook("order_paid", {
                   id: row.orderId,
                   status: newOrderStatus,
+                  clientName: parentOrder[0].clientName,
+                  total: parentOrder[0].total,
                   source: "difference_charge",
                 });
               }
@@ -398,7 +403,7 @@ router.post("/webhook", async (req, res) => {
     // If orderId is directly specified, update that order
     if (rawOrderId) {
       const rows = await db
-        .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+        .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
         .from(ordersTable)
         .where(eq(ordersTable.id, rawOrderId))
         .limit(1);
@@ -415,6 +420,8 @@ router.post("/webhook", async (req, res) => {
           void sendOutboundWebhook("order_paid", {
             id: rawOrderId,
             status: newStatus,
+            clientName: rows[0]!.clientName,
+            total: rows[0]!.total,
             source: "universal_webhook",
           });
         }
@@ -451,7 +458,7 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
     // Also patch by orderId directly in case transactionId isn't in the body
     if (orderId && isPaymentConfirmed(body.status || "")) {
       const rows = await db
-        .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+        .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
         .from(ordersTable)
         .where(eq(ordersTable.id, orderId))
         .limit(1);
@@ -471,6 +478,8 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
         void sendOutboundWebhook("order_paid", {
           id: orderId,
           status: "paid",
+          clientName: rows[0]!.clientName,
+          total: rows[0]!.total,
           source: "direct_order_webhook",
         });
         console.log(`[WEBHOOK] Order ${orderId} paid via direct URL`);
@@ -519,7 +528,7 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
         // Propagate to parent order if this is a diff charge
         if (rows[0]!.orderId) {
           const parentOrder = await db
-            .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total, paidAmount: ordersTable.paidAmount })
+            .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
             .from(ordersTable)
             .where(eq(ordersTable.id, rows[0]!.orderId))
             .limit(1);
@@ -546,6 +555,8 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
               void sendOutboundWebhook("order_paid", {
                 id: rows[0]!.orderId,
                 status: newOrderStatus,
+                clientName: parentOrder[0].clientName,
+                total: parentOrder[0].total,
                 source: "direct_charge_webhook",
               });
             }
@@ -568,8 +579,12 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
 
 router.post("/admin/outbound-webhook/test", requirePrimaryAdmin, async (req, res) => {
   try {
-    const result = await sendOutboundWebhook("test", {
+    const eventRaw = String((req.body as { event?: string } | undefined)?.event || "new_order").trim();
+    const eventType = isOutboundRealEvent(eventRaw) ? eventRaw : "new_order";
+    const result = await sendOutboundWebhook(eventType, {
       message: "Teste manual disparado pelo painel administrativo.",
+      clientName: "Cliente teste",
+      total: 150,
       triggeredAt: new Date().toISOString(),
     }, { force: true });
 

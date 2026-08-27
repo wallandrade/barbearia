@@ -536,6 +536,8 @@ router.post("/checkout/pix", async (req, res) => {
       void sendOutboundWebhook("order_paid", {
         id: orderId,
         status: "paid",
+        clientName: client.name,
+        total: amount,
         coveredByAffiliateCredit: true,
       });
       res.json({

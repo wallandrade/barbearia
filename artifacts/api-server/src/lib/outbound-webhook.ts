@@ -1,18 +1,43 @@
 import { createHmac, randomUUID } from "crypto";
 import { db, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { isEnabledSetting, isPushcutApiUrl, normalizeOutboundWebhookUrl } from "./outbound-webhook-url";
+import {
+  buildPushcutPresentation,
+  isEnabledSetting,
+  isOutboundRealEvent,
+  isPushcutApiUrl,
+  normalizeOutboundWebhookUrl,
+  redactWebhookUrlForLog,
+  sanitizeOutboundWebhookUrlInput,
+  type OutboundEventType,
+  type OutboundRealEventType,
+} from "./outbound-webhook-url";
 
-type OutboundEventType = "new_order" | "order_paid" | "test";
+export type { OutboundEventType, OutboundRealEventType };
 
-const EVENT_KEY_MAP: Record<Exclude<OutboundEventType, "test">, string> = {
+const EVENT_KEY_MAP: Record<OutboundRealEventType, string> = {
   new_order: "outbound_webhook_event_new_order",
   order_paid: "outbound_webhook_event_order_paid",
+  order_cancelled: "outbound_webhook_event_order_cancelled",
+};
+
+const URL_KEY_MAP: Record<OutboundRealEventType, string> = {
+  new_order: "outbound_webhook_url",
+  order_paid: "outbound_webhook_url_order_paid",
+  order_cancelled: "outbound_webhook_url_order_cancelled",
 };
 
 async function getSettingValue(key: string): Promise<string> {
   const rows = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, key)).limit(1);
-  return String(rows[0]?.value || "").trim();
+  return sanitizeOutboundWebhookUrlInput(String(rows[0]?.value || ""));
+}
+
+async function resolveWebhookUrl(eventType: OutboundEventType): Promise<string> {
+  const fallback = await getSettingValue("outbound_webhook_url");
+  if (eventType === "test") return fallback;
+  const specificKey = URL_KEY_MAP[eventType];
+  const specific = specificKey ? await getSettingValue(specificKey) : "";
+  return specific || fallback;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -39,7 +64,7 @@ export async function sendOutboundWebhook(
   options?: { force?: boolean },
 ): Promise<{ sent: boolean; status?: number; error?: string }> {
   try {
-    const rawUrl = await getSettingValue("outbound_webhook_url");
+    const rawUrl = await resolveWebhookUrl(eventType);
     if (!rawUrl) {
       return { sent: false, error: "webhook_url_not_configured" };
     }
@@ -59,8 +84,8 @@ export async function sendOutboundWebhook(
       return { sent: false, error: "webhook_disabled" };
     }
 
-    if (!options?.force && eventType !== "test") {
-      const eventSettingKey = EVENT_KEY_MAP[eventType as Exclude<OutboundEventType, "test">];
+    if (!options?.force && isOutboundRealEvent(eventType)) {
+      const eventSettingKey = EVENT_KEY_MAP[eventType];
       if (eventSettingKey) {
         const eventEnabled = isEnabledSetting(await getSettingValue(eventSettingKey), true);
         if (!eventEnabled) {
@@ -72,12 +97,23 @@ export async function sendOutboundWebhook(
     const secret = await getSettingValue("outbound_webhook_secret");
     const webhookId = randomUUID();
     const timestamp = new Date().toISOString();
-    const payload = {
-      id: webhookId,
-      event: eventType,
-      timestamp,
-      data,
-    };
+    const presentation = buildPushcutPresentation(eventType, data);
+    const payload = isPushcutApiUrl(url)
+      ? {
+          title: presentation.title,
+          text: presentation.text,
+          input: presentation.text,
+          id: webhookId,
+          event: eventType,
+          timestamp,
+          data,
+        }
+      : {
+          id: webhookId,
+          event: eventType,
+          timestamp,
+          data,
+        };
     const body = JSON.stringify(payload);
 
     const headers: Record<string, string> = {
@@ -123,7 +159,7 @@ export async function sendOutboundWebhook(
     console.error("[OUTBOUND_WEBHOOK] Failed to deliver event", {
       eventType,
       error: lastError,
-      url,
+      url: redactWebhookUrlForLog(url),
     });
     return { sent: false, error: lastError };
   } catch (err) {

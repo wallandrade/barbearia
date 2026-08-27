@@ -2558,22 +2558,23 @@ export default function Admin() {
     finally { setSettingsLoading((p) => ({ ...p, [key]: false })); }
   }, []);
 
-  const testOutboundWebhook = useCallback(async () => {
+  const testOutboundWebhook = useCallback(async (event: "new_order" | "order_paid" | "order_cancelled" = "new_order") => {
     try {
       const res = await fetch(`${BASE}/api/admin/outbound-webhook/test`, {
         method: "POST",
         headers: authHeaders(),
+        body: JSON.stringify({ event }),
       });
       const data = await res.json().catch(() => ({} as { error?: string }));
       if (!res.ok) {
         if ((data as { error?: string }).error === "webhook_url_not_configured") {
-          toast.error("Configure a URL do webhook de saída antes de testar.");
+          toast.error("Configure a URL desse evento (ou a de pedido gerado) antes de testar.");
           return;
         }
         toast.error("Falha ao enviar webhook de teste.");
         return;
       }
-      toast.success("Webhook de teste enviado com sucesso.");
+      toast.success("Teste enviado. Confira o Pushcut (nome e R$ 150,00 de exemplo).");
     } catch {
       toast.error("Falha ao enviar webhook de teste.");
     }
@@ -15824,7 +15825,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   clientErrors: ClientErrorEvent[];
   clientErrorsLoading: boolean;
   onRefreshClientErrors: () => void;
-  onTestOutboundWebhook: () => void;
+  onTestOutboundWebhook: (event?: "new_order" | "order_paid" | "order_cancelled") => void;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
   brevoApiKey: string;
@@ -15836,6 +15837,8 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [sitePw, setSitePw] = useState(settings["site_password"] ?? "");
   const [paymentPw, setPaymentPw] = useState(settings["payment_password"] ?? "");
   const [outboundUrl, setOutboundUrl] = useState(settings["outbound_webhook_url"] ?? "");
+  const [outboundUrlPaid, setOutboundUrlPaid] = useState(settings["outbound_webhook_url_order_paid"] ?? "");
+  const [outboundUrlCancelled, setOutboundUrlCancelled] = useState(settings["outbound_webhook_url_order_cancelled"] ?? "");
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
@@ -15860,9 +15863,12 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const outboundEnabled = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_enabled"] ?? "0").toLowerCase());
   const outboundEventNewOrder = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_new_order"] ?? "1").toLowerCase());
   const outboundEventOrderPaid = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_order_paid"] ?? "1").toLowerCase());
+  const outboundEventOrderCancelled = !["0", "false", "off", "no", "disabled"].includes(String(settings["outbound_webhook_event_order_cancelled"] ?? "1").toLowerCase());
 
   useEffect(() => {
     setOutboundUrl(settings["outbound_webhook_url"] ?? "");
+    setOutboundUrlPaid(settings["outbound_webhook_url_order_paid"] ?? "");
+    setOutboundUrlCancelled(settings["outbound_webhook_url_order_cancelled"] ?? "");
     setOutboundSecret(settings["outbound_webhook_secret"] ?? "");
     setStoreWhatsappNumber(settings["checkout_store_whatsapp_number"] ?? "");
     setRaffleWhatsappNumber(settings["checkout_raffle_whatsapp_number"] ?? "");
@@ -15881,6 +15887,25 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
 
   const togglePaymentMethod = (key: string, enabled: boolean) => {
     onSave(key, enabled ? "1" : "0");
+  };
+
+  const persistOutboundEventFlags = () => {
+    if (!String(settings["outbound_webhook_event_new_order"] || "").trim()) {
+      onSave("outbound_webhook_event_new_order", "1");
+    }
+    if (!String(settings["outbound_webhook_event_order_paid"] || "").trim()) {
+      onSave("outbound_webhook_event_order_paid", "1");
+    }
+    if (!String(settings["outbound_webhook_event_order_cancelled"] || "").trim()) {
+      onSave("outbound_webhook_event_order_cancelled", "1");
+    }
+  };
+
+  const saveOutboundUrl = (key: string, draft: string) => {
+    const value = draft.replace(/^\s+/, "").replace(/[\r\n]+$/g, "");
+    if (!value) { onDelete(key); return; }
+    onSave(key, value);
+    persistOutboundEventFlags();
   };
 
   return (
@@ -16464,38 +16489,59 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             Webhook de Saída (Pushcut)
           </h2>
           <p className="text-muted-foreground text-sm">
-            Envia eventos do sistema para uma URL externa (ex: Pushcut) quando pedido é criado ou pagamento é aprovado.
+            Uma URL por aviso. O celular mostra cliente e valor da compra. Se pago/cancelado estiver vazio, usa a URL de pedido gerado.
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
           <div>
-            <label className="block text-xs font-medium mb-1">URL de destino</label>
+            <label className="block text-xs font-medium mb-1">URL pedido gerado</label>
             <div className="flex gap-2">
               <input
-                type="url"
+                type="text"
                 value={outboundUrl}
                 onChange={(e) => setOutboundUrl(e.target.value)}
-                placeholder="https://api.pushcut.io/..."
+                placeholder="https://api.pushcut.io/.../notifications/Pedido%20feito%20"
                 className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
               />
-              <Button
-                size="sm"
-                onClick={() => {
-                  const value = outboundUrl.trim();
-                  if (!value) { onDelete("outbound_webhook_url"); return; }
-                  onSave("outbound_webhook_url", value);
-                  if (!String(settings["outbound_webhook_event_new_order"] || "").trim()) {
-                    onSave("outbound_webhook_event_new_order", "1");
-                  }
-                  if (!String(settings["outbound_webhook_event_order_paid"] || "").trim()) {
-                    onSave("outbound_webhook_event_order_paid", "1");
-                  }
-                }}
-                disabled={!!loading["outbound_webhook_url"]}
-              >
+              <Button size="sm" onClick={() => saveOutboundUrl("outbound_webhook_url", outboundUrl)} disabled={!!loading["outbound_webhook_url"]}>
                 {loading["outbound_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
               </Button>
+              <Button size="sm" variant="outline" onClick={() => onTestOutboundWebhook("new_order")}>Testar</Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1">URL pedido pago</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={outboundUrlPaid}
+                onChange={(e) => setOutboundUrlPaid(e.target.value)}
+                placeholder="https://api.pushcut.io/.../notifications/Pedido%20pago"
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              />
+              <Button size="sm" onClick={() => saveOutboundUrl("outbound_webhook_url_order_paid", outboundUrlPaid)} disabled={!!loading["outbound_webhook_url_order_paid"]}>
+                {loading["outbound_webhook_url_order_paid"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => onTestOutboundWebhook("order_paid")}>Testar</Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1">URL pedido cancelado</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={outboundUrlCancelled}
+                onChange={(e) => setOutboundUrlCancelled(e.target.value)}
+                placeholder="https://api.pushcut.io/.../notifications/Pedido%20cancelado"
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              />
+              <Button size="sm" onClick={() => saveOutboundUrl("outbound_webhook_url_order_cancelled", outboundUrlCancelled)} disabled={!!loading["outbound_webhook_url_order_cancelled"]}>
+                {loading["outbound_webhook_url_order_cancelled"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => onTestOutboundWebhook("order_cancelled")}>Testar</Button>
             </div>
           </div>
 
@@ -16533,7 +16579,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
             <span className="text-sm font-medium">Ativar envio</span>
             <input
@@ -16542,21 +16588,14 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               onChange={(e) => {
                 const on = e.target.checked;
                 onSave("outbound_webhook_enabled", on ? "1" : "0");
-                if (on) {
-                  if (!String(settings["outbound_webhook_event_new_order"] || "").trim()) {
-                    onSave("outbound_webhook_event_new_order", "1");
-                  }
-                  if (!String(settings["outbound_webhook_event_order_paid"] || "").trim()) {
-                    onSave("outbound_webhook_event_order_paid", "1");
-                  }
-                }
+                if (on) persistOutboundEventFlags();
               }}
               disabled={!!loading["outbound_webhook_enabled"]}
             />
           </label>
 
           <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
-            <span className="text-sm font-medium">Evento: pedido criado</span>
+            <span className="text-sm font-medium">Evento: pedido gerado</span>
             <input
               type="checkbox"
               checked={outboundEventNewOrder}
@@ -16566,7 +16605,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           </label>
 
           <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
-            <span className="text-sm font-medium">Evento: pagamento aprovado</span>
+            <span className="text-sm font-medium">Evento: pedido pago</span>
             <input
               type="checkbox"
               checked={outboundEventOrderPaid}
@@ -16574,14 +16613,21 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               disabled={!!loading["outbound_webhook_event_order_paid"]}
             />
           </label>
+
+          <label className="flex items-center justify-between border rounded-xl px-3 py-2.5 cursor-pointer">
+            <span className="text-sm font-medium">Evento: pedido cancelado</span>
+            <input
+              type="checkbox"
+              checked={outboundEventOrderCancelled}
+              onChange={(e) => onSave("outbound_webhook_event_order_cancelled", e.target.checked ? "1" : "0")}
+              disabled={!!loading["outbound_webhook_event_order_cancelled"]}
+            />
+          </label>
         </div>
 
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-xs text-muted-foreground">
-            O teste sempre envia. Pedido real só sai com <strong>Ativar envio</strong> ligado (pedido criado / pagamento aprovado seguem os checkboxes).
-          </p>
-          <Button variant="outline" onClick={onTestOutboundWebhook}>Enviar teste</Button>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Pedido real só sai com <strong>Ativar envio</strong> ligado. Cole a URL exatamente como o Pushcut mostra (espaço no nome conta). Teste envia “Cliente teste — R$ 150,00”.
+        </p>
       </div>
 
       {/* ── Integração Brevo ─────────────────────────────────────────────── */}

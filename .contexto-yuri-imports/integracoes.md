@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Pushcut: URL por evento (gerado/pago/cancelado); `title`/`text` com nome+valor; espaço no nome da notificação preservado | Banner no iPhone mostra R$; sons separados | PIX/webhook de entrada iguais |
 | 2026-08-27 | Admin: primeira vez pago (botão Pago ou comprovante) dispara Pushcut `order_paid` | Marcar pago no Admin avisa igual PIX | Pedido já pago não reenvia |
 | 2026-08-27 | Webhook Pushcut: evento pedido/pago **default ligado** se a chave não existir; URL tira espaço no nome | Pedido real segue o teste; `Pedido feito ` deixa de 404 | Payload/assinatura iguais |
 | 2026-08-26 | Sync cobertura Motoboy → espelho: `GET /api/integrations/motoboy/coverage` + webhook HMAC (`MOTOBOY_SYNC_*`) em CRUD bairros/faixas e aprovação portal | KA Imports (ou outro) puxa/recebe bairros+CEP | Checkout Motoboy / slots / estoque iguais |
@@ -103,7 +104,7 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 
 - SSE admin: `routes/notifications.ts` (`text/event-stream`).
 - Service Worker: notificações only — `artifacts/ka-imports/public/sw.js`.
-- **Webhook de saída (Pushcut):** `lib/outbound-webhook.ts` + settings `outbound_webhook_*`. **Ativar envio** default off. **pedido criado / pagamento aprovado** default **on** se a chave não existir (o Admin já mostrava ligado; o servidor antes tratava vazio como off — teste com `force` passava e pedido real não). URL Pushcut faz trim de espaço no nome da notificação. Teste (`POST /admin/outbound-webhook/test`) ignora os flags. `new_order` no `POST /api/orders` e no PIX checkout; `order_paid` no webhook PIX **e** no Admin (botão Pago ou comprovante, só na primeira transição para pago/concluído).
+- **Webhook de saída (Pushcut):** `lib/outbound-webhook.ts` + settings `outbound_webhook_*`. **Ativar envio** default off. Eventos **gerado / pago / cancelado** default **on** se a chave não existir. URL por evento (`outbound_webhook_url`, `_order_paid`, `_order_cancelled`); pago/cancelado vazio cai na URL de gerado. Nome da notificação **preserva espaço** (`Pedido feito `). POST Pushcut manda `title` + `text` (cliente — R$ valor). Teste (`POST /admin/outbound-webhook/test` com `{ event }`) ignora os flags. `new_order` no create/checkout PIX; `order_paid` no PIX e no Admin (primeira vez); `order_cancelled` no Admin (primeira vez).
 
 ## Outros
 

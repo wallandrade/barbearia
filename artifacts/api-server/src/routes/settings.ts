@@ -29,10 +29,13 @@ const ALLOWED_KEYS = [
   "gateway_withdraw_fixed",
   // Webhook de saída (Pushcut/automations)
   "outbound_webhook_url",
+  "outbound_webhook_url_order_paid",
+  "outbound_webhook_url_order_cancelled",
   "outbound_webhook_secret",
   "outbound_webhook_enabled",
   "outbound_webhook_event_new_order",
   "outbound_webhook_event_order_paid",
+  "outbound_webhook_event_order_cancelled",
   // Admin helpers
   "admin_saved_brands",
   // EnvioEcom: nome genérico dos itens no create (nunca nome do catálogo)

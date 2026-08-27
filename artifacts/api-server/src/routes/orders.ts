@@ -1754,6 +1754,7 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
 
     // Release queue slot when order is cancelled or unpaid
     const isBeingCancelled = nextStatus === "cancelled" || nextStatus === "cancelado";
+    const wasAlreadyCancelled = currentStatus === "cancelled" || currentStatus === "cancelado";
     if (isBeingCancelled && wasAlreadyPaid) {
       void releaseShippingSlot(id);
     }
@@ -1761,6 +1762,15 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
     broadcastNotification({ type: "order_status_updated", data: { id, status } });
     if (isBeingPaid && !wasAlreadyPaid) {
       void sendOutboundWebhook("order_paid", {
+        id,
+        status: nextStatus,
+        clientName: existing[0]?.clientName,
+        total: existing[0]?.total,
+        source: "admin_manual",
+      });
+    }
+    if (isBeingCancelled && !wasAlreadyCancelled) {
+      void sendOutboundWebhook("order_cancelled", {
         id,
         status: nextStatus,
         clientName: existing[0]?.clientName,

@@ -223,7 +223,13 @@ router.post("/pix/callback/:token", async (req, res) => {
 
     if (body.transactionId && isPaymentConfirmed(body.status || "")) {
       const existing = await db
-        .select({ id: ordersTable.id, status: ordersTable.status, shippingType: ordersTable.shippingType })
+        .select({
+          id: ordersTable.id,
+          status: ordersTable.status,
+          shippingType: ordersTable.shippingType,
+          clientName: ordersTable.clientName,
+          total: ordersTable.total,
+        })
         .from(ordersTable)
         .where(eq(ordersTable.transactionId, body.transactionId))
         .limit(1);
@@ -243,8 +249,11 @@ router.post("/pix/callback/:token", async (req, res) => {
         data: { transactionId: body.transactionId, status: "paid" },
       });
       void sendOutboundWebhook("order_paid", {
+        id: existing[0]?.id,
         transactionId: body.transactionId,
         status: "paid",
+        clientName: existing[0]?.clientName,
+        total: existing[0]?.total,
         source: "legacy_pix_callback",
       });
     }
