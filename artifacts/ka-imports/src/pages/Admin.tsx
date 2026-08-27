@@ -11139,11 +11139,14 @@ function OrdersPanel({
           const hiddenProductsCount = Math.max(0, orderProducts.length - previewProducts.length);
           // Definir isReshipment no escopo correto
           const isReshipment = Boolean(order?.reshipment?.id) && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
+          const hasReshipmentRecord = Boolean(order?.reshipment?.id);
+          const reshipmentIsSent = String(order?.reshipment?.status || "") === "reenvio_enviado";
           const envioecomStatus = String((order as any).envioecomStatus || "").trim();
           const envioecomLabelReady = isEnvioEcomLabelReadyStatus(envioecomStatus);
           const envioecomShippedLike = isEnvioEcomShippedLikeStatus(envioecomStatus);
           // Badge Enviado segue a flag (manual ou postagem EE). Etiqueta pronta sozinha não desfaz.
-          const showEnviadoUi = !!enviados[order.id];
+          // Reenvio enviado conta como enviado (não usa o botão normal).
+          const showEnviadoUi = !!enviados[order.id] || reshipmentIsSent;
           const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
             ? "ring-2 ring-emerald-500"
             : isPrioridade
@@ -11159,7 +11162,7 @@ function OrdersPanel({
             <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${cardRingClass}`}>
             {/* Shipping queue block — some se já marcado enviado OU etiqueta EE pronta */}
             {shippingQueueMap[order.id] && !isExcludedFromShippingCopyList({
-              enviado: enviados[order.id],
+              enviado: enviados[order.id] || reshipmentIsSent,
               envioecomStatus,
               envioecomLabelUrl: (order as any).envioecomLabelUrl,
             }) && (() => {
@@ -11261,8 +11264,19 @@ function OrdersPanel({
                               : `sem estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"}`)}
                         </span>
                         {isReshipment && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${rs === "reenvio_aguardando_estoque" ? "bg-red-100 text-red-800 border-red-200" : rs === "reenvio_pronto_para_envio" ? "bg-red-50 text-red-700 border-red-200" : "bg-rose-100 text-rose-800 border-rose-200"}`}>
-                            <AlertTriangle className="w-3 h-3" />{reshipmentStatusLabel(rs)}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                            rs === "reenvio_enviado"
+                              ? "bg-green-100 text-green-800 border-green-200"
+                              : rs === "reenvio_resolvido_sem_entrada"
+                                ? "bg-slate-100 text-slate-700 border-slate-200"
+                                : rs === "reenvio_pronto_para_envio"
+                                  ? "bg-red-50 text-red-700 border-red-200"
+                                  : "bg-red-100 text-red-800 border-red-200"
+                          }`}>
+                            {rs === "reenvio_enviado"
+                              ? <CheckCircle className="w-3 h-3" />
+                              : <AlertTriangle className="w-3 h-3" />}
+                            {reshipmentStatusLabel(rs)}
                           </span>
                         )}
                         {statusBadge(order.status)}
@@ -11587,7 +11601,7 @@ function OrdersPanel({
                     : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
-                {!showEnviadoUi && (
+                {!showEnviadoUi && !hasReshipmentRecord && (
                   <div className="inline-flex items-center gap-1 h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
                       {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
@@ -11634,6 +11648,7 @@ function OrdersPanel({
                     )}
                   </div>
                 )}
+                {!hasReshipmentRecord && (
                 <Button
                   size="sm"
                   className={`gap-1.5 rounded-full px-5 py-2 font-semibold transition shadow-sm border ${showEnviadoUi
@@ -11652,6 +11667,7 @@ function OrdersPanel({
                       ? "Marcar como Pendente"
                       : "Marcar como Enviado"}
                 </Button>
+                )}
                 <Button size="sm" className="gap-2 bg-green-600 hover:bg-green-700 text-white border-none"
                   onClick={() => openWhatsApp(order)}>
                   <MessageCircle className="w-4 h-4" />WhatsApp

@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-26
+> **Última atualização:** 2026-08-27
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Reenvio enviado: badge verde; card sem **Marcar como Enviado** / baixa Loja; `enviado` liga/desliga com o status do reenvio | Só o fluxo de reenvio no filho; some POSTAR ATÉ ao enviar | Pedido normal (sem `reshipments`) igual |
 | 2026-08-26 | Cópia Motoboy inclui **data/hora do slot** (`motoboy_bookings`); PIX/cartão também gravam o agendamento | Motoboy vê quando entregar | Endereço sem telefone; valores iguais |
 | 2026-08-26 | Compra na home `/` (sem `/poly` ou `/yuri` na URL) recebe rodízio **poly ↔ yuri** no create do pedido; links de vendedor continuam fixos | PIX/WhatsApp e comissão seguem o vendedor da vez; Poly 3% / Yuri conforme cadastro | `/poly` e `/yuri` não entram no rodízio |
 | 2026-08-26 | Sync cobertura Motoboy: pull `/api/integrations/motoboy/coverage` + webhook HMAC para espelho (`MOTOBOY_SYNC_TOKEN/URL/SECRET`); dispara em CRUD Fretes e approve portal | Outro sistema espelha bairros/CEP da Yury | Slots/checkout/whitelist iguais |
@@ -151,7 +152,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 - Tickets (`support_tickets`) por CPF/pedido.
 - **Abertura (cliente):** após escolher o pedido, escolhe **Pedido veio faltando** (marca produtos/qtd) ou **Outro problema**. Itens faltantes vão em `missing_products_json` (+ `problem_type`).
-- **Reenviar (Suporte):** modal de itens (default = faltantes do ticket se houver, senão todos do pedido) → cria **pedido filho** em `orders` com `parent_order_id`, `shippingType = "Reenvio"`, `status = paid`, prioridade, observação `REENVIO DO PEDIDO {#pai} · TICKET {id}`; **não** gera PIX novo; total = só quantidade **extra** vs pai (pode ser R$ 0). Fila `reshipments` fica no **filho**. Endereço novo do chamado (se mais recente) aplica-se só no filho. Ticket → Resolvido · Reenvio (continua apontando o pedido original). Reenvios **já** ligados ao pedido pai permanecem como estão. **Lucro estimado** no card/stats do filho = R$ 0 (custo já no pedido original; não conta prejuízo). **Faturamento líquido** (`financial-summary`) também **exclui** custo/comissão/taxa gateway desses filhos. No card: **Cancelar reenvio** (aguardando/pronto → `reenvio_resolvido_sem_entrada`) remove badge e o pin fora da data; distinto de **Cancelar Reenvio Enviado** (só desfaz o marcado enviado).
+- **Reenviar (Suporte):** modal de itens (default = faltantes do ticket se houver, senão todos do pedido) → cria **pedido filho** em `orders` com `parent_order_id`, `shippingType = "Reenvio"`, `status = paid`, prioridade, observação `REENVIO DO PEDIDO {#pai} · TICKET {id}`; **não** gera PIX novo; total = só quantidade **extra** vs pai (pode ser R$ 0). Fila `reshipments` fica no **filho**. Endereço novo do chamado (se mais recente) aplica-se só no filho. Ticket → Resolvido · Reenvio (continua apontando o pedido original). Reenvios **já** ligados ao pedido pai permanecem como estão. **Lucro estimado** no card/stats do filho = R$ 0 (custo já no pedido original; não conta prejuízo). **Faturamento líquido** (`financial-summary`) também **exclui** custo/comissão/taxa gateway desses filhos. No card com `reshipments`: **não** mostra Marcar como Enviado / baixa Loja-Motoboy — só **Marcar Reenvio Enviado** ou **Cancelar Reenvio Enviado**. `reenvio_enviado` deixa o badge verde e liga `orders.enviado` (some POSTAR ATÉ / Pendente para envio). **Cancelar reenvio** (aguardando/pronto → `reenvio_resolvido_sem_entrada`) remove o pin da lista de hoje; distinto de **Cancelar Reenvio Enviado** (volta a pronto e desliga `enviado`).
 - Reenvios manuais (`manual_reshipments`) da aba estoque — fluxo separado.
 - Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
 - **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado** **ou** no botão **Dar baixa agora** (`reserveNow` → `inventory_reserved`). **Loja** continua reservando na escolha. Com reserva feita, Coletado EE / Marcar Enviado **não** baixam de novo. Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.

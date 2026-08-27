@@ -1077,7 +1077,7 @@ export async function listReshipments(status?: string): Promise<Array<{
 
 export async function setReshipmentStatus(id: string, status: ReshipmentStatus): Promise<boolean> {
   const rows = await db
-    .select({ id: reshipmentsTable.id, status: reshipmentsTable.status })
+    .select({ id: reshipmentsTable.id, status: reshipmentsTable.status, orderId: reshipmentsTable.orderId })
     .from(reshipmentsTable)
     .where(eq(reshipmentsTable.id, id))
     .limit(1);
@@ -1092,6 +1092,19 @@ export async function setReshipmentStatus(id: string, status: ReshipmentStatus):
       updatedAt: new Date(),
     })
     .where(eq(reshipmentsTable.id, id));
+
+  const orderId = String(rows[0].orderId || "").trim();
+  if (orderId) {
+    const sent = status === "reenvio_enviado";
+    await db
+      .update(ordersTable)
+      .set({
+        enviado: sent,
+        enviadoAt: sent ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(ordersTable.id, orderId));
+  }
 
   return true;
 }
