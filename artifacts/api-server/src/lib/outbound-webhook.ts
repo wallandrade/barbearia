@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "crypto";
 import { db, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { isEnabledSetting, isPushcutApiUrl, normalizeOutboundWebhookUrl } from "./outbound-webhook-url";
 
 type OutboundEventType = "new_order" | "order_paid" | "test";
 
@@ -14,49 +15,12 @@ async function getSettingValue(key: string): Promise<string> {
   return String(rows[0]?.value || "").trim();
 }
 
-function isEnabledValue(value: string): boolean {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return false;
-  return !["0", "false", "off", "no", "disabled"].includes(normalized);
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function signPayload(secret: string, timestamp: string, body: string): string {
   return createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
-}
-
-function isPushcutApiUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    return parsed.hostname.toLowerCase() === "api.pushcut.io";
-  } catch {
-    return false;
-  }
-}
-
-function isPushcutLegacyTokenPath(pathname: string): boolean {
-  // Legacy Pushcut URLs look like: /<token>/notifications/<name>
-  return /^\/[A-Za-z0-9_-]+\/notifications\/.+/.test(pathname);
-}
-
-function normalizePushcutUrl(value: string): string {
-  try {
-    const parsed = new URL(value);
-    if (parsed.hostname.toLowerCase() !== "api.pushcut.io") return value;
-    // Keep legacy token-based paths untouched.
-    if (isPushcutLegacyTokenPath(parsed.pathname)) {
-      return parsed.toString();
-    }
-    if (!parsed.pathname.startsWith("/v1/")) {
-      parsed.pathname = `/v1${parsed.pathname.startsWith("/") ? "" : "/"}${parsed.pathname}`;
-    }
-    return parsed.toString();
-  } catch {
-    return value;
-  }
 }
 
 async function postWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -79,7 +43,7 @@ export async function sendOutboundWebhook(
     if (!rawUrl) {
       return { sent: false, error: "webhook_url_not_configured" };
     }
-    const url = isPushcutApiUrl(rawUrl) ? normalizePushcutUrl(rawUrl) : rawUrl;
+    const url = isPushcutApiUrl(rawUrl) ? normalizeOutboundWebhookUrl(rawUrl) : rawUrl;
     const pushcutV1Api = (() => {
       if (!isPushcutApiUrl(url)) return false;
       try {
@@ -90,7 +54,7 @@ export async function sendOutboundWebhook(
       }
     })();
 
-    const enabled = isEnabledValue(await getSettingValue("outbound_webhook_enabled"));
+    const enabled = isEnabledSetting(await getSettingValue("outbound_webhook_enabled"), false);
     if (!options?.force && !enabled) {
       return { sent: false, error: "webhook_disabled" };
     }
@@ -98,7 +62,7 @@ export async function sendOutboundWebhook(
     if (!options?.force && eventType !== "test") {
       const eventSettingKey = EVENT_KEY_MAP[eventType as Exclude<OutboundEventType, "test">];
       if (eventSettingKey) {
-        const eventEnabled = isEnabledValue(await getSettingValue(eventSettingKey));
+        const eventEnabled = isEnabledSetting(await getSettingValue(eventSettingKey), true);
         if (!eventEnabled) {
           return { sent: false, error: `event_disabled:${eventType}` };
         }

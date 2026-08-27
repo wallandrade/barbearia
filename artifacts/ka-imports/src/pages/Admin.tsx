@@ -16485,6 +16485,12 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
                   const value = outboundUrl.trim();
                   if (!value) { onDelete("outbound_webhook_url"); return; }
                   onSave("outbound_webhook_url", value);
+                  if (!String(settings["outbound_webhook_event_new_order"] || "").trim()) {
+                    onSave("outbound_webhook_event_new_order", "1");
+                  }
+                  if (!String(settings["outbound_webhook_event_order_paid"] || "").trim()) {
+                    onSave("outbound_webhook_event_order_paid", "1");
+                  }
                 }}
                 disabled={!!loading["outbound_webhook_url"]}
               >
@@ -16533,7 +16539,18 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             <input
               type="checkbox"
               checked={outboundEnabled}
-              onChange={(e) => onSave("outbound_webhook_enabled", e.target.checked ? "1" : "0")}
+              onChange={(e) => {
+                const on = e.target.checked;
+                onSave("outbound_webhook_enabled", on ? "1" : "0");
+                if (on) {
+                  if (!String(settings["outbound_webhook_event_new_order"] || "").trim()) {
+                    onSave("outbound_webhook_event_new_order", "1");
+                  }
+                  if (!String(settings["outbound_webhook_event_order_paid"] || "").trim()) {
+                    onSave("outbound_webhook_event_order_paid", "1");
+                  }
+                }
+              }}
               disabled={!!loading["outbound_webhook_enabled"]}
             />
           </label>
@@ -16561,7 +16578,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <p className="text-xs text-muted-foreground">
-            Use o botão de teste para validar recebimento no Pushcut antes de ativar em produção.
+            O teste sempre envia. Pedido real só sai com <strong>Ativar envio</strong> ligado (pedido criado / pagamento aprovado seguem os checkboxes).
           </p>
           <Button variant="outline" onClick={onTestOutboundWebhook}>Enviar teste</Button>
         </div>

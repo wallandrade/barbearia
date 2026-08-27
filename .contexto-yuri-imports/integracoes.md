@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-26
+> **Última atualização:** 2026-08-27
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Webhook Pushcut: evento pedido/pago **default ligado** se a chave não existir; URL tira espaço no nome | Pedido real segue o teste; `Pedido feito ` deixa de 404 | Payload/assinatura iguais |
 | 2026-08-26 | Sync cobertura Motoboy → espelho: `GET /api/integrations/motoboy/coverage` + webhook HMAC (`MOTOBOY_SYNC_*`) em CRUD bairros/faixas e aprovação portal | KA Imports (ou outro) puxa/recebe bairros+CEP | Checkout Motoboy / slots / estoque iguais |
 | 2026-08-19 | tracking-board: campo `events` (histórico completo) + UI expand | Timeline no painel admin | Webhook / soft-sync iguais |
 | 2026-08-19 | tracking-board sync: prioridade Pronto + body shipment_id na linha | Lote/linha alinhados ao Sync do card | Cotação/create iguais |
@@ -101,6 +102,7 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 
 - SSE admin: `routes/notifications.ts` (`text/event-stream`).
 - Service Worker: notificações only — `artifacts/ka-imports/public/sw.js`.
+- **Webhook de saída (Pushcut):** `lib/outbound-webhook.ts` + settings `outbound_webhook_*`. **Ativar envio** default off. **pedido criado / pagamento aprovado** default **on** se a chave não existir (o Admin já mostrava ligado; o servidor antes tratava vazio como off — teste com `force` passava e pedido real não). URL Pushcut faz trim de espaço no nome da notificação. Teste (`POST /admin/outbound-webhook/test`) ignora os flags.
 
 ## Outros
 
