@@ -18,7 +18,7 @@ import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
-import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
+import { formatCurrency, getActiveWhatsApp, getSellerSlugFromCheckoutPath, setSellerContext } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
@@ -49,11 +49,16 @@ function toLocalYmd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function safeReadStorage(key: string): string | null {
+function rememberAssignedSeller(sellerCode?: string | null, sellerWhatsapp?: string | null): void {
+  const slug = String(sellerCode || "").trim().toLowerCase();
+  if (slug) setSellerContext(slug);
+  const digits = String(sellerWhatsapp || "").replace(/\D/g, "");
+  if (!slug || !digits) return;
   try {
-    return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+    sessionStorage.setItem("sellerWhatsapp", digits);
+    sessionStorage.setItem("sellerWhatsappSlug", slug);
   } catch {
-    return null;
+    // ignore
   }
 }
 
@@ -126,7 +131,7 @@ const checkoutSchema = z.object({
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
 
 export default function Checkout() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { items, getSubtotal, getCardSubtotal, clearCart, addItem, addBumpItem, removeItem, updateQuantity, setIsOpen } = useCart();
 
   // Garante que o carrinho lateral não abre no checkout
@@ -439,11 +444,53 @@ export default function Checkout() {
         throw error;
       }
 
-      return result as { id: string; orderNumber?: number | null };
+      return result as { id: string; orderNumber?: number | null; sellerCode?: string | null; sellerWhatsapp?: string | null };
     } finally {
       setIsCreatingOrder(false);
     }
   }, []);
+
+  const requireMotoboySlot = () => {
+    if (!selectedShippingId?.startsWith("motoboy_")) return true;
+    if (!motoboySlotDate) { toast.error("Escolha uma data para a entrega por Motoboy."); return false; }
+    if (!motoboySlotTime) { toast.error("Escolha um horário para a entrega por Motoboy."); return false; }
+    return true;
+  };
+
+  const bookMotoboySlotForOrder = async (
+    orderId: string,
+    data: { neighborhood: string; city: string; name: string },
+  ): Promise<boolean> => {
+    if (!selectedShippingId?.startsWith("motoboy_")) return true;
+    if (!motoboySlotDate || !motoboySlotTime || !motoboyNeighborhoodId) {
+      toast.error("Escolha data e horário da entrega Motoboy.");
+      return false;
+    }
+    try {
+      const bookRes = await fetch(`${BASE}/api/motoboy-slots/book`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          neighborhoodId: motoboyNeighborhoodId,
+          neighborhoodName: data.neighborhood,
+          city: data.city,
+          slotDate: motoboySlotDate,
+          slotTime: motoboySlotTime,
+          clientName: data.name,
+        }),
+      });
+      if (!bookRes.ok) {
+        const bookErr = await bookRes.json() as { message?: string };
+        toast.error(bookErr.message || "Horário do motoboy não disponível. Escolha outro.");
+        return false;
+      }
+      return true;
+    } catch {
+      toast.warning("Pedido criado, mas não foi possível registrar o agendamento. Entre em contato.");
+      return true;
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -575,14 +622,14 @@ export default function Checkout() {
     return bumpItem ? 1 + (bumpItem.quantity ?? 0) : item.quantity;
   }, [checkoutBumps, items]);
 
-  // Capture seller from localStorage (set by SellerPage redirect)
-  const sellerCode = safeReadStorage("sellerCode") || undefined;
+  // Capture seller from the URL (`/poly/checkout`). Generic `/checkout` has no seller — API rotates.
+  const sellerCode = getSellerSlugFromCheckoutPath(location) || undefined;
   const normalizedSellerCode = String(sellerCode || "").trim().toLowerCase();
   const sellerHomeHref = normalizedSellerCode ? `/${encodeURIComponent(normalizedSellerCode)}` : "/";
 
   const resolveSellerWhatsAppStrict = useCallback(async (): Promise<string | null> => {
     const normalizedSeller = String(sellerCode || "").trim().toLowerCase();
-    if (!normalizedSeller) return getActiveWhatsApp();
+    if (!normalizedSeller) return null;
 
     try {
       const res = await fetch(`${BASE}/api/sellers/${encodeURIComponent(normalizedSeller)}`);
@@ -606,13 +653,26 @@ export default function Checkout() {
     return null;
   }, [sellerCode]);
 
-  const resolveCheckoutWhatsAppNumber = useCallback(async (): Promise<string | null> => {
+  const resolveCheckoutWhatsAppNumber = useCallback(async (assignedWhatsapp?: string | null): Promise<string | null> => {
+    const assignedDigits = String(assignedWhatsapp || "").replace(/\D/g, "");
+    if (assignedDigits) return assignedDigits;
+
     const sellerWhatsapp = await resolveSellerWhatsAppStrict();
 
     // On seller checkout links, only allow the seller-bound WhatsApp.
     if (normalizedSellerCode) return sellerWhatsapp;
 
-    if (sellerWhatsapp) return sellerWhatsapp;
+    try {
+      const res = await fetch(`${BASE}/api/sellers/home-next`);
+      if (res.ok) {
+        const data = (await res.json()) as { whatsapp?: string | null };
+        const whatsapp = String(data?.whatsapp || "").replace(/\D/g, "");
+        if (whatsapp) return whatsapp;
+      }
+    } catch {
+      // fall through to store number
+    }
+
     const configuredStoreWhatsapp = checkoutWhatsappNumber.replace(/\D/g, "");
     if (configuredStoreWhatsapp) return configuredStoreWhatsapp;
 
@@ -1053,6 +1113,7 @@ export default function Checkout() {
     }
 
     if (!validateLanderGoldRule()) return;
+    if (!requireMotoboySlot()) return;
 
     const cartAvailable = await validateCartAvailability();
     if (!cartAvailable) return;
@@ -1123,6 +1184,8 @@ export default function Checkout() {
         affiliateCreditUsed?: number;
         remainingToPay?: number;
         message?: string;
+        sellerCode?: string | null;
+        sellerWhatsapp?: string | null;
       };
 
       if (!resp.ok) {
@@ -1137,7 +1200,15 @@ export default function Checkout() {
       }
 
       if (result.coveredByAffiliateCredit) {
+        rememberAssignedSeller(result.sellerCode, result.sellerWhatsapp);
         const coveredOrderId = result.orderId || genId();
+        if (result.orderId) {
+          await bookMotoboySlotForOrder(result.orderId, {
+            neighborhood: data.neighborhood,
+            city: data.city,
+            name: data.name,
+          });
+        }
         const coveredOrderRef = result.orderNumber != null ? String(result.orderNumber) : coveredOrderId;
         localStorage.setItem(
           "successOrder",
@@ -1182,6 +1253,12 @@ export default function Checkout() {
 
       const orderId = result.orderId!;
       const orderRef = result.orderNumber != null ? String(result.orderNumber) : orderId;
+      rememberAssignedSeller(result.sellerCode, result.sellerWhatsapp);
+      await bookMotoboySlotForOrder(orderId, {
+        neighborhood: data.neighborhood,
+        city: data.city,
+        name: data.name,
+      });
 
       localStorage.setItem(
         "currentPix",
@@ -1262,6 +1339,7 @@ export default function Checkout() {
 
     handleSubmit(async () => {
       if (!validateLanderGoldRule()) return;
+      if (!requireMotoboySlot()) return;
 
       const cartAvailable = await validateCartAvailability();
       if (!cartAvailable) return;
@@ -1303,10 +1381,7 @@ export default function Checkout() {
     }
 
     // Require motoboy slot selection
-    if (selectedShippingId?.startsWith("motoboy_")) {
-      if (!motoboySlotDate) { toast.error("Escolha uma data para a entrega por Motoboy."); return; }
-      if (!motoboySlotTime) { toast.error("Escolha um horário para a entrega por Motoboy."); return; }
-    }
+    if (!requireMotoboySlot()) return;
 
     if (!validateLanderGoldRule()) return;
 
@@ -1412,7 +1487,8 @@ export default function Checkout() {
           `Total: ${formatCurrency(payableTotal)}\n\n` +
           `Pode me enviar a chave PIX para pagamento?`;
 
-      const supportNumber = await resolveCheckoutWhatsAppNumber();
+      rememberAssignedSeller(order.sellerCode, order.sellerWhatsapp);
+      const supportNumber = await resolveCheckoutWhatsAppNumber(order.sellerWhatsapp);
       if (!supportNumber) {
         if (normalizedSellerCode) {
           toast.error("Não foi possível encontrar o WhatsApp deste vendedor. Tente novamente em instantes.");
@@ -1426,29 +1502,13 @@ export default function Checkout() {
       const orderRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
 
       // Book motoboy slot after order creation
-      if (isMotoboy && motoboySlotDate && motoboySlotTime && motoboyNeighborhoodId) {
-        try {
-          const bookRes = await fetch(`${BASE}/api/motoboy-slots/book`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              orderId: order.id,
-              neighborhoodId: motoboyNeighborhoodId,
-              neighborhoodName: data.neighborhood,
-              city: data.city,
-              slotDate: motoboySlotDate,
-              slotTime: motoboySlotTime,
-              clientName: data.name,
-            }),
-          });
-          if (!bookRes.ok) {
-            const bookErr = await bookRes.json() as { message?: string };
-            toast.error(bookErr.message || "Horário do motoboy não disponível. Escolha outro.");
-            return;
-          }
-        } catch {
-          toast.warning("Pedido criado, mas não foi possível registrar o agendamento. Entre em contato.");
-        }
+      if (isMotoboy) {
+        const booked = await bookMotoboySlotForOrder(order.id, {
+          neighborhood: data.neighborhood,
+          city: data.city,
+          name: data.name,
+        });
+        if (!booked) return;
       }
 
       // Store modal data to show confirmation dialog
@@ -1478,6 +1538,7 @@ export default function Checkout() {
 
   const finalizeCardPayment = async () => {
     if (!validateLanderGoldRule()) return;
+    if (!requireMotoboySlot()) return;
 
     const data = getValues();
     const cardFee = installments <= 3 ? 100 : 0;
@@ -1521,6 +1582,12 @@ export default function Checkout() {
         discountAmount: cardDiscountAmount > 0 ? cardDiscountAmount : undefined,
       });
 
+      await bookMotoboySlotForOrder(order.id, {
+        neighborhood: data.neighborhood,
+        city: data.city,
+        name: data.name,
+      });
+
       const itemsText = cardProductsPayload
         .map((item) => `  • ${item.quantity}x ${item.name} — ${formatCurrency(item.price * item.quantity)}`)
         .join("\n");
@@ -1553,7 +1620,8 @@ export default function Checkout() {
         `*Total:* ${formatCurrency(cardTotal)}\n\n` +
         `Aguardo o retorno para confirmar os detalhes!`;
 
-      const supportNumber = await resolveCheckoutWhatsAppNumber();
+      rememberAssignedSeller(order.sellerCode, order.sellerWhatsapp);
+      const supportNumber = await resolveCheckoutWhatsAppNumber(order.sellerWhatsapp);
       if (!supportNumber) {
         if (normalizedSellerCode) {
           toast.error("Não foi possível encontrar o WhatsApp deste vendedor. Tente novamente em instantes.");

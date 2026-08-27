@@ -17,6 +17,17 @@ function formatTimeBR(date: string | Date | undefined | null): string {
   });
 }
 
+function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | null): string {
+  const date = String(slotDate || "").trim();
+  const time = String(slotTime || "").trim();
+  if (!date || !time) return "horário não informado";
+  const parsed = new Date(`${date}T12:00:00`);
+  const dateLabel = Number.isFinite(parsed.getTime())
+    ? parsed.toLocaleDateString("pt-BR")
+    : date;
+  return `${dateLabel} às ${time}`;
+}
+
 function daysSince(date: string | Date | undefined | null): number {
   if (!date) return 0;
   const d = typeof date === "string" ? new Date(date) : date;
@@ -4111,15 +4122,11 @@ export default function Admin() {
 
     const buyLines = breakdown
       .filter((item) => item.toBuy > 0)
-      .map((item) => `- ${item.toBuy}x ${item.label}`);
-
-    const stockLines = breakdown
-      .filter((item) => item.fromStock > 0)
-      .map((item) => `- ${item.fromStock}x ${item.label}`);
+      .map((item) => `${item.toBuy}x ${item.label}`);
 
     const reshipmentLines = breakdown
       .filter((item) => item.toBuyReshipment > 0)
-      .map((item) => `- ${item.toBuyReshipment}x ${item.label}`);
+      .map((item) => `${item.toBuyReshipment}x ${item.label}`);
 
     const estimatedTotalCost = breakdown.reduce((sum, item) => {
       const unitCost = item.productId ? costById.get(item.productId) : undefined;
@@ -4128,24 +4135,17 @@ export default function Admin() {
       return sum + (item.toBuy * effectiveCost);
     }, 0);
 
-    const stockSectionLabel = balancesSnapshot.length > 0
-      ? "Itens ja cobertos por estoque (nao comprar):"
-      : "Itens ja cobertos por estoque (nao comprar):\n- Estoque nao carregado";
-
-    const text = [
+    const textParts = [
       `Lista de Compra - ${ordersParaEnviar.length} pedido${ordersParaEnviar.length !== 1 ? "s" : ""}`,
       "",
       "Comprar agora:",
-      buyLines.length ? buyLines.join("\n") : "- Nada para comprar",
-      "",
-      "🚨 Reenvios (abater no pagamento):",
-      reshipmentLines.length ? reshipmentLines.join("\n") : "- Nenhum reenvio na lista",
-      "",
-      stockSectionLabel,
-      stockLines.length ? stockLines.join("\n") : "- Nenhum item coberto",
-      "",
-      `Valor total estimado de custo (somente compra): ${formatCurrency(estimatedTotalCost)}`,
-    ].join("\n");
+      buyLines.length ? buyLines.join("\n") : "Nada para comprar",
+    ];
+    if (reshipmentLines.length > 0) {
+      textParts.push("", "🚨 Reenvios (abater no pagamento):", reshipmentLines.join("\n"));
+    }
+    textParts.push("", `Valor total estimado de custo (somente compra): ${formatCurrency(estimatedTotalCost)}`);
+    const text = textParts.join("\n");
 
     try {
       const mode = await copyText(text);
@@ -4646,7 +4646,13 @@ export default function Admin() {
                         <button type="button"
                           onClick={async (e) => {
                             e.preventDefault(); e.stopPropagation();
-                            const lines = motoboyOrders.map((order) => {
+                            const lines = [...motoboyOrders]
+                              .sort((a, b) => {
+                                const aKey = `${String((a as { motoboySlotDate?: string | null }).motoboySlotDate || "9999-99-99")} ${String((a as { motoboySlotTime?: string | null }).motoboySlotTime || "99:99")}`;
+                                const bKey = `${String((b as { motoboySlotDate?: string | null }).motoboySlotDate || "9999-99-99")} ${String((b as { motoboySlotTime?: string | null }).motoboySlotTime || "99:99")}`;
+                                return aKey.localeCompare(bKey);
+                              })
+                              .map((order) => {
                               const products = getOrderProducts(order?.products);
                               const ref = getOrderReference(order);
                               const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
@@ -4667,9 +4673,14 @@ export default function Admin() {
                                     .join("\n")
                                 : "• Sem itens";
                               const paid = order.status === "paid" || order.status === "completed";
+                              const slotLabel = formatMotoboySlotLabel(
+                                (order as { motoboySlotDate?: string | null }).motoboySlotDate,
+                                (order as { motoboySlotTime?: string | null }).motoboySlotTime,
+                              );
                               return [
                                 `📦 ENTREGA #${ref}`,
                                 paid ? "✅ Pagamento: confirmado" : "⚠️ Pagamento: PENDENTE",
+                                `🕐 Entrega: ${slotLabel}`,
                                 `👤 Cliente: ${order?.clientName || "-"}`,
                                 `📍 Endereço: ${rua}`,
                                 `🏘️ Bairro: ${order?.addressNeighborhood || "-"}`,

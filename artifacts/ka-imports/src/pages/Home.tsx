@@ -7,6 +7,7 @@ import { Loader2, X, SlidersHorizontal, Search, ArrowRight } from "lucide-react"
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
+import { clearSellerContext } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -146,6 +147,10 @@ export default function Home() {
   const { banners, isLoaded: bannersLoaded } = useSiteBanners();
 
   useLiveTracking("catalog");
+
+  useEffect(() => {
+    if (!sellerSlug) clearSellerContext();
+  }, [sellerSlug]);
 
   const toggleCategory = (category: string) => {
     setActiveCategories((prev) =>

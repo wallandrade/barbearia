@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, sellersTable, productsTable, siteSettingsTable, couponsTable } from "@workspace/db";
+import { db, ordersTable, productsTable, siteSettingsTable, couponsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { broadcastNotification } from "./notifications";
@@ -17,6 +17,7 @@ import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
+import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
 
 const router: IRouter = Router();
 
@@ -252,21 +253,6 @@ router.post("/checkout/pix", async (req, res) => {
       ? affiliate.userId
       : null;
 
-    let sellerCommissionRateSnapshot = 0;
-    if (sellerCode) {
-      const slug = String(sellerCode).toLowerCase();
-      const [seller] = await db
-        .select({
-          hasCommission: sellersTable.hasCommission,
-          commissionRate: sellersTable.commissionRate,
-        })
-        .from(sellersTable)
-        .where(eq(sellersTable.slug, slug));
-      if (seller?.hasCommission) {
-        sellerCommissionRateSnapshot = Number(seller.commissionRate ?? 0);
-      }
-    }
-
     // ── Validate client fields ────────────────────────────────────────────
     if (!client?.name || !client?.email || !client?.phone || !client?.document) {
       console.warn(`[CHECKOUT/PIX:${requestId}] Validation failed — missing client fields:`, {
@@ -432,6 +418,10 @@ router.post("/checkout/pix", async (req, res) => {
       return;
     }
 
+    const assignedSeller = await resolveCheckoutSeller(sellerCode);
+    const resolvedSellerCode = assignedSeller.sellerCode;
+    const sellerCommissionRateSnapshot = assignedSeller.commissionRateSnapshot;
+
     await db.insert(ordersTable).values({
       id:                  orderId,
       userId:              customerSession?.userId ?? null,
@@ -459,7 +449,7 @@ router.post("/checkout/pix", async (req, res) => {
       total:               String(amount),
       status:              "pending",
       paymentMethod:       "pix",
-      sellerCode:          sellerCode ? String(sellerCode) : null,
+      sellerCode:          resolvedSellerCode,
       sellerCommissionRateSnapshot: String(sellerCommissionRateSnapshot),
       couponCode:          normalizedCouponCode,
       discountAmount:      computedDiscountAmount > 0 ? String(computedDiscountAmount) : null,
@@ -503,7 +493,7 @@ router.post("/checkout/pix", async (req, res) => {
       });
     }
 
-    console.log(`[CHECKOUT/PIX:${requestId}] Order created: ${orderId} (sellerCode=${sellerCode || "none"})`);
+    console.log(`[CHECKOUT/PIX:${requestId}] Order created: ${orderId} (sellerCode=${resolvedSellerCode || "none"})`);
 
     // Geo lookup — fire and forget, não bloqueia a resposta
     lookupIpGeo(purchaseIp).then((geo) => {
@@ -521,7 +511,7 @@ router.post("/checkout/pix", async (req, res) => {
         clientName:    client.name,
         total:         amount,
         paymentMethod: "pix",
-        sellerCode:    sellerCode || null,
+        sellerCode:    resolvedSellerCode,
         createdAt:     new Date().toISOString(),
       },
     });
@@ -530,7 +520,7 @@ router.post("/checkout/pix", async (req, res) => {
       clientName: client.name,
       total: amount,
       paymentMethod: "pix",
-      sellerCode: sellerCode || null,
+      sellerCode: resolvedSellerCode,
       createdAt: new Date().toISOString(),
     });
 
@@ -558,6 +548,8 @@ router.post("/checkout/pix", async (req, res) => {
         coveredByAffiliateCredit: true,
         affiliateCreditUsed,
         remainingToPay: 0,
+        sellerCode: resolvedSellerCode,
+        sellerWhatsapp: assignedSeller.whatsapp,
       });
       return;
     }
@@ -631,6 +623,8 @@ router.post("/checkout/pix", async (req, res) => {
       pixBase64:     gatewayData.pix?.base64 || "",
       pixImage:      gatewayData.pix?.image  || "",
       expiresAt,
+      sellerCode: resolvedSellerCode,
+      sellerWhatsapp: assignedSeller.whatsapp,
     });
   } catch (err) {
     console.error(`[CHECKOUT/PIX:${requestId}] Unexpected error:`, err);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useRoute } from "wouter";
+import { Link, useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -69,30 +69,13 @@ function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
     .filter((group): group is ProductVariantGroup => Boolean(group));
 }
 
-function safeGetStorage(key: string): string {
-  try {
-    return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
-  } catch {
-    return "";
-  }
-}
-
 export default function ProductDetail() {
   const [, paramsSeller] = useRoute("/:seller/produto/:id");
   const [, paramsGlobal] = useRoute("/produto/:id");
-  const [, setLocation] = useLocation();
   const { addItem } = useCart();
 
   const productId = paramsSeller?.id ?? paramsGlobal?.id ?? "";
   const sellerSlug = paramsSeller?.seller?.toLowerCase();
-
-  useEffect(() => {
-    if (sellerSlug || !productId) return;
-    const storedSeller = safeGetStorage("sellerCode").toLowerCase();
-    if (storedSeller) {
-      setLocation(`/${storedSeller}/produto/${productId}`);
-    }
-  }, [sellerSlug, productId, setLocation]);
 
   if (sellerSlug) {
     setSellerContext(sellerSlug);

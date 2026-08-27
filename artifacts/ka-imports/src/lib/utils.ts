@@ -48,6 +48,55 @@ export function setSellerContext(slug: string): void {
   }
 }
 
+export function clearSellerContext(): void {
+  try {
+    sessionStorage.removeItem(SELLER_CODE_KEY);
+    localStorage.removeItem(SELLER_CODE_KEY);
+    sessionStorage.removeItem(SELLER_WHATSAPP_KEY);
+    sessionStorage.removeItem(SELLER_WHATSAPP_SLUG_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+/** Segments that are app routes, not seller slugs. */
+export const RESERVED_ROOT_SEGMENTS = new Set([
+  "admin",
+  "login",
+  "produto",
+  "checkout",
+  "ofertas",
+  "categoria",
+  "pix",
+  "success",
+  "r",
+  "pagamento",
+  "payment-link",
+  "kyc",
+  "suporte",
+  "rifas",
+  "grupo2",
+  "minha-conta",
+  "motoboy",
+]);
+
+export function getSellerSlugFromPath(path: string): string {
+  const root = String(path || "").split("?")[0].split("/").filter(Boolean)[0] || "";
+  const slug = root.toLowerCase();
+  if (!slug || RESERVED_ROOT_SEGMENTS.has(slug)) return "";
+  return slug;
+}
+
+/** `/poly/checkout` → poly; `/checkout` → "". */
+export function getSellerSlugFromCheckoutPath(path: string): string {
+  const clean = String(path || "").split("?")[0].replace(/\/+$/, "") || "/";
+  const match = clean.match(/^\/([^/]+)\/checkout$/);
+  if (!match) return "";
+  const slug = match[1].toLowerCase();
+  if (RESERVED_ROOT_SEGMENTS.has(slug)) return "";
+  return slug;
+}
+
 export function getActiveSellerCode(): string {
   try {
     return normalizeSellerSlug(

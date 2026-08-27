@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, sellersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
+import { peekHomeRotationSeller } from "../lib/assign-checkout-seller";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,19 @@ router.get("/sellers", async (_req, res) => {
     res.json({ sellers: rows });
   } catch {
     res.json({ sellers: [] });
+  }
+});
+
+/** GET /api/sellers/home-next — próximo vendedor do rodízio da home, sem gastar a vez */
+router.get("/sellers/home-next", async (_req, res) => {
+  try {
+    const next = await peekHomeRotationSeller();
+    res.json({
+      slug: next.sellerCode,
+      whatsapp: next.whatsapp,
+    });
+  } catch {
+    res.json({ slug: null, whatsapp: null });
   }
 });
 

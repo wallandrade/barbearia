@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, sellersTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, motoboyBookingsTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, motoboyBookingsTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -26,6 +26,7 @@ import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
+import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
 
 const router: IRouter = Router();
 
@@ -1108,21 +1109,6 @@ router.post("/orders", async (req, res) => {
       ? affiliate.userId
       : null;
 
-    let sellerCommissionRateSnapshot = 0;
-    if (sellerCode) {
-      const slug = String(sellerCode).toLowerCase();
-      const [seller] = await db
-        .select({
-          hasCommission: sellersTable.hasCommission,
-          commissionRate: sellersTable.commissionRate,
-        })
-        .from(sellersTable)
-        .where(eq(sellersTable.slug, slug));
-      if (seller?.hasCommission) {
-        sellerCommissionRateSnapshot = Number(seller.commissionRate ?? 0);
-      }
-    }
-
     if (!client || !products || !shippingType) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campos obrigatórios ausentes." });
       return;
@@ -1308,6 +1294,10 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
+    const assignedSeller = await resolveCheckoutSeller(sellerCode);
+    const resolvedSellerCode = assignedSeller.sellerCode;
+    const sellerCommissionRateSnapshot = assignedSeller.commissionRateSnapshot;
+
     await db.insert(ordersTable).values({
       id,
       userId: customerSession?.userId ?? null,
@@ -1336,7 +1326,7 @@ router.post("/orders", async (req, res) => {
       status:            method === "card_simulation" ? "awaiting_payment" : "pending",
       paymentMethod:     method,
       cardInstallments:  cardInstallments ? Number(cardInstallments) : null,
-      sellerCode:        sellerCode ? String(sellerCode) : null,
+      sellerCode:        resolvedSellerCode,
       sellerCommissionRateSnapshot: String(sellerCommissionRateSnapshot),
       couponCode:        normalizedCouponCode,
       discountAmount:    computedDiscountAmount > 0 ? String(computedDiscountAmount) : null,
@@ -1366,7 +1356,7 @@ router.post("/orders", async (req, res) => {
         clientName: client.name,
         total: computedTotal,
         paymentMethod: method,
-        sellerCode: sellerCode || null,
+        sellerCode: resolvedSellerCode,
         createdAt: new Date().toISOString(),
       },
     });
@@ -1375,7 +1365,7 @@ router.post("/orders", async (req, res) => {
       clientName: client.name,
       total: computedTotal,
       paymentMethod: method,
-      sellerCode: sellerCode || null,
+      sellerCode: resolvedSellerCode,
       createdAt: new Date().toISOString(),
     });
 
@@ -1396,7 +1386,8 @@ router.post("/orders", async (req, res) => {
       total: computedTotal,
       status:        method === "card_simulation" ? "awaiting_payment" : "pending",
       paymentMethod: method,
-      sellerCode:    sellerCode || null,
+      sellerCode:    resolvedSellerCode,
+      sellerWhatsapp: assignedSeller.whatsapp,
       affiliateCode: affiliateUserId ? normalizedAffiliateCode : null,
       guestAccessToken,
       isGuestOrder: !customerSession,
@@ -1580,6 +1571,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
 
     const reshipmentByOrder = await getReshipmentByOrderIds(orders.map((o) => o.id));
     const priorityByOrder = await loadOrderPriorityMap(orders.map((o) => o.id));
+    const motoboyBookingByOrder = await loadMotoboyBookingMap(orders.map((o) => o.id));
 
     const enriched = orders.map((order) => {
       const manualPriority = priorityByOrder.get(order.id) ?? false;
@@ -1620,6 +1612,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
         }
       }
 
+      const motoboyBooking = motoboyBookingByOrder.get(order.id) || null;
       return {
         ...mapOrder(order),
         isPrioridade: manualPriority || automaticPriority,
@@ -1629,6 +1622,8 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
         purchaseRisk,
         purchaseRiskReason,
         reshipment: reshipmentByOrder.get(order.id) || null,
+        motoboySlotDate: motoboyBooking?.slotDate ?? null,
+        motoboySlotTime: motoboyBooking?.slotTime ?? null,
       };
     });
 
@@ -2259,6 +2254,35 @@ async function enrichOrdersWithProductImages<T extends { products?: Array<{ id?:
       return fromCatalog ? { ...product, image: fromCatalog } : product;
     }),
   }));
+}
+
+async function loadMotoboyBookingMap(orderIds: string[]): Promise<Map<string, { slotDate: string; slotTime: string }>> {
+  const map = new Map<string, { slotDate: string; slotTime: string }>();
+  const ids = Array.from(new Set(orderIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (ids.length === 0) return map;
+
+  const rows = await db
+    .select({
+      orderId: motoboyBookingsTable.orderId,
+      slotDate: motoboyBookingsTable.slotDate,
+      slotTime: motoboyBookingsTable.slotTime,
+      isReleased: motoboyBookingsTable.isReleased,
+      createdAt: motoboyBookingsTable.createdAt,
+    })
+    .from(motoboyBookingsTable)
+    .where(inArray(motoboyBookingsTable.orderId, ids));
+
+  rows.sort((a, b) => {
+    if (a.isReleased !== b.isReleased) return a.isReleased ? 1 : -1;
+    return (b.createdAt?.getTime?.() ?? 0) - (a.createdAt?.getTime?.() ?? 0);
+  });
+
+  for (const row of rows) {
+    const oid = String(row.orderId || "").trim();
+    if (!oid || map.has(oid)) continue;
+    map.set(oid, { slotDate: row.slotDate, slotTime: row.slotTime });
+  }
+  return map;
 }
 
 function mapOrder(o: typeof ordersTable.$inferSelect) {

@@ -2,18 +2,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Minus, ShoppingBag, ArrowRight } from "lucide-react";
 import { useCart } from "@/store/use-cart";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getSellerSlugFromPath } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 
 export function CartDrawer() {
   const { items, isOpen, setIsOpen, updateQuantity, removeItem, getSubtotal } = useCart();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const handleCheckout = () => {
     setIsOpen(false);
-    const sellerCode = (
-      sessionStorage.getItem("sellerCode") || localStorage.getItem("sellerCode") || ""
-    ).trim().toLowerCase();
+    const sellerCode = getSellerSlugFromPath(location);
     const checkoutHref = sellerCode ? `/${encodeURIComponent(sellerCode)}/checkout` : "/checkout";
     setLocation(checkoutHref);
   };
