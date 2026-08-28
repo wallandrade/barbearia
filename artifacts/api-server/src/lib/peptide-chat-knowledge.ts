@@ -162,7 +162,7 @@ export const PEPTIDE_GUIDE_TOPICS = [
   { id: "dose", label: "Dose e ciclo" },
   { id: "reconstitute", label: "Reconstituição" },
   { id: "effects", label: "Efeitos e cuidados" },
-  { id: "stacks", label: "Stacks" },
+  { id: "stacks", label: "Pode juntar com" },
   { id: "research", label: "Pesquisa" },
 ] as const;
 
@@ -270,7 +270,7 @@ function extractLabeledLine(line: string): { title: string; rest: string } | nul
     [/^titula[cç][aã]o:\s*/i, "Titulação"],
     [/^reconstitui[cç][aã]o[^:]*:\s*/i, "Reconstituição"],
     [/^efeitos[^:]*:\s*/i, "Efeitos e cuidados"],
-    [/^stacks:\s*/i, "Stacks"],
+    [/^stacks:\s*/i, "Pode juntar com"],
     [/^pesquisa:\s*/i, "Pesquisa"],
     [/^dosagem\b\s*/i, "Dosagem"],
   ];
@@ -288,7 +288,7 @@ function itemsForBlock(title: string, raw: string): string[] {
   if (title === "Titulação") return splitTitration(body);
   if (
     title === "Linha do tempo"
-    || title === "Stacks"
+    || title === "Pode juntar com"
     || title === "Efeitos e cuidados"
     || title === "Indicações"
     || title === "Fases"
