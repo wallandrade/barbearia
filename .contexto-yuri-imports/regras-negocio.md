@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-28 | Ficha **HGH Fragment 176-191** alinhada à fonte (aliases, doses, papers, ≠ AOD) | Menu/Admin; ainda MONITORAR com AOD-9604 | Demais fichas iguais |
 | 2026-08-28 | Admin: aba **Biblioteca** (mesmo painel da bolha) para **todo** admin | Consulta fichas no `/admin` sem bolha | Bolha continua só login/Minha conta |
 | 2026-08-28 | Ficha **MOTS-C** (mitokine / longevidade; evidência baixa) | Menu; metformina e sema MONITORAR | Demais fichas iguais |
 | 2026-08-28 | Ficha **Tesamorelin** (Egrifta / GHRH FDA; performance) | Menu; não juntar com CJC-1295 | Demais fichas iguais |

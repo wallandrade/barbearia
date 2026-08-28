@@ -124,28 +124,28 @@ Pesquisa: Pickart 1985 — fibroblastos humanos: mais colágeno, elastina e GAGs
     name: "HGH Fragment 176-191",
     aliases: ["HGH Frag 176-191", "Fragment 176-191", "GH Frag", "hGH C-terminal fragment", "GH fragment lipolytic", "Frag 176-191"],
     body: `Fragmento lipolítico do GH sem efeitos anabólicos. Categoria ficha: emagrecimento.
-Também conhecido como: HGH Frag 176-191, Fragment 176-191, GH Frag, hGH C-terminal fragment.
-Meia-vida: ~30 minutos. Classificação: fragmento C-terminal do hGH (aa 176–191) SEM tirosina N-terminal — diferente do AOD-9604. Ciclo: 12–16 semanas. Via: SC. Dose típica: 250–500 mcg 1–2x/dia em jejum. Evidência: moderada (pré-clínico; sem fase 2/3 próprias). Reconstituição: fácil.
+Também conhecido como: HGH Frag 176-191, Fragment 176-191, GH Frag, hGH C-terminal fragment, GH fragment lipolytic.
+Meia-vida: ~30 minutos. Classificação: fragmento C-terminal do hGH (aa 176–191) SEM modificação N-terminal — diferente do AOD-9604 (que tem tirosina extra). Ciclo: 12–16 semanas. Via: subcutânea. Dose típica: 250–500 mcg, 1–2x ao dia em jejum. Custo: $$. Evidência: moderada. Reconstituição: fácil.
 
-O que é: fragmento C-terminal do GH (aa 176-191). Mecanismo lipolítico igual ao AOD-9604, mas SEM a tirosina extra na ponta N (AOD-9604 é mais estável). NÃO eleva IGF-1, NÃO hiperglicemia, NÃO crescimento ósseo/muscular. Mais barato e comum no mercado research. A ficha de capa às vezes chama de “também AOD-9604” — NÃO são idênticos. Sem estudos clínicos fase 2/3 próprios; dados vêm do programa do fragmento nativo que antecedeu o AOD-9604.
+O que é: fragmento C-terminal da molécula do GH (aa 176–191). Estimula lipólise e inibe lipogênese sem os efeitos anabólicos ou proliferativos do GH completo. Algumas capas chamam de “também AOD-9604” — NÃO são idênticos: o AOD-9604 leva tirosina N-terminal para mais estabilidade metabólica. Sem estudos clínicos fase 2 ou 3 próprios; dados pré-clínicos vêm do programa do fragmento nativo que antecedeu o AOD-9604.
 
-Mecanismo: ativa β3-AR nos adipócitos (lipólise, inibe lipogênese) sem GHR clássico. Sem tirosina, estabilidade/meia-vida efetiva pode ser um pouco menor que AOD-9604 (comparativos diretos escassos). Indicação off-label: lipólise visceral/subcutânea (abdômen) + déficit calórico e exercício.
+Mecanismo: fragmento sintético dos aminoácidos 176–191 da cadeia C-terminal do hGH. Mecanismo lipolítico idêntico ao AOD-9604 (β3-AR nos adipócitos), sem GHR clássico. NÃO eleva IGF-1, NÃO causa hiperglicemia, NÃO estimula crescimento ósseo ou muscular — efeito exclusivamente lipolítico. Sem a tirosina, estabilidade/meia-vida efetiva pode ser um pouco menor que AOD-9604 (comparativos diretos escassos). Mais acessível no mercado de pesquisa; estruturalmente similar, não idêntico. Indicação off-label: lipólise visceral e subcutânea (sobretudo abdominal), sempre com déficit calórico e exercício.
 
-Benefícios citados: lipólise (sobretudo visceral); sem anabolismo indesejado do GH; possível melhora da sensibilidade à insulina; preservação de massa muscular na ficha.
+Benefícios citados: lipólise específica (especialmente gordura visceral); sem efeitos anabólicos indesejados do GH; possível melhora de sensibilidade à insulina; preservação de massa muscular.
 
-Linha do tempo: sem 1-2 lipólise localizada com déficit calórico; sem 3-4 redução de medidas e mais definição; mês 2-3 composição mais consolidada com dieta; mês 3+ ciclos 8–12 sem com pausa e reavaliação.
+Linha do tempo: sem 1-2 = lipólise perceptível em gordura localizada com déficit calórico; sem 3-4 = redução progressiva de medidas na área aplicada e mais definição muscular; mês 2-3 = composição corporal mais consolidada com dieta; mês 3+ = ciclos de 8–12 semanas com pausa e reavaliação de composição.
 
-Dosagem: 250–500 mcg SC 1–2x/dia em jejum (30–60 min). Frequência da tabela: 1x/dia em jejum. Ciclo 12–16 semanas. Concentração ficha: 2 mL = 250 mcg/mL (vial 500 mcg). Via peri-adiposo para efeito localizado.
-Indicações (ficha): lipólise corporal 250–500 mcg SC 1x/dia em jejum + déficit e exercício; localizada 250 mcg SC na área; manutenção pós-cutting 250 mcg SC 3–4x/semana; com semaglutida/tirzepatida 250 mcg SC 1x/dia (sem interação conhecida na ficha).
-Fases SC: sem 1–12 = 250–500 mcg SC 1x/dia em jejum; pausa 4 semanas = avaliar composição; ciclo seguinte = mesma dose; se quiser mais estabilidade, a ficha sugere considerar AOD-9604 no lugar — não os dois juntos.
+Dosagem: 250–500 mcg SC 1–2x ao dia em jejum. Via peri-adiposo para efeito localizado. Frequência da tabela: 1x/dia em jejum. Ciclo 12–16 semanas. Concentração ficha: 2 mL = 250 mcg/mL (vial 500 mcg).
+Indicações (ficha): lipólise corporal geral 250–500 mcg SC 1x/dia em jejum 30–60 min no abdômen ou área-alvo + déficit calórico e exercício; lipólise localizada 250 mcg SC direto no tecido adiposo da área-alvo 1x/dia; manutenção pós-cutting 250 mcg SC 3–4x/semana; com semaglutida/tirzepatida 250 mcg SC 1x/dia para refinamento localizado (sem interação farmacológica conhecida na ficha).
+Fases SC: sem 1–12 = 250–500 mcg SC 1x/dia em jejum; pausa 4 semanas = avaliar composição corporal antes de reiniciar; ciclo seguinte = mesma dose; a ficha sugere considerar AOD-9604 no lugar se quiser mais estabilidade — não os dois juntos.
 
-Reconstituição: aspirar 2,0 mL água bacteriostática; injetar pela parede (evitar espuma); girar (não agitar); rotular; refrigerar 2–8°C; proteger da luz; aplicar em jejum 30–60 min.
+Reconstituição: aspirar 2,0 mL água bacteriostática com seringa estéril; injetar lentamente pela parede do frasco (evitar espuma); girar suavemente até dissolver (não agitar); rotular; refrigerar 2–8°C; proteger da luz; injetar preferencialmente em jejum de 30–60 min.
 
 Efeitos: hipoglicemia leve; anticorpos neutralizantes com uso prolongado.
 
-Stacks: AOD-9604 MONITORAR — mesmo mecanismo (β3-AR); juntar é redundante; escolher só um. Semaglutida COMPATÍVEL; Tirzepatida COMPATÍVEL; 5-Amino-1MQ SINÉRGICO (β3-AR vs NNMT); Ipamorelin COMPATÍVEL (GH anabólico vs frag lipolítico).
+Stacks: AOD-9604 MONITORAR — mesmo mecanismo (β3-AR); juntar é redundante e desperdiça recurso; escolher só um. Semaglutida COMPATÍVEL — GLP-1 perda sistêmica + Fragment lipólise localizada. Tirzepatida COMPATÍVEL — mesmo raciocínio no protocolo GIP/GLP-1. 5-Amino-1MQ SINÉRGICO — β3-AR vs inibição de NNMT, vias complementares. Ipamorelin COMPATÍVEL — GH endógeno anabólico vs Fragment lipolítico puro.
 
-Pesquisa: Ng et al. 1997 — fragmento 176-191 lipolítico em adipócitos/roedores, sem crescimento/insulinogênico. 2001 — lipólise sem GHR, sem IGF-1, sem alterar glicemia. 2008 — revisão comparando frag nativo vs AOD-9604 (tirosina aumenta estabilidade, mecanismo lipolítico parecido).`,
+Pesquisa: Ng et al. 1997 — The lipolytic effects of a C-terminal fragment of human growth hormone (hGH 176-191) in isolated fat cells (in vitro/ratos): lipólise similar ao hGH completo sem crescimento ou insulinogênese. 2001 — lipólise em roedores sem GHR, sem IGF-1 e sem alterar glicemia. 2008 — revisão comparando fragmento 176-191 nativo vs AOD-9604: a tirosina N-terminal do AOD aumenta estabilidade metabólica sem mudar o mecanismo lipolítico central.`,
   },
   {
     slug: "slu-pp-332",
