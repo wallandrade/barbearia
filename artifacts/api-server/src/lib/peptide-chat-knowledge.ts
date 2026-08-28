@@ -217,21 +217,147 @@ function splitGuideSections(body: string): Record<PeptideGuideTopicId, string> {
   };
 }
 
+export type PeptideGuideBlock = { title: string; items: string[] };
+
+const DISCLAIMER = "Informativo — não substitui médico ou endocrinologista.";
+
+function tidyClause(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/^[-–•]\s*/, "").trim();
+}
+
+function splitBySemicolon(body: string): string[] {
+  return body.split(";").map(tidyClause).filter((item) => item.length > 1);
+}
+
+function splitSentences(body: string): string[] {
+  return body
+    .split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÃÕÂÊÔÀ0-9])/)
+    .map(tidyClause)
+    .filter((item) => item.length > 1);
+}
+
+function splitTitration(body: string): string[] {
+  const items: string[] = [];
+  const leftover: string[] = [];
+  for (const part of splitBySemicolon(body)) {
+    const match = part.match(/^(?:sem(?:anas?)?\s*)?(.+?)\s*=\s*(.+)$/i);
+    if (!match) {
+      leftover.push(part);
+      continue;
+    }
+    const weeks = match[1].replace(/^sem(?:anas?)?\s*/i, "").trim();
+    let dose = match[2].trim();
+    const extraSentences = dose.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÃÕÂÊÔÀ0-9])/);
+    if (extraSentences.length > 1) {
+      dose = extraSentences[0].trim();
+      leftover.push(...extraSentences.slice(1).map(tidyClause).filter(Boolean));
+    }
+    if (/^\d+(?:[.,]\d+)?$/.test(dose.replace(/\.$/, ""))) dose = `${dose.replace(/\.$/, "")} mg`;
+    else dose = dose.replace(/^(\d+(?:[.,]\d+)?)\s+(?!mg)/i, "$1 mg ");
+    items.push(`Semanas ${weeks}: ${dose}`);
+  }
+  return [...items, ...leftover];
+}
+
+function extractLabeledLine(line: string): { title: string; rest: string } | null {
+  const patterns: Array<[RegExp, string]> = [
+    [/^o que é(?:\s*\([^)]+\))?\s*:?\s*/i, "O que é"],
+    [/^mecanismo(?:\s*\([^)]+\))?\s*:?\s*/i, "Mecanismo"],
+    [/^benef[ií]cios[^:]*:\s*/i, "Benefícios"],
+    [/^linha do tempo:\s*/i, "Linha do tempo"],
+    [/^indica(?:ções)?[^:]*:\s*/i, "Indicações"],
+    [/^fases sc:\s*/i, "Fases"],
+    [/^titula[cç][aã]o:\s*/i, "Titulação"],
+    [/^reconstitui[cç][aã]o[^:]*:\s*/i, "Reconstituição"],
+    [/^efeitos[^:]*:\s*/i, "Efeitos e cuidados"],
+    [/^stacks:\s*/i, "Stacks"],
+    [/^pesquisa:\s*/i, "Pesquisa"],
+    [/^dosagem\b\s*/i, "Dosagem"],
+  ];
+  for (const [pattern, title] of patterns) {
+    if (pattern.test(line)) {
+      return { title, rest: line.replace(pattern, "").replace(/^:\s*/, "").trim() };
+    }
+  }
+  return null;
+}
+
+function itemsForBlock(title: string, raw: string): string[] {
+  const body = tidyClause(raw);
+  if (!body) return [];
+  if (title === "Titulação") return splitTitration(body);
+  if (
+    title === "Linha do tempo"
+    || title === "Stacks"
+    || title === "Efeitos e cuidados"
+    || title === "Indicações"
+    || title === "Fases"
+    || title === "Reconstituição"
+  ) {
+    const items = splitBySemicolon(body);
+    if (title === "Linha do tempo") {
+      return items.map((item) => item
+        .replace(/^sem(?:anas?)?\s+/i, "Semanas ")
+        .replace(/^m[eê]s\s+/i, "Mês "));
+    }
+    return items;
+  }
+  return splitSentences(body);
+}
+
+export function formatGuideBlocks(raw: string): PeptideGuideBlock[] {
+  const blocks: PeptideGuideBlock[] = [];
+  let currentTitle = "Resumo";
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const items = itemsForBlock(currentTitle, buffer.join(" "));
+    if (items.length) blocks.push({ title: currentTitle, items });
+    buffer = [];
+  };
+
+  for (const rawLine of raw.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const labeled = extractLabeledLine(line);
+    if (labeled) {
+      flush();
+      currentTitle = labeled.title;
+      if (labeled.rest) buffer.push(labeled.rest);
+      continue;
+    }
+    buffer.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+function blocksToPlainText(blocks: PeptideGuideBlock[]): string {
+  return blocks
+    .map((block) => `${block.title}\n${block.items.map((item) => `• ${item}`).join("\n")}`)
+    .join("\n\n");
+}
+
 export function getPeptideGuideSection(slug: string, topicId: string): {
   name: string;
   topicLabel: string;
+  disclaimer: string;
+  blocks: PeptideGuideBlock[];
   text: string;
 } | null {
   const entry = PEPTIDE_CHAT_ENTRIES.find((item) => item.slug === slug);
   const topic = PEPTIDE_GUIDE_TOPICS.find((item) => item.id === topicId);
   if (!entry || !topic) return null;
   const sections = splitGuideSections(entry.body);
-  const text = sections[topic.id]?.trim() || "Não há esse trecho nesta ficha.";
-  const disclaimer = "Informativo — não substitui médico ou endocrinologista.";
+  const raw = sections[topic.id]?.trim() || "Não há esse trecho nesta ficha.";
+  const blocks = formatGuideBlocks(raw);
+  const text = `${DISCLAIMER}\n\n${blocksToPlainText(blocks) || raw}`;
   return {
     name: entry.name,
     topicLabel: topic.label,
-    text: `${disclaimer}\n\n${text}`,
+    disclaimer: DISCLAIMER,
+    blocks,
+    text,
   };
 }
 

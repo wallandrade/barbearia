@@ -5,6 +5,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type Product = { slug: string; name: string };
 type Topic = { id: string; label: string };
+type GuideBlock = { title: string; items: string[] };
 
 const FALLBACK_PRODUCTS: Product[] = [
   { slug: "5-amino-1mq", name: "5-Amino-1MQ" },
@@ -30,6 +31,8 @@ export default function PeptideChatWidget() {
   const [product, setProduct] = useState<Product | null>(null);
   const [topic, setTopic] = useState<Topic | null>(null);
   const [text, setText] = useState("");
+  const [disclaimer, setDisclaimer] = useState("");
+  const [blocks, setBlocks] = useState<GuideBlock[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,6 +57,8 @@ export default function PeptideChatWidget() {
       setProduct(null);
       setTopic(null);
       setText("");
+      setDisclaimer("");
+      setBlocks([]);
       setError("");
     }
   }, [open]);
@@ -63,14 +68,23 @@ export default function PeptideChatWidget() {
     setTopic(next);
     setLoading(true);
     setError("");
+    setBlocks([]);
+    setDisclaimer("");
     try {
       const res = await fetch(`${BASE}/api/chat/guide/${encodeURIComponent(product.slug)}/${encodeURIComponent(next.id)}`);
-      const data = await res.json().catch(() => ({})) as { text?: string; message?: string };
+      const data = await res.json().catch(() => ({})) as {
+        text?: string;
+        message?: string;
+        disclaimer?: string;
+        blocks?: GuideBlock[];
+      };
       if (!res.ok) {
         setText("");
         setError(data.message || "Não encontrei esse trecho.");
         return;
       }
+      setDisclaimer(String(data.disclaimer || "").trim());
+      setBlocks(Array.isArray(data.blocks) ? data.blocks.filter((block) => block?.title && Array.isArray(block.items)) : []);
       setText(String(data.text || "").trim());
     } catch {
       setText("");
@@ -103,7 +117,7 @@ export default function PeptideChatWidget() {
                     <button
                       key={item.slug}
                       type="button"
-                      onClick={() => { setProduct(item); setTopic(null); setText(""); setError(""); }}
+                      onClick={() => { setProduct(item); setTopic(null); setText(""); setDisclaimer(""); setBlocks([]); setError(""); }}
                       className="text-left px-3 py-2.5 rounded-xl border bg-white hover:bg-slate-100 text-sm font-medium text-slate-900"
                     >
                       {item.name}
@@ -117,7 +131,7 @@ export default function PeptideChatWidget() {
               <>
                 <button
                   type="button"
-                  onClick={() => { setProduct(null); setTopic(null); setText(""); setError(""); }}
+                  onClick={() => { setProduct(null); setTopic(null); setText(""); setDisclaimer(""); setBlocks([]); setError(""); }}
                   className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" /> Trocar composto
@@ -150,9 +164,35 @@ export default function PeptideChatWidget() {
               </div>
             )}
 
-            {(text || error) && (
-              <div className="rounded-2xl border bg-white px-3 py-2.5 text-sm text-slate-800 whitespace-pre-wrap">
-                {error || text}
+            {error && (
+              <div className="rounded-2xl border bg-white px-3 py-2.5 text-sm text-slate-800">
+                {error}
+              </div>
+            )}
+
+            {!error && (disclaimer || blocks.length > 0 || text) && (
+              <div className="space-y-2">
+                {disclaimer && (
+                  <p className="text-[11px] leading-snug text-amber-900 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                    {disclaimer}
+                  </p>
+                )}
+                {blocks.length > 0 ? blocks.map((block) => (
+                  <div key={block.title} className="rounded-2xl border bg-white px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                      {block.title}
+                    </p>
+                    <ul className="space-y-1.5 text-sm text-slate-800 list-disc pl-4">
+                      {block.items.map((item) => (
+                        <li key={item} className="leading-snug">{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )) : (
+                  <div className="rounded-2xl border bg-white px-3 py-2.5 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+                    {text}
+                  </div>
+                )}
               </div>
             )}
           </div>
