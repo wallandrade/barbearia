@@ -36,6 +36,90 @@ Stacks: BPC-157 sinérgico; MOTS-c sinérgico; NAD+ compatível; metformina MONI
 Pesquisa: estudos em camundongos 2018–2019 (inibição NNMT, redução de obesidade induzida por dieta, gasto energético). Evidência humana baixa.`,
   },
   {
+    slug: "aod-9604",
+    name: "AOD-9604",
+    aliases: ["AOD9604", "AOD 9604", "Anti-Obesity Drug 9604", "hGH fragment 176-191", "Tyr-hGH(177-191)", "fragmento 176-191"],
+    body: `Fragmento lipolítico do GH para emagrecimento, sem efeito diabetogênico.
+Também conhecido como: AOD9604, Anti-Obesity Drug 9604, hGH fragment 176-191, Tyr-hGH(177-191).
+Meia-vida: ~30 minutos. Classificação: fragmento C-terminal do hGH (aa 176–191) com tirosina N-terminal. Ciclo: 12–16 semanas. Via: SC 30 min antes do café (em jejum). Dose típica: 300 mcg/dia manhã em jejum. Evidência: moderada. Reconstituição: fácil.
+
+O que é: fragmento modificado do hormônio do crescimento (hGH aa 176-191). Desenvolvido na Monash University / Metabolic Pharmaceuticals (Austrália) para obesidade. Atua no tecido adiposo sem os efeitos diabetogênicos do GH completo. NÃO eleva IGF-1, NÃO estimula crescimento ósseo/muscular, NÃO causa hiperglicemia.
+
+Mecanismo: lipólise via receptor beta-3-adrenérgico (β3-AR) nos adipócitos; inibe lipogênese. Sem mediação pelo receptor de GH (GHR) nem IGF-1. Em animais, lipólise comparável ao hGH completo (visceral e subcutânea). Programa clínico oral chegou à fase 2b para obesidade e NÃO mostrou eficácia significativa vs placebo — o desenvolvimento para essa indicação foi interrompido. Uso off-label atual: lipólise localizada (SC peri-adiposo) e protocolos de cartilagem/articulação (mecanismo articular ainda não totalmente elucidado).
+
+Benefícios citados na ficha: lipólise seletiva sem elevar IGF-1; redução de gordura abdominal/visceral; sem impacto negativo em glicemia/insulina; potencial regenerativo em cartilagem; perfil de segurança citado como favorável; complemento de protocolos GLP-1. Eficácia isolada modesta — responde melhor em combinação com dieta/déficit.
+
+Linha do tempo: sem 1-2 lipólise perceptível em gordura localizada com dieta e exercício; sem 3-4 redução de medidas na área aplicada e mais definição; mês 2-3 composição corporal mais consolidada; articular: possível redução de dor em protocolo de cartilagem; mês 3+ ciclo 8–12 sem com pausa e reavaliação (DEXA ou bioimpedância).
+
+Dosagem: 300 mcg/dia SC manhã em jejum (30–60 min). Frequência 1x/dia. Ciclo 12–16 semanas. Concentração ficha: 2 mL = 250 mcg/mL (vial 500 mcg). Via peri-adiposo para efeito localizado.
+Indicações (ficha): lipólise corporal 250–500 mcg SC 1x/dia em jejum no abdômen ou área-alvo + déficit calórico; lipólise localizada 250 mcg SC direto na área; regeneração articular/cartilagem off-label 250–500 mcg SC 1x/dia (8–12 sem); junto com semaglutida/tirzepatida 250 mcg SC 1x/dia (mecanismos distintos; sem interação conhecida na ficha).
+Fases SC: sem 1–12 = 250–500 mcg SC 1x/dia em jejum; pausa 4 semanas = avaliar composição antes de reiniciar; ciclo seguinte = mesma dose ou ajustar pelo resultado.
+
+Reconstituição: aspirar 2,0 mL água bacteriostática; injetar pela parede do frasco (evitar espuma); girar suavemente até dissolver (não agitar); rotular; refrigerar 2–8°C; proteger da luz; injetar em jejum 30–60 min.
+
+Efeitos: dor discreta no local da injeção; leve fadiga nas primeiras semanas; eficácia isolada modesta (melhor em combinação). Sem o perfil de hiperglicemia/retenção hídrica típico do GH completo, segundo a ficha.
+
+Stacks: Semaglutida COMPATÍVEL (GLP-1 perda total + AOD lipólise localizada); Tirzepatida COMPATÍVEL (GIP/GLP-1 sistêmico + AOD composição); BPC-157 COMPATÍVEL (articular/tecido + lipólise); 5-Amino-1MQ SINÉRGICO (β3-AR vs NNMT/NAD+, vias complementares); Ipamorelin COMPATÍVEL (GH endógeno anabólico vs AOD lipolítico). Stack citado: Metabolic Reset = Semaglutida + AOD-9604.
+
+Pesquisa: Heffernan/Ng 2001 — AOD-9604 reduz adiposidade em roedores obesos sem efeitos tipo GH (IGF-1/glicemia). Fase 2 2006 (oral, adultos obesos) — redução de gordura visceral em subgrupos; fase 2b oral não significativa vs placebo, programa descontinuado. 2014 — evidência pré-clínica/in vitro de potencial em cartilagem.`,
+  },
+  {
+    slug: "dsip",
+    name: "DSIP",
+    aliases: ["Delta Sleep-Inducing Peptide", "DSIP nonapeptídeo", "delta-sleep peptide", "Trp-Ala-Gly-Gly-Asp-Ala-Ser-Gly-Glu"],
+    body: `Peptídeo indutor de sono delta, com efeito ansiolítico e adaptogênico. Categoria ficha: imunidade / sono.
+Também conhecido como: Delta Sleep-Inducing Peptide, DSIP nonapeptídeo, Trp-Ala-Gly-Gly-Asp-Ala-Ser-Gly-Glu.
+Meia-vida: ~7–15 min no plasma; efeito clínico pode durar horas (mecanismo indireto). Classificação: nonapeptídeo indutor de sono delta (NREM3); regulador do eixo HPA. Ciclo: 2–4 semanas (ficha); fases citam 1–6 sem. Via: SC ou intranasal. Dose típica: 100–500 mcg SC ou nasal, ao dormir. Evidência: baixa. Reconstituição: fácil.
+
+O que é: nonapeptídeo isolado de coelhos em sono profundo (Monnier e Schoenenberger, Basel, 1977). Além de sono delta de ondas lentas, a ficha cita ansiólise, antioxidante, analgesia e regulação de cortisol (adaptógeno peptídico). Detectado em hipotálamo, hipófise, plasma e pâncreas humanos. IMPORTANTE: evidência clínica humana limitada; estudos principais das décadas de 1970–1990; estudos modernos controlados são escassos — VERIFICAR.
+
+Mecanismo: indução de NREM3 não totalmente elucidada — ritmos circadianos hipotalâmicos, potencialização GABA-A e sistema opioide endógeno. Eixo HPA: em roedores, reduz resposta de corticosterona ao estresse. Também pesquisados: analgesia (opioide), anticonvulsivante, termorregulação. Paradoxo: meia-vida plasmática curta vs efeito por horas → ação indireta via neurotransmissores.
+
+Benefícios citados na ficha (evidência baixa): melhora de sono delta profundo; ansiólise; redução de cortisol; analgesia; regulação de GH e ACTH. Sempre avisar que dados humanos são antigos e fracos.
+
+Linha do tempo: sem 1-2 qualidade de sono e mais NREM3; onset 30–60 min; sem 3-4 menos despertar noturno; recuperação muscular/cognitiva associada ao sono profundo; mês 2-3 cortisol noturno e adaptação ao estresse só anedótico — VERIFICAR; mês 3+ ciclos 4–8 sem com pausa; avaliar por diário ou polissonografia — VERIFICAR.
+
+Dosagem: 100–500 mcg SC ou intranasal ao dormir. Via típica ficha: SC. Frequência 1x/dia, 30–60 min antes de dormir. Ciclo 2–4 semanas. Concentração ficha: 2 mL = 100 mcg/mL (vial 200 mcg).
+Indicações (ficha): insônia/sono profundo 100–300 mcg SC 30–60 min antes de dormir (resposta variável — VERIFICAR); cortisol/adaptógeno 100–200 mcg SC à noite (sem protocolo padronizado — VERIFICAR); dor crônica/analgesia adjuvante 100–200 mcg SC (evidência limitada — VERIFICAR); com Epithalon 100 mcg DSIP + 5 mg Epithalon SC antes de dormir — VERIFICAR.
+Fases SC: sem 1–6 = 100–200 mcg SC 30–60 min antes de dormir; pausa 2–4 semanas = avaliar sono e cortisol; ciclo seguinte = mesma dose ou ajustar; polissonografia para objetivar efeito.
+
+Reconstituição: aspirar 2,0 mL água bacteriostática; injetar pela parede do frasco (evitar espuma); girar suavemente (não agitar); rotular; refrigerar 2–8°C; proteger da luz; aplicar 30–60 min antes de dormir.
+
+Efeitos: tolerância rápida; cefaleia; sonhos vívidos; dados humanos limitados.
+
+Stacks: Epithalon SINÉRGICO (DSIP = NREM3; Epithalon = melatonina/circadiano); Selank COMPATÍVEL (ansiedade diurna vs sono noturno); Semax COMPATÍVEL (cognitivo de manhã vs DSIP à noite — não sobrepor horário); Ipamorelin COMPATÍVEL (pulso de GH no sono delta). Benzodiazepínicos MONITORAR: DSIP potencializa GABA; junto pode ter sedação excessiva e risco de depressão respiratória — VERIFICAR. NÃO usar com benzo sem médico.
+
+Pesquisa: Monnier/Schoenenberger 1977 — isolamento do DSIP no liquor de coelhos e indução de sono delta. Schoenenberger 1984 — revisão (sono, HPA, analgesia, termorregulação). 1989 — DSIP em liquor/plasma humanos e correlação com resposta de corticosterona ao estresse.`,
+  },
+  {
+    slug: "ghk-cu",
+    name: "GHK-Cu",
+    aliases: ["Copper peptide", "GHK", "Glycyl-L-histidyl-L-lysine copper", "Cu-GHK", "GHK cobre", "peptídeo de cobre"],
+    body: `Complexo cobre-peptídeo para pele, cabelo e regeneração. Categoria ficha: estética.
+Também conhecido como: Copper peptide, GHK, Glycyl-L-histidyl-L-lysine copper, Cu-GHK.
+Meia-vida: ~30 min SC; tópico tem efeito depot mais longo. Classificação: tripeptídeo endógeno quelante de Cu²⁺. Ciclo: 8–16 semanas. Via: SC ou tópica. Dose típica: 1–2 mg SC 3–5x/semana ou uso tópico. Evidência: moderada. Reconstituição: média. Solução reconstituída deve ficar azul-celeste.
+
+O que é: tripeptídeo Gly-His-Lys naturalmente no plasma; cai com a idade (~200 ng/mL em jovens → ~80 ng/mL após 60 anos). Descoberto por Loren Pickart em 1973. A ficha cita >40 anos de pesquisa: remodelação de colágeno, cabelo, cicatrização e proteção neural (tópico e sistêmico). Sem o cobre (GHK livre) a atividade cai muito — o Cu²⁺ é cofator essencial.
+
+Mecanismo: ativa fibroblastos para colágeno I e III, elastina e glicosaminoglicanos (hialuronano). Transcriptômica (Pickart): modula >4.000 genes (reparo de DNA, anti-inflamação, antioxidação, angiogênese, apoptose). SC: migração de queratinócitos, VEGF, cicatrização. Tópico: penetra a barreira e atua em fotoenvelhecimento.
+
+Benefícios citados: síntese de colágeno e elastina; regeneração capilar; cicatrização mais rápida; neuroproteção; antioxidante.
+
+Linha do tempo: sem 1-2 tópico = textura/hidratação; SC = inflamação inicial mínima; sem 3-4 menos linhas finas; SC acelera cicatrização de lesões; mês 2-3 elasticidade, tônus e uniformidade; mês 3+ cumulativo; tópico contínuo mais pronunciado na ficha.
+
+Dosagem: 1–2 mg SC 3–5x/semana ou tópico. Frequência tópico 1–2x/dia; SC 2–3x/semana na tabela de protocolos. Ciclo 8–16 semanas. Concentração: tópico 1–5%; SC 1 mL = 1 mg/mL.
+Indicações (ficha): rejuvenescimento tópico 1–5% após limpeza 1–2x/dia; cicatrização 2–5% em curativo oclusivo (troca diária); anti-aging SC 1–2 mg 2–3x/semana (8 sem on / 4 sem off); alopecia tópico 2–3% no couro cabeludo à noite, avaliar em 90 dias.
+Fases SC: sem 1–8 = 1–2 mg SC 2–3x/semana ou tópico 1–2x/dia; pausa 4 semanas = tópico de manutenção se quiser; ciclo seguinte = retomar conforme objetivo.
+
+Reconstituição: aspirar 1,0 mL água bacteriostática; injetar pela parede (evitar espuma e calor); girar até dissolver — solução azul-celeste; tópico: diluir em salina ou gel a 1–5%; refrigerar 2–8°C; proteger da luz; válido 21 dias após reconstituição.
+
+Efeitos: irritação tópica em pele sensível; pigmentação transitória; acúmulo de cobre se uso excessivo.
+
+Stacks: BPC-157 SINÉRGICO (matriz/colágeno vs angiogênese/cicatrização); TB-500 SINÉRGICO (células-tronco sistêmicas vs remodelação local); Ipamorelin COMPATÍVEL (GH/IGF-1 amplifica colágeno). Retinoides MONITORAR: irritação e eritema cumulativos no tópico — dias alternados e ir aumentando.
+
+Pesquisa: Pickart 1985 — fibroblastos humanos: mais colágeno, elastina e GAGs. Pickart et al. 2018 — revisão (estresse oxidativo/envelhecimento; transcriptômica >4.000 genes). 2015 — vias de matriz, angiogênese e reparo de DNA em pele (rejuvenescimento e feridas).`,
+  },
+  {
     slug: "adamax",
     name: "Adamax",
     aliases: ["Adamax blend", "Stack androgênico underground", "Blend peptídico androgênico"],

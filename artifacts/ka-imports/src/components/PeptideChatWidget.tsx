@@ -11,6 +11,9 @@ const FALLBACK_PRODUCTS: Product[] = [
   { slug: "5-amino-1mq", name: "5-Amino-1MQ" },
   { slug: "adamax", name: "Adamax" },
   { slug: "aicar", name: "AICAR" },
+  { slug: "aod-9604", name: "AOD-9604" },
+  { slug: "dsip", name: "DSIP" },
+  { slug: "ghk-cu", name: "GHK-Cu" },
   { slug: "tirzepatida", name: "Tirzepatida" },
   { slug: "retatrutide", name: "Retatrutide" },
 ];

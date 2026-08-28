@@ -10,7 +10,9 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-08-28 | Botão da ficha **Stacks** virou **Pode juntar com** | Linguagem popular no menu | Id `stacks` / conteúdo da ficha iguais |
+| 2026-08-28 | Ficha **GHK-Cu** na biblioteca (estética / cobre-peptídeo) | Aparece no menu; retinoides MONITORAR | Demais fichas iguais |
+| 2026-08-28 | Ficha **DSIP** na biblioteca (sono delta / imunidade) | Aparece no menu; evidência baixa e benzo MONITORAR | Demais fichas iguais |
+| 2026-08-28 | Ficha **AOD-9604** na biblioteca (emagrecimento / fragmento GH) | Aparece no menu do login/Minha conta | Demais fichas iguais |
 | 2026-08-28 | Ficha da biblioteca em blocos (título + lista); aviso médico separado | Dose/ciclo legível (titulação semana a semana) | Conteúdo da ficha igual |
 | 2026-08-28 | Biblioteca de compostos: menu clicável (produto → assunto), sem campo de texto; texto sai da ficha | Sem recusa da IA em “protocolo”; conteúdo = ficha | Pedido/PIX iguais |
 | 2026-08-27 | Chat visível sem `OPENAI_API_KEY`: responde pelas fichas; OpenAI só se a chave existir | Bolha no login/Minha conta mesmo sem chave no Railway | Regras das fichas iguais |
@@ -174,7 +176,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Widget `PeptideChatWidget` só em `/login` e rotas `/minha-conta*` (não no admin/motoboy/home). Bolha **sempre visível** nessas rotas.
 - UX: **sem chat aberto**. Cliente escolhe composto e depois assunto (O que é, Dose e ciclo, Reconstituição, Efeitos e cuidados, **Pode juntar com**, Pesquisa). Resposta em **blocos** (título + bullets), aviso médico no topo. Texto vem da ficha, sem OpenAI nesse fluxo.
 - API: `GET /api/chat/status` (produtos+tópicos), `GET /api/chat/guide/:slug/:topic` — `routes/peptide-chat.ts` + `lib/peptide-chat-knowledge.ts`.
-- Fichas: 5-Amino-1MQ, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
+- Fichas: 5-Amino-1MQ, AOD-9604, DSIP, GHK-Cu, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
 - `POST /api/chat/ask` (OpenAI opcional) permanece no backend, mas o widget **não** usa.
 - Fetch direto no FE (não client Orval).
 
