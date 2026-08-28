@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { answerPeptideChat, isPeptideChatConfigured, sanitizeChatTurns } from "../lib/peptide-chat";
+import { answerPeptideChat, sanitizeChatTurns } from "../lib/peptide-chat";
 import { listPeptideChatNames } from "../lib/peptide-chat-knowledge";
 
 const router: IRouter = Router();
@@ -32,21 +32,13 @@ function allowChat(ip: string): boolean {
 
 router.get("/chat/status", (_req, res) => {
   res.json({
-    enabled: isPeptideChatConfigured(),
+    enabled: true,
     products: listPeptideChatNames(),
   });
 });
 
 router.post("/chat/ask", async (req, res) => {
   try {
-    if (!isPeptideChatConfigured()) {
-      res.status(503).json({
-        error: "CHAT_NOT_CONFIGURED",
-        message: "O assistente não está disponível no momento.",
-      });
-      return;
-    }
-
     const ip = clientIp(req);
     if (!allowChat(ip)) {
       res.status(429).json({

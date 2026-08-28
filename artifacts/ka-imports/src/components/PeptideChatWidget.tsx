@@ -9,8 +9,7 @@ const SUGGESTIONS = ["Tirzepatida", "Retatrutide", "5-Amino-1MQ", "AICAR"];
 
 export default function PeptideChatWidget() {
   const [open, setOpen] = useState(false);
-  const [enabled, setEnabled] = useState(false);
-  const [products, setProducts] = useState<string[]>([]);
+  const [products, setProducts] = useState<string[]>(SUGGESTIONS);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([
@@ -25,18 +24,19 @@ export default function PeptideChatWidget() {
   useEffect(() => {
     fetch(`${BASE}/api/chat/status`)
       .then((res) => res.json())
-      .then((data: { enabled?: boolean; products?: string[] }) => {
-        setEnabled(Boolean(data?.enabled));
-        setProducts(Array.isArray(data?.products) ? data.products : []);
+      .then((data: { products?: string[] }) => {
+        if (Array.isArray(data?.products) && data.products.length) {
+          setProducts(data.products);
+        }
       })
-      .catch(() => setEnabled(false));
+      .catch(() => {
+        /* chips locais já cobrem as fichas */
+      });
   }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns, open]);
-
-  if (!enabled) return null;
 
   async function send(text: string) {
     const question = text.trim();
@@ -76,7 +76,7 @@ export default function PeptideChatWidget() {
   }
 
   return (
-    <div className="fixed z-[70] right-4 sm:right-6" style={{ bottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+    <div className="fixed z-[200] right-4 sm:right-6" style={{ bottom: "max(1rem, env(safe-area-inset-bottom))" }}>
       {open && (
         <div className="mb-3 w-[min(100vw-2rem,380px)] h-[min(70vh,520px)] bg-white border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b bg-slate-900 text-white flex items-center justify-between">

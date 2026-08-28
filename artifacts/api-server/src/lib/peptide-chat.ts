@@ -1,4 +1,4 @@
-import { buildPeptideChatKnowledgeBlock, listPeptideChatNames } from "./peptide-chat-knowledge";
+import { answerFromPeptideKnowledge, buildPeptideChatKnowledgeBlock, listPeptideChatNames } from "./peptide-chat-knowledge";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -18,7 +18,7 @@ export function sanitizeChatTurns(raw: unknown): ChatTurn[] {
   return turns;
 }
 
-export function isPeptideChatConfigured(): boolean {
+export function hasOpenAiChatKey(): boolean {
   return Boolean(String(process.env.OPENAI_API_KEY || "").trim());
 }
 
@@ -44,16 +44,7 @@ function buildSystemPrompt(): string {
   ].join("\n");
 }
 
-export async function answerPeptideChat(turns: ChatTurn[]): Promise<{ reply: string }> {
-  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) {
-    throw new Error("CHAT_NOT_CONFIGURED");
-  }
-  const lastUser = [...turns].reverse().find((turn) => turn.role === "user");
-  if (!lastUser) {
-    throw new Error("EMPTY_QUESTION");
-  }
-
+async function answerWithOpenAi(turns: ChatTurn[], apiKey: string): Promise<string | null> {
   const model = String(process.env.OPENAI_CHAT_MODEL || process.env.OPENAI_VISION_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: buildSystemPrompt() },
@@ -77,13 +68,27 @@ export async function answerPeptideChat(turns: ChatTurn[]): Promise<{ reply: str
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
     console.error("[PEPTIDE_CHAT] OpenAI error", response.status, errText.slice(0, 400));
-    throw new Error("OPENAI_FAILED");
+    return null;
   }
 
   const payload = await response.json().catch(() => ({})) as {
     choices?: Array<{ message?: { content?: string | null } }>;
   };
   const reply = String(payload?.choices?.[0]?.message?.content || "").trim();
-  if (!reply) throw new Error("EMPTY_REPLY");
-  return { reply };
+  return reply || null;
+}
+
+export async function answerPeptideChat(turns: ChatTurn[]): Promise<{ reply: string }> {
+  const lastUser = [...turns].reverse().find((turn) => turn.role === "user");
+  if (!lastUser) {
+    throw new Error("EMPTY_QUESTION");
+  }
+
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (apiKey) {
+    const openaiReply = await answerWithOpenAi(turns, apiKey);
+    if (openaiReply) return { reply: openaiReply };
+  }
+
+  return { reply: answerFromPeptideKnowledge(lastUser.content) };
 }

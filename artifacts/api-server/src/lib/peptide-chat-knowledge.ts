@@ -89,7 +89,7 @@ Pesquisa: Narkar Cell 2008; Hardie AMPK 2012; Mangano 1993 acadesina em cirurgia
   {
     slug: "tirzepatida",
     name: "Tirzepatida",
-    aliases: ["Tirzepatide", "Mounjaro", "Zepbound", "LY3298176", "Twincretin", "tirzepatida"],
+    aliases: ["Tirzepatide", "Mounjaro", "Zepbound", "LY3298176", "Twincretin", "tirzepatida", "Tirzec"],
     body: `Agonista duplo GIP/GLP-1 — maior eficácia entre incretinas aprovadas para perda de peso (vs semaglutida).
 Também conhecido como: Mounjaro, Zepbound, LY3298176, twincretin.
 Meia-vida: ~5 dias. Classificação: twincretin. Ciclo: 16–72 semanas (uso contínuo). Via: SC semanal. Dose: 2,5 mg/semana início → titulação a cada 4 semanas até 15 mg/semana. Evidência: alta. Reconstituição de vial: fácil.
@@ -151,4 +151,54 @@ export function buildPeptideChatKnowledgeBlock(): string {
 
 export function listPeptideChatNames(): string[] {
   return PEPTIDE_CHAT_ENTRIES.map((entry) => entry.name);
+}
+
+function fold(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function termsOf(entry: PeptideChatEntry): string[] {
+  return [entry.name, entry.slug, ...entry.aliases]
+    .map(fold)
+    .filter((term) => term.length >= 4);
+}
+
+export function matchPeptideChatEntries(question: string): PeptideChatEntry[] {
+  const q = ` ${fold(question)} `;
+  const scored = PEPTIDE_CHAT_ENTRIES.map((entry) => {
+    let score = 0;
+    for (const term of termsOf(entry)) {
+      if (q.includes(` ${term} `) || q.includes(term)) {
+        score = Math.max(score, term.length);
+      }
+    }
+    return { entry, score };
+  })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, 2).map((row) => row.entry);
+}
+
+export function answerFromPeptideKnowledge(question: string): string {
+  const q = fold(question);
+  const names = listPeptideChatNames().join(", ");
+  const disclaimer = "Informativo — não substitui médico ou endocrinologista.";
+  const looksLikeOrder = /\b(pedido|pix|rastreio|rastrear|senha|reenvio|entregue|pagamento|boleto)\b/.test(q);
+  const matches = matchPeptideChatEntries(question);
+
+  if (looksLikeOrder && matches.length === 0) {
+    return "Pedido, PIX, rastreio e senha não são função deste assistente. Veja em Minha conta → Meus pedidos, ou fale no suporte do pedido / WhatsApp da loja.";
+  }
+
+  if (matches.length === 0) {
+    return `Não tenho ficha disso ainda. Hoje consigo falar de: ${names}. Se for outro composto, fale no WhatsApp/suporte da loja.`;
+  }
+
+  const blocks = matches.map((entry) => `### ${entry.name}\n${entry.body.trim()}`);
+  return `${disclaimer}\n\n${blocks.join("\n\n---\n\n")}`;
 }

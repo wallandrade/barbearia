@@ -10,7 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-08-27 | Chat informativo no `/login` e `/minha-conta*`: responde só com fichas (5-Amino-1MQ, Adamax, AICAR, Tirzepatida, Retatrutide); não prescreve; pedido/PIX/rastreio → Minha conta/suporte | Bolha no canto; some se não houver `OPENAI_API_KEY` | Checkout, pedidos, admin iguais |
+| 2026-08-27 | Chat visível sem `OPENAI_API_KEY`: responde pelas fichas; OpenAI só se a chave existir | Bolha no login/Minha conta mesmo sem chave no Railway | Regras das fichas iguais |
 | 2026-08-27 | Cópia 48h/72h/lista: `reenvio_enviado` sai igual `enviado`; marcar reenvio enviado solta vaga da fila | #870 some do 48h sem reenviar | Pedido normal igual |
 | 2026-08-27 | Reenvio enviado: badge verde; card sem **Marcar como Enviado** / baixa Loja; `enviado` liga/desliga com o status do reenvio | Só o fluxo de reenvio no filho; some POSTAR ATÉ ao enviar | Pedido normal (sem `reshipments`) igual |
 | 2026-08-26 | Cópia Motoboy inclui **data/hora do slot** (`motoboy_bookings`); PIX/cartão também gravam o agendamento | Motoboy vê quando entregar | Endereço sem telefone; valores iguais |
@@ -168,10 +168,10 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 ## Chat informativo (biblioteca de compostos)
 
-- Widget `PeptideChatWidget` só em `/login` e rotas `/minha-conta*` (não no admin/motoboy/home).
-- API: `GET /api/chat/status`, `POST /api/chat/ask` — `routes/peptide-chat.ts` + `lib/peptide-chat.ts`.
-- Base: `lib/peptide-chat-knowledge.ts` (fichas atuais: 5-Amino-1MQ, Adamax, AICAR, Tirzepatida, Retatrutide). Só responde o que está na ficha; sem prescrição; pedido/PIX/rastreio não são função do bot.
-- Sem `OPENAI_API_KEY` o status vem `enabled: false` e a bolha não aparece.
+- Widget `PeptideChatWidget` só em `/login` e rotas `/minha-conta*` (não no admin/motoboy/home). Bolha **sempre visível** nessas rotas.
+- API: `GET /api/chat/status` (`enabled: true`), `POST /api/chat/ask` — `routes/peptide-chat.ts` + `lib/peptide-chat.ts`.
+- Base: `lib/peptide-chat-knowledge.ts` (fichas atuais: 5-Amino-1MQ, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide). Só responde o que está na ficha; sem prescrição; pedido/PIX/rastreio não são função do bot.
+- Sem `OPENAI_API_KEY` responde por busca na ficha (nome/apelidos). Com chave, usa OpenAI e cai na ficha se a API falhar.
 - Fetch direto no FE (não client Orval).
 
 ## Multi-tenant
