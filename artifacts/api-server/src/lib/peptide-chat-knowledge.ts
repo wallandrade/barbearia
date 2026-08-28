@@ -59,7 +59,7 @@ Reconstituição: aspirar 2,0 mL água bacteriostática; injetar pela parede do 
 
 Efeitos: dor discreta no local da injeção; leve fadiga nas primeiras semanas; eficácia isolada modesta (melhor em combinação). Sem o perfil de hiperglicemia/retenção hídrica típico do GH completo, segundo a ficha.
 
-Stacks: Semaglutida COMPATÍVEL (GLP-1 perda total + AOD lipólise localizada); Tirzepatida COMPATÍVEL (GIP/GLP-1 sistêmico + AOD composição); BPC-157 COMPATÍVEL (articular/tecido + lipólise); 5-Amino-1MQ SINÉRGICO (β3-AR vs NNMT/NAD+, vias complementares); Ipamorelin COMPATÍVEL (GH endógeno anabólico vs AOD lipolítico). Stack citado: Metabolic Reset = Semaglutida + AOD-9604.
+Stacks: Semaglutida COMPATÍVEL (GLP-1 perda total + AOD lipólise localizada); Tirzepatida COMPATÍVEL (GIP/GLP-1 sistêmico + AOD composição); BPC-157 COMPATÍVEL (articular/tecido + lipólise); 5-Amino-1MQ SINÉRGICO (β3-AR vs NNMT/NAD+, vias complementares); Ipamorelin COMPATÍVEL (GH endógeno anabólico vs AOD lipolítico). HGH Fragment 176-191 MONITORAR — mesmo mecanismo; não juntar (escolher um). Stack citado: Metabolic Reset = Semaglutida + AOD-9604.
 
 Pesquisa: Heffernan/Ng 2001 — AOD-9604 reduz adiposidade em roedores obesos sem efeitos tipo GH (IGF-1/glicemia). Fase 2 2006 (oral, adultos obesos) — redução de gordura visceral em subgrupos; fase 2b oral não significativa vs placebo, programa descontinuado. 2014 — evidência pré-clínica/in vitro de potencial em cartilagem.`,
   },
@@ -118,6 +118,118 @@ Efeitos: irritação tópica em pele sensível; pigmentação transitória; acú
 Stacks: BPC-157 SINÉRGICO (matriz/colágeno vs angiogênese/cicatrização); TB-500 SINÉRGICO (células-tronco sistêmicas vs remodelação local); Ipamorelin COMPATÍVEL (GH/IGF-1 amplifica colágeno). Retinoides MONITORAR: irritação e eritema cumulativos no tópico — dias alternados e ir aumentando.
 
 Pesquisa: Pickart 1985 — fibroblastos humanos: mais colágeno, elastina e GAGs. Pickart et al. 2018 — revisão (estresse oxidativo/envelhecimento; transcriptômica >4.000 genes). 2015 — vias de matriz, angiogênese e reparo de DNA em pele (rejuvenescimento e feridas).`,
+  },
+  {
+    slug: "hgh-fragment-176-191",
+    name: "HGH Fragment 176-191",
+    aliases: ["HGH Frag 176-191", "Fragment 176-191", "GH Frag", "hGH C-terminal fragment", "GH fragment lipolytic", "Frag 176-191"],
+    body: `Fragmento lipolítico do GH sem efeitos anabólicos. Categoria ficha: emagrecimento.
+Também conhecido como: HGH Frag 176-191, Fragment 176-191, GH Frag, hGH C-terminal fragment.
+Meia-vida: ~30 minutos. Classificação: fragmento C-terminal do hGH (aa 176–191) SEM tirosina N-terminal — diferente do AOD-9604. Ciclo: 12–16 semanas. Via: SC. Dose típica: 250–500 mcg 1–2x/dia em jejum. Evidência: moderada (pré-clínico; sem fase 2/3 próprias). Reconstituição: fácil.
+
+O que é: fragmento C-terminal do GH (aa 176-191). Mecanismo lipolítico igual ao AOD-9604, mas SEM a tirosina extra na ponta N (AOD-9604 é mais estável). NÃO eleva IGF-1, NÃO hiperglicemia, NÃO crescimento ósseo/muscular. Mais barato e comum no mercado research. A ficha de capa às vezes chama de “também AOD-9604” — NÃO são idênticos. Sem estudos clínicos fase 2/3 próprios; dados vêm do programa do fragmento nativo que antecedeu o AOD-9604.
+
+Mecanismo: ativa β3-AR nos adipócitos (lipólise, inibe lipogênese) sem GHR clássico. Sem tirosina, estabilidade/meia-vida efetiva pode ser um pouco menor que AOD-9604 (comparativos diretos escassos). Indicação off-label: lipólise visceral/subcutânea (abdômen) + déficit calórico e exercício.
+
+Benefícios citados: lipólise (sobretudo visceral); sem anabolismo indesejado do GH; possível melhora da sensibilidade à insulina; preservação de massa muscular na ficha.
+
+Linha do tempo: sem 1-2 lipólise localizada com déficit calórico; sem 3-4 redução de medidas e mais definição; mês 2-3 composição mais consolidada com dieta; mês 3+ ciclos 8–12 sem com pausa e reavaliação.
+
+Dosagem: 250–500 mcg SC 1–2x/dia em jejum (30–60 min). Frequência da tabela: 1x/dia em jejum. Ciclo 12–16 semanas. Concentração ficha: 2 mL = 250 mcg/mL (vial 500 mcg). Via peri-adiposo para efeito localizado.
+Indicações (ficha): lipólise corporal 250–500 mcg SC 1x/dia em jejum + déficit e exercício; localizada 250 mcg SC na área; manutenção pós-cutting 250 mcg SC 3–4x/semana; com semaglutida/tirzepatida 250 mcg SC 1x/dia (sem interação conhecida na ficha).
+Fases SC: sem 1–12 = 250–500 mcg SC 1x/dia em jejum; pausa 4 semanas = avaliar composição; ciclo seguinte = mesma dose; se quiser mais estabilidade, a ficha sugere considerar AOD-9604 no lugar — não os dois juntos.
+
+Reconstituição: aspirar 2,0 mL água bacteriostática; injetar pela parede (evitar espuma); girar (não agitar); rotular; refrigerar 2–8°C; proteger da luz; aplicar em jejum 30–60 min.
+
+Efeitos: hipoglicemia leve; anticorpos neutralizantes com uso prolongado.
+
+Stacks: AOD-9604 MONITORAR — mesmo mecanismo (β3-AR); juntar é redundante; escolher só um. Semaglutida COMPATÍVEL; Tirzepatida COMPATÍVEL; 5-Amino-1MQ SINÉRGICO (β3-AR vs NNMT); Ipamorelin COMPATÍVEL (GH anabólico vs frag lipolítico).
+
+Pesquisa: Ng et al. 1997 — fragmento 176-191 lipolítico em adipócitos/roedores, sem crescimento/insulinogênico. 2001 — lipólise sem GHR, sem IGF-1, sem alterar glicemia. 2008 — revisão comparando frag nativo vs AOD-9604 (tirosina aumenta estabilidade, mecanismo lipolítico parecido).`,
+  },
+  {
+    slug: "slu-pp-332",
+    name: "SLU-PP-332",
+    aliases: ["SLU PP 332", "Agonista pan-ERR SLU", "ERR alfa/beta/gamma agonista", "Exercise mimetic ERR", "Saint Louis University ERR"],
+    body: `Ativador de ERR para mimetismo de exercício aeróbico. Categoria ficha: emagrecimento.
+Também conhecido como: SLU PP 332, agonista pan-ERR (Saint Louis University), exercise mimetic ERR.
+Meia-vida: desconhecida em humanos (só modelos animais). Classificação: composto sintético de baixo peso — NÃO é peptídeo; agonista pan-ERR (alfa, beta e gama); exercise mimetic PRÉ-CLÍNICO. Ciclo: em investigação. Via: oral (em desenvolvimento). Dose típica: dose humana NÃO estabelecida. Evidência: baixa. Reconstituição: média (pesquisa).
+
+O que é: agonista dos receptores relacionados ao estrogênio (ERRα/β/γ) que liga o programa transcricional de exercício de resistência no músculo. Grupo Elgendy / Stephens-Shields, Saint Louis University; paper 2023. Em camundongos: perda de gordura e mais desempenho SEM exercício. ATENÇÃO: 100% pré-clínico (2023–2024). Nenhum dado humano publicado. Toxicidade, PK e eficácia em humanos desconhecidas. Research-only; vender/usar como suplemento é prematuro e sem regulamentação.
+
+Mecanismo: pan-ERR → PGC-1α, genes mitocondriais (COX, citocromos), densidade mitocondrial, oxidação de gordura, gasto energético. Murinos sedentários: ↑ VO2máx e resistência à fadiga. Pesquisa inicial: obesidade, síndrome metabólica, HFpEF.
+
+Benefícios citados (SÓ animais): mimetismo de exercício aeróbico; mais gasto energético; queima de gordura sem treino (murino); desempenho. NÃO comprovado em humano.
+
+Linha do tempo: sem 1-2 só murino (marcadores mitocondriais); sem 3-4 murino ↑ aeróbico e oxidação de gordura — extrapolação humana especulativa; mês 2-3 adaptação mitocondrial murina; mês 3+ sem dado crônico humano. Timeline humana desconhecida.
+
+Dosagem: dose humana NÃO estabelecida. Referência murina: 30 mg/kg/dia oral. Frequência/ciclo: em investigação. Qualquer extrapolar rato → humano é prematuro e potencialmente perigoso.
+Indicações (ficha): pesquisa aeróbica/metabolismo — só pesquisa, 30 mg/kg/dia oral em camundongos; síndrome metabólica/obesidade — hipótese, sem ensaio clínico; HFpEF — pesquisa ativa, sem dado humano em 2024.
+Fases SC: protocolo murino 4–8 semanas 30 mg/kg/dia oral; AVISO = nenhum protocolo humano existe; status = research-only.
+
+Reconstituição (pesquisa): sem protocolo humano aprovado. Pó em DMSO grau pesquisa (estoque 10–50 mM); diluir com PEG400/Tween-80/água para oral em animais; cápsulas artesanais humanas = sem formulação padronizada. Estoque DMSO a −20°C, luz/umidade; estabilidade de meses.
+
+Efeitos: dados humanos inexistentes; perfil de segurança desconhecido.
+
+Stacks: GW501516 (Cardarine) MONITORAR — PPARδ parcialmente convergente; redundante e risco desconhecido. SS-31 COMPATÍVEL só pré-clínico (cardiolipina vs biogênese). NAD+/NMN/NR COMPATÍVEL teórico (sirtuínas/AMPK vs ERR/PGC-1α). AOD-9604 COMPATÍVEL especulativo (lipólise vs oxidação). AICAR também é exercise mimetic (AMPK), não peptídeo — não tratar SLU como peptídeo.
+
+Pesquisa: Elgendy et al. 2023 — design e validação in vivo (ERR, genes mitocondriais, aeróbico, adiposidade em camundongos). Huss et al. 2004 — ERRα / PPARα / metabolismo muscular e cardíaco. Rangwala/Lazar 2010 — revisão ERR em doença metabólica.`,
+  },
+  {
+    slug: "tesamorelin",
+    name: "Tesamorelin",
+    aliases: ["Egrifta", "TH9507", "GHRH(1-44)-trans-3-hexenoic acid", "Tesamorelin acetato", "Tesamorelina"],
+    body: `Análogo de GHRH aprovado pelo FDA para lipodistrofia (Egrifta). Categoria ficha: performance.
+Também conhecido como: Egrifta, TH9507, Tesamorelin acetato.
+Meia-vida: ~26–38 min (GHRH nativo ~7 min). Classificação: análogo estabilizado de GHRH; único com aprovação FDA. Ciclo: 26–52 semanas. Via: SC abdômen. Dose típica: 1–2 mg SC 1x/dia. Evidência: alta. Reconstituição: fácil.
+
+O que é: análogo sintético do GHRH (44 aa) com grupo trans-3-hexenoico na N-terminal — resiste à DPP-IV. FDA 2010 (Egrifta) para gordura visceral abdominal (VAT) na lipodistrofia por HIV + antirretrovirais. Estimula pulso fisiológico de GH (não suprime o eixo, ao contrário do GH exógeno). Off-label: Friedman et al. JAMA 2013 — VAT e cognição em idosos sem HIV com comprometimento cognitivo leve.
+
+Mecanismo: pulso de GH na hipófise → IGF-1 e lipólise visceral (receptor de GH nos adipócitos viscerais). Preserva ritmo circadiano.
+
+Benefícios (ensaios): redução de gordura visceral; perfil lipídico; ↑ IGF-1; composição corporal.
+
+Linha do tempo: sem 1-2 sono profundo, IGF-1 mensurável, leve retenção hídrica; sem 3-4 circunferência abdominal e composição; mês 2-3 VAT e lipídios nos estudos; mês 3+ contínuo; reavaliar aos 6 meses — suspender se VAT não responder.
+
+Dosagem: 1–2 mg SC 1x/dia no abdômen, mesmo horário. Ciclo 26–52 semanas. Concentração ficha: 2 mL = 1 mg/mL (vial 2 mg).
+Indicações (ficha): lipodistrofia HIV (FDA) 2 mg/dia SC contínuo; VAT off-label não-HIV 2 mg/dia, ciclos 12–24 sem, DEXA ou TC; anti-aging/cognição idosos 1–2 mg/dia, monitorar IGF-1 e glicemia; com GHRP 2 mg Tesamorelin + 100–200 mcg Ipamorelin (vias complementares).
+Fases SC: sem 1–26 = 2 mg/dia SC (padrão FDA); semana 26 = medir VAT, suspender se redução < 8% vs basal; semana 27+ = 2 mg/dia se boa resposta.
+
+Reconstituição: aspirar 2,2 mL água estéril para injeção (kit Egrifta); injetar pela parede (evitar espuma); girar (não agitar); usar na hora ou refrigerar 2–8°C no máximo 24 h; descartar se turva ou com partículas.
+
+Efeitos: retenção hídrica; artralgia; resistência à insulina; neuropatia periférica (rara).
+
+Stacks: Ipamorelin SINÉRGICO (GHRH abre janela + GHRP/grelina = pico de GH 2–5×). GHRP-2 SINÉRGICO (mais potente; monitorar cortisol). CJC-1295 MONITORAR — NÃO juntar dois GHRH (hipersecreção e dessensibilização). 5-Amino-1MQ COMPATÍVEL. Semaglutida COMPATÍVEL (VAT vs perda total).
+
+Pesquisa: Falutz et al. LIPO-010 fase 3 2010 — tesamorelin 2 mg/dia SC: VAT −15,2% vs −5,1% placebo em 26 sem (HIV lipodistrofia) → FDA. Friedman et al. JAMA 2013 — VAT e memória verbal em idosos sem HIV com CCL. Revisão 2017 — tesamorelin vs sermorelin/CJC-1295: único com aprovação e fase 3 de VAT.`,
+  },
+  {
+    slug: "mots-c",
+    name: "MOTS-C",
+    aliases: ["MOTS-c", "MOTS-c peptide", "Mitochondrial ORF of 12S rRNA type-c", "Mitokine MOTS-c", "MOTSC"],
+    body: `Peptídeo mitocondrial regulador de metabolismo e longevidade. Categoria ficha: longevidade.
+Também conhecido como: MOTS-c peptide, Mitochondrial ORF of 12S rRNA type-c, mitokine MOTS-c.
+Meia-vida: ~4–6 h (estimativa; dados humanos limitados). Classificação: peptídeo de 16 aa codificado pelo mtDNA (12S rRNA); mitokine metabólica. Ciclo: 8–12 semanas. Via: SC. Dose típica citada: 5–10 mg SC 3x/semana. Evidência: baixa. Reconstituição: fácil. Pesquisa de fronteira — sem protocolo clínico estabelecido.
+
+O que é: ORF pequena no 12S rRNA mitocondrial; descoberto por Changhan David Lee (USC, 2015). Age como hormônio sistêmico: AMPK, homeostase metabólica; em animais, extensão de vida e menos obesidade/resistência à insulina mesmo sedentários. Em humanos, polimorfismos de mtDNA ligados a centenários japoneses; MOTS-c sérico cai com idade e obesidade e sobe com HIIT. IMPORTANTE: ensaios clínicos controlados em humanos ainda muito escassos.
+
+Mecanismo: ativa AMPK no músculo e fígado → mais sensibilidade à insulina, oxidação de ácidos graxos, glicemia. Lee et al. Cell Metabolism 2015: mimetiza exercício metabólico em camundongos.
+
+Benefícios citados (maioria animal/anedótico): sensibilidade à insulina; longevidade em modelos; composição corporal; proteção metabólica. Sempre dizer que evidência humana é baixa.
+
+Linha do tempo: sem 1-2 energia e insulina só anedótico; sem 3-4 glicemia/jejum e sensibilidade — VERIFICAR; mês 2-3 marcadores de resistência/inflamação nos animais; mês 3+ sem dado humano longo; ciclos 8–12 sem até haver mais evidência.
+
+Dosagem: 5–10 mg SC 3x/semana (experimental). Ciclo 8–12 semanas. Concentração ficha: 2 mL = 5 mg/mL (vial 10 mg).
+Indicações (ficha): metabolismo/insulina 5 mg SC 3x/sem — VERIFICAR; longevidade 5–10 mg SC 3x/sem + exercício para AMPK; no dia de HIIT 5 mg SC (sinal natural sobe com treino) — VERIFICAR; teto anedótico 10 mg SC 3x/sem sem safety robusta — VERIFICAR.
+Fases SC: 8–12 sem = 5–10 mg SC 3x/sem; pausa 4–8 sem = glicemia, insulina, HOMA-IR; ciclo seguinte = mesma dose se resposta, aguardar evidência clínica.
+
+Reconstituição: aspirar 2,0 mL água bacteriostática; parede do frasco (evitar espuma); girar (não agitar); rotular; 2–8°C; proteger da luz. Pesquisa — protocolos clínicos ainda não padronizados.
+
+Efeitos: dados humanos limitados; estudos iniciais relatam boa tolerância.
+
+Stacks: 5-Amino-1MQ SINÉRGICO (AMPK vs NNMT/NAD+). Ipamorelin COMPATÍVEL (GH vs AMPK). Epithalon COMPATÍVEL (telômero/circadiano vs mitocôndria). Metformina MONITORAR — AMPK dupla, hipoglicemia. Semaglutida MONITORAR — insulina/glicemia em excesso; ajustar e medir glicemia.
+
+Pesquisa: Lee et al. Cell Metabolism 2015 — MOTS-c, AMPK, obesidade e insulina em camundongos. 2019 — mtDNA/centenários japoneses; MOTS-c sérico cai com idade/obesidade. 2021 — HIIT eleva MOTS-c circulante em humanos.`,
   },
   {
     slug: "adamax",

@@ -10,6 +10,11 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-28 | Admin: aba **Biblioteca** (mesmo painel da bolha) para **todo** admin | Consulta fichas no `/admin` sem bolha | Bolha continua só login/Minha conta |
+| 2026-08-28 | Ficha **MOTS-C** (mitokine / longevidade; evidência baixa) | Menu; metformina e sema MONITORAR | Demais fichas iguais |
+| 2026-08-28 | Ficha **Tesamorelin** (Egrifta / GHRH FDA; performance) | Menu; não juntar com CJC-1295 | Demais fichas iguais |
+| 2026-08-28 | Ficha **SLU-PP-332** (exercise mimetic ERR; não é peptídeo; só pré-clínico) | Menu; sem dose humana | Demais fichas iguais |
+| 2026-08-28 | Ficha **HGH Fragment 176-191** (emagrecimento; ≠ AOD-9604) | Menu; não juntar com AOD | Demais fichas iguais |
 | 2026-08-28 | Ficha **GHK-Cu** na biblioteca (estética / cobre-peptídeo) | Aparece no menu; retinoides MONITORAR | Demais fichas iguais |
 | 2026-08-28 | Ficha **DSIP** na biblioteca (sono delta / imunidade) | Aparece no menu; evidência baixa e benzo MONITORAR | Demais fichas iguais |
 | 2026-08-28 | Ficha **AOD-9604** na biblioteca (emagrecimento / fragmento GH) | Aparece no menu do login/Minha conta | Demais fichas iguais |
@@ -173,10 +178,12 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 ## Chat informativo (biblioteca de compostos)
 
-- Widget `PeptideChatWidget` só em `/login` e rotas `/minha-conta*` (não no admin/motoboy/home). Bolha **sempre visível** nessas rotas.
-- UX: **sem chat aberto**. Cliente escolhe composto e depois assunto (O que é, Dose e ciclo, Reconstituição, Efeitos e cuidados, **Pode juntar com**, Pesquisa). Resposta em **blocos** (título + bullets), aviso médico no topo. Texto vem da ficha, sem OpenAI nesse fluxo.
+- Conteúdo compartilhado em `PeptideLibraryPanel`: produto → assunto → ficha em blocos.
+- Widget `PeptideChatWidget` (bolha) só em `/login` e rotas `/minha-conta*` (não no admin/motoboy/home). Bolha **sempre visível** nessas rotas.
+- Admin: aba **Biblioteca** (após Suporte) com o mesmo painel; visível para **todo** admin (`isPrimary` e secundário). Sem bolha em `/admin`.
+- UX: **sem chat aberto**. Escolhe composto e depois assunto (O que é, Dose e ciclo, Reconstituição, Efeitos e cuidados, **Pode juntar com**, Pesquisa). Resposta em **blocos** (título + bullets), aviso médico no topo. Texto vem da ficha, sem OpenAI nesse fluxo.
 - API: `GET /api/chat/status` (produtos+tópicos), `GET /api/chat/guide/:slug/:topic` — `routes/peptide-chat.ts` + `lib/peptide-chat-knowledge.ts`.
-- Fichas: 5-Amino-1MQ, AOD-9604, DSIP, GHK-Cu, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
+- Fichas: 5-Amino-1MQ, AOD-9604, HGH Fragment 176-191, SLU-PP-332, DSIP, GHK-Cu, Tesamorelin, MOTS-C, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
 - `POST /api/chat/ask` (OpenAI opcional) permanece no backend, mas o widget **não** usa.
 - Fetch direto no FE (não client Orval).
 

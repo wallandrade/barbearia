@@ -579,6 +579,7 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
+import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 
 
 
@@ -1068,7 +1069,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
 
 interface CommissionPendingOrder {
   id: string;
@@ -4797,6 +4798,7 @@ export default function Admin() {
             { key: "customers",     label: "Clientes",         icon: "UserPlus",    count: customerUsers.length || undefined },
             { key: "recurringCustomers", label: "Clientes recorrentes", icon: "RefreshCw", count: recurringCustomers.length || undefined },
             { key: "support",       label: "Suporte",          icon: "MessageCircle", count: supportTickets.filter((t) => t.status === "open").length || undefined },
+            { key: "biblioteca",    label: "Biblioteca",       icon: "BookOpen" },
             ...(isPrimary ? [
               { key: "coupons",       label: "Cupons",           icon: "Ticket",      count: coupons.length },
               { key: "products",      label: "Produtos",         icon: "ShoppingBag", count: products.length },
@@ -5416,6 +5418,10 @@ export default function Admin() {
             setSearch={setRecurringCustomerSearch}
             onRefresh={fetchRecurringCustomers}
           />
+        ) : tab === "biblioteca" ? (
+          <div className="bg-white rounded-xl border border-border p-6">
+            <PeptideLibraryPanel variant="page" />
+          </div>
         ) : tab === "support" ? (
           <SupportTicketsPanel
             tickets={supportTickets}
