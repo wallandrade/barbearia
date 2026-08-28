@@ -378,10 +378,12 @@ router.post("/checkout/pix", async (req, res) => {
       shippingBaseCost,
       freeShippingMinSubtotal,
     });
+    const insuranceConfig = await getCheckoutInsuranceConfig();
     const computedInsurance = resolveCheckoutInsurance({
-      ...(await getCheckoutInsuranceConfig()),
+      ...insuranceConfig,
       includeInsurance: Boolean(includeInsurance),
       subtotal: computedSubtotal,
+      items: orderProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const resolvedIncludeInsurance = computedInsurance.includeInsurance;

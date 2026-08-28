@@ -581,7 +581,7 @@ import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { CheckoutInsuranceCard } from "@/components/CheckoutInsuranceCard";
-import { parseInsurancePercent, computeInsuranceAmount } from "@/lib/checkout-insurance";
+import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount } from "@/lib/checkout-insurance";
 
 
 
@@ -2935,7 +2935,7 @@ export default function Admin() {
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
-    else if (tab === "checkout")   { fetchSettings(); setLoading(false); }
+    else if (tab === "checkout")   { fetchSettings(); fetchProducts(); setLoading(false); }
     else setLoading(false);
   }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchExpenses, fetchShippingOptions, fetchMotoboyNeighborhoods, fetchCepRanges, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
@@ -3648,7 +3648,14 @@ export default function Admin() {
       const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
       const shippingCost = editOrderModal.shippingCost;
       const insuranceAmount = editOrderModal.includeInsurance
-        ? computeInsuranceAmount(subtotal, true, parseInsurancePercent(settings["checkout_insurance_percent"]))
+        ? computeCartInsuranceAmount({
+            includeInsurance: true,
+            defaultPercent: parseInsurancePercent(settings["checkout_insurance_percent"]),
+            specialPercent: parseOptionalInsurancePercent(settings["checkout_insurance_product_percent"]),
+            specialProductIds: parseInsuranceProductIds(settings["checkout_insurance_product_ids"]),
+            items: editItems.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+            fallbackSubtotal: subtotal,
+          })
         : 0;
       const discountAmount = editDiscount || 0;
       const total = Math.max(0, subtotal + shippingCost + insuranceAmount - discountAmount);
@@ -7282,6 +7289,12 @@ export default function Admin() {
             <CheckoutInsuranceCard
               settings={settings}
               loading={settingsLoading}
+              products={(Array.isArray(products) ? products : []).map((p) => ({
+                id: p.id,
+                name: p.name,
+                image: p.image ?? null,
+                isActive: p.isActive !== false,
+              }))}
               onSave={saveSetting}
             />
           </div>
@@ -7770,7 +7783,14 @@ export default function Admin() {
                   {editItems.length > 0 && (() => {
                     const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
                     const insuranceAmount = editOrderModal.includeInsurance
-                      ? computeInsuranceAmount(subtotal, true, parseInsurancePercent(settings["checkout_insurance_percent"]))
+                      ? computeCartInsuranceAmount({
+                          includeInsurance: true,
+                          defaultPercent: parseInsurancePercent(settings["checkout_insurance_percent"]),
+                          specialPercent: parseOptionalInsurancePercent(settings["checkout_insurance_product_percent"]),
+                          specialProductIds: parseInsuranceProductIds(settings["checkout_insurance_product_ids"]),
+                          items: editItems.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+                          fallbackSubtotal: subtotal,
+                        })
                       : 0;
                     const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editDiscount || 0));
                     const hasPaidAmount = (editOrderModal.paidAmount ?? 0) > 0;

@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   computeInsuranceAmount,
+  computeSplitInsuranceAmount,
   DEFAULT_CHECKOUT_INSURANCE_PERCENT,
   parseInsuranceEnabledSetting,
   parseInsurancePercentSetting,
+  parseInsuranceProductIds,
+  parseOptionalInsurancePercentSetting,
   resolveCheckoutInsurance,
 } from "./checkout-insurance";
 
@@ -13,6 +16,13 @@ test("percentual vazio usa 10%", () => {
   assert.equal(parseInsurancePercentSetting(""), DEFAULT_CHECKOUT_INSURANCE_PERCENT);
   assert.equal(parseInsurancePercentSetting(undefined), DEFAULT_CHECKOUT_INSURANCE_PERCENT);
   assert.equal(parseInsurancePercentSetting("0"), 0);
+});
+
+test("percentual especial vazio e nulo", () => {
+  assert.equal(parseOptionalInsurancePercentSetting(""), null);
+  assert.equal(parseOptionalInsurancePercentSetting(undefined), null);
+  assert.equal(parseOptionalInsurancePercentSetting("20"), 20);
+  assert.equal(parseOptionalInsurancePercentSetting("0"), 0);
 });
 
 test("percentual aceita virgula e limita 0-100", () => {
@@ -53,4 +63,37 @@ test("ativado aplica percentual configurado", () => {
   });
   assert.equal(resolved.includeInsurance, true);
   assert.equal(resolved.insuranceAmount, 30);
+});
+
+test("lista de produtos parseia JSON e csv", () => {
+  assert.deepEqual(parseInsuranceProductIds('["a","b"]'), ["a", "b"]);
+  assert.deepEqual(parseInsuranceProductIds("a, b"), ["a", "b"]);
+  assert.deepEqual(parseInsuranceProductIds(""), []);
+});
+
+test("carrinho misto aplica % especial so nos produtos marcados", () => {
+  const amount = computeSplitInsuranceAmount({
+    includeInsurance: true,
+    defaultPercent: 10,
+    specialPercent: 20,
+    specialProductIds: ["esp"],
+    items: [
+      { id: "esp", quantity: 1, price: 200 },
+      { id: "outro", quantity: 1, price: 100 },
+    ],
+    fallbackSubtotal: 300,
+  });
+  assert.equal(amount, 50);
+});
+
+test("sem produtos especiais usa so o % padrao", () => {
+  const amount = computeSplitInsuranceAmount({
+    includeInsurance: true,
+    defaultPercent: 10,
+    specialPercent: 20,
+    specialProductIds: [],
+    items: [{ id: "a", quantity: 1, price: 200 }],
+    fallbackSubtotal: 200,
+  });
+  assert.equal(amount, 20);
 });

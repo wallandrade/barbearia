@@ -21,12 +21,15 @@ import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
 import { formatCurrency, getActiveWhatsApp, getSellerSlugFromCheckoutPath, setSellerContext } from "@/lib/utils";
 import {
   CHECKOUT_INSURANCE_SETTING_KEYS,
-  computeInsuranceAmount,
-  formatInsurancePercent,
+  catalogProductId,
+  computeCartInsuranceAmount,
+  formatInsuranceOfferSuffix,
   parseInsuranceDescription,
   parseInsuranceEnabled,
   parseInsuranceLabel,
   parseInsurancePercent,
+  parseInsuranceProductIds,
+  parseOptionalInsurancePercent,
 } from "@/lib/checkout-insurance";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -169,6 +172,8 @@ export default function Checkout() {
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [insuranceEnabled, setInsuranceEnabled] = useState(true);
   const [insurancePercent, setInsurancePercent] = useState(10);
+  const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
+  const [insuranceProductIds, setInsuranceProductIds] = useState<string[]>([]);
   const [insuranceLabel, setInsuranceLabel] = useState("Adicionar Seguro de Envio");
   const [insuranceDescription, setInsuranceDescription] = useState(
     "Seguro de envio que garante cobertura em caso de extravio, dano ou problemas na entrega.",
@@ -558,6 +563,8 @@ export default function Checkout() {
           if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
           setInsuranceEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]));
           setInsurancePercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.percent]));
+          setInsuranceProductPercent(parseOptionalInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]));
+          setInsuranceProductIds(parseInsuranceProductIds(data[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]));
           setInsuranceLabel(parseInsuranceLabel(data[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
           setInsuranceDescription(parseInsuranceDescription(data[CHECKOUT_INSURANCE_SETTING_KEYS.description]));
         }
@@ -775,13 +782,27 @@ export default function Checkout() {
 
   const couponProductsPayload = useMemo(
     () => items.map((item) => ({
-      id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
+      id: catalogProductId(item as { id: string; bumpProductId?: string }),
       quantity: item.quantity,
       price: item.price,
       regularPrice: (item as { regularPrice?: number }).regularPrice ?? item.price,
     })),
     [items]
   );
+  const insuranceLineItems = useMemo(
+    () => couponProductsPayload.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+    [couponProductsPayload],
+  );
+  const cardInsuranceLineItems = useMemo(
+    () => couponProductsPayload.map((p) => ({ id: p.id, quantity: p.quantity, price: p.regularPrice })),
+    [couponProductsPayload],
+  );
+  const insuranceOfferSuffix = formatInsuranceOfferSuffix({
+    defaultPercent: insurancePercent,
+    specialPercent: insuranceProductPercent,
+    specialProductIds: insuranceProductIds,
+    itemIds: insuranceLineItems.map((item) => item.id),
+  });
   const eligibleProductSubtotal = useMemo(() => {
     if (!appliedCoupon) return 0;
     if (!appliedCoupon.eligibleProductIds.length) {
@@ -845,7 +866,14 @@ export default function Checkout() {
   const missingForFreeShipping = isFreeShippingEligible || freeShippingMinSubtotal == null
     ? 0
     : Math.max(0, freeShippingMinSubtotal - subtotal);
-  const insuranceAmount = computeInsuranceAmount(subtotal, includeInsurance && insuranceEnabled, insurancePercent);
+  const insuranceAmount = computeCartInsuranceAmount({
+    includeInsurance: includeInsurance && insuranceEnabled,
+    defaultPercent: insurancePercent,
+    specialPercent: insuranceProductPercent,
+    specialProductIds: insuranceProductIds,
+    items: insuranceLineItems,
+    fallbackSubtotal: subtotal,
+  });
   const baseTotal = subtotal + shippingCost + insuranceAmount;
   const discountAmount = appliedCoupon
     ? appliedCoupon.discountType === "percent"
@@ -863,7 +891,14 @@ export default function Checkout() {
       ? eligibleProductSubtotalCard * (appliedCoupon.discountValue / 100)
       : Math.min(appliedCoupon.discountValue, eligibleProductSubtotalCard)
     : 0;
-  const cardInsuranceAmount = computeInsuranceAmount(cardSubtotal, includeInsurance && insuranceEnabled, insurancePercent);
+  const cardInsuranceAmount = computeCartInsuranceAmount({
+    includeInsurance: includeInsurance && insuranceEnabled,
+    defaultPercent: insurancePercent,
+    specialPercent: insuranceProductPercent,
+    specialProductIds: insuranceProductIds,
+    items: cardInsuranceLineItems,
+    fallbackSubtotal: cardSubtotal,
+  });
   const cardBaseTotal = cardSubtotal + shippingCost + cardInsuranceAmount;
   const cardNetTotal = Math.max(0, cardBaseTotal - cardDiscountAmount);
 
@@ -2376,7 +2411,7 @@ export default function Checkout() {
                   </div>
                   <div>
                     <p className="font-bold text-foreground group-hover:text-primary transition-colors">
-                      {insuranceLabel} (+{formatInsurancePercent(insurancePercent)}%)
+                      {insuranceLabel} ({insuranceOfferSuffix})
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
                       {insuranceDescription}
@@ -2546,7 +2581,7 @@ export default function Checkout() {
                 )}
                 {includeInsurance && (
                   <div className="flex justify-between text-primary font-medium">
-                    <span>{insuranceLabel} (+{formatInsurancePercent(insurancePercent)}%)</span>
+                    <span>{insuranceLabel} ({insuranceOfferSuffix})</span>
                     <span>{formatCurrency(insuranceAmount)}</span>
                   </div>
                 )}

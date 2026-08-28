@@ -27,7 +27,7 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
-import { computeInsuranceAmount, resolveCheckoutInsurance } from "../lib/checkout-insurance";
+import { computeSplitInsuranceAmount, resolveCheckoutInsurance } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 
 const router: IRouter = Router();
@@ -1266,10 +1266,16 @@ router.post("/orders", async (req, res) => {
       shippingBaseCost,
       freeShippingMinSubtotal,
     });
+    const insuranceConfig = await getCheckoutInsuranceConfig();
     const computedInsurance = resolveCheckoutInsurance({
-      ...(await getCheckoutInsuranceConfig()),
+      ...insuranceConfig,
       includeInsurance: Boolean(includeInsurance),
       subtotal: computedSubtotal,
+      items: orderProducts.map((p: { id: string; quantity?: number; price?: number }) => ({
+        id: p.id,
+        quantity: Number(p.quantity) || 0,
+        price: Number(p.price) || 0,
+      })),
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const resolvedIncludeInsurance = computedInsurance.includeInsurance;
@@ -2003,7 +2009,14 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       : Math.max(0, Number(current[0].discountAmount) || 0);
     const insuranceConfig = await getCheckoutInsuranceConfig();
     const computedInsuranceAmount = current[0].includeInsurance
-      ? computeInsuranceAmount(computedSubtotal, true, insuranceConfig.percent)
+      ? computeSplitInsuranceAmount({
+          includeInsurance: true,
+          defaultPercent: insuranceConfig.percent,
+          specialPercent: insuranceConfig.productPercent,
+          specialProductIds: insuranceConfig.productIds,
+          items: resolvedProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+          fallbackSubtotal: computedSubtotal,
+        })
       : 0;
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
