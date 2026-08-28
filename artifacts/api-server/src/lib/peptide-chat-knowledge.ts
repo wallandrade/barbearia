@@ -153,6 +153,88 @@ export function listPeptideChatNames(): string[] {
   return PEPTIDE_CHAT_ENTRIES.map((entry) => entry.name);
 }
 
+export function listPeptideChatProducts(): Array<{ slug: string; name: string }> {
+  return PEPTIDE_CHAT_ENTRIES.map((entry) => ({ slug: entry.slug, name: entry.name }));
+}
+
+export const PEPTIDE_GUIDE_TOPICS = [
+  { id: "about", label: "O que é" },
+  { id: "dose", label: "Dose e ciclo" },
+  { id: "reconstitute", label: "Reconstituição" },
+  { id: "effects", label: "Efeitos e cuidados" },
+  { id: "stacks", label: "Stacks" },
+  { id: "research", label: "Pesquisa" },
+] as const;
+
+export type PeptideGuideTopicId = (typeof PEPTIDE_GUIDE_TOPICS)[number]["id"];
+
+function topicFromHeading(line: string): PeptideGuideTopicId | "skip" | null {
+  const l = line.trim();
+  if (!l) return null;
+  if (/^o que é/i.test(l)) return "about";
+  if (/^mecanismo/i.test(l)) return "about";
+  if (/^benef/i.test(l)) return "about";
+  if (/^linha do tempo/i.test(l)) return "dose";
+  if (/^dosagem/i.test(l)) return "dose";
+  if (/^indica/i.test(l)) return "dose";
+  if (/^fases sc/i.test(l)) return "dose";
+  if (/^titula/i.test(l)) return "dose";
+  if (/^reconstitui/i.test(l)) return "reconstitute";
+  if (/^efeitos/i.test(l)) return "effects";
+  if (/^stacks/i.test(l)) return "stacks";
+  if (/^pesquisa/i.test(l)) return "research";
+  if (/^tamb[eé]m conhecido/i.test(l)) return "skip";
+  return null;
+}
+
+function splitGuideSections(body: string): Record<PeptideGuideTopicId, string> {
+  const buckets: Record<PeptideGuideTopicId, string[]> = {
+    about: [],
+    dose: [],
+    reconstitute: [],
+    effects: [],
+    stacks: [],
+    research: [],
+  };
+  let current: PeptideGuideTopicId = "about";
+  for (const raw of body.split("\n")) {
+    const heading = topicFromHeading(raw);
+    if (heading === "skip") {
+      continue;
+    }
+    if (heading) {
+      current = heading;
+    }
+    if (raw.trim()) buckets[current].push(raw.trim());
+  }
+  return {
+    about: buckets.about.join("\n"),
+    dose: buckets.dose.join("\n"),
+    reconstitute: buckets.reconstitute.join("\n"),
+    effects: buckets.effects.join("\n"),
+    stacks: buckets.stacks.join("\n"),
+    research: buckets.research.join("\n"),
+  };
+}
+
+export function getPeptideGuideSection(slug: string, topicId: string): {
+  name: string;
+  topicLabel: string;
+  text: string;
+} | null {
+  const entry = PEPTIDE_CHAT_ENTRIES.find((item) => item.slug === slug);
+  const topic = PEPTIDE_GUIDE_TOPICS.find((item) => item.id === topicId);
+  if (!entry || !topic) return null;
+  const sections = splitGuideSections(entry.body);
+  const text = sections[topic.id]?.trim() || "Não há esse trecho nesta ficha.";
+  const disclaimer = "Informativo — não substitui médico ou endocrinologista.";
+  return {
+    name: entry.name,
+    topicLabel: topic.label,
+    text: `${disclaimer}\n\n${text}`,
+  };
+}
+
 function fold(value: string): string {
   return value
     .toLowerCase()

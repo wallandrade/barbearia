@@ -1,6 +1,11 @@
 import { Router, type IRouter } from "express";
 import { answerPeptideChat, sanitizeChatTurns } from "../lib/peptide-chat";
-import { listPeptideChatNames } from "../lib/peptide-chat-knowledge";
+import {
+  getPeptideGuideSection,
+  listPeptideChatNames,
+  listPeptideChatProducts,
+  PEPTIDE_GUIDE_TOPICS,
+} from "../lib/peptide-chat-knowledge";
 
 const router: IRouter = Router();
 
@@ -33,8 +38,19 @@ function allowChat(ip: string): boolean {
 router.get("/chat/status", (_req, res) => {
   res.json({
     enabled: true,
-    products: listPeptideChatNames(),
+    products: listPeptideChatProducts(),
+    productNames: listPeptideChatNames(),
+    topics: PEPTIDE_GUIDE_TOPICS,
   });
+});
+
+router.get("/chat/guide/:slug/:topic", (req, res) => {
+  const section = getPeptideGuideSection(String(req.params.slug || ""), String(req.params.topic || ""));
+  if (!section) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Ficha ou assunto não encontrado." });
+    return;
+  }
+  res.json(section);
 });
 
 router.post("/chat/ask", async (req, res) => {
