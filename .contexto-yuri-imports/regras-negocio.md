@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Chat informativo no `/login` e `/minha-conta*`: responde só com fichas (5-Amino-1MQ, Adamax, AICAR, Tirzepatida, Retatrutide); não prescreve; pedido/PIX/rastreio → Minha conta/suporte | Bolha no canto; some se não houver `OPENAI_API_KEY` | Checkout, pedidos, admin iguais |
 | 2026-08-27 | Cópia 48h/72h/lista: `reenvio_enviado` sai igual `enviado`; marcar reenvio enviado solta vaga da fila | #870 some do 48h sem reenviar | Pedido normal igual |
 | 2026-08-27 | Reenvio enviado: badge verde; card sem **Marcar como Enviado** / baixa Loja; `enviado` liga/desliga com o status do reenvio | Só o fluxo de reenvio no filho; some POSTAR ATÉ ao enviar | Pedido normal (sem `reshipments`) igual |
 | 2026-08-26 | Cópia Motoboy inclui **data/hora do slot** (`motoboy_bookings`); PIX/cartão também gravam o agendamento | Motoboy vê quando entregar | Endereço sem telefone; valores iguais |
@@ -164,6 +165,14 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 - Social proof (settings + entradas fake) — `social-proof`.
 - `site_settings` / rotas `settings.ts`: canais, WhatsApp, gateways por checkout, etc.
+
+## Chat informativo (biblioteca de compostos)
+
+- Widget `PeptideChatWidget` só em `/login` e rotas `/minha-conta*` (não no admin/motoboy/home).
+- API: `GET /api/chat/status`, `POST /api/chat/ask` — `routes/peptide-chat.ts` + `lib/peptide-chat.ts`.
+- Base: `lib/peptide-chat-knowledge.ts` (fichas atuais: 5-Amino-1MQ, Adamax, AICAR, Tirzepatida, Retatrutide). Só responde o que está na ficha; sem prescrição; pedido/PIX/rastreio não são função do bot.
+- Sem `OPENAI_API_KEY` o status vem `enabled: false` e a bolha não aparece.
+- Fetch direto no FE (não client Orval).
 
 ## Multi-tenant
 

@@ -35,6 +35,7 @@ import shippingQueueRouter from "./shipping-queue";
 import brevoRouter from "./brevo";
 import envioecomRouter from "./envioecom";
 import bankStatementRouter from "./bank-statement";
+import peptideChatRouter from "./peptide-chat";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -72,5 +73,6 @@ router.use(shippingQueueRouter);
 router.use(brevoRouter);
 router.use(envioecomRouter);
 router.use(bankStatementRouter);
+router.use(peptideChatRouter);
 
 export default router;

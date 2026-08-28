@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-08-26
+> **Última atualização:** 2026-08-27
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Chat `/api/chat/*` público (sem Bearer / sem checkout token) | Login consegue perguntar | Auth admin/cliente iguais |
 | 2026-08-26 | Sync Motoboy cobertura: pull autenticado por `MOTOBOY_SYNC_TOKEN` (Bearer / `X-Api-Key`); webhook outbound com `MOTOBOY_SYNC_WEBHOOK_SECRET` | Espelho externo lê/recebe cobertura | Portal token / admin sessions iguais |
 | 2026-08-20 | Portal Motoboy: auth por `MOTOBOY_PORTAL_TOKEN` (query `k` / header `X-Motoboy-Token`); propostas aprovadas só por `requirePrimaryAdmin` | Motoboy sem login admin | Sessões admin/cliente iguais |
 | 2026-08-12 | Admin pode redefinir senha de cliente (`POST /api/admin/customers/:id/set-password`) e ver/copiar a nova senha no painel | Suporte a login do cliente sem recuperar hash | Impersonate e listagem de clientes iguais |
@@ -51,6 +52,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Admin primário: `POST /api/admin/customers/:id/set-password` gera ou define nova senha e devolve o plaintext **uma vez**; UI Admin aba Clientes → botão **Senha**.
 - Admin primário: impersonate `POST /api/admin/customers/:id/impersonate`.
 - Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha).
+- Chat de compostos (`/api/chat/*`): **público** (login ainda sem sessão); sem Bearer. Rate limit na rota.
 
 ## Checkout / anti-abuso (relacionado)
 

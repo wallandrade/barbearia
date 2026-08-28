@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-08-11
+> **Última atualização:** 2026-08-27
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | `POST /api/chat/ask`: rate limit em memória 20 req / 10 min por IP; **não** exige `x-checkout-token` (login ainda sem token de checkout) | Abuso de OpenAI limitado; chat no `/login` funciona | Writes de pedido/PIX/KYC iguais |
 | 2026-08-11 | Baseline segurança/perf | Checklist operacional | Sem mudança de código |
 
 ## CORS e headers
@@ -25,6 +26,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 ## Rate limit e checkout token
 
 - Rate limit **em memória** para POSTs públicos sensíveis (pedidos, checkout PIX, cobranças, suporte, KYC, rifa, etc.).
+- Chat de compostos: limiter **próprio** em `routes/peptide-chat.ts` (20 / 10 min / IP); fora da lista de writes que exigem checkout token.
 - `GET /api/security/checkout-token` → HMAC; writes exigem `x-checkout-token` (com exceções: Authorization presente; `/api/orders` com origem oficial por compatibilidade).
 - Env: segredo de checkout / `SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET`.
 

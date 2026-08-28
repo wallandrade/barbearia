@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-08-26
+> **Última atualização:** 2026-08-27
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Rotas `peptide-chat` + widget FE no login/Minha conta | Assistente de fichas no cliente | Stack/deploy iguais |
 | 2026-08-26 | Deploy API Railway: repo Git **`wallandrade/barbearia`** / `main` (auto-deploy). Remote `oficialkaimports` é paralelo/legado | Redeploy do mesmo commit antigo não puxa whitelist Motoboy | Domínio `api.yury-imports.com` igual |
 | 2026-08-19 | `support_tickets.problem_type` + `missing_products_json` | Cliente marca itens faltantes; admin reenvia só esses | Auth/deploy iguais |
 | 2026-08-19 | `orders.parent_order_id` (+ runtime) para reenvio como pedido filho | Liga filho → pai no suporte | Stack/deploy iguais |
@@ -58,7 +59,7 @@ Schemas em `lib/db/src/schema/*.ts` (export em `index.ts`):
 
 ## Integrações (resumo)
 
-APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, OCR/OpenAI etiquetas, ip-api.com, **EnvioEcom** (frete/etiqueta/rastreio), **OFX Inter** (conciliação depósito). Detalhes: `integracoes.md`.
+APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, OCR/OpenAI etiquetas, **chat OpenAI de compostos** (`/api/chat/*`), ip-api.com, **EnvioEcom** (frete/etiqueta/rastreio), **OFX Inter** (conciliação depósito). Detalhes: `integracoes.md`.
 
 ## Deploy
 

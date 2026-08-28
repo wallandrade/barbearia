@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-27 | Chat de compostos: `OPENAI_API_KEY` + `POST https://api.openai.com/v1/chat/completions` (`OPENAI_CHAT_MODEL` ou fallback `gpt-4o-mini` / `OPENAI_VISION_MODEL`); conhecimento em `peptide-chat-knowledge.ts` | Login/Minha conta perguntam fichas | OCR de etiqueta igual |
 | 2026-08-27 | Pushcut: URL por evento (gerado/pago/cancelado); `title`/`text` com nome+valor; espaço no nome da notificação preservado | Banner no iPhone mostra R$; sons separados | PIX/webhook de entrada iguais |
 | 2026-08-27 | Admin: primeira vez pago (botão Pago ou comprovante) dispara Pushcut `order_paid` | Marcar pago no Admin avisa igual PIX | Pedido já pago não reenvia |
 | 2026-08-27 | Webhook Pushcut: evento pedido/pago **default ligado** se a chave não existir; URL tira espaço no nome | Pedido real segue o teste; `Pedido feito ` deixa de 404 | Payload/assinatura iguais |
@@ -111,6 +112,7 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 - Geo IP: `ip-api.com` — `lib/ip-geo.ts` (fire-and-forget em pedidos).
 - Distância rastreio cliente: BrasilAPI CEP + Nominatim — `lib/geo-distance.ts`.
 - OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados) — fallback paralelo ao EnvioEcom.
+- **Chat informativo (compostos):** mesma `OPENAI_API_KEY`; modelo `OPENAI_CHAT_MODEL` ou `OPENAI_VISION_MODEL` / `gpt-4o-mini`; temp 0,2; `lib/peptide-chat.ts`. Prompt + fichas em `peptide-chat-knowledge.ts`. Rotas públicas `GET /api/chat/status` e `POST /api/chat/ask` (rate limit 20/10 min por IP na rota; **sem** checkout token). Não substitui médico; não confirma PIX/pedido.
 - **Extrato OFX (Banco Inter):** `lib/ofx-bank-statement.ts` + `lib/bank-statement-reconcile.ts`; rotas `POST .../analyze|apply|clear`, `GET .../bank-deposits`; UI abas **Extrato** + **Depósitos** (Desfazer por linha). Só créditos novos (FITID não usado); só pedidos manuais Inter; valor exato + janela + nome; **CPF/CNPJ** no NAME/MEMO vs `clientDocument` → score 100%.
 - **Google Sheets:** mencionado em docs/comentários antigos — **sem implementação ativa encontrada**; produtos no MySQL.
 
