@@ -27,6 +27,8 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
+import { computeInsuranceAmount, resolveCheckoutInsurance } from "../lib/checkout-insurance";
+import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 
 const router: IRouter = Router();
 
@@ -1097,7 +1099,7 @@ router.post("/orders", async (req, res) => {
 
     const {
       client, address, products, shippingType, includeInsurance,
-      shippingCost, insuranceAmount,
+      shippingCost,
       paymentMethod, cardInstallments, sellerCode,
     } = req.body;
 
@@ -1264,7 +1266,13 @@ router.post("/orders", async (req, res) => {
       shippingBaseCost,
       freeShippingMinSubtotal,
     });
-    const computedInsuranceAmount = Math.max(0, Number(insuranceAmount) || 0);
+    const computedInsurance = resolveCheckoutInsurance({
+      ...(await getCheckoutInsuranceConfig()),
+      includeInsurance: Boolean(includeInsurance),
+      subtotal: computedSubtotal,
+    });
+    const computedInsuranceAmount = computedInsurance.insuranceAmount;
+    const resolvedIncludeInsurance = computedInsurance.includeInsurance;
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 
     let normalizedCouponCode: string | null = null;
@@ -1318,7 +1326,7 @@ router.post("/orders", async (req, res) => {
       addressState:        address?.state        || null,
       products: orderProducts,
       shippingType,
-      includeInsurance:  Boolean(includeInsurance),
+      includeInsurance:  resolvedIncludeInsurance,
       subtotal:          String(computedSubtotal),
       shippingCost:      String(computedShippingCost),
       insuranceAmount:   String(computedInsuranceAmount),
@@ -1379,7 +1387,7 @@ router.post("/orders", async (req, res) => {
     res.status(201).json({
       orderNumber,
       id, client, address: address || null, products: orderProducts, shippingType,
-      includeInsurance: Boolean(includeInsurance),
+      includeInsurance: resolvedIncludeInsurance,
       subtotal: computedSubtotal,
       shippingCost: computedShippingCost,
       insuranceAmount: computedInsuranceAmount,
@@ -1993,7 +2001,10 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     const computedDiscountAmount = discountAmount !== undefined
       ? Math.max(0, Number(discountAmount) || 0)
       : Math.max(0, Number(current[0].discountAmount) || 0);
-    const computedInsuranceAmount = current[0].includeInsurance ? Math.max(0, computedSubtotal) * 0.1 : 0;
+    const insuranceConfig = await getCheckoutInsuranceConfig();
+    const computedInsuranceAmount = current[0].includeInsurance
+      ? computeInsuranceAmount(computedSubtotal, true, insuranceConfig.percent)
+      : 0;
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
     let newStatus: string;

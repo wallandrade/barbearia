@@ -580,6 +580,8 @@ import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
+import { CheckoutInsuranceCard } from "@/components/CheckoutInsuranceCard";
+import { parseInsurancePercent, computeInsuranceAmount } from "@/lib/checkout-insurance";
 
 
 
@@ -2933,6 +2935,7 @@ export default function Admin() {
     else if (tab === "kyc")        fetchKycList();
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
+    else if (tab === "checkout")   { fetchSettings(); setLoading(false); }
     else setLoading(false);
   }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchExpenses, fetchShippingOptions, fetchMotoboyNeighborhoods, fetchCepRanges, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
@@ -3644,7 +3647,9 @@ export default function Admin() {
     try {
       const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
       const shippingCost = editOrderModal.shippingCost;
-      const insuranceAmount = editOrderModal.includeInsurance ? Math.max(0, subtotal) * 0.1 : 0;
+      const insuranceAmount = editOrderModal.includeInsurance
+        ? computeInsuranceAmount(subtotal, true, parseInsurancePercent(settings["checkout_insurance_percent"]))
+        : 0;
       const discountAmount = editDiscount || 0;
       const total = Math.max(0, subtotal + shippingCost + insuranceAmount - discountAmount);
       const nextOrderSnapshot = {
@@ -7273,6 +7278,12 @@ export default function Admin() {
                 </div>
               )}
             </div>
+
+            <CheckoutInsuranceCard
+              settings={settings}
+              loading={settingsLoading}
+              onSave={saveSetting}
+            />
           </div>
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
@@ -7758,7 +7769,9 @@ export default function Admin() {
                   {/* Totals preview */}
                   {editItems.length > 0 && (() => {
                     const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
-                    const insuranceAmount = editOrderModal.includeInsurance ? Math.max(0, subtotal) * 0.1 : 0;
+                    const insuranceAmount = editOrderModal.includeInsurance
+                      ? computeInsuranceAmount(subtotal, true, parseInsurancePercent(settings["checkout_insurance_percent"]))
+                      : 0;
                     const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editDiscount || 0));
                     const hasPaidAmount = (editOrderModal.paidAmount ?? 0) > 0;
                     const refValue = hasPaidAmount ? (editOrderModal.paidAmount ?? 0) : editOrderModal.total;

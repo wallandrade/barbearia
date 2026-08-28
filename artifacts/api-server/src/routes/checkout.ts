@@ -18,6 +18,8 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
+import { resolveCheckoutInsurance } from "../lib/checkout-insurance";
+import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 
 const router: IRouter = Router();
 
@@ -226,7 +228,7 @@ router.post("/checkout/pix", async (req, res) => {
 
     const {
       client, address, products, shippingType, includeInsurance,
-      shippingCost, insuranceAmount,
+      shippingCost,
       sellerCode, couponCode,
       useAffiliateCredit,
     } = req.body as {
@@ -376,7 +378,13 @@ router.post("/checkout/pix", async (req, res) => {
       shippingBaseCost,
       freeShippingMinSubtotal,
     });
-    const computedInsuranceAmount = Math.max(0, Number(insuranceAmount) || 0);
+    const computedInsurance = resolveCheckoutInsurance({
+      ...(await getCheckoutInsuranceConfig()),
+      includeInsurance: Boolean(includeInsurance),
+      subtotal: computedSubtotal,
+    });
+    const computedInsuranceAmount = computedInsurance.insuranceAmount;
+    const resolvedIncludeInsurance = computedInsurance.includeInsurance;
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 
     let normalizedCouponCode: string | null = null;
@@ -442,7 +450,7 @@ router.post("/checkout/pix", async (req, res) => {
       addressState:        address?.state        || null,
       products:            orderProducts,
       shippingType:        shippingType || "Frete",
-      includeInsurance:    Boolean(includeInsurance),
+      includeInsurance:    resolvedIncludeInsurance,
       subtotal:            String(computedSubtotal),
       shippingCost:        String(computedShippingCost),
       insuranceAmount:     String(computedInsuranceAmount),
@@ -581,7 +589,7 @@ router.post("/checkout/pix", async (req, res) => {
         metadata: {
           orderId,
           shippingType:     shippingType || "normal",
-          includeInsurance: String(includeInsurance ?? false),
+          includeInsurance: String(resolvedIncludeInsurance),
         },
         callbackUrl,
       });

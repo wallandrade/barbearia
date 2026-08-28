@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-28 | Admin aba Checkout: seguro ativar/desativar, nome, % e descrição (`checkout_insurance_*`) | Checkout e API usam a setting; default 10% ligado | Pedidos já criados mantêm o valor gravado |
 | 2026-08-28 | Ficha **HGH Fragment 176-191** alinhada à fonte (aliases, doses, papers, ≠ AOD) | Menu/Admin; ainda MONITORAR com AOD-9604 | Demais fichas iguais |
 | 2026-08-28 | Admin: aba **Biblioteca** (mesmo painel da bolha) para **todo** admin | Consulta fichas no `/admin` sem bolha | Bolha continua só login/Minha conta |
 | 2026-08-28 | Ficha **MOTS-C** (mitokine / longevidade; evidência baixa) | Menu; metformina e sema MONITORAR | Demais fichas iguais |
@@ -130,7 +131,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 - Cupons: `%` ou valor fixo, mínimo, limite de usos, elegibilidade — `coupons.ts` / schema `coupons`.
 - Order bumps: ofertas no checkout — `order-bumps`.
-- Opções de frete: `shipping_options`; seguro (+% no fluxo de checkout, documentado no produto). Frete grátis por valor mínimo: settings `checkout_free_shipping_min_subtotal` (envio padrão) e `checkout_free_shipping_min_motoboy` (Motoboy); checkout/API escolhem pelo `shippingType` / opção selecionada. Em branco = desativado naquele frete.
+- Opções de frete: `shipping_options`; seguro de envio configurável no Admin → **Checkout** (settings públicas `checkout_insurance_enabled`, `checkout_insurance_percent`, `checkout_insurance_label`, `checkout_insurance_description`). Default: ligado, **10%** do subtotal. Desativado some o checkbox; create/PIX recalcula o valor e ignora o `insuranceAmount` do cliente. Pedido já gravado com seguro: edição recalcula com o % atual (não desliga o flag). Frete grátis por valor mínimo: settings `checkout_free_shipping_min_subtotal` (envio padrão) e `checkout_free_shipping_min_motoboy` (Motoboy); checkout/API escolhem pelo `shippingType` / opção selecionada. Em branco = desativado naquele frete.
 - **Produtos elegíveis Motoboy:** setting público `motoboy_eligible_product_ids` (JSON de IDs) em Admin → Fretes. Vazio = todos os produtos. Com lista: Motoboy só aparece se **todos** os itens do carrinho estiverem na lista; senão só frete padrão. API rejeita Motoboy com `MOTOBOY_NOT_ELIGIBLE` se o carrinho não for elegível (`lib/motoboy-eligible-products.ts`).
 - Fila de envio (`shipping_queue`): aloca slots para pedidos pagos com frete padrão — `lib/shipping-queue-allocator.ts`.
 - Motoboy: bairros (`motoboy_neighborhoods`) + faixas de CEP (`motoboy_cep_ranges`) + slots/bookings — schemas/rotas `motoboy-*`.

@@ -19,6 +19,15 @@ import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
 import { formatCurrency, getActiveWhatsApp, getSellerSlugFromCheckoutPath, setSellerContext } from "@/lib/utils";
+import {
+  CHECKOUT_INSURANCE_SETTING_KEYS,
+  computeInsuranceAmount,
+  formatInsurancePercent,
+  parseInsuranceDescription,
+  parseInsuranceEnabled,
+  parseInsuranceLabel,
+  parseInsurancePercent,
+} from "@/lib/checkout-insurance";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
@@ -158,6 +167,12 @@ export default function Checkout() {
   const [queuePreview, setQueuePreview] = useState<{ availableSlots: number; deadlineHours: number } | null>(null);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [includeInsurance, setIncludeInsurance] = useState(false);
+  const [insuranceEnabled, setInsuranceEnabled] = useState(true);
+  const [insurancePercent, setInsurancePercent] = useState(10);
+  const [insuranceLabel, setInsuranceLabel] = useState("Adicionar Seguro de Envio");
+  const [insuranceDescription, setInsuranceDescription] = useState(
+    "Seguro de envio que garante cobertura em caso de extravio, dano ou problemas na entrega.",
+  );
   const [showCardModal, setShowCardModal] = useState(false);
   const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string; orderRef: string } | null>(null);
   const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
@@ -541,6 +556,10 @@ export default function Checkout() {
             setMotoboyEligibleProductIds(ids);
           }
           if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
+          setInsuranceEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]));
+          setInsurancePercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.percent]));
+          setInsuranceLabel(parseInsuranceLabel(data[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
+          setInsuranceDescription(parseInsuranceDescription(data[CHECKOUT_INSURANCE_SETTING_KEYS.description]));
         }
       } catch {
         // Keep defaults enabled on network errors.
@@ -549,6 +568,10 @@ export default function Checkout() {
 
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!insuranceEnabled) setIncludeInsurance(false);
+  }, [insuranceEnabled]);
 
   // Smart quantity increase — respects order bump tiers
   const handleQtyIncrease = useCallback((item: (typeof items)[0]) => {
@@ -822,14 +845,13 @@ export default function Checkout() {
   const missingForFreeShipping = isFreeShippingEligible || freeShippingMinSubtotal == null
     ? 0
     : Math.max(0, freeShippingMinSubtotal - subtotal);
-  const baseTotal = subtotal + shippingCost + (includeInsurance ? subtotal * 0.1 : 0);
+  const insuranceAmount = computeInsuranceAmount(subtotal, includeInsurance && insuranceEnabled, insurancePercent);
+  const baseTotal = subtotal + shippingCost + insuranceAmount;
   const discountAmount = appliedCoupon
     ? appliedCoupon.discountType === "percent"
       ? eligibleProductSubtotal * (appliedCoupon.discountValue / 100)
       : Math.min(appliedCoupon.discountValue, eligibleProductSubtotal)
     : 0;
-  const insuranceBase = Math.max(0, subtotal);
-  const insuranceAmount = includeInsurance ? insuranceBase * 0.1 : 0;
   const total = Math.max(0, subtotal + shippingCost + insuranceAmount - discountAmount);
   const affiliateCreditToApply = useAffiliateCredit ? Math.min(affiliateCreditAvailable, total) : 0;
   const payableTotal = Math.max(0, total - affiliateCreditToApply);
@@ -841,8 +863,7 @@ export default function Checkout() {
       ? eligibleProductSubtotalCard * (appliedCoupon.discountValue / 100)
       : Math.min(appliedCoupon.discountValue, eligibleProductSubtotalCard)
     : 0;
-  const cardInsuranceBase = Math.max(0, cardSubtotal);
-  const cardInsuranceAmount = includeInsurance ? cardInsuranceBase * 0.1 : 0;
+  const cardInsuranceAmount = computeInsuranceAmount(cardSubtotal, includeInsurance && insuranceEnabled, insurancePercent);
   const cardBaseTotal = cardSubtotal + shippingCost + cardInsuranceAmount;
   const cardNetTotal = Math.max(0, cardBaseTotal - cardDiscountAmount);
 
@@ -2342,6 +2363,7 @@ export default function Checkout() {
               </div>
 
               {/* Insurance */}
+              {insuranceEnabled && (
               <div className="pt-4 border-t border-border">
                 <label className="flex items-start gap-4 cursor-pointer group">
                   <div className="relative flex items-center justify-center mt-1 shrink-0">
@@ -2354,10 +2376,10 @@ export default function Checkout() {
                   </div>
                   <div>
                     <p className="font-bold text-foreground group-hover:text-primary transition-colors">
-                      Adicionar Seguro de Envio (+10%)
+                      {insuranceLabel} (+{formatInsurancePercent(insurancePercent)}%)
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Seguro de envio que garante cobertura em caso de extravio, dano ou problemas na entrega.
+                      {insuranceDescription}
                     </p>
                     <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                       <p className="text-xs text-amber-800 flex items-start gap-1.5">
@@ -2368,6 +2390,7 @@ export default function Checkout() {
                   </div>
                 </label>
               </div>
+              )}
             </div>
           </div>
 
@@ -2523,7 +2546,7 @@ export default function Checkout() {
                 )}
                 {includeInsurance && (
                   <div className="flex justify-between text-primary font-medium">
-                    <span>Seguro de Envio (+10%)</span>
+                    <span>{insuranceLabel} (+{formatInsurancePercent(insurancePercent)}%)</span>
                     <span>{formatCurrency(insuranceAmount)}</span>
                   </div>
                 )}
@@ -2790,7 +2813,7 @@ export default function Checkout() {
 
                       {includeInsurance && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Seguro de Envio</span>
+                          <span className="text-muted-foreground">{insuranceLabel}</span>
                           <span className="font-medium">+{formatCurrency(cardInsuranceAmount)}</span>
                         </div>
                       )}

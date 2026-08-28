@@ -16,6 +16,7 @@ const PUBLIC_KEYS  = [
   "checkout_raffle_enable_pix", "checkout_raffle_enable_card", "checkout_raffle_enable_whatsapp", "checkout_raffle_pix_gateway",
   "checkout_raffle_whatsapp_number",
   "checkout_mode",
+  "checkout_insurance_enabled", "checkout_insurance_percent", "checkout_insurance_label", "checkout_insurance_description",
   "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text"
 ];
 const ALLOWED_KEYS = [
