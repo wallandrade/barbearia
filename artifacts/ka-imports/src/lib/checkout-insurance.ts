@@ -26,6 +26,16 @@ export function parseInsuranceEnabled(raw: string | undefined | null, defaultVal
   return !["0", "false", "off", "no", "disabled"].includes(normalized);
 }
 
+export function parseInsuranceLabel(raw: string | undefined | null): string {
+  const text = String(raw ?? "").trim();
+  return text || DEFAULT_CHECKOUT_INSURANCE.label;
+}
+
+export function parseInsuranceDescription(raw: string | undefined | null): string {
+  const text = String(raw ?? "").trim();
+  return text || DEFAULT_CHECKOUT_INSURANCE.description;
+}
+
 export function parseInsurancePercent(raw: string | undefined | null): number {
   const text = String(raw ?? "").trim().replace(",", ".");
   if (!text) return DEFAULT_CHECKOUT_INSURANCE.percent;

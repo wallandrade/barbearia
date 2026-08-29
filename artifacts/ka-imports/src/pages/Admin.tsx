@@ -16134,6 +16134,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
 
   return (
     <div className="space-y-8">
+      {/* ── APIs EnvioEcom ──────────────────────────────────────────────── */}
+      <AdminEnvioEcomAccountsPanel />
+
       {/* ── Identidade Visual ─────────────────────────────────────────────── */}
       <div>
         <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
@@ -16704,9 +16707,6 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           </div>
         </div>
       </div>
-
-      {/* ── APIs EnvioEcom ──────────────────────────────────────────────── */}
-      <AdminEnvioEcomAccountsPanel />
 
       {/* ── Webhook de Saída (Pushcut/Automations) ───────────────────────── */}
       <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">

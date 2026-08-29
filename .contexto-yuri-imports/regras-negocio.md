@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-29 | `parseInsuranceLabel` / `parseInsuranceDescription` exportados em `checkout-insurance.ts` | Build Vercel do Admin volta a passar | %/produtos do seguro iguais |
 | 2026-08-29 | Configurações: várias APIs EnvioEcom; no card, EnvioEcom pede qual conta se houver mais de uma | Frete/etiqueta da conta escolhida; pedido guarda `envioecom_account_id` | Motoboy, fila 48h, OCR iguais |
 | 2026-08-28 | Seguro: % padrão da loja + % especial em produtos marcados (`checkout_insurance_product_percent` / `_product_ids`) | Carrinho misto soma os dois %; lista vazia = só o padrão | Pedidos já criados; ligar/desligar/nome iguais |
 | 2026-08-28 | Admin aba Checkout: seguro ativar/desativar, nome, % e descrição (`checkout_insurance_*`) | Checkout e API usam a setting; default 10% ligado | Pedidos já criados mantêm o valor gravado |

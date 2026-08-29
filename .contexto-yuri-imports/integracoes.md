@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-29 | Admin Configurações: painel **APIs EnvioEcom** no topo do painel (após gastos) | Conta extra visível sem rolar até o Pushcut | CRUD/seletor iguais |
 | 2026-08-29 | Várias APIs EnvioEcom: CRUD em Configurações + seletor no botão EnvioEcom; pedido grava `envioecom_account_id` | Cotar/criar/etiqueta/sync usam a conta escolhida | Motoboy, OCR, webhook de entrada PIX iguais |
 | 2026-08-28 | Admin aba Biblioteca usa os mesmos `GET /api/chat/status` e `GET /api/chat/guide/:slug/:topic` | Ficha igual à bolha do cliente | OpenAI/`POST /api/chat/ask` continua fora do fluxo |
 | 2026-08-28 | Biblioteca de compostos no FE é menu (`GET /api/chat/guide/:slug/:topic`); OpenAI/`POST /api/chat/ask` não é o fluxo da bolha | Clique mostra a ficha; sem recusa de “protocolo” | OCR de etiqueta igual |
@@ -66,7 +67,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Base: `ENVIOECOM_BASE_URL` (default `https://envioecom.com.br/api/v1/whitelabel`)
 - Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`) = conta **Padrão (servidor)** (`id=env`)
 - Contas extras: `site_settings.envioecom_accounts` (JSON); CRUD `GET/POST/PUT/DELETE /api/admin/envioecom/accounts` (listar: qualquer admin; gravar/apagar: primary). Token/senha **não** voltam no GET (só hint)
-- Admin Configurações: painel **APIs EnvioEcom** para adicionar nome + token ou e-mail/senha + CEP origem
+- Admin Configurações: painel **APIs EnvioEcom** no **topo** (depois de Gastos por data) para adicionar nome + token ou e-mail/senha + CEP origem
 - Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id`. Sync/etiqueta/cancel/soft-sync tentam a conta do pedido e, se não achar, as demais
 - Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`
 - Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
