@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-28
+> **Última atualização:** 2026-08-29
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-29 | Várias APIs EnvioEcom: CRUD em Configurações + seletor no botão EnvioEcom; pedido grava `envioecom_account_id` | Cotar/criar/etiqueta/sync usam a conta escolhida | Motoboy, OCR, webhook de entrada PIX iguais |
 | 2026-08-28 | Admin aba Biblioteca usa os mesmos `GET /api/chat/status` e `GET /api/chat/guide/:slug/:topic` | Ficha igual à bolha do cliente | OpenAI/`POST /api/chat/ask` continua fora do fluxo |
 | 2026-08-28 | Biblioteca de compostos no FE é menu (`GET /api/chat/guide/:slug/:topic`); OpenAI/`POST /api/chat/ask` não é o fluxo da bolha | Clique mostra a ficha; sem recusa de “protocolo” | OCR de etiqueta igual |
 | 2026-08-27 | Pushcut: URL por evento (gerado/pago/cancelado); `title`/`text` com nome+valor; espaço no nome da notificação preservado | Banner no iPhone mostra R$; sons separados | PIX/webhook de entrada iguais |
@@ -63,11 +64,15 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Client: `artifacts/api-server/src/lib/envioecom.ts`
 - Rotas: `artifacts/api-server/src/routes/envioecom.ts`
 - Base: `ENVIOECOM_BASE_URL` (default `https://envioecom.com.br/api/v1/whitelabel`)
-- Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`)
+- Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`) = conta **Padrão (servidor)** (`id=env`)
+- Contas extras: `site_settings.envioecom_accounts` (JSON); CRUD `GET/POST/PUT/DELETE /api/admin/envioecom/accounts` (listar: qualquer admin; gravar/apagar: primary). Token/senha **não** voltam no GET (só hint)
+- Admin Configurações: painel **APIs EnvioEcom** para adicionar nome + token ou e-mail/senha + CEP origem
+- Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id`. Sync/etiqueta/cancel/soft-sync tentam a conta do pedido e, se não achar, as demais
+- Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`
 - Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults
 - Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; etiqueta/pronto **não** marcam nem desmarcam `enviado` (manual prevalece; EE só liga em trânsito/entregue). Lista de cópia admin exclui por etiqueta EE **ou** `enviado`.
-- Origem no create: **obrigatória** — `cep_origem` no body, senão `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
+- Origem no create: **obrigatória** — `cep_origem` no body, senão CEP da conta escolhida / `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
 - Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
@@ -76,7 +81,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Cliente: card com Situação/EnvioEcom + eventos abertos (`status_history` da API → `envioecomStatusHistory`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` em `CustomerOrders.tsx`
 - Sync/soft-sync: `pickEffectiveShipmentStatus` — se `status` do envio ficar em Pronto/etiqueta mas o último `status_history` for Coletado/trânsito/entregue, grava o do histórico
 - Distância aproximada (pós-coleta): `geo-distance.ts` geocodifica último `location` do histórico (Nominatim) e cidade do cliente (BrasilAPI CEP v2 ou Nominatim); Haversine → `distanceKmFromCustomerCity` no payload de tracking; UI: “Está a cerca de X km da sua cidade” (não mostra em embalagem/entregue/sem local)
-- Campos no pedido: `envioecom_*` (schema + `runtime-schema.ts`)
+- Campos no pedido: `envioecom_*` + `envioecom_account_id` (schema + `runtime-schema.ts`)
 
 ## Motoboy cobertura → espelho (KA Imports)
 

@@ -577,6 +577,7 @@ import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
+import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
@@ -9491,13 +9492,22 @@ function OrdersPanel({
     order: AdminOrder;
     quotes: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
     originZipcode?: string | null;
+    accountId?: string | null;
+    accountName?: string | null;
   }>(null);
   const [envioecomLinkModal, setEnvioecomLinkModal] = useState<null | {
     order: AdminOrder;
     /** Após vincular, tenta gerar etiqueta PDF */
     continueToLabel?: boolean;
+    accountId?: string | null;
   }>(null);
   const [envioecomLinkDraft, setEnvioecomLinkDraft] = useState("");
+  const [envioecomAccounts, setEnvioecomAccounts] = useState<EnvioEcomAccountPublic[]>([]);
+  const [envioecomAccountPicker, setEnvioecomAccountPicker] = useState<null | {
+    order: AdminOrder;
+    purpose: "quote" | "link";
+    continueToLabel?: boolean;
+  }>(null);
   const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [trackingReview, setTrackingReview] = useState<null | {
     order: AdminOrder;
@@ -9547,6 +9557,36 @@ function OrdersPanel({
     onSetOrderPatched({ ...current, ...patch } as AdminOrder);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${BASE}/api/admin/envioecom/accounts`, { headers: authHeaders() });
+        const data = await res.json() as { accounts?: EnvioEcomAccountPublic[] };
+        if (!cancelled && res.ok) setEnvioecomAccounts(data.accounts || []);
+      } catch {
+        // silencioso: o clique no botão tenta de novo
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectableEnvioEcomAccounts = envioecomAccounts.filter((account) => account.configured);
+  const envioecomAccountNameById = (id: string | null | undefined) =>
+    envioecomAccounts.find((account) => account.id === id)?.name || null;
+
+  const refreshEnvioEcomAccounts = async (): Promise<EnvioEcomAccountPublic[]> => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/accounts`, { headers: authHeaders() });
+      const data = await res.json() as { accounts?: EnvioEcomAccountPublic[] };
+      const list = res.ok ? (data.accounts || []) : envioecomAccounts;
+      setEnvioecomAccounts(list);
+      return list;
+    } catch {
+      return envioecomAccounts;
+    }
+  };
+
   const ENVIOECOM_CARRIER_OPTIONS = [
     "Correios Sedex",
     "Correios Pac",
@@ -9557,18 +9597,22 @@ function OrdersPanel({
     "BUSLOG envioEcom",
   ] as const;
 
-  const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[]) => {
+  const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[], accountId?: string | null) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
       const selected = (carriers ?? envioecomSelectedCarriers).filter(Boolean);
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/quote`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(selected.length ? { carriers: selected } : {}),
+        body: JSON.stringify({
+          ...(selected.length ? { carriers: selected } : {}),
+          ...(accountId ? { accountId } : {}),
+        }),
       });
       const data = await res.json() as {
         quotes?: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
         origin_zipcode?: string | null;
+        accountId?: string | null;
         message?: string;
       };
       if (!res.ok) {
@@ -9580,16 +9624,35 @@ function OrdersPanel({
         toast.error("Nenhuma opção de frete retornada.");
         return;
       }
+      const usedAccountId = data.accountId || accountId || null;
       setEnvioecomQuoteModal({
         order,
         quotes,
         originZipcode: data.origin_zipcode ? String(data.origin_zipcode) : null,
+        accountId: usedAccountId,
+        accountName: envioecomAccountNameById(usedAccountId),
       });
     } catch {
       toast.error("Erro ao cotar EnvioEcom.");
     } finally {
       setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
     }
+  };
+
+  const startEnvioEcomQuote = async (order: AdminOrder) => {
+    const list = selectableEnvioEcomAccounts.length
+      ? envioecomAccounts
+      : await refreshEnvioEcomAccounts();
+    const ready = list.filter((account) => account.configured);
+    if (!ready.length) {
+      toast.error("Nenhuma API EnvioEcom configurada. Cadastre em Configurações.");
+      return;
+    }
+    if (ready.length === 1) {
+      void quoteEnvioEcom(order, undefined, ready[0].id);
+      return;
+    }
+    setEnvioecomAccountPicker({ order, purpose: "quote" });
   };
 
   const createEnvioEcomShipment = async (
@@ -9613,6 +9676,7 @@ function OrdersPanel({
           freight_cost: quote.price != null ? String(quote.price) : undefined,
           delivery_time: quote.delivery_time != null ? String(quote.delivery_time) : undefined,
           ...(cepOrigem.length === 8 ? { cep_origem: cepOrigem } : {}),
+          ...(envioecomQuoteModal?.accountId ? { accountId: envioecomQuoteModal.accountId } : {}),
         }),
       });
       const data = await res.json() as {
@@ -9624,6 +9688,7 @@ function OrdersPanel({
         message?: string;
         details?: unknown;
         error?: string;
+        accountId?: string | null;
       };
       if (!res.ok) {
         const extra =
@@ -9639,6 +9704,7 @@ function OrdersPanel({
         envioecomTrackingKey: data.trackingKey,
         envioecomDeliveryMode: shippingCompany,
         envioecomStatus: data.status,
+        envioecomAccountId: data.accountId || envioecomQuoteModal?.accountId,
         trackingCode: data.barcode || (order as any).trackingCode,
       });
       setEnvioecomQuoteModal(null);
@@ -9667,12 +9733,37 @@ function OrdersPanel({
     return { barcode: value.replace(/\s+/g, "") };
   };
 
-  const openEnvioEcomLinkModal = (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string }) => {
+  const openEnvioEcomLinkModal = (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string; accountId?: string | null }) => {
     const prefill =
       opts?.prefill ??
       String((order as any).envioecomShipmentId || (order as any).envioecomBarcode || (order as any).trackingCode || "");
     setEnvioecomLinkDraft(prefill);
-    setEnvioecomLinkModal({ order, continueToLabel: !!opts?.continueToLabel });
+    setEnvioecomLinkModal({
+      order,
+      continueToLabel: !!opts?.continueToLabel,
+      accountId: opts?.accountId || (order as { envioecomAccountId?: string | null }).envioecomAccountId || null,
+    });
+  };
+
+  const startEnvioEcomLink = async (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string }) => {
+    const existingAccountId = String((order as { envioecomAccountId?: string | null }).envioecomAccountId || "");
+    if (existingAccountId) {
+      openEnvioEcomLinkModal(order, { ...opts, accountId: existingAccountId });
+      return;
+    }
+    const list = selectableEnvioEcomAccounts.length
+      ? envioecomAccounts
+      : await refreshEnvioEcomAccounts();
+    const ready = list.filter((account) => account.configured);
+    if (!ready.length) {
+      toast.error("Nenhuma API EnvioEcom configurada. Cadastre em Configurações.");
+      return;
+    }
+    if (ready.length === 1) {
+      openEnvioEcomLinkModal(order, { ...opts, accountId: ready[0].id });
+      return;
+    }
+    setEnvioecomAccountPicker({ order, purpose: "link", continueToLabel: opts?.continueToLabel });
   };
 
   const linkEnvioEcomShipment = async (order: AdminOrder, rawRef: string, opts?: { continueToLabel?: boolean }) => {
@@ -9687,7 +9778,10 @@ function OrdersPanel({
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(parsed),
+        body: JSON.stringify({
+          ...parsed,
+          ...(envioecomLinkModal?.accountId ? { accountId: envioecomLinkModal.accountId } : {}),
+        }),
       });
       const data = await res.json() as {
         ok?: boolean;
@@ -9714,6 +9808,7 @@ function OrdersPanel({
         envioecomBarcode: barcode,
         envioecomShipmentId: shipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
+        envioecomAccountId: envioecomLinkModal?.accountId || (order as any).envioecomAccountId,
         trackingCode: barcode || (order as any).trackingCode,
         // Só liga enviado se já postado; nunca desliga marcado manual.
         ...(isEnvioEcomPostedStatus(status) ? { enviado: true } : {}),
@@ -9789,9 +9884,12 @@ function OrdersPanel({
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(
-          shipmentIdOverride ? { shipment_id: shipmentIdOverride } : {},
-        ),
+        body: JSON.stringify({
+          ...(shipmentIdOverride ? { shipment_id: shipmentIdOverride } : {}),
+          ...((order as { envioecomAccountId?: string | null }).envioecomAccountId
+            ? { accountId: (order as { envioecomAccountId?: string | null }).envioecomAccountId }
+            : {}),
+        }),
       });
       const data = await res.json() as {
         ok?: boolean;
@@ -11551,8 +11649,8 @@ function OrdersPanel({
                     variant="outline"
                     className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
                     disabled={!!envioecomBusy[order.id]}
-                    onClick={() => { void quoteEnvioEcom(order); }}
-                    title="Cotar e criar envio via EnvioEcom"
+                    onClick={() => { void startEnvioEcomQuote(order); }}
+                    title="Cotar e criar envio via EnvioEcom (escolhe a API se houver mais de uma)"
                   >
                     {envioecomBusy[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
                     EnvioEcom
@@ -11562,7 +11660,7 @@ function OrdersPanel({
                     variant="outline"
                     className="gap-1.5 text-teal-800 border-teal-300 hover:bg-teal-50"
                     disabled={!!envioecomBusy[order.id]}
-                    onClick={() => openEnvioEcomLinkModal(order)}
+                    onClick={() => { void startEnvioEcomLink(order); }}
                     title="Vincular envio criado manualmente no painel EnvioEcom (ID ou rastreio)"
                   >
                     <LinkIcon className="w-3.5 h-3.5" />
@@ -11617,6 +11715,9 @@ function OrdersPanel({
                   {(order as any).envioecomStatus && (
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass((order as any).envioecomStatus)}`}>
                       EE: {(order as any).envioecomStatus}
+                      {envioecomAccountNameById((order as any).envioecomAccountId)
+                        ? ` · ${envioecomAccountNameById((order as any).envioecomAccountId)}`
+                        : ""}
                       {(order as any).envioecomBarcode ? ` · ${(order as any).envioecomBarcode}` : ""}
                     </span>
                   )}
@@ -12122,6 +12223,55 @@ function OrdersPanel({
           </motion.div>
         )}
 
+        {envioecomAccountPicker && (
+          <div className="fixed inset-0 z-[125] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Escolher API EnvioEcom</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pedido #{getOrderReference(envioecomAccountPicker.order)} · {envioecomAccountPicker.order.clientName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="p-1.5 rounded-lg hover:bg-muted"
+                  onClick={() => setEnvioecomAccountPicker(null)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2">
+                {selectableEnvioEcomAccounts.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    className="w-full text-left rounded-xl border border-border hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3 transition"
+                    onClick={() => {
+                      const picked = envioecomAccountPicker;
+                      setEnvioecomAccountPicker(null);
+                      if (picked.purpose === "quote") {
+                        void quoteEnvioEcom(picked.order, undefined, account.id);
+                      } else {
+                        openEnvioEcomLinkModal(picked.order, {
+                          continueToLabel: picked.continueToLabel,
+                          accountId: account.id,
+                        });
+                      }
+                    }}
+                  >
+                    <p className="font-semibold text-foreground">{account.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {account.fromEnv ? "Conta do servidor" : "Conta cadastrada"}
+                      {account.originCep ? ` · CEP ${account.originCep}` : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {envioecomQuoteModal && (
           <div className="fixed inset-0 z-[120] bg-black/45 flex items-center justify-center p-4">
             <div className="w-full max-w-lg rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
@@ -12130,6 +12280,7 @@ function OrdersPanel({
                   <h3 className="text-base font-bold text-foreground">Cotação EnvioEcom</h3>
                   <p className="text-sm text-muted-foreground mt-0.5">
                     Pedido #{getOrderReference(envioecomQuoteModal.order)} · {envioecomQuoteModal.order.clientName}
+                    {envioecomQuoteModal.accountName ? ` · API: ${envioecomQuoteModal.accountName}` : ""}
                   </p>
                 </div>
                 <button
@@ -12173,7 +12324,7 @@ function OrdersPanel({
                     size="sm"
                     variant="outline"
                     disabled={!!envioecomBusy[envioecomQuoteModal.order.id]}
-                    onClick={() => { void quoteEnvioEcom(envioecomQuoteModal.order); }}
+                    onClick={() => { void quoteEnvioEcom(envioecomQuoteModal.order, undefined, envioecomQuoteModal.accountId); }}
                   >
                     {envioecomBusy[envioecomQuoteModal.order.id] ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
@@ -16553,6 +16704,9 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           </div>
         </div>
       </div>
+
+      {/* ── APIs EnvioEcom ──────────────────────────────────────────────── */}
+      <AdminEnvioEcomAccountsPanel />
 
       {/* ── Webhook de Saída (Pushcut/Automations) ───────────────────────── */}
       <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">

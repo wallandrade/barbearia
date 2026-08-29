@@ -2450,6 +2450,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
       : [],
     envioecomLabelUrl:      (o as any).envioecomLabelUrl ?? null,
     envioecomFreightCost:   (o as any).envioecomFreightCost != null ? Number((o as any).envioecomFreightCost) : null,
+    envioecomAccountId:     (o as any).envioecomAccountId ?? null,
     bankDepositMatchStatus: (o as any).bankDepositMatchStatus ?? null,
     bankDepositFitid:       (o as any).bankDepositFitid ?? null,
     bankDepositAmount:      (o as any).bankDepositAmount != null ? Number((o as any).bankDepositAmount) : null,

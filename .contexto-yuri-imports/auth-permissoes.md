@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-08-27
+> **Última atualização:** 2026-08-29
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-29 | CRUD contas EnvioEcom extras: gravar/apagar `requirePrimaryAdmin`; listar `requireAdminAuth` | Vendedor escolhe API no card; só primário cadastra token | Login/sessão iguais |
 | 2026-08-28 | Aba Admin **Biblioteca** fora de `PRIMARY_ONLY_TABS` | Todo admin vê as fichas | Chat `/api/chat/*` continua público |
 | 2026-08-27 | Chat `/api/chat/*` público (sem Bearer / sem checkout token) | Login consegue perguntar | Auth admin/cliente iguais |
 | 2026-08-26 | Sync Motoboy cobertura: pull autenticado por `MOTOBOY_SYNC_TOKEN` (Bearer / `X-Api-Key`); webhook outbound com `MOTOBOY_SYNC_WEBHOOK_SECRET` | Espelho externo lê/recebe cobertura | Portal token / admin sessions iguais |
@@ -29,6 +30,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - `isPrimary === true` → acesso global.
 - Admin não primário → precisa de seller vinculado via env `ADMIN_SELLER_SCOPE_MAP` (JSON `{"usuario":"seller-slug"}`). Sem vínculo → erro pedindo configuração do mapa.
 - Gestão de usuários admin (criar, promoção `isPrimary`, senha): rotas sob `/api/admin/users*` com `requirePrimaryAdmin` onde aplicável.
+- Contas extras EnvioEcom: `POST/PUT/DELETE /api/admin/envioecom/accounts` = `requirePrimaryAdmin`; `GET` = qualquer admin autenticado (seletor no card).
 - **Não** há multi-tenant por `tenant_id`; isolamento = `sellerCode` + escopo.
 - Aba **Biblioteca** (fichas de compostos): todos os admins autenticados; não está em `PRIMARY_ONLY_TABS`. API das fichas continua pública (`/api/chat/*`).
 

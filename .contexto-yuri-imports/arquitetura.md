@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-08-28
+> **Última atualização:** 2026-08-29
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-29 | `orders.envioecom_account_id` (+ runtime) para multi-conta EnvioEcom | Pedido sabe qual API gerou o envio | Demais colunas iguais |
 | 2026-08-28 | Widget de compostos = menu produto→assunto (`/api/chat/guide`) | Sem chat aberto na loja | Stack/deploy iguais |
 | 2026-08-26 | Deploy API Railway: repo Git **`wallandrade/barbearia`** / `main` (auto-deploy). Remote `oficialkaimports` é paralelo/legado | Redeploy do mesmo commit antigo não puxa whitelist Motoboy | Domínio `api.yury-imports.com` igual |
 | 2026-08-19 | `support_tickets.problem_type` + `missing_products_json` | Cliente marca itens faltantes; admin reenvia só esses | Auth/deploy iguais |

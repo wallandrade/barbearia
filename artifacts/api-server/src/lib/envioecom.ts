@@ -3,8 +3,54 @@
  * Docs: https://envioecom.com.br/api/v1/whitelabel/*
  */
 import crypto from "crypto";
+import { AsyncLocalStorage } from "async_hooks";
 
 const DEFAULT_BASE = "https://envioecom.com.br/api/v1/whitelabel";
+
+/** Conta vinda das env vars do servidor (Railway). */
+export const ENVIOECOM_ENV_ACCOUNT_ID = "env";
+
+export type EnvioEcomAuth = {
+  accountId: string;
+  token?: string;
+  email?: string;
+  password?: string;
+  originCep?: string;
+};
+
+const authAls = new AsyncLocalStorage<EnvioEcomAuth>();
+
+export function runWithEnvioEcomAuth<T>(auth: EnvioEcomAuth, fn: () => T): T {
+  return authAls.run(auth, fn);
+}
+
+export function getEnvioEcomEnvAuth(): EnvioEcomAuth {
+  return {
+    accountId: ENVIOECOM_ENV_ACCOUNT_ID,
+    token: String(process.env.ENVIOECOM_TOKEN || "").trim() || undefined,
+    email: String(process.env.ENVIOECOM_EMAIL || "").trim() || undefined,
+    password: String(process.env.ENVIOECOM_PASSWORD || "").trim() || undefined,
+    originCep: String(process.env.ENVIOECOM_ORIGIN_CEP || "").trim() || undefined,
+  };
+}
+
+function currentAuth(): EnvioEcomAuth {
+  return authAls.getStore() || getEnvioEcomEnvAuth();
+}
+
+export function isEnvioEcomAuthConfigured(auth?: EnvioEcomAuth): boolean {
+  const a = auth || currentAuth();
+  if (String(a.token || "").trim()) return true;
+  return Boolean(String(a.email || "").trim() && String(a.password || "").trim());
+}
+
+export function getCurrentEnvioEcomOriginCep(): string {
+  return digitsOnly(currentAuth().originCep || process.env.ENVIOECOM_ORIGIN_CEP || "");
+}
+
+export function getCurrentEnvioEcomAccountId(): string {
+  return currentAuth().accountId || ENVIOECOM_ENV_ACCOUNT_ID;
+}
 
 export type EnvioEcomErrorBody = {
   error?: {
@@ -75,7 +121,7 @@ type CachedToken = {
   expiresAt: number | null;
 };
 
-let cachedToken: CachedToken | null = null;
+const tokenCacheByAccount = new Map<string, CachedToken>();
 
 function getBaseUrl(): string {
   return String(process.env.ENVIOECOM_BASE_URL || DEFAULT_BASE).replace(/\/$/, "");
@@ -227,11 +273,7 @@ export function consolidateOrderIntoSinglePackage(input: {
 }
 
 export function isEnvioEcomConfigured(): boolean {
-  const permanent = String(process.env.ENVIOECOM_TOKEN || "").trim();
-  if (permanent) return true;
-  const email = String(process.env.ENVIOECOM_EMAIL || "").trim();
-  const password = String(process.env.ENVIOECOM_PASSWORD || "").trim();
-  return Boolean(email && password);
+  return isEnvioEcomAuthConfigured(getEnvioEcomEnvAuth());
 }
 
 async function parseError(res: Response): Promise<EnvioEcomApiError> {
@@ -250,18 +292,21 @@ async function parseError(res: Response): Promise<EnvioEcomApiError> {
 }
 
 export async function fetchEnvioEcomToken(force = false): Promise<string> {
-  const permanent = String(process.env.ENVIOECOM_TOKEN || "").trim();
+  const auth = currentAuth();
+  const permanent = String(auth.token || "").trim();
   if (permanent) return permanent;
 
+  const cacheKey = auth.accountId || ENVIOECOM_ENV_ACCOUNT_ID;
   const now = Date.now();
+  const cachedToken = tokenCacheByAccount.get(cacheKey);
   if (!force && cachedToken?.token) {
     if (!cachedToken.expiresAt || cachedToken.expiresAt > now + 60_000) {
       return cachedToken.token;
     }
   }
 
-  const email = String(process.env.ENVIOECOM_EMAIL || "").trim();
-  const password = String(process.env.ENVIOECOM_PASSWORD || "").trim();
+  const email = String(auth.email || "").trim();
+  const password = String(auth.password || "").trim();
   if (!email || !password) {
     throw new EnvioEcomApiError(503, "NOT_CONFIGURED", "Credenciais EnvioEcom não configuradas.");
   }
@@ -287,10 +332,10 @@ export async function fetchEnvioEcomToken(force = false): Promise<string> {
   }
 
   const expiresAt = data.expires_at ? Date.parse(data.expires_at) : null;
-  cachedToken = {
+  tokenCacheByAccount.set(cacheKey, {
     token,
     expiresAt: Number.isFinite(expiresAt as number) ? (expiresAt as number) : null,
-  };
+  });
   return token;
 }
 
@@ -311,8 +356,9 @@ async function envioecomFetch(
     headers,
   });
 
-  if ((res.status === 401 || res.status === 403) && !retried && !String(process.env.ENVIOECOM_TOKEN || "").trim()) {
-    cachedToken = null;
+  const auth = currentAuth();
+  if ((res.status === 401 || res.status === 403) && !retried && !String(auth.token || "").trim()) {
+    tokenCacheByAccount.delete(auth.accountId || ENVIOECOM_ENV_ACCOUNT_ID);
     return envioecomFetch(path, init, true);
   }
 
