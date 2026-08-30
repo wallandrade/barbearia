@@ -10,7 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-08-30 | Create EnvioEcom: `items` sempre 1 linha das settings (nome/qty/valor; defaults Mercadoria/1/R$5) | Pedido de 10 peças gera etiqueta com 1 item; catálogo não entra no payload | Cotação 2×12×17 0,3kg R$5; estoque; comissão; envios já criados |
+| 2026-08-30 | Admin Estoque: aba **Resumo** (Loja+Motoboy+Minas) com custo empatado e valor se vender tudo | Só leitura; preços do cadastro | Entrada/saída das três abas iguais |
 | 2026-08-30 | Sync estoque Motoboy+Minas só leitura: snapshot + webhook `inventory.changed` | Outro sistema espelha os dois pools | Loja e cobertura Motoboy iguais |
 | 2026-08-30 | Estoque Minas: pool independente + aba Admin + botão no card (`inventory_pool=minas`) | Saldo/entrada/saída separados; baixa só no Enviado ou Dar baixa agora | Loja reserva na escolha; Motoboy e EnvioEcom iguais |
 | 2026-08-29 | Rastreios: valor declarado global no create EnvioEcom (`envioecom_shipment_item_value`) | Cotação/create usam o valor do painel; preço do catálogo não vai na API se preenchido | Nome genérico, contas EE, webhook iguais |
@@ -178,6 +178,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - Inventário loja: saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`).
 - **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado** **ou** no botão **Dar baixa agora** (`reserveNow` → `inventory_reserved`). **Loja** continua reservando na escolha. Com reserva feita, Coletado EE / Marcar Enviado **não** baixam de novo. Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.
 - **Estoque Minas** (pool independente, mesmo padrão Motoboy): `inventory_minas_balances` / `inventory_minas_movements`; aba Admin Estoque → Minas (entrada/saída manual). No card, **Minas** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado** ou **Dar baixa agora**. Entrada Minas **não** debita Loja nem Motoboy. Reenvio manual / produto voltando ficam só na aba Loja.
+- **Resumo (aba Estoque):** só leitura. Soma qty Loja+Motoboy+Minas × `costPrice` (empatado) e × preço de venda (promo se ativa). Sem entrada/saída. Alerta se custo 0 com saldo.
 - **Sync estoque Motoboy+Minas (espelho):** `GET /api/integrations/inventory/snapshot` (token `INVENTORY_SYNC_TOKEN` ou `MOTOBOY_SYNC_TOKEN`); webhook opcional `inventory.changed` (`INVENTORY_SYNC_WEBHOOK_*`). Outro sistema **só lê**; Yury grava.
 - **Etiqueta EnvioEcom:** ao gerar, toast de **previsão** (saldo atual − qty do pedido) em Loja e Motoboy — **sem** reservar/baixar. Na aba Estoque Motoboy, pedidos com etiqueta e ainda não enviados aparecem como **linha imaginária** (exceto se já tiver `inventory_reserved`); a baixa real segue no Coletado/Enviado ou **Dar baixa agora**.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.

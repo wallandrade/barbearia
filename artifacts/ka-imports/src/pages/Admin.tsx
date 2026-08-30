@@ -563,7 +563,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 }
 
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
@@ -8535,7 +8535,276 @@ function SupportTicketsPanel({
 }
 
 type InventoryPoolKind = "loja" | "motoboy" | "minas";
-type StockTabKind = InventoryPoolKind;
+type StockTabKind = InventoryPoolKind | "resumo";
+
+type InventoryCatalogLite = {
+  id: string;
+  name: string;
+  image?: string | null;
+  price?: number | string;
+  costPrice?: number | string | null;
+  promoPrice?: number | string | null;
+  promoEndsAt?: string | Date | null;
+};
+
+function getCatalogSalePrice(product: InventoryCatalogLite | undefined): number {
+  if (!product) return 0;
+  const price = Number(product.price || 0);
+  const promoRaw = product.promoPrice == null || product.promoPrice === "" ? null : Number(product.promoPrice);
+  const ends = product.promoEndsAt ? new Date(product.promoEndsAt) : null;
+  const promoOn = promoRaw != null
+    && Number.isFinite(promoRaw)
+    && promoRaw > 0
+    && (!ends || !Number.isFinite(ends.getTime()) || Date.now() <= ends.getTime());
+  if (promoOn) return promoRaw;
+  return Number.isFinite(price) ? price : 0;
+}
+
+function inventoryQtyMap(rows: InventoryBalanceRecord[]): Map<string, number> {
+  return new Map(rows.map((row) => [row.productId, Number(row.quantity) || 0]));
+}
+
+function InventoryStockSummary({
+  loading,
+  products,
+  balances,
+  motoboyBalances,
+  minasBalances,
+  onRefresh,
+}: {
+  loading: boolean;
+  products: InventoryCatalogLite[];
+  balances: InventoryBalanceRecord[];
+  motoboyBalances: InventoryBalanceRecord[];
+  minasBalances: InventoryBalanceRecord[];
+  onRefresh: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [hideZeros, setHideZeros] = useState(true);
+
+  const rows = useMemo(() => {
+    const lojaMap = inventoryQtyMap(balances);
+    const motoboyMap = inventoryQtyMap(motoboyBalances);
+    const minasMap = inventoryQtyMap(minasBalances);
+    const nameById = new Map<string, string>();
+    for (const row of [...balances, ...motoboyBalances, ...minasBalances]) {
+      nameById.set(row.productId, row.productName);
+    }
+    const productById = new Map(products.map((p) => [p.id, p]));
+    const ids = new Set<string>([
+      ...products.map((p) => p.id),
+      ...lojaMap.keys(),
+      ...motoboyMap.keys(),
+      ...minasMap.keys(),
+    ]);
+
+    return Array.from(ids).map((productId) => {
+      const product = productById.get(productId);
+      const qtyLoja = lojaMap.get(productId) || 0;
+      const qtyMotoboy = motoboyMap.get(productId) || 0;
+      const qtyMinas = minasMap.get(productId) || 0;
+      const totalQty = qtyLoja + qtyMotoboy + qtyMinas;
+      const costUnit = Math.max(0, Number(product?.costPrice || 0) || 0);
+      const saleUnit = getCatalogSalePrice(product);
+      return {
+        productId,
+        name: product?.name || nameById.get(productId) || productId,
+        image: product?.image || null,
+        qtyLoja,
+        qtyMotoboy,
+        qtyMinas,
+        totalQty,
+        costUnit,
+        saleUnit,
+        costTotal: totalQty * costUnit,
+        saleTotal: totalQty * saleUnit,
+        missingCost: totalQty > 0 && costUnit <= 0,
+      };
+    }).sort((a, b) => {
+      if (b.costTotal !== a.costTotal) return b.costTotal - a.costTotal;
+      if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
+      return a.name.localeCompare(b.name, "pt-BR");
+    });
+  }, [products, balances, motoboyBalances, minasBalances]);
+
+  const normalized = search.trim().toLowerCase();
+  const visible = rows.filter((row) => {
+    if (hideZeros && row.totalQty <= 0) return false;
+    if (!normalized) return true;
+    return row.name.toLowerCase().includes(normalized);
+  });
+
+  const totals = visible.reduce(
+    (acc, row) => {
+      acc.units += row.totalQty;
+      acc.cost += row.costTotal;
+      acc.sale += row.saleTotal;
+      acc.lojaCost += row.qtyLoja * row.costUnit;
+      acc.lojaSale += row.qtyLoja * row.saleUnit;
+      acc.motoboyCost += row.qtyMotoboy * row.costUnit;
+      acc.motoboySale += row.qtyMotoboy * row.saleUnit;
+      acc.minasCost += row.qtyMinas * row.costUnit;
+      acc.minasSale += row.qtyMinas * row.saleUnit;
+      if (row.missingCost) acc.missing += 1;
+      return acc;
+    },
+    {
+      units: 0,
+      cost: 0,
+      sale: 0,
+      lojaCost: 0,
+      lojaSale: 0,
+      motoboyCost: 0,
+      motoboySale: 0,
+      minasCost: 0,
+      minasSale: 0,
+      missing: 0,
+    },
+  );
+  const profit = totals.sale - totals.cost;
+
+  const copySummary = async () => {
+    const when = new Date().toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const lines = visible
+      .filter((row) => row.totalQty > 0)
+      .map((row) =>
+        `${row.totalQty} un · ${row.name} · L ${row.qtyLoja} / Moto ${row.qtyMotoboy} / Minas ${row.qtyMinas} · custo ${formatCurrency(row.costTotal)} · venda ${formatCurrency(row.saleTotal)}`,
+      );
+    const text = [
+      `RESUMO ESTOQUE (${when})`,
+      `Empatado: ${formatCurrency(totals.cost)}`,
+      `Se vender tudo: ${formatCurrency(totals.sale)}`,
+      `Lucro potencial: ${formatCurrency(profit)}`,
+      `Loja ${formatCurrency(totals.lojaCost)} · Motoboy ${formatCurrency(totals.motoboyCost)} · Minas ${formatCurrency(totals.minasCost)}`,
+      "",
+      ...lines,
+    ].join("\n");
+    const mode = await copyText(text);
+    toast.success(mode === "manual" ? "Texto aberto para cópia manual." : "Resumo copiado.");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold">Resumo de valores</p>
+            <p className="text-xs text-muted-foreground">
+              Junta Loja, Motoboy e Minas. Custo e venda vêm do cadastro do produto (promo se estiver ativa). Sem entrada/saída nesta aba.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" />Atualizar
+          </Button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-3">
+            <p className="text-[11px] uppercase tracking-wide text-amber-900/70 font-semibold">Empatado (custo)</p>
+            <p className="text-xl font-bold text-amber-950 mt-1">{formatCurrency(totals.cost)}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-900/70 font-semibold">Se vender tudo</p>
+            <p className="text-xl font-bold text-emerald-950 mt-1">{formatCurrency(totals.sale)}</p>
+          </div>
+          <div className={`rounded-xl border px-3 py-3 ${profit >= 0 ? "border-sky-200 bg-sky-50/70" : "border-red-200 bg-red-50/70"}`}>
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">Lucro potencial</p>
+            <p className={`text-xl font-bold mt-1 ${profit >= 0 ? "text-sky-950" : "text-red-800"}`}>{formatCurrency(profit)}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <span className="font-semibold">Loja:</span> {formatCurrency(totals.lojaCost)} custo · {formatCurrency(totals.lojaSale)} venda
+          </p>
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <span className="font-semibold">Motoboy:</span> {formatCurrency(totals.motoboyCost)} custo · {formatCurrency(totals.motoboySale)} venda
+          </p>
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+            <span className="font-semibold">Minas:</span> {formatCurrency(totals.minasCost)} custo · {formatCurrency(totals.minasSale)} venda
+          </p>
+        </div>
+        {totals.missing > 0 && (
+          <p className="mt-3 text-xs font-medium text-red-700">
+            {totals.missing} produto(s) com saldo e custo 0 no cadastro — o empatado fica baixo demais.
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <p className="text-sm font-semibold">Detalhe por produto</p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{visible.length}/{hideZeros ? rows.filter((r) => r.totalQty > 0).length : rows.length}</span>
+            <button
+              type="button"
+              onClick={() => setHideZeros((v) => !v)}
+              className="text-xs px-2 py-1 rounded-md border border-border bg-muted hover:bg-accent transition-colors font-medium"
+            >
+              {hideZeros ? "Mostrar zerados" : "Ocultar zerados"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { void copySummary(); }}
+              className="text-xs px-2 py-1 rounded-md border border-border bg-muted hover:bg-accent transition-colors font-medium"
+            >
+              Copiar resumo
+            </button>
+          </div>
+        </div>
+        <input
+          className="h-10 w-full rounded-lg border border-border px-3 text-sm mb-3"
+          placeholder="Pesquisar produto por nome"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Carregando estoque...</p>
+        ) : visible.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum produto neste recorte.</p>
+        ) : (
+          <div className="space-y-2 max-h-[640px] overflow-auto pr-1">
+            {visible.map((row) => (
+              <div key={row.productId} className="rounded-lg border border-border px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {row.image ? (
+                      <img src={row.image} alt={row.name} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
+                    ) : (
+                      <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
+                        <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{row.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Loja {row.qtyLoja} · Motoboy {row.qtyMotoboy} · Minas {row.qtyMinas} · {row.totalQty} un
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-muted-foreground">Custo {formatCurrency(row.costUnit)} · Venda {formatCurrency(row.saleUnit)}</p>
+                    <p className="text-sm font-semibold text-amber-900">{formatCurrency(row.costTotal)}</p>
+                    <p className="text-sm font-semibold text-emerald-800">{formatCurrency(row.saleTotal)}</p>
+                  </div>
+                </div>
+                {row.missingCost && (
+                  <p className="mt-1 text-[11px] text-red-700">Custo 0 no cadastro</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function parseInventoryPool(raw: unknown): InventoryPoolKind | null {
   const value = String(raw || "").toLowerCase().trim();
@@ -8578,7 +8847,7 @@ function InventoryPanel({
   onResolvePendingReshipment,
 }: {
   loading: boolean;
-  products: Array<{ id: string; name: string; image?: string | null }>;
+  products: InventoryCatalogLite[];
   balances: InventoryBalanceRecord[];
   movements: InventoryMovementRecord[];
   motoboyBalances: InventoryBalanceRecord[];
@@ -8684,8 +8953,9 @@ function InventoryPanel({
   };
 
   const normalizedBalanceSearch = balanceSearch.trim().toLowerCase();
-  const isDeferredStockTab = isDeferredDebitPool(stockTab);
-  const stockTabLabel = inventoryPoolLabel(stockTab);
+  const poolTab: InventoryPoolKind = stockTab === "resumo" ? "loja" : stockTab;
+  const isDeferredStockTab = isDeferredDebitPool(poolTab);
+  const stockTabLabel = inventoryPoolLabel(poolTab);
   const activeBalances = stockTab === "motoboy"
     ? motoboyBalances
     : stockTab === "minas"
@@ -8868,8 +9138,30 @@ function InventoryPanel({
         >
           Estoque Minas
         </button>
+        <button
+          type="button"
+          onClick={() => setStockTab("resumo")}
+          className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition ${
+            stockTab === "resumo"
+              ? "bg-slate-800 text-white border-slate-800"
+              : "bg-white text-muted-foreground border-border hover:border-slate-400"
+          }`}
+        >
+          Resumo
+        </button>
       </div>
 
+      {stockTab === "resumo" ? (
+        <InventoryStockSummary
+          loading={loading}
+          products={products}
+          balances={balances}
+          motoboyBalances={motoboyBalances}
+          minasBalances={minasBalances}
+          onRefresh={onRefresh}
+        />
+      ) : (
+      <>
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -9330,6 +9622,8 @@ function InventoryPanel({
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
