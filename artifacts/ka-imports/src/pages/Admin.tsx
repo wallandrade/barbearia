@@ -1357,6 +1357,8 @@ export default function Admin() {
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovementRecord[]>([]);
   const [motoboyInventoryBalances, setMotoboyInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
   const [motoboyInventoryMovements, setMotoboyInventoryMovements] = useState<InventoryMovementRecord[]>([]);
+  const [minasInventoryBalances, setMinasInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
+  const [minasInventoryMovements, setMinasInventoryMovements] = useState<InventoryMovementRecord[]>([]);
   const [marketingExpenseForm, setMarketingExpenseForm] = useState({
     expenseStartDate: todayStr(),
     expenseEndDate: todayStr(),
@@ -2330,11 +2332,12 @@ export default function Admin() {
   const fetchInventoryOverview = useCallback(async () => {
     setInventoryLoading(true);
     try {
-      const [lojaRes, motoRes] = await Promise.all([
+      const [lojaRes, motoRes, minasRes] = await Promise.all([
         fetch(`${BASE}/api/admin/inventory/overview`, { headers: authHeaders() }),
         fetch(`${BASE}/api/admin/inventory/motoboy/overview`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/admin/inventory/minas/overview`, { headers: authHeaders() }),
       ]);
-      if (lojaRes.status === 401 || motoRes.status === 401) { handleUnauthorized(); return; }
+      if (lojaRes.status === 401 || motoRes.status === 401 || minasRes.status === 401) { handleUnauthorized(); return; }
       if (lojaRes.ok) {
         const data = await lojaRes.json() as {
           balances: InventoryBalanceRecord[];
@@ -2352,6 +2355,14 @@ export default function Admin() {
         };
         setMotoboyInventoryBalances(motoData.balances || []);
         setMotoboyInventoryMovements(motoData.movements || []);
+      }
+      if (minasRes.ok) {
+        const minasData = await minasRes.json() as {
+          balances: InventoryBalanceRecord[];
+          movements: InventoryMovementRecord[];
+        };
+        setMinasInventoryBalances(minasData.balances || []);
+        setMinasInventoryMovements(minasData.movements || []);
       }
     } catch {
       // silent
@@ -4914,6 +4925,7 @@ export default function Admin() {
             )}
             inventoryBalances={inventoryBalances}
             motoboyInventoryBalances={motoboyInventoryBalances}
+            minasInventoryBalances={minasInventoryBalances}
             getCommissionRate={getCommissionRate}
             gatewayFeePercent={Number(settings["gateway_fee_percent"] || 0)}
             gatewayFeeFixed={Number(settings["gateway_fee_fixed"] || 0)}
@@ -5556,6 +5568,8 @@ export default function Admin() {
             movements={inventoryMovements}
             motoboyBalances={motoboyInventoryBalances}
             motoboyMovements={motoboyInventoryMovements}
+            minasBalances={minasInventoryBalances}
+            minasMovements={minasInventoryMovements}
             pendingReshipments={pendingReshipments}
             labelProjectionOrders={orders}
             entryForm={inventoryEntryForm}
@@ -5646,6 +5660,36 @@ export default function Admin() {
                 toast.success(movementType === "exit" ? "Saída Motoboy registrada." : "Entrada Motoboy registrada.");
               } catch {
                 toast.error("Erro ao registrar estoque Motoboy.");
+              } finally {
+                setInventorySubmitting(false);
+              }
+            }}
+            onCreateMinasEntry={async () => {
+              const productId = String(inventoryEntryForm.productId || "").trim();
+              const quantity = Number(inventoryEntryForm.quantity || 0);
+              const reason = String(inventoryEntryForm.reason || "").trim();
+              const movementType = inventoryEntryForm.movementType === "exit" ? "exit" : "entry";
+              if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
+                toast.error("Selecione o produto e informe quantidade válida.");
+                return;
+              }
+              setInventorySubmitting(true);
+              try {
+                const res = await fetch(`${BASE}/api/admin/inventory/minas/entries`, {
+                  method: "POST",
+                  headers: authHeaders(),
+                  body: JSON.stringify({ productId, quantity, reason, movementType }),
+                });
+                const data = await res.json() as { message?: string };
+                if (!res.ok) {
+                  toast.error(data?.message || "Erro ao registrar estoque Minas.");
+                  return;
+                }
+                setInventoryEntryForm((prev) => ({ ...prev, productId: "", quantity: "", reason: "" }));
+                fetchInventoryOverview();
+                toast.success(movementType === "exit" ? "Saída Minas registrada." : "Entrada Minas registrada.");
+              } catch {
+                toast.error("Erro ao registrar estoque Minas.");
               } finally {
                 setInventorySubmitting(false);
               }
@@ -8486,6 +8530,25 @@ function SupportTicketsPanel({
   );
 }
 
+type InventoryPoolKind = "loja" | "motoboy" | "minas";
+type StockTabKind = InventoryPoolKind;
+
+function parseInventoryPool(raw: unknown): InventoryPoolKind | null {
+  const value = String(raw || "").toLowerCase().trim();
+  if (value === "loja" || value === "motoboy" || value === "minas") return value;
+  return null;
+}
+
+function inventoryPoolLabel(pool: InventoryPoolKind): string {
+  if (pool === "motoboy") return "Motoboy";
+  if (pool === "minas") return "Minas";
+  return "Loja";
+}
+
+function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
+  return pool === "motoboy" || pool === "minas";
+}
+
 function InventoryPanel({
   loading,
   products,
@@ -8493,6 +8556,8 @@ function InventoryPanel({
   movements,
   motoboyBalances,
   motoboyMovements,
+  minasBalances,
+  minasMovements,
   pendingReshipments,
   labelProjectionOrders,
   entryForm,
@@ -8504,6 +8569,7 @@ function InventoryPanel({
   onRefresh,
   onCreateEntry,
   onCreateMotoboyEntry,
+  onCreateMinasEntry,
   onCreateManualReshipment,
   onResolvePendingReshipment,
 }: {
@@ -8513,6 +8579,8 @@ function InventoryPanel({
   movements: InventoryMovementRecord[];
   motoboyBalances: InventoryBalanceRecord[];
   motoboyMovements: InventoryMovementRecord[];
+  minasBalances: InventoryBalanceRecord[];
+  minasMovements: InventoryMovementRecord[];
   pendingReshipments: ReshipmentRecord[];
   labelProjectionOrders: Array<{
     id: string;
@@ -8580,10 +8648,11 @@ function InventoryPanel({
   onRefresh: () => void;
   onCreateEntry: () => void;
   onCreateMotoboyEntry: () => void;
+  onCreateMinasEntry: () => void;
   onCreateManualReshipment: () => void;
   onResolvePendingReshipment: (item: ReshipmentRecord, registerStockEntry: boolean) => Promise<void>;
 }) {
-  const [stockTab, setStockTab] = useState<"loja" | "motoboy">("loja");
+  const [stockTab, setStockTab] = useState<StockTabKind>("loja");
   const [manualProductQuery, setManualProductQuery] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
   const [reshipmentActionLoading, setReshipmentActionLoading] = useState<Record<string, boolean>>({});
@@ -8611,7 +8680,18 @@ function InventoryPanel({
   };
 
   const normalizedBalanceSearch = balanceSearch.trim().toLowerCase();
-  const activeBalances = stockTab === "motoboy" ? motoboyBalances : balances;
+  const isDeferredStockTab = isDeferredDebitPool(stockTab);
+  const stockTabLabel = inventoryPoolLabel(stockTab);
+  const activeBalances = stockTab === "motoboy"
+    ? motoboyBalances
+    : stockTab === "minas"
+      ? minasBalances
+      : balances;
+  const activeMovements = stockTab === "motoboy"
+    ? motoboyMovements
+    : stockTab === "minas"
+      ? minasMovements
+      : movements;
   const filteredBalances = (normalizedBalanceSearch
     ? activeBalances.filter((row) => {
         const productName = String(row.productName || "").toLowerCase();
@@ -8621,7 +8701,7 @@ function InventoryPanel({
   )
     .slice()
     .sort((a, b) => {
-      // Com estoque primeiro (Loja e Motoboy), depois maior qty, depois nome.
+      // Com estoque primeiro (Loja, Motoboy e Minas), depois maior qty, depois nome.
       const aHas = Number(a.quantity) > 0 ? 1 : 0;
       const bHas = Number(b.quantity) > 0 ? 1 : 0;
       if (aHas !== bHas) return bHas - aHas;
@@ -8773,18 +8853,35 @@ function InventoryPanel({
         >
           Estoque Motoboy
         </button>
+        <button
+          type="button"
+          onClick={() => setStockTab("minas")}
+          className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition ${
+            stockTab === "minas"
+              ? "bg-indigo-700 text-white border-indigo-700"
+              : "bg-white text-muted-foreground border-border hover:border-indigo-300"
+          }`}
+        >
+          Estoque Minas
+        </button>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">
-              {stockTab === "motoboy" ? "Estoque Motoboy" : "Estoque e Reenvios"}
+              {stockTab === "motoboy"
+                ? "Estoque Motoboy"
+                : stockTab === "minas"
+                  ? "Estoque Minas"
+                  : "Estoque e Reenvios"}
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
                 ? "Registre o que está na mão do motoboy. Pedidos Motoboy só baixam ao marcar enviado (não reservam na escolha). Pedidos com etiqueta EE aparecem como previsão (linha imaginária), sem baixar."
-                : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
+                : stockTab === "minas"
+                  ? "Registre o que está no estoque Minas. Pedidos Minas só baixam ao marcar enviado (não reservam na escolha), ou use Dar baixa agora no card."
+                  : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5">
@@ -8820,7 +8917,11 @@ function InventoryPanel({
           />
           <Button
             className="h-10"
-            onClick={() => { stockTab === "motoboy" ? onCreateMotoboyEntry() : onCreateEntry(); }}
+            onClick={() => {
+              if (stockTab === "motoboy") onCreateMotoboyEntry();
+              else if (stockTab === "minas") onCreateMinasEntry();
+              else onCreateEntry();
+            }}
             disabled={submitting}
           >
             {submitting ? "Salvando..." : entryForm.movementType === "exit" ? "Dar Saída" : "Dar Entrada"}
@@ -8923,10 +9024,10 @@ function InventoryPanel({
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className={`rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[560px] overflow-hidden ${stockTab === "motoboy" ? "xl:col-span-2" : ""}`}>
+        <div className={`rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[560px] overflow-hidden ${isDeferredStockTab ? "xl:col-span-2" : ""}`}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">
-              {stockTab === "motoboy" ? "Saldo Motoboy por produto" : "Saldo atual por produto"}
+              {isDeferredStockTab ? `Saldo ${stockTabLabel} por produto` : "Saldo atual por produto"}
             </p>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
@@ -8934,13 +9035,13 @@ function InventoryPanel({
               </span>
               <button
                 type="button"
-                title={stockTab === "motoboy" ? "Copiar estoque Motoboy" : "Copiar estoque"}
+                title={isDeferredStockTab ? `Copiar estoque ${stockTabLabel}` : "Copiar estoque"}
                 onClick={() => {
                   const lines = activeBalances
                     .filter((r) => r.quantity > 0)
                     .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"))
                     .map((r) => `${r.quantity} un - ${r.productName}`);
-                  const label = stockTab === "motoboy" ? "Estoque Motoboy" : "Estoque disponível";
+                  const label = isDeferredStockTab ? `Estoque ${stockTabLabel}` : "Estoque disponível";
                   const when = new Date().toLocaleString("pt-BR", {
                     day: "2-digit",
                     month: "2-digit",
@@ -8950,7 +9051,12 @@ function InventoryPanel({
                   });
                   const text = `📦 ${label} (${when}):\n\n${lines.join("\n")}`;
                   navigator.clipboard.writeText(text).then(() => {
-                    const btn = document.getElementById(stockTab === "motoboy" ? "copy-motoboy-stock-btn" : "copy-stock-btn");
+                    const copyBtnId = stockTab === "motoboy"
+                      ? "copy-motoboy-stock-btn"
+                      : stockTab === "minas"
+                        ? "copy-minas-stock-btn"
+                        : "copy-stock-btn";
+                    const btn = document.getElementById(copyBtnId);
                     if (btn) {
                       const original = btn.textContent;
                       btn.textContent = "✓ Copiado!";
@@ -8958,10 +9064,10 @@ function InventoryPanel({
                     }
                   });
                 }}
-                id={stockTab === "motoboy" ? "copy-motoboy-stock-btn" : "copy-stock-btn"}
+                id={stockTab === "motoboy" ? "copy-motoboy-stock-btn" : stockTab === "minas" ? "copy-minas-stock-btn" : "copy-stock-btn"}
                 className="text-xs px-2 py-1 rounded-md border border-border bg-muted hover:bg-accent transition-colors font-medium"
               >
-                {stockTab === "motoboy" ? "Copiar Motoboy" : "Copiar estoque"}
+                {isDeferredStockTab ? `Copiar ${stockTabLabel}` : "Copiar estoque"}
               </button>
             </div>
           </div>
@@ -9179,15 +9285,15 @@ function InventoryPanel({
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-semibold mb-3">
-          {stockTab === "motoboy" ? "Movimentações estoque Motoboy" : "Movimentações de estoque"}
+          {isDeferredStockTab ? `Movimentações estoque ${stockTabLabel}` : "Movimentações de estoque"}
         </p>
         {loading ? (
           <p className="text-sm text-muted-foreground">Carregando movimentações...</p>
-        ) : (stockTab === "motoboy" ? motoboyMovements : movements).length === 0 ? (
+        ) : activeMovements.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sem movimentações registradas.</p>
         ) : (
           <div className="space-y-2 max-h-80 overflow-auto pr-1">
-            {(stockTab === "motoboy" ? motoboyMovements : movements).map((mv) => (
+            {activeMovements.map((mv) => (
               <div key={mv.id} className="flex items-start justify-between rounded-lg border border-border px-3 py-2 gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{mv.productName}</p>
@@ -9406,6 +9512,7 @@ function OrdersPanel({
   productNameById,
   inventoryBalances,
   motoboyInventoryBalances,
+  minasInventoryBalances,
   getCommissionRate,
   gatewayFeePercent,
   gatewayFeeFixed,
@@ -9422,6 +9529,7 @@ function OrdersPanel({
   productNameById: Record<string, string>;
   inventoryBalances: InventoryBalanceRecord[];
   motoboyInventoryBalances: InventoryBalanceRecord[];
+  minasInventoryBalances: InventoryBalanceRecord[];
   getCommissionRate: (sellerCode?: string | null, snapshot?: number | null) => number;
   gatewayFeePercent: number;
   gatewayFeeFixed: number;
@@ -9481,7 +9589,7 @@ function OrdersPanel({
   const [orderPriorities, setOrderPriorities] = useState<Record<string, boolean>>({});
   const [orderPriorityUpdating, setOrderPriorityUpdating] = useState<Record<string, boolean>>({});
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
-  const [enviadoInventoryPool, setEnviadoInventoryPool] = useState<Record<string, "loja" | "motoboy">>({});
+  const [enviadoInventoryPool, setEnviadoInventoryPool] = useState<Record<string, InventoryPoolKind>>({});
   const [inventoryReservedByOrder, setInventoryReservedByOrder] = useState<Record<string, boolean>>({});
   const [inventoryPoolSaving, setInventoryPoolSaving] = useState<Record<string, boolean>>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
@@ -9915,12 +10023,14 @@ function OrdersPanel({
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
         }
-        // Só alerta: previsão Loja + Motoboy (sem reservar/baixar).
+        // Só alerta: previsão Loja + Motoboy + Minas (sem reservar/baixar).
         const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
         const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
+        const minasProjection = buildOrderStockProjectionLines(order, minasInventoryBalances);
         const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Loja");
         const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
-        const projectionMsg = [lojaMsg, motoMsg].filter(Boolean).join("\n\n");
+        const minasMsg = formatStockProjectionToast(minasProjection, "estoque Minas");
+        const projectionMsg = [lojaMsg, motoMsg, minasMsg].filter(Boolean).join("\n\n");
         if (projectionMsg) {
           toast.message(projectionMsg, { duration: 16000 });
         }
@@ -9956,9 +10066,11 @@ function OrdersPanel({
         toast.success("Etiqueta gerada (download local).");
         const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
         const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
+        const minasProjection = buildOrderStockProjectionLines(order, minasInventoryBalances);
         const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Loja");
         const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
-        const projectionMsg = [lojaMsg, motoMsg].filter(Boolean).join("\n\n");
+        const minasMsg = formatStockProjectionToast(minasProjection, "estoque Minas");
+        const projectionMsg = [lojaMsg, motoMsg, minasMsg].filter(Boolean).join("\n\n");
         if (projectionMsg) {
           toast.message(projectionMsg, { duration: 16000 });
         }
@@ -10100,7 +10212,7 @@ function OrdersPanel({
       let changed = false;
       for (const order of ordersLookup) {
         const saved = String((order as { inventoryPool?: string | null }).inventoryPool || "").toLowerCase().trim();
-        const fromDb = saved === "motoboy" || saved === "loja" ? saved as "loja" | "motoboy" : null;
+        const fromDb = parseInventoryPool(saved);
         if (fromDb) {
           if (next[order.id] !== fromDb) {
             next[order.id] = fromDb;
@@ -10373,17 +10485,23 @@ function OrdersPanel({
       setAdminPasswordSubmitting(false);
     }
   };
-  const resolveInventoryPoolForOrder = (orderId: string): "loja" | "motoboy" => {
+  const resolveInventoryPoolForOrder = (orderId: string): InventoryPoolKind => {
     const existing = enviadoInventoryPool[orderId];
-    if (existing === "loja" || existing === "motoboy") return existing;
+    if (existing) return existing;
     const order = ordersLookup.find((o) => o.id === orderId);
-    const saved = String((order as { inventoryPool?: string | null } | undefined)?.inventoryPool || "").toLowerCase().trim();
-    if (saved === "loja" || saved === "motoboy") return saved;
+    const saved = parseInventoryPool((order as { inventoryPool?: string | null } | undefined)?.inventoryPool);
+    if (saved) return saved;
     const isMotoboy = String((order as { shippingType?: string } | undefined)?.shippingType || "").toLowerCase().trim() === "motoboy";
     return isMotoboy ? "motoboy" : "loja";
   };
 
-  const saveInventoryPoolForOrder = async (orderId: string, pool: "loja" | "motoboy", opts?: { reserveNow?: boolean }) => {
+  const balancesForInventoryPool = (pool: InventoryPoolKind): InventoryBalanceRecord[] => {
+    if (pool === "motoboy") return motoboyInventoryBalances;
+    if (pool === "minas") return minasInventoryBalances;
+    return inventoryBalances;
+  };
+
+  const saveInventoryPoolForOrder = async (orderId: string, pool: InventoryPoolKind, opts?: { reserveNow?: boolean }) => {
     if (!orderId) return;
     const reserveNow = opts?.reserveNow === true;
     setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: true }));
@@ -10396,7 +10514,7 @@ function OrdersPanel({
       const data = await res.json().catch(() => ({})) as {
         message?: string;
         order?: AdminOrder;
-        inventoryPool?: "loja" | "motoboy";
+        inventoryPool?: InventoryPoolKind;
         inventoryReserved?: boolean;
       };
       if (!res.ok) {
@@ -10416,12 +10534,12 @@ function OrdersPanel({
       onRefreshInventory();
       if (reserveNow && reserved) {
         toast.success(
-          `Baixa feita no estoque ${pool === "motoboy" ? "Motoboy" : "Loja"}. Coletado/Enviado não baixa de novo.`,
+          `Baixa feita no estoque ${inventoryPoolLabel(pool)}. Coletado/Enviado não baixa de novo.`,
         );
       } else {
         toast.success(
-          pool === "motoboy"
-            ? "Estoque Motoboy selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora)."
+          isDeferredDebitPool(pool)
+            ? `Estoque ${inventoryPoolLabel(pool)} selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora).`
             : reserved
               ? "Estoque Loja reservado para o pedido."
               : "Estoque Loja selecionado.",
@@ -10443,7 +10561,7 @@ function OrdersPanel({
   const verifyOrderStock = (
     orderId: string,
     balancesSnapshot?: InventoryBalanceRecord[],
-    inventoryPool?: "loja" | "motoboy",
+    inventoryPool?: InventoryPoolKind,
   ): { hasStock: boolean; message: string; missingItems: string[] } => {
     const order = ordersLookup.find(o => o.id === orderId);
     if (!order) {
@@ -10459,8 +10577,8 @@ function OrdersPanel({
     }
 
     const effectiveBalances = balancesSnapshot
-      ?? (pool === "motoboy" ? motoboyInventoryBalances : inventoryBalances);
-    const stockLabel = pool === "motoboy" ? "estoque Motoboy" : "estoque Loja";
+      ?? balancesForInventoryPool(pool);
+    const stockLabel = `estoque ${inventoryPoolLabel(pool)}`;
 
     // Avoid false negatives while inventory snapshot is still loading.
     if (effectiveBalances.length === 0) {
@@ -10595,7 +10713,7 @@ function OrdersPanel({
     // Verify stock before marking as enviado
     if (novoValor) {
       // Only check stock when marking as enviado (not when unmarking)
-      const balancesForPool = inventoryPool === "motoboy" ? motoboyInventoryBalances : inventoryBalances;
+      const balancesForPool = balancesForInventoryPool(inventoryPool);
       const stockCheck = verifyOrderStock(orderId, balancesForPool, inventoryPool);
       if (!stockCheck.hasStock) {
         toast.error(stockCheck.message);
@@ -10632,7 +10750,7 @@ function OrdersPanel({
       onRefreshInventory();
       toast.success(
         novoValor
-          ? `Pedido marcado como enviado (baixa em ${inventoryPool === "motoboy" ? "Motoboy" : "Loja"})!`
+          ? `Pedido marcado como enviado (baixa em ${inventoryPoolLabel(inventoryPool)})!`
           : "Pedido marcado como pendente!",
       );
     } catch (err) {
@@ -11105,7 +11223,7 @@ function OrdersPanel({
     const targetOrderId = trackingSelectedOrderId || trackingReview.order.id;
     const targetOrder = ordersLookup.find((o) => o.id === targetOrderId) || trackingReview.order;
     const inventoryPool = resolveInventoryPoolForOrder(targetOrderId);
-    const balancesForPool = inventoryPool === "motoboy" ? motoboyInventoryBalances : inventoryBalances;
+    const balancesForPool = balancesForInventoryPool(inventoryPool);
     const stockCheck = verifyOrderStock(targetOrderId, balancesForPool, inventoryPool);
     if (!stockCheck.hasStock) {
       toast.error(stockCheck.message);
@@ -11179,11 +11297,17 @@ function OrdersPanel({
   const modalInventoryBalances = (trackingInventoryBalances && trackingInventoryBalances.length > 0)
     ? trackingInventoryBalances
     : inventoryBalances;
-  const trackingInventoryReady = modalInventoryBalances.length > 0 || motoboyInventoryBalances.length > 0;
-  const trackingReviewPool = trackingReview ? resolveInventoryPoolForOrder(trackingReview.order.id) : "loja";
-  const trackingTargetPool = trackingTargetOrderId ? resolveInventoryPoolForOrder(trackingTargetOrderId) : "loja";
-  const trackingReviewBalances = trackingReviewPool === "motoboy" ? motoboyInventoryBalances : modalInventoryBalances;
-  const trackingTargetBalances = trackingTargetPool === "motoboy" ? motoboyInventoryBalances : modalInventoryBalances;
+  const trackingInventoryReady = modalInventoryBalances.length > 0
+    || motoboyInventoryBalances.length > 0
+    || minasInventoryBalances.length > 0;
+  const trackingReviewPool = trackingReview ? resolveInventoryPoolForOrder(trackingReview.order.id) : "loja" as InventoryPoolKind;
+  const trackingTargetPool = trackingTargetOrderId ? resolveInventoryPoolForOrder(trackingTargetOrderId) : "loja" as InventoryPoolKind;
+  const trackingReviewBalances = trackingReviewPool === "loja"
+    ? modalInventoryBalances
+    : balancesForInventoryPool(trackingReviewPool);
+  const trackingTargetBalances = trackingTargetPool === "loja"
+    ? modalInventoryBalances
+    : balancesForInventoryPool(trackingTargetPool);
   const trackingReviewStock = trackingReview
     ? (trackingReviewBalances.length > 0
       ? verifyOrderStock(trackingReview.order.id, trackingReviewBalances, trackingReviewPool)
@@ -11247,9 +11371,7 @@ function OrdersPanel({
           const isExpanded = expandedOrder === order.id;
           // Estoque no card mesmo com enviado/EE (alerta visual). Lista "para enviar" continua só com !enviado.
           const selectedInventoryPool = resolveInventoryPoolForOrder(order.id);
-          const poolInventoryReady = selectedInventoryPool === "motoboy"
-            ? motoboyInventoryBalances.length > 0
-            : inventoryBalances.length > 0;
+          const poolInventoryReady = balancesForInventoryPool(selectedInventoryPool).length > 0;
           const orderStockCheck = !poolInventoryReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
             : verifyOrderStock(order.id, undefined, selectedInventoryPool);
@@ -11402,8 +11524,8 @@ function OrdersPanel({
                           title={!poolInventoryReady
                             ? "Carregando saldo de estoque"
                             : orderStockCheck.hasStock
-                              ? `Estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} suficiente para envio`
-                              : orderStockCheck.missingItems.join("\n") || `Sem estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} dos produtos do pedido`}
+                              ? `Estoque ${inventoryPoolLabel(selectedInventoryPool)} suficiente para envio`
+                              : orderStockCheck.missingItems.join("\n") || `Sem estoque ${inventoryPoolLabel(selectedInventoryPool)} dos produtos do pedido`}
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${!poolInventoryReady
                             ? "bg-slate-100 text-slate-700 border-slate-200"
                             : orderStockCheck.hasStock
@@ -11413,10 +11535,10 @@ function OrdersPanel({
                           {!poolInventoryReady
                             ? "Estoque carregando"
                             : inventoryReservedByOrder[order.id] && String((order as { inventoryPool?: string }).inventoryPool || "").toLowerCase() === selectedInventoryPool
-                              ? `Reservado ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"}`
+                              ? `Reservado ${inventoryPoolLabel(selectedInventoryPool)}`
                             : (orderStockCheck.hasStock
-                              ? `Estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} OK`
-                              : `sem estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"}`)}
+                              ? `Estoque ${inventoryPoolLabel(selectedInventoryPool)} OK`
+                              : `sem estoque ${inventoryPoolLabel(selectedInventoryPool)}`)}
                         </span>
                         {isReshipment && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${
@@ -11760,7 +11882,7 @@ function OrdersPanel({
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
                 {!showEnviadoUi && !hasReshipmentRecord && (
-                  <div className="inline-flex items-center gap-1 h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 text-xs font-semibold text-amber-900">
+                  <div className="inline-flex flex-wrap items-center gap-1 min-h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 py-0.5 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
                       {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
                     </span>
@@ -11788,12 +11910,24 @@ function OrdersPanel({
                     >
                       {inventoryPoolSaving[order.id] ? "..." : "Motoboy"}
                     </button>
+                    <button
+                      type="button"
+                      disabled={!!inventoryPoolSaving[order.id]}
+                      onClick={() => { void saveInventoryPoolForOrder(order.id, "minas"); }}
+                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition ${
+                        selectedInventoryPool === "minas"
+                          ? "bg-indigo-700 text-white border-indigo-700"
+                          : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
+                      }`}
+                    >
+                      Minas
+                    </button>
                     {!inventoryReservedByOrder[order.id] && (
                       <button
                         type="button"
                         disabled={!!inventoryPoolSaving[order.id]}
                         onClick={() => { void debitInventoryNowForOrder(order.id); }}
-                        title={`Dar baixa agora no estoque ${selectedInventoryPool === "motoboy" ? "Motoboy" : "Loja"} (Coletado/Enviado não baixa de novo)`}
+                        title={`Dar baixa agora no estoque ${inventoryPoolLabel(selectedInventoryPool)} (Coletado/Enviado não baixa de novo)`}
                         className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
                       >
                         Dar baixa agora

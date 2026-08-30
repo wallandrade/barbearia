@@ -8,6 +8,8 @@ import {
   inventoryMovementsTable,
   inventoryMotoboyBalancesTable,
   inventoryMotoboyMovementsTable,
+  inventoryMinasBalancesTable,
+  inventoryMinasMovementsTable,
   manualReshipmentsTable,
   ordersTable,
   productsTable,
@@ -950,6 +952,131 @@ export async function getMotoboyInventoryOverview(): Promise<{
       .select()
       .from(inventoryMotoboyMovementsTable)
       .orderBy(asc(inventoryMotoboyMovementsTable.createdAt)),
+  ]);
+
+  const productNameMap = new Map(productsRows.map((row) => [row.id, row.name]));
+
+  return {
+    balances: balancesRows
+      .map((row) => ({
+        productId: row.productId,
+        productName: productNameMap.get(row.productId) || row.productId,
+        quantity: Number(row.quantity) || 0,
+      }))
+      .sort((a, b) => a.productName.localeCompare(b.productName)),
+    movements: movementsRows
+      .slice(-120)
+      .reverse()
+      .map((row) => ({
+        id: row.id,
+        productId: row.productId,
+        productName: productNameMap.get(row.productId) || row.productId,
+        type: row.type,
+        entrySource: row.entrySource || null,
+        clientName: row.clientName || null,
+        clientPhone: (row as { clientPhone?: string | null }).clientPhone || null,
+        trackingCode: row.trackingCode || null,
+        quantity: Number(row.quantity) || 0,
+        reason: row.reason || null,
+        createdAt: row.createdAt?.toISOString() || new Date().toISOString(),
+      })),
+  };
+}
+
+async function changeMinasBalance(productId: string, delta: number): Promise<void> {
+  const currentRows = await db
+    .select({ quantity: inventoryMinasBalancesTable.quantity })
+    .from(inventoryMinasBalancesTable)
+    .where(eq(inventoryMinasBalancesTable.productId, productId))
+    .limit(1);
+
+  const current = Number(currentRows[0]?.quantity || 0);
+  const next = Math.max(0, current + delta);
+
+  if (!currentRows[0]) {
+    await db.insert(inventoryMinasBalancesTable).values({
+      productId,
+      quantity: next,
+      updatedAt: new Date(),
+    });
+    return;
+  }
+
+  await db
+    .update(inventoryMinasBalancesTable)
+    .set({ quantity: next, updatedAt: new Date() })
+    .where(eq(inventoryMinasBalancesTable.productId, productId));
+}
+
+export async function getMinasStockMap(productIds: string[]): Promise<Map<string, number>> {
+  if (productIds.length === 0) return new Map();
+  const rows = await db
+    .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
+    .from(inventoryMinasBalancesTable)
+    .where(inArray(inventoryMinasBalancesTable.productId, productIds));
+
+  return new Map(rows.map((row) => [row.productId, Number(row.quantity) || 0]));
+}
+
+export async function registerMinasInventoryEntry(params: {
+  productId: string;
+  quantity: number;
+  reason?: string;
+  referenceId?: string;
+  entrySource?: "purchase" | "customer_return";
+  clientName?: string | null;
+  clientPhone?: string | null;
+  trackingCode?: string | null;
+  affectBalance?: boolean;
+}): Promise<void> {
+  if (params.affectBalance !== false) {
+    await changeMinasBalance(params.productId, params.quantity);
+  }
+
+  const isExit = Number(params.quantity) < 0;
+
+  await db.insert(inventoryMinasMovementsTable).values({
+    id: crypto.randomBytes(8).toString("hex"),
+    productId: params.productId,
+    type: isExit ? "exit" : "entry",
+    entrySource: params.entrySource || null,
+    clientName: params.clientName || null,
+    clientPhone: params.clientPhone || null,
+    trackingCode: params.trackingCode || null,
+    quantity: params.quantity,
+    reason: params.reason || (isExit ? "Saida manual estoque Minas" : "Entrada manual estoque Minas"),
+    referenceId: params.referenceId || null,
+    createdAt: new Date(),
+  });
+}
+
+export async function getMinasInventoryOverview(): Promise<{
+  balances: Array<{ productId: string; productName: string; quantity: number }>;
+  movements: Array<{
+    id: string;
+    productId: string;
+    productName: string;
+    type: string;
+    entrySource: string | null;
+    clientName: string | null;
+    clientPhone: string | null;
+    trackingCode: string | null;
+    quantity: number;
+    reason: string | null;
+    createdAt: string;
+  }>;
+}> {
+  const [balancesRows, productsRows, movementsRows] = await Promise.all([
+    db
+      .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
+      .from(inventoryMinasBalancesTable),
+    db
+      .select({ id: productsTable.id, name: productsTable.name })
+      .from(productsTable),
+    db
+      .select()
+      .from(inventoryMinasMovementsTable)
+      .orderBy(asc(inventoryMinasMovementsTable.createdAt)),
   ]);
 
   const productNameMap = new Map(productsRows.map((row) => [row.id, row.name]));

@@ -789,6 +789,37 @@ async function ensureInventoryTables(databaseName: string): Promise<void> {
       )
     `);
   }
+
+  if (!(await tableExists("inventory_minas_balances", databaseName))) {
+    await pool.query(`
+      CREATE TABLE inventory_minas_balances (
+        product_id VARCHAR(255) NOT NULL PRIMARY KEY,
+        quantity INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  if (!(await tableExists("inventory_minas_movements", databaseName))) {
+    await pool.query(`
+      CREATE TABLE inventory_minas_movements (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        product_id VARCHAR(255) NOT NULL,
+        type VARCHAR(32) NOT NULL DEFAULT 'entry',
+        entry_source VARCHAR(32) NULL,
+        client_name VARCHAR(255) NULL,
+        client_phone VARCHAR(255) NULL,
+        tracking_code VARCHAR(255) NULL,
+        quantity INT NOT NULL,
+        reason VARCHAR(255) NULL,
+        reference_id VARCHAR(255) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY inventory_minas_movements_product_id_idx (product_id),
+        KEY inventory_minas_movements_type_idx (type),
+        KEY inventory_minas_movements_created_at_idx (created_at)
+      )
+    `);
+  }
 }
 
 async function ensureManualReshipmentsTable(databaseName: string): Promise<void> {

@@ -11,9 +11,12 @@ import {
   getInventoryOverview,
   getMotoboyInventoryOverview,
   getMotoboyStockMap,
+  getMinasInventoryOverview,
+  getMinasStockMap,
   listReshipments,
   registerInventoryEntry,
   registerMotoboyInventoryEntry,
+  registerMinasInventoryEntry,
   releasePendingReshipments,
   setManualReshipmentStatus,
   setReshipmentStatus,
@@ -351,6 +354,67 @@ router.post("/admin/inventory/motoboy/entries", requirePrimaryAdmin, async (req,
   } catch (err) {
     console.error("Motoboy inventory entry error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao registrar movimento estoque Motoboy." });
+  }
+});
+
+router.get("/admin/inventory/minas/overview", requirePrimaryAdmin, async (_req, res) => {
+  try {
+    const inventory = await getMinasInventoryOverview();
+    res.json({
+      balances: inventory.balances,
+      movements: inventory.movements,
+    });
+  } catch (err) {
+    console.error("Minas inventory overview error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao carregar estoque Minas." });
+  }
+});
+
+router.post("/admin/inventory/minas/entries", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const productId = String(req.body?.productId ?? "").trim();
+    const quantity = Number(req.body?.quantity || 0);
+    const movementType = String(req.body?.movementType ?? "entry").trim().toLowerCase();
+    const reason = String(req.body?.reason ?? "").trim();
+
+    if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Produto e quantidade devem ser válidos." });
+      return;
+    }
+
+    if (movementType !== "entry" && movementType !== "exit") {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Tipo de movimentação inválido." });
+      return;
+    }
+
+    const signedQuantity = movementType === "exit" ? -quantity : quantity;
+
+    if (signedQuantity < 0) {
+      const stockMap = await getMinasStockMap([productId]);
+      const current = stockMap.get(productId) || 0;
+      if (current < quantity) {
+        res.status(400).json({
+          error: "INSUFFICIENT_STOCK",
+          message: `Saldo Minas insuficiente. Disponível: ${current}.`,
+        });
+        return;
+      }
+    }
+
+    const resolvedReason = reason
+      || (movementType === "exit" ? "Saida manual estoque Minas" : "Entrada manual estoque Minas");
+
+    await registerMinasInventoryEntry({
+      productId,
+      quantity: signedQuantity,
+      reason: resolvedReason,
+      entrySource: movementType === "entry" ? "purchase" : undefined,
+    });
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Minas inventory entry error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao registrar movimento estoque Minas." });
   }
 });
 

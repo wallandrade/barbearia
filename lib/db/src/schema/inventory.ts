@@ -42,6 +42,26 @@ export const inventoryMotoboyMovementsTable = mysqlTable("inventory_motoboy_move
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const inventoryMinasBalancesTable = mysqlTable("inventory_minas_balances", {
+  productId: varchar("product_id", { length: 255 }).primaryKey(),
+  quantity: int("quantity").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const inventoryMinasMovementsTable = mysqlTable("inventory_minas_movements", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  productId: varchar("product_id", { length: 255 }).notNull(),
+  type: varchar("type", { length: 32 }).notNull().default("entry"),
+  entrySource: varchar("entry_source", { length: 32 }),
+  clientName: varchar("client_name", { length: 255 }),
+  clientPhone: varchar("client_phone", { length: 255 }),
+  trackingCode: varchar("tracking_code", { length: 255 }),
+  quantity: int("quantity").notNull(),
+  reason: varchar("reason", { length: 255 }),
+  referenceId: varchar("reference_id", { length: 255 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertInventoryBalanceSchema = createInsertSchema(inventoryBalancesTable).omit({
   updatedAt: true,
 });
@@ -56,3 +76,5 @@ export type InventoryBalance = typeof inventoryBalancesTable.$inferSelect;
 export type InventoryMovement = typeof inventoryMovementsTable.$inferSelect;
 export type InventoryMotoboyBalance = typeof inventoryMotoboyBalancesTable.$inferSelect;
 export type InventoryMotoboyMovement = typeof inventoryMotoboyMovementsTable.$inferSelect;
+export type InventoryMinasBalance = typeof inventoryMinasBalancesTable.$inferSelect;
+export type InventoryMinasMovement = typeof inventoryMinasMovementsTable.$inferSelect;

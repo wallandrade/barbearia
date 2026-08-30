@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, motoboyBookingsTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, inventoryMinasMovementsTable, motoboyBookingsTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -19,7 +19,7 @@ import {
   registerAffiliateLead,
   resolveAffiliateByCode,
 } from "../lib/affiliates";
-import { getReshipmentByOrderIds, getMotoboyStockMap, registerInventoryEntry, registerMotoboyInventoryEntry } from "../lib/reshipments";
+import { getReshipmentByOrderIds, getMotoboyStockMap, getMinasStockMap, registerInventoryEntry, registerMotoboyInventoryEntry, registerMinasInventoryEntry } from "../lib/reshipments";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
@@ -975,7 +975,23 @@ function parseOrderItemsForInventory(raw: unknown): Array<{ productId: string | 
   return [...grouped.values()];
 }
 
-type InventoryPoolKind = "loja" | "motoboy";
+type InventoryPoolKind = "loja" | "motoboy" | "minas";
+
+function parseInventoryPool(raw: unknown): InventoryPoolKind | null {
+  const value = String(raw || "").toLowerCase().trim();
+  if (value === "loja" || value === "motoboy" || value === "minas") return value;
+  return null;
+}
+
+function inventoryPoolLabel(pool: InventoryPoolKind): string {
+  if (pool === "motoboy") return "Motoboy";
+  if (pool === "minas") return "Minas";
+  return "Loja";
+}
+
+function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
+  return pool === "motoboy" || pool === "minas";
+}
 
 async function resolveOrderInventoryItems(products: unknown): Promise<Array<{ productId: string; productName: string; quantity: number }>> {
   const orderItems = parseOrderItemsForInventory(products);
@@ -1012,6 +1028,7 @@ async function resolveOrderInventoryItems(products: unknown): Promise<Array<{ pr
 
 async function getStockMapForPool(pool: InventoryPoolKind, productIds: string[]): Promise<Map<string, number>> {
   if (pool === "motoboy") return getMotoboyStockMap(productIds);
+  if (pool === "minas") return getMinasStockMap(productIds);
   const balanceRows = productIds.length > 0
     ? await db
       .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
@@ -1033,7 +1050,7 @@ async function applyOrderInventoryDelta(params: {
   kind: "reserve" | "release" | "ship" | "unship";
 }): Promise<void> {
   const isExit = params.kind === "reserve" || params.kind === "ship";
-  const poolLabel = params.pool === "motoboy" ? "Motoboy" : "Loja";
+  const poolLabel = inventoryPoolLabel(params.pool);
   const reasonByKind: Record<typeof params.kind, string> = {
     reserve: `Reserva ${poolLabel} pedido ${params.orderId}`,
     release: `Liberação reserva ${poolLabel} pedido ${params.orderId}`,
@@ -1042,22 +1059,19 @@ async function applyOrderInventoryDelta(params: {
   };
   for (const item of params.items) {
     const qty = isExit ? -item.quantity : item.quantity;
+    const entry = {
+      productId: item.productId,
+      quantity: qty,
+      reason: reasonByKind[params.kind],
+      referenceId: params.orderId,
+      clientName: params.clientName,
+    };
     if (params.pool === "motoboy") {
-      await registerMotoboyInventoryEntry({
-        productId: item.productId,
-        quantity: qty,
-        reason: reasonByKind[params.kind],
-        referenceId: params.orderId,
-        clientName: params.clientName,
-      });
+      await registerMotoboyInventoryEntry(entry);
+    } else if (params.pool === "minas") {
+      await registerMinasInventoryEntry(entry);
     } else {
-      await registerInventoryEntry({
-        productId: item.productId,
-        quantity: qty,
-        reason: reasonByKind[params.kind],
-        referenceId: params.orderId,
-        clientName: params.clientName,
-      });
+      await registerInventoryEntry(entry);
     }
   }
 }
@@ -2429,10 +2443,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
       ?? (o as { enviadoAt?: string | null }).enviadoAt
       ?? null,
     updatedAt:              o.updatedAt?.toISOString?.() ?? null,
-    inventoryPool:          (() => {
-      const raw = String((o as any).inventoryPool || "").toLowerCase().trim();
-      return raw === "motoboy" || raw === "loja" ? raw : null;
-    })(),
+    inventoryPool:          parseInventoryPool((o as any).inventoryPool),
     inventoryReserved:      !!(o as any).inventoryReserved,
     trackingCode:           o.trackingCode ?? null,
     trackingLabelUrl:       o.trackingLabelUrl ?? null,
@@ -2530,7 +2541,7 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/inventory-pool  (protected)
-// Loja: reserva (baixa imediata). Motoboy: só grava preferência — baixa ao Enviado/postagem,
+// Loja: reserva (baixa imediata). Motoboy/Minas: só grava preferência — baixa ao Enviado/postagem,
 // salvo reserveNow=true (botão "Dar baixa agora" no card).
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, res) => {
@@ -2542,12 +2553,11 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     if (Array.isArray(id)) id = id[0];
 
     const body = req.body as { inventoryPool?: string; reserveNow?: boolean };
-    const rawPool = String(body?.inventoryPool || "").toLowerCase().trim();
-    if (rawPool !== "loja" && rawPool !== "motoboy") {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja' ou 'motoboy'." });
+    const nextPool = parseInventoryPool(body?.inventoryPool);
+    if (!nextPool) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja', 'motoboy' ou 'minas'." });
       return;
     }
-    const nextPool = rawPool as InventoryPoolKind;
     const reserveNow = body?.reserveNow === true;
 
     const rows = await db
@@ -2569,13 +2579,11 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       return;
     }
 
-    const currentPoolRaw = String((order as any).inventoryPool || "").toLowerCase().trim();
-    const currentPool: InventoryPoolKind | null =
-      currentPoolRaw === "motoboy" || currentPoolRaw === "loja" ? currentPoolRaw : null;
+    const currentPool = parseInventoryPool((order as any).inventoryPool);
     const currentlyReserved = !!(order as any).inventoryReserved;
-    // Motoboy: não reserva na escolha — só baixa quando sair (Enviado / postado),
+    // Motoboy/Minas: não reserva na escolha — só baixa quando sair (Enviado / postado),
     // a menos que o admin clique "Dar baixa agora" (reserveNow).
-    const softSelect = nextPool === "motoboy" && !reserveNow;
+    const softSelect = isDeferredDebitPool(nextPool) && !reserveNow;
 
     if (!softSelect && currentlyReserved && currentPool === nextPool) {
       res.json({ ok: true, order: mapOrder(order), inventoryPool: nextPool, inventoryReserved: true });
@@ -2633,10 +2641,10 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
           .join("; ");
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
-          message: nextPool === "motoboy"
+          message: isDeferredDebitPool(nextPool)
             ? (reserveNow
-              ? `Estoque Motoboy insuficiente para dar baixa: ${details}.`
-              : `Estoque Motoboy insuficiente: ${details}.`)
+              ? `Estoque ${inventoryPoolLabel(nextPool)} insuficiente para dar baixa: ${details}.`
+              : `Estoque ${inventoryPoolLabel(nextPool)} insuficiente: ${details}.`)
             : `Estoque Loja insuficiente para reservar: ${details}.`,
         });
         return;
@@ -2693,15 +2701,15 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     const { enviado, adminPassword, inventoryPool: inventoryPoolRaw } = req.body as {
       enviado: boolean;
       adminPassword?: string;
-      inventoryPool?: "loja" | "motoboy" | string;
+      inventoryPool?: "loja" | "motoboy" | "minas" | string;
     };
     if (typeof enviado !== "boolean") {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'enviado' obrigatório e deve ser boolean." });
       return;
     }
-    const requestedPool = String(inventoryPoolRaw || "").toLowerCase().trim();
-    if (requestedPool && requestedPool !== "loja" && requestedPool !== "motoboy") {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja' ou 'motoboy'." });
+    const requestedPool = parseInventoryPool(inventoryPoolRaw);
+    if (inventoryPoolRaw && !requestedPool) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja', 'motoboy' ou 'minas'." });
       return;
     }
     const rows = await db
@@ -2720,15 +2728,11 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
 
     const wasEnviado = !!order.enviado;
     const shippingIsMotoboy = String(order.shippingType || "").toLowerCase().trim() === "motoboy";
-    const savedPoolRaw = String(order.inventoryPool || "").toLowerCase().trim();
-    const savedPool: InventoryPoolKind | null =
-      savedPoolRaw === "motoboy" || savedPoolRaw === "loja" ? savedPoolRaw : null;
+    const savedPool = parseInventoryPool(order.inventoryPool);
     const alreadyReserved = !!order.inventoryReserved && !!savedPool;
     const defaultPool: InventoryPoolKind = savedPool || (shippingIsMotoboy ? "motoboy" : "loja");
 
-    let inventoryPool: InventoryPoolKind = requestedPool === "motoboy" || requestedPool === "loja"
-      ? requestedPool
-      : defaultPool;
+    let inventoryPool: InventoryPoolKind = requestedPool || defaultPool;
 
     // Estorno: se já reservado, mantém o pool salvo; senão detecta pela saída.
     if (wasEnviado && !enviado) {
@@ -2746,19 +2750,30 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         if (motoExit) {
           inventoryPool = "motoboy";
         } else {
-          const [lojaExit] = await db
-            .select({ id: inventoryMovementsTable.id })
-            .from(inventoryMovementsTable)
+          const [minasExit] = await db
+            .select({ id: inventoryMinasMovementsTable.id })
+            .from(inventoryMinasMovementsTable)
             .where(and(
-              eq(inventoryMovementsTable.referenceId, id),
-              eq(inventoryMovementsTable.type, "exit"),
+              eq(inventoryMinasMovementsTable.referenceId, id),
+              eq(inventoryMinasMovementsTable.type, "exit"),
             ))
             .limit(1);
-          if (lojaExit) inventoryPool = "loja";
+          if (minasExit) {
+            inventoryPool = "minas";
+          } else {
+            const [lojaExit] = await db
+              .select({ id: inventoryMovementsTable.id })
+              .from(inventoryMovementsTable)
+              .where(and(
+                eq(inventoryMovementsTable.referenceId, id),
+                eq(inventoryMovementsTable.type, "exit"),
+              ))
+              .limit(1);
+            if (lojaExit) inventoryPool = "loja";
+          }
         }
       }
     }
-    const useMotoboyStock = inventoryPool === "motoboy";
 
     if (wasEnviado && !enviado) {
       const providedPassword = String(adminPassword || "").trim();
@@ -2789,7 +2804,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           .then((r) => !!r[0])
       : false;
 
-    // Já reservado: estoque já saiu na escolha Loja/Motoboy — não baixa/estorna de novo no Enviado.
+    // Já reservado: estoque já saiu na escolha Loja/Motoboy/Minas — não baixa/estorna de novo no Enviado.
     const skipStockBecauseReserved = alreadyReserved;
 
     if (enviado !== wasEnviado && !skipStockBecauseReserved) {
@@ -2814,9 +2829,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
               .join("; ");
             res.status(400).json({
               error: "INSUFFICIENT_STOCK",
-              message: useMotoboyStock
-                ? `Estoque Motoboy insuficiente para envio: ${details}.`
-                : `Estoque Loja insuficiente para envio: ${details}.`,
+              message: `Estoque ${inventoryPoolLabel(inventoryPool)} insuficiente para envio: ${details}.`,
             });
             return;
           }
