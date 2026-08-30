@@ -15480,24 +15480,18 @@ function ProductsPanel({
 
       const backupCount = parsed.products.length;
       const declaredCount = Number(parsed.productCount || backupCount);
-      const replaceAll = window.confirm(
-        `Backup encontrado com ${backupCount} produto(s).\n\n` +
-        `Clique em OK para SUBSTITUIR o catálogo atual por completo, apagando produtos que não estejam no backup.\n` +
-        `Clique em Cancelar para modo seguro: atualizar/criar produtos do backup sem apagar os demais.`,
-      );
-
       const confirmed = window.confirm(
-        `Confirmar restauração do backup?\n\n` +
-        `Produtos no arquivo: ${backupCount}\n` +
-        `Contagem declarada no backup: ${declaredCount}\n` +
-        `Modo: ${replaceAll ? "substituir catálogo atual" : "atualizar sem apagar extras"}`,
+        `Restaurar backup com ${backupCount} produto(s)?\n\n` +
+        `Contagem declarada no arquivo: ${declaredCount}\n\n` +
+        `Os produtos do arquivo serão criados ou atualizados.\n` +
+        `Nenhum produto que já existe no catálogo será apagado.`,
       );
       if (!confirmed) return;
 
       const res = await fetch(`${BASE}/api/admin/products/restore-backup`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ backup: parsed, deleteMissing: replaceAll }),
+        body: JSON.stringify({ backup: parsed }),
       });
 
       const data = await res.json().catch(() => ({})) as {
@@ -15525,7 +15519,7 @@ function ProductsPanel({
       onRefreshProducts();
       toast.success(
         `Backup restaurado: ${data.restored ?? backupCount} produto(s). ` +
-        `Criados: ${data.created ?? 0}. Atualizados: ${data.updated ?? 0}. Removidos: ${data.deleted ?? 0}.`,
+        `Criados: ${data.created ?? 0}. Atualizados: ${data.updated ?? 0}. Nada foi apagado.`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao restaurar backup de produtos.";
@@ -15677,6 +15671,7 @@ function ProductsPanel({
             onClick={() => restoreBackupRef.current?.click()}
             className="gap-2"
             disabled={productBackupRestoring}
+            title="Cria ou atualiza produtos do arquivo. Nunca apaga o catálogo atual."
           >
             {productBackupRestoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             Restaurar backup

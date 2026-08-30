@@ -465,13 +465,17 @@ router.get("/admin/products/export-backup", requirePrimaryAdmin, async (_req, re
   }
 });
 
-/** POST /api/admin/products/restore-backup */
+/** POST /api/admin/products/restore-backup — só cria/atualiza; nunca apaga produtos existentes */
 router.post("/admin/products/restore-backup", requirePrimaryAdmin, async (req, res) => {
   try {
     const { backup, deleteMissing } = req.body as {
       backup?: ProductBackupPayload;
       deleteMissing?: boolean;
     };
+
+    if (deleteMissing === true) {
+      console.warn("[Products] restore-backup ignorou deleteMissing=true (nunca apaga catálogo existente)");
+    }
 
     if (!backup || !Array.isArray(backup.products)) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Backup inválido. Envie um arquivo JSON de produtos válido." });
@@ -511,26 +515,13 @@ router.post("/admin/products/restore-backup", requirePrimaryAdmin, async (req, r
       }
     }
 
-    let deleted = 0;
-    if (deleteMissing === true) {
-      const backupIds = new Set(uniqueProducts.map((item) => item.id));
-      const idsToDelete = existingRows
-        .map((row) => row.id)
-        .filter((id) => !backupIds.has(id));
-
-      for (const id of idsToDelete) {
-        await db.delete(productsTable).where(eq(productsTable.id, id));
-        deleted += 1;
-      }
-    }
-
     res.json({
       ok: true,
       created,
       updated,
-      deleted,
+      deleted: 0,
       restored: uniqueProducts.length,
-      deleteMissing: deleteMissing === true,
+      deleteMissing: false,
     });
   } catch (err) {
     console.error("Restore products backup error:", err);

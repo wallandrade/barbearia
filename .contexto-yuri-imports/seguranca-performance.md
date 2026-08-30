@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-08-27
+> **Última atualização:** 2026-08-30
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | Restore de produtos ignora `deleteMissing`; API não apaga linhas de `products` nesse POST | Backup curto não apaga o catálogo | CRUD/DELETE individual iguais |
 | 2026-08-27 | Chat `/api/chat/ask` sempre ligado (ficha local); OpenAI só se houver chave | Bolha no login sem env OpenAI | Writes de pedido/PIX/KYC iguais |
 | 2026-08-11 | Baseline segurança/perf | Checklist operacional | Sem mudança de código |
 
@@ -33,6 +34,10 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 ## Health
 
 - `/`, `/health`, `/api/healthz` — `routes/health.ts`.
+
+## Admin catálogo
+
+- `POST /api/admin/products/restore-backup` **não apaga** produtos. `deleteMissing` no body é ignorado.
 
 ## Gateway / reconciliação
 

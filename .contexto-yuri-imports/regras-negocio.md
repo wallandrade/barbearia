@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | Restaurar backup de produtos **nunca** apaga cadastro existente (`deleteMissing` ignorado) | JSON incompleto não zera o catálogo | Criar/atualizar pelo `id`; DELETE individual igual |
 | 2026-08-30 | Overview estoque (Foz/Motoboy/Minas) resolve nome pelo catálogo (id trim/caixa); API **não** puxa `image` | Lista deixa de mostrar hash no lugar do nome | Saldos/entradas iguais; foto vem do catálogo no Admin |
 | 2026-08-30 | UI: pool `loja` aparece como **Foz Guaçu** (aba, card, toasts) | Só o nome visível | Chave `loja` no BD/API igual |
 | 2026-08-30 | Admin Estoque: aba **Resumo** (Foz Guaçu+Motoboy+Minas) com custo empatado e valor se vender tudo | Só leitura; preços do cadastro | Entrada/saída das três abas iguais |
@@ -139,6 +140,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 ## Cupons, bumps, frete
 
 - Cupons: `%` ou valor fixo, mínimo, limite de usos, elegibilidade — `coupons.ts` / schema `coupons`.
+- Admin Produtos: **Restaurar backup** só cria/atualiza pelo `id`. `POST /api/admin/products/restore-backup` **ignora** `deleteMissing` e não dá `DELETE` no catálogo. Apagar produto continua só no botão individual.
 - Order bumps: ofertas no checkout — `order-bumps`.
 - Opções de frete: `shipping_options`; seguro de envio configurável no Admin → **Checkout** (settings públicas `checkout_insurance_enabled`, `checkout_insurance_percent`, `checkout_insurance_label`, `checkout_insurance_description`, `checkout_insurance_product_percent`, `checkout_insurance_product_ids`). Default: ligado, **10%** do subtotal (padrão da loja). Lista de produtos + % especial: cobra o especial só nesses itens e o padrão no resto; lista vazia ou % especial em branco = só o padrão. Desativado some o checkbox; create/PIX recalcula o valor e ignora o `insuranceAmount` do cliente. Pedido já gravado com seguro: edição recalcula com os % atuais (não desliga o flag). Frete grátis por valor mínimo: settings `checkout_free_shipping_min_subtotal` (envio padrão) e `checkout_free_shipping_min_motoboy` (Motoboy); checkout/API escolhem pelo `shippingType` / opção selecionada. Em branco = desativado naquele frete.
 - **Produtos elegíveis Motoboy:** setting público `motoboy_eligible_product_ids` (JSON de IDs) em Admin → Fretes. Vazio = todos os produtos. Com lista: Motoboy só aparece se **todos** os itens do carrinho estiverem na lista; senão só frete padrão. API rejeita Motoboy com `MOTOBOY_NOT_ELIGIBLE` se o carrinho não for elegível (`lib/motoboy-eligible-products.ts`).
