@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | Snapshot/webhook estoque: `productName` casa `products.id` com trim/caixa (mesmo helper do Admin) | Espelho deixa de receber hash se o id existir no catálogo | Token, URL, payload `balances` iguais |
 | 2026-08-30 | Create EnvioEcom: `items` = 1 linha das settings nome/qty/valor (defaults Mercadoria/1/R$5); cotação não usa esses settings | Pedido interno intacto; etiqueta genérica | Cotação 2×12×17 0,3kg R$5; webhook; contas |
 | 2026-08-30 | Conta EnvioEcom do Railway no seletor: label **São Paulo (servidor)** (`id=env`) | Só o nome no modal/painel | Token, CEP e contas cadastradas iguais |
 | 2026-08-30 | Sync estoque Motoboy+Minas (somente leitura): `GET /api/integrations/inventory/snapshot` + webhook `inventory.changed` | Espelho puxa/recebe os dois pools juntos | Loja, cobertura Motoboy, checkout iguais |
@@ -103,7 +104,7 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 
 Yury = **fonte da verdade**. O outro sistema **só lê** (não dá entrada/saída).
 
-- **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName`, `quantity`).
+- **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName` do catálogo se o id existir, `quantity`).
 - **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (admin e baixa de pedido), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
 - **Headers webhook:** iguais à cobertura (`X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp`).
 - Lib: `lib/inventory-sync.ts`; rota: `routes/inventory-sync.ts`.

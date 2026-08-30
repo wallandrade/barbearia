@@ -1249,6 +1249,7 @@ interface InventoryBalanceRecord {
   productId: string;
   productName: string;
   quantity: number;
+  image?: string | null;
 }
 
 interface InventoryMovementRecord {
@@ -8547,6 +8548,42 @@ type InventoryCatalogLite = {
   promoEndsAt?: string | Date | null;
 };
 
+function findInventoryCatalogProduct(
+  products: InventoryCatalogLite[],
+  productId: string,
+  productName?: string | null,
+): InventoryCatalogLite | undefined {
+  const id = String(productId || "").trim();
+  if (id) {
+    const idLower = id.toLowerCase();
+    const exact = products.find((p) => {
+      const catalogId = String(p.id || "").trim();
+      return catalogId === id || catalogId.toLowerCase() === idLower;
+    });
+    if (exact) return exact;
+  }
+  const name = String(productName || "").trim().toLowerCase();
+  if (name && name !== id.toLowerCase()) {
+    const named = products.filter((p) => String(p.name || "").trim().toLowerCase() === name);
+    if (named.length === 1) return named[0];
+  }
+  return undefined;
+}
+
+function resolveInventoryDisplay(
+  products: InventoryCatalogLite[],
+  productId: string,
+  productName?: string | null,
+  fallbackImage?: string | null,
+): { name: string; image: string } {
+  const prod = findInventoryCatalogProduct(products, productId, productName);
+  const id = String(productId || "").trim();
+  const apiName = String(productName || "").trim();
+  const name = String(prod?.name || "").trim() || apiName || id;
+  const image = String(prod?.image || fallbackImage || "").trim();
+  return { name, image };
+}
+
 function getCatalogSalePrice(product: InventoryCatalogLite | undefined): number {
   if (!product) return 0;
   const price = Number(product.price || 0);
@@ -8561,7 +8598,15 @@ function getCatalogSalePrice(product: InventoryCatalogLite | undefined): number 
 }
 
 function inventoryQtyMap(rows: InventoryBalanceRecord[]): Map<string, number> {
-  return new Map(rows.map((row) => [row.productId, Number(row.quantity) || 0]));
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const id = String(row.productId || "").trim();
+    if (!id) continue;
+    const qty = Number(row.quantity) || 0;
+    map.set(id, qty);
+    map.set(id.toLowerCase(), qty);
+  }
+  return map;
 }
 
 function InventoryStockSummary({
@@ -8587,19 +8632,30 @@ function InventoryStockSummary({
     const motoboyMap = inventoryQtyMap(motoboyBalances);
     const minasMap = inventoryQtyMap(minasBalances);
     const nameById = new Map<string, string>();
+    const imageById = new Map<string, string>();
     for (const row of [...balances, ...motoboyBalances, ...minasBalances]) {
       nameById.set(row.productId, row.productName);
+      const img = String(row.image || "").trim();
+      if (img) imageById.set(row.productId, img);
     }
-    const productById = new Map(products.map((p) => [p.id, p]));
+    const productById = new Map<string, InventoryCatalogLite>();
+    for (const p of products) {
+      const catalogId = String(p.id || "").trim();
+      if (!catalogId) continue;
+      productById.set(catalogId, p);
+      productById.set(catalogId.toLowerCase(), p);
+    }
     const ids = new Set<string>([
-      ...products.map((p) => p.id),
+      ...products.map((p) => String(p.id || "").trim()),
       ...lojaMap.keys(),
       ...motoboyMap.keys(),
       ...minasMap.keys(),
     ]);
 
     return Array.from(ids).map((productId) => {
-      const product = productById.get(productId);
+      const product = findInventoryCatalogProduct(products, productId, nameById.get(productId))
+        || productById.get(productId)
+        || productById.get(String(productId || "").trim().toLowerCase());
       const qtyLoja = lojaMap.get(productId) || 0;
       const qtyMotoboy = motoboyMap.get(productId) || 0;
       const qtyMinas = minasMap.get(productId) || 0;
@@ -8609,7 +8665,7 @@ function InventoryStockSummary({
       return {
         productId,
         name: product?.name || nameById.get(productId) || productId,
-        image: product?.image || null,
+        image: product?.image || imageById.get(productId) || null,
         qtyLoja,
         qtyMotoboy,
         qtyMinas,
@@ -8966,12 +9022,16 @@ function InventoryPanel({
     : stockTab === "minas"
       ? minasMovements
       : movements;
+  const resolvedBalances = activeBalances.map((row) => {
+    const display = resolveInventoryDisplay(products, row.productId, row.productName, row.image);
+    return { ...row, displayName: display.name, displayImage: display.image };
+  });
   const filteredBalances = (normalizedBalanceSearch
-    ? activeBalances.filter((row) => {
-        const productName = String(row.productName || "").toLowerCase();
+    ? resolvedBalances.filter((row) => {
+        const productName = String(row.displayName || "").toLowerCase();
         return productName.includes(normalizedBalanceSearch);
       })
-    : activeBalances
+    : resolvedBalances
   )
     .slice()
     .sort((a, b) => {
@@ -8980,7 +9040,7 @@ function InventoryPanel({
       const bHas = Number(b.quantity) > 0 ? 1 : 0;
       if (aHas !== bHas) return bHas - aHas;
       if (Number(b.quantity) !== Number(a.quantity)) return Number(b.quantity) - Number(a.quantity);
-      return String(a.productName || "").localeCompare(String(b.productName || ""), "pt-BR");
+      return String(a.displayName || "").localeCompare(String(b.displayName || ""), "pt-BR");
     });
 
   const motoboyLabelProjectionLines = labelProjectionOrders
@@ -9333,10 +9393,10 @@ function InventoryPanel({
                 type="button"
                 title={`Copiar estoque ${stockTabLabel}`}
                 onClick={() => {
-                  const lines = activeBalances
+                  const lines = resolvedBalances
                     .filter((r) => r.quantity > 0)
-                    .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"))
-                    .map((r) => `${r.quantity} un - ${r.productName}`);
+                    .sort((a, b) => a.displayName.localeCompare(b.displayName, "pt-BR"))
+                    .map((r) => `${r.quantity} un - ${r.displayName}`);
                   const label = `Estoque ${stockTabLabel}`;
                   const when = new Date().toLocaleString("pt-BR", {
                     day: "2-digit",
@@ -9383,11 +9443,12 @@ function InventoryPanel({
             ) : (
               <div className="space-y-2 h-full overflow-auto pr-1">
                 {filteredBalances.map((row) => {
-                  const prod = products.find((p) => p.id === row.productId);
+                  const displayName = row.displayName;
+                  const image = row.displayImage;
                   const pendingForProduct = stockTab === "motoboy"
                     ? motoboyLabelProjectionLines.filter((line) => {
                         if (line.productId && line.productId === row.productId) return true;
-                        return line.productName.trim().toLowerCase() === String(row.productName || "").trim().toLowerCase();
+                        return line.productName.trim().toLowerCase() === String(displayName || "").trim().toLowerCase();
                       })
                     : [];
                   const pendingQty = pendingForProduct.reduce((sum, line) => sum + line.orderQty, 0);
@@ -9396,14 +9457,14 @@ function InventoryPanel({
                     <div key={row.productId} className="rounded-lg border border-border px-3 py-2 gap-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          {prod?.image ? (
-                            <img src={prod.image} alt={row.productName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
+                          {image ? (
+                            <img src={image} alt={displayName} className="h-8 w-8 rounded-md object-cover shrink-0 border border-border" loading="lazy" />
                           ) : (
                             <div className="h-8 w-8 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
                               <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
                             </div>
                           )}
-                          <span className="text-sm truncate">{row.productName}</span>
+                          <span className="text-sm truncate">{displayName}</span>
                         </div>
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${row.quantity > 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
                           {row.quantity} un
@@ -9589,10 +9650,12 @@ function InventoryPanel({
           <p className="text-sm text-muted-foreground">Sem movimentações registradas.</p>
         ) : (
           <div className="space-y-2 max-h-80 overflow-auto pr-1">
-            {activeMovements.map((mv) => (
+            {activeMovements.map((mv) => {
+              const movementName = resolveInventoryDisplay(products, mv.productId, mv.productName).name;
+              return (
               <div key={mv.id} className="flex items-start justify-between rounded-lg border border-border px-3 py-2 gap-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">{mv.productName}</p>
+                  <p className="text-sm font-medium">{movementName}</p>
                   <p className="text-xs text-muted-foreground">Motivo: {mv.reason || "Movimentação"} · {formatDateBR(mv.createdAt)}</p>
                   {(mv.clientName || mv.clientPhone || mv.trackingCode) && (
                     <div className="mt-1 flex flex-wrap gap-1.5">
@@ -9618,7 +9681,8 @@ function InventoryPanel({
                   {mv.quantity >= 0 ? "+" : ""}{mv.quantity}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,6 +1,12 @@
 import crypto from "crypto";
 import { allocateShippingSlot, releaseShippingSlot } from "./shipping-queue-allocator";
 import { scheduleInventoryChangedNotify } from "./inventory-sync";
+import {
+  buildProductNameMap,
+  mapInventoryBalanceRows,
+  normalizeProductId,
+  resolveProductName,
+} from "./inventory-catalog";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -939,61 +945,81 @@ export async function registerMotoboyInventoryEntry(params: {
   }
 }
 
+type InventoryMovementOverview = {
+  id: string;
+  productId: string;
+  productName: string;
+  type: string;
+  entrySource: string | null;
+  clientName: string | null;
+  clientPhone: string | null;
+  trackingCode: string | null;
+  quantity: number;
+  reason: string | null;
+  createdAt: string;
+};
+
+async function loadProductNameMap(): Promise<Map<string, string>> {
+  const productsRows = await db
+    .select({ id: productsTable.id, name: productsTable.name })
+    .from(productsTable);
+  return buildProductNameMap(productsRows);
+}
+
+function mapInventoryMovementOverview(
+  rows: Array<{
+    id: string;
+    productId: unknown;
+    type: string;
+    entrySource?: string | null;
+    clientName?: string | null;
+    clientPhone?: string | null;
+    trackingCode?: string | null;
+    quantity: number;
+    reason?: string | null;
+    createdAt?: Date | null;
+  }>,
+  nameMap: Map<string, string>,
+): InventoryMovementOverview[] {
+  return rows
+    .slice(-120)
+    .reverse()
+    .map((row) => {
+      const productId = normalizeProductId(row.productId);
+      return {
+        id: row.id,
+        productId,
+        productName: resolveProductName(nameMap, productId) || productId,
+        type: row.type,
+        entrySource: row.entrySource || null,
+        clientName: row.clientName || null,
+        clientPhone: row.clientPhone || null,
+        trackingCode: row.trackingCode || null,
+        quantity: Number(row.quantity) || 0,
+        reason: row.reason || null,
+        createdAt: row.createdAt?.toISOString() || new Date().toISOString(),
+      };
+    });
+}
+
 export async function getMotoboyInventoryOverview(): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
-  movements: Array<{
-    id: string;
-    productId: string;
-    productName: string;
-    type: string;
-    entrySource: string | null;
-    clientName: string | null;
-    clientPhone: string | null;
-    trackingCode: string | null;
-    quantity: number;
-    reason: string | null;
-    createdAt: string;
-  }>;
+  movements: InventoryMovementOverview[];
 }> {
-  const [balancesRows, productsRows, movementsRows] = await Promise.all([
+  const [balancesRows, nameMap, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryMotoboyBalancesTable.productId, quantity: inventoryMotoboyBalancesTable.quantity })
       .from(inventoryMotoboyBalancesTable),
-    db
-      .select({ id: productsTable.id, name: productsTable.name })
-      .from(productsTable),
+    loadProductNameMap(),
     db
       .select()
       .from(inventoryMotoboyMovementsTable)
       .orderBy(asc(inventoryMotoboyMovementsTable.createdAt)),
   ]);
 
-  const productNameMap = new Map(productsRows.map((row) => [row.id, row.name]));
-
   return {
-    balances: balancesRows
-      .map((row) => ({
-        productId: row.productId,
-        productName: productNameMap.get(row.productId) || row.productId,
-        quantity: Number(row.quantity) || 0,
-      }))
-      .sort((a, b) => a.productName.localeCompare(b.productName)),
-    movements: movementsRows
-      .slice(-120)
-      .reverse()
-      .map((row) => ({
-        id: row.id,
-        productId: row.productId,
-        productName: productNameMap.get(row.productId) || row.productId,
-        type: row.type,
-        entrySource: row.entrySource || null,
-        clientName: row.clientName || null,
-        clientPhone: (row as { clientPhone?: string | null }).clientPhone || null,
-        trackingCode: row.trackingCode || null,
-        quantity: Number(row.quantity) || 0,
-        reason: row.reason || null,
-        createdAt: row.createdAt?.toISOString() || new Date().toISOString(),
-      })),
+    balances: mapInventoryBalanceRows(balancesRows, nameMap),
+    movements: mapInventoryMovementOverview(movementsRows, nameMap),
   };
 }
 
@@ -1079,59 +1105,22 @@ export async function registerMinasInventoryEntry(params: {
 
 export async function getMinasInventoryOverview(): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
-  movements: Array<{
-    id: string;
-    productId: string;
-    productName: string;
-    type: string;
-    entrySource: string | null;
-    clientName: string | null;
-    clientPhone: string | null;
-    trackingCode: string | null;
-    quantity: number;
-    reason: string | null;
-    createdAt: string;
-  }>;
+  movements: InventoryMovementOverview[];
 }> {
-  const [balancesRows, productsRows, movementsRows] = await Promise.all([
+  const [balancesRows, nameMap, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
       .from(inventoryMinasBalancesTable),
-    db
-      .select({ id: productsTable.id, name: productsTable.name })
-      .from(productsTable),
+    loadProductNameMap(),
     db
       .select()
       .from(inventoryMinasMovementsTable)
       .orderBy(asc(inventoryMinasMovementsTable.createdAt)),
   ]);
 
-  const productNameMap = new Map(productsRows.map((row) => [row.id, row.name]));
-
   return {
-    balances: balancesRows
-      .map((row) => ({
-        productId: row.productId,
-        productName: productNameMap.get(row.productId) || row.productId,
-        quantity: Number(row.quantity) || 0,
-      }))
-      .sort((a, b) => a.productName.localeCompare(b.productName)),
-    movements: movementsRows
-      .slice(-120)
-      .reverse()
-      .map((row) => ({
-        id: row.id,
-        productId: row.productId,
-        productName: productNameMap.get(row.productId) || row.productId,
-        type: row.type,
-        entrySource: row.entrySource || null,
-        clientName: row.clientName || null,
-        clientPhone: (row as { clientPhone?: string | null }).clientPhone || null,
-        trackingCode: row.trackingCode || null,
-        quantity: Number(row.quantity) || 0,
-        reason: row.reason || null,
-        createdAt: row.createdAt?.toISOString() || new Date().toISOString(),
-      })),
+    balances: mapInventoryBalanceRows(balancesRows, nameMap),
+    movements: mapInventoryMovementOverview(movementsRows, nameMap),
   };
 }
 
@@ -1294,59 +1283,22 @@ export async function setManualReshipmentStatus(id: string, status: ReshipmentSt
 
 export async function getInventoryOverview(): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
-  movements: Array<{
-    id: string;
-    productId: string;
-    productName: string;
-    type: string;
-    entrySource: string | null;
-    clientName: string | null;
-    clientPhone: string | null;
-    trackingCode: string | null;
-    quantity: number;
-    reason: string | null;
-    createdAt: string;
-  }>;
+  movements: InventoryMovementOverview[];
 }> {
-  const [balancesRows, productsRows, movementsRows] = await Promise.all([
+  const [balancesRows, nameMap, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
       .from(inventoryBalancesTable),
-    db
-      .select({ id: productsTable.id, name: productsTable.name })
-      .from(productsTable),
+    loadProductNameMap(),
     db
       .select()
       .from(inventoryMovementsTable)
       .orderBy(asc(inventoryMovementsTable.createdAt)),
   ]);
 
-  const productNameMap = new Map(productsRows.map((row) => [row.id, row.name]));
-
   return {
-    balances: balancesRows
-      .map((row) => ({
-        productId: row.productId,
-        productName: productNameMap.get(row.productId) || row.productId,
-        quantity: Number(row.quantity) || 0,
-      }))
-      .sort((a, b) => a.productName.localeCompare(b.productName)),
-    movements: movementsRows
-      .slice(-120)
-      .reverse()
-      .map((row) => ({
-        id: row.id,
-        productId: row.productId,
-        productName: productNameMap.get(row.productId) || row.productId,
-        type: row.type,
-        entrySource: row.entrySource || null,
-        clientName: row.clientName || null,
-        clientPhone: (row as { clientPhone?: string | null }).clientPhone || null,
-        trackingCode: row.trackingCode || null,
-        quantity: Number(row.quantity) || 0,
-        reason: row.reason || null,
-        createdAt: row.createdAt?.toISOString() || new Date().toISOString(),
-      })),
+    balances: mapInventoryBalanceRows(balancesRows, nameMap),
+    movements: mapInventoryMovementOverview(movementsRows, nameMap),
   };
 }
 

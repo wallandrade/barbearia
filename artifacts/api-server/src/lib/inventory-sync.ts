@@ -7,6 +7,7 @@ import {
   productsTable,
 } from "@workspace/db";
 import { signMotoboyCoverageBody } from "./motoboy-coverage-sync";
+import { buildProductNameMap, resolveProductName } from "./inventory-catalog";
 
 export type InventorySyncPool = "motoboy" | "minas";
 
@@ -105,7 +106,7 @@ function mapBalanceRows(
   return rows
     .map((row) => ({
       productId: row.productId,
-      productName: nameById.get(row.productId) || row.productId,
+      productName: resolveProductName(nameById, row.productId) || row.productId,
       quantity: Number(row.quantity) || 0,
     }))
     .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"));
@@ -128,7 +129,7 @@ export async function getInventorySyncSnapshot(): Promise<InventorySyncSnapshot>
     db.select({ id: productsTable.id, name: productsTable.name }).from(productsTable),
   ]);
 
-  const nameById = new Map(productsRows.map((row) => [row.id, row.name]));
+  const nameById = buildProductNameMap(productsRows);
 
   return {
     syncedAt: new Date().toISOString(),
