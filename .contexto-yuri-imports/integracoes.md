@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-29
+> **Última atualização:** 2026-08-30
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,8 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | Sync estoque Motoboy+Minas (somente leitura): `GET /api/integrations/inventory/snapshot` + webhook `inventory.changed` | Espelho puxa/recebe os dois pools juntos | Loja, cobertura Motoboy, checkout iguais |
+| 2026-08-29 | Rastreios: valor declarado global (`envioecom_shipment_item_value`) no mesmo GET/PUT do nome | Quote/create usam o valor se preenchido (≤R$3000); item único qty 1 | Nome, webhook, contas iguais |
 | 2026-08-29 | Admin Configurações: painel **APIs EnvioEcom** no topo do painel (após gastos) | Conta extra visível sem rolar até o Pushcut | CRUD/seletor iguais |
 | 2026-08-29 | Várias APIs EnvioEcom: CRUD em Configurações + seletor no botão EnvioEcom; pedido grava `envioecom_account_id` | Cotar/criar/etiqueta/sync usam a conta escolhida | Motoboy, OCR, webhook de entrada PIX iguais |
 | 2026-08-28 | Admin aba Biblioteca usa os mesmos `GET /api/chat/status` e `GET /api/chat/guide/:slug/:topic` | Ficha igual à bolha do cliente | OpenAI/`POST /api/chat/ask` continua fora do fluxo |
@@ -77,7 +79,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
 - Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
-- Create envia `items` com **nome genérico** (`site_settings.envioecom_shipment_item_name`, default `Mercadoria`) — nunca o nome real do produto; editável em Admin → Rastreios (`GET/PUT .../shipment-item-name`)
+- Create/cotação: **nome genérico** (`site_settings.envioecom_shipment_item_name`, default `Mercadoria`) e **valor declarado genérico** opcional (`envioecom_shipment_item_value`, 0–3000). Se o valor estiver preenchido, vira `items[].unit_cost` (1 item) + `cost`/`price` da cotação — nunca o preço do catálogo. Vazio = comportamento antigo (preço do pedido / R$5 sem medidas). Editável em Admin → Rastreios (`GET/PUT .../shipment-item-name` também devolve/grava `declaredValue`). Envios já criados não mudam.
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: card com Situação/EnvioEcom + eventos abertos (`status_history` da API → `envioecomStatusHistory`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` em `CustomerOrders.tsx`
 - Sync/soft-sync: `pickEffectiveShipmentStatus` — se `status` do envio ficar em Pronto/etiqueta mas o último `status_history` for Coletado/trânsito/entregue, grava o do histórico
@@ -94,6 +96,16 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 - **Eventos:** `motoboy.neighborhood.upserted|deactivated|deleted`, `motoboy.cep_range.upserted|deactivated|deleted`.
 - Lib: `lib/motoboy-coverage-sync.ts`; rota: `routes/motoboy-coverage-sync.ts`.
 - Fase 2 (proposta do espelho → Yury) **não** implementada.
+
+## Estoque Motoboy + Minas → espelho (somente leitura)
+
+Yury = **fonte da verdade**. O outro sistema **só lê** (não dá entrada/saída).
+
+- **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName`, `quantity`).
+- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (admin e baixa de pedido), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
+- **Headers webhook:** iguais à cobertura (`X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp`).
+- Lib: `lib/inventory-sync.ts`; rota: `routes/inventory-sync.ts`.
+- **Não** há POST de escrita para o espelho.
 
 ## Storage
 

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { allocateShippingSlot, releaseShippingSlot } from "./shipping-queue-allocator";
+import { scheduleInventoryChangedNotify } from "./inventory-sync";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -909,9 +910,11 @@ export async function registerMotoboyInventoryEntry(params: {
   }
 
   const isExit = Number(params.quantity) < 0;
+  const movementId = crypto.randomBytes(8).toString("hex");
+  const reason = params.reason || (isExit ? "Saida manual estoque Motoboy" : "Entrada manual estoque Motoboy");
 
   await db.insert(inventoryMotoboyMovementsTable).values({
-    id: crypto.randomBytes(8).toString("hex"),
+    id: movementId,
     productId: params.productId,
     type: isExit ? "exit" : "entry",
     entrySource: params.entrySource || null,
@@ -919,10 +922,21 @@ export async function registerMotoboyInventoryEntry(params: {
     clientPhone: params.clientPhone || null,
     trackingCode: params.trackingCode || null,
     quantity: params.quantity,
-    reason: params.reason || (isExit ? "Saida manual estoque Motoboy" : "Entrada manual estoque Motoboy"),
+    reason,
     referenceId: params.referenceId || null,
     createdAt: new Date(),
   });
+
+  if (params.affectBalance !== false) {
+    scheduleInventoryChangedNotify({
+      pool: "motoboy",
+      productId: params.productId,
+      movementId,
+      quantityDelta: params.quantity,
+      reason,
+      referenceId: params.referenceId || null,
+    });
+  }
 }
 
 export async function getMotoboyInventoryOverview(): Promise<{
@@ -1034,9 +1048,11 @@ export async function registerMinasInventoryEntry(params: {
   }
 
   const isExit = Number(params.quantity) < 0;
+  const movementId = crypto.randomBytes(8).toString("hex");
+  const reason = params.reason || (isExit ? "Saida manual estoque Minas" : "Entrada manual estoque Minas");
 
   await db.insert(inventoryMinasMovementsTable).values({
-    id: crypto.randomBytes(8).toString("hex"),
+    id: movementId,
     productId: params.productId,
     type: isExit ? "exit" : "entry",
     entrySource: params.entrySource || null,
@@ -1044,10 +1060,21 @@ export async function registerMinasInventoryEntry(params: {
     clientPhone: params.clientPhone || null,
     trackingCode: params.trackingCode || null,
     quantity: params.quantity,
-    reason: params.reason || (isExit ? "Saida manual estoque Minas" : "Entrada manual estoque Minas"),
+    reason,
     referenceId: params.referenceId || null,
     createdAt: new Date(),
   });
+
+  if (params.affectBalance !== false) {
+    scheduleInventoryChangedNotify({
+      pool: "minas",
+      productId: params.productId,
+      movementId,
+      quantityDelta: params.quantity,
+      reason,
+      referenceId: params.referenceId || null,
+    });
+  }
 }
 
 export async function getMinasInventoryOverview(): Promise<{
