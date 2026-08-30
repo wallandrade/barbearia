@@ -167,7 +167,7 @@ export default function AdminEnvioEcomAccountsPanel() {
         </h2>
         <p className="text-muted-foreground text-sm">
           Cadastre contas extras. No card do pedido, o botão EnvioEcom pede qual API usar.
-          A conta <strong>Padrão (servidor)</strong> continua vindo do Railway.
+          A conta <strong>São Paulo (servidor)</strong> continua vindo do Railway.
         </p>
       </div>
 

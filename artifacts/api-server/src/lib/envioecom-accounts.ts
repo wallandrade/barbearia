@@ -84,7 +84,7 @@ function envAccountPublic(): EnvioEcomAccountPublic {
   const origin = digitsOnly(auth.originCep);
   return {
     id: ENVIOECOM_ENV_ACCOUNT_ID,
-    name: "Padrão (servidor)",
+    name: "São Paulo (servidor)",
     fromEnv: true,
     configured: isEnvioEcomAuthConfigured(auth),
     hasToken: Boolean(auth.token),

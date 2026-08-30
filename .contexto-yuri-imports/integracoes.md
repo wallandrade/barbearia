@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | Conta EnvioEcom do Railway no seletor: label **São Paulo (servidor)** (`id=env`) | Só o nome no modal/painel | Token, CEP e contas cadastradas iguais |
 | 2026-08-30 | Sync estoque Motoboy+Minas (somente leitura): `GET /api/integrations/inventory/snapshot` + webhook `inventory.changed` | Espelho puxa/recebe os dois pools juntos | Loja, cobertura Motoboy, checkout iguais |
 | 2026-08-29 | Rastreios: valor declarado global (`envioecom_shipment_item_value`) no mesmo GET/PUT do nome | Quote/create usam o valor se preenchido (≤R$3000); item único qty 1 | Nome, webhook, contas iguais |
 | 2026-08-29 | Admin Configurações: painel **APIs EnvioEcom** no topo do painel (após gastos) | Conta extra visível sem rolar até o Pushcut | CRUD/seletor iguais |
@@ -67,7 +68,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Client: `artifacts/api-server/src/lib/envioecom.ts`
 - Rotas: `artifacts/api-server/src/routes/envioecom.ts`
 - Base: `ENVIOECOM_BASE_URL` (default `https://envioecom.com.br/api/v1/whitelabel`)
-- Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`) = conta **Padrão (servidor)** (`id=env`)
+- Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`) = conta **São Paulo (servidor)** (`id=env`)
 - Contas extras: `site_settings.envioecom_accounts` (JSON); CRUD `GET/POST/PUT/DELETE /api/admin/envioecom/accounts` (listar: qualquer admin; gravar/apagar: primary). Token/senha **não** voltam no GET (só hint)
 - Admin Configurações: painel **APIs EnvioEcom** no **topo** (depois de Gastos por data) para adicionar nome + token ou e-mail/senha + CEP origem
 - Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id`. Sync/etiqueta/cancel/soft-sync tentam a conta do pedido e, se não achar, as demais
