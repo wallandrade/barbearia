@@ -8674,14 +8674,14 @@ function InventoryStockSummary({
     const lines = visible
       .filter((row) => row.totalQty > 0)
       .map((row) =>
-        `${row.totalQty} un · ${row.name} · L ${row.qtyLoja} / Moto ${row.qtyMotoboy} / Minas ${row.qtyMinas} · custo ${formatCurrency(row.costTotal)} · venda ${formatCurrency(row.saleTotal)}`,
+        `${row.totalQty} un · ${row.name} · Foz ${row.qtyLoja} / Moto ${row.qtyMotoboy} / Minas ${row.qtyMinas} · custo ${formatCurrency(row.costTotal)} · venda ${formatCurrency(row.saleTotal)}`,
       );
     const text = [
       `RESUMO ESTOQUE (${when})`,
       `Empatado: ${formatCurrency(totals.cost)}`,
       `Se vender tudo: ${formatCurrency(totals.sale)}`,
       `Lucro potencial: ${formatCurrency(profit)}`,
-      `Loja ${formatCurrency(totals.lojaCost)} · Motoboy ${formatCurrency(totals.motoboyCost)} · Minas ${formatCurrency(totals.minasCost)}`,
+      `Foz Guaçu ${formatCurrency(totals.lojaCost)} · Motoboy ${formatCurrency(totals.motoboyCost)} · Minas ${formatCurrency(totals.minasCost)}`,
       "",
       ...lines,
     ].join("\n");
@@ -8721,7 +8721,7 @@ function InventoryStockSummary({
 
         <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
           <p className="rounded-lg border border-border bg-muted/40 px-3 py-2">
-            <span className="font-semibold">Loja:</span> {formatCurrency(totals.lojaCost)} custo · {formatCurrency(totals.lojaSale)} venda
+            <span className="font-semibold">Foz Guaçu:</span> {formatCurrency(totals.lojaCost)} custo · {formatCurrency(totals.lojaSale)} venda
           </p>
           <p className="rounded-lg border border-border bg-muted/40 px-3 py-2">
             <span className="font-semibold">Motoboy:</span> {formatCurrency(totals.motoboyCost)} custo · {formatCurrency(totals.motoboySale)} venda
@@ -8784,7 +8784,7 @@ function InventoryStockSummary({
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{row.name}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        Loja {row.qtyLoja} · Motoboy {row.qtyMotoboy} · Minas {row.qtyMinas} · {row.totalQty} un
+                        Foz Guaçu {row.qtyLoja} · Motoboy {row.qtyMotoboy} · Minas {row.qtyMinas} · {row.totalQty} un
                       </p>
                     </div>
                   </div>
@@ -8815,7 +8815,7 @@ function parseInventoryPool(raw: unknown): InventoryPoolKind | null {
 function inventoryPoolLabel(pool: InventoryPoolKind): string {
   if (pool === "motoboy") return "Motoboy";
   if (pool === "minas") return "Minas";
-  return "Loja";
+  return "Foz Guaçu";
 }
 
 function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
@@ -9114,7 +9114,7 @@ function InventoryPanel({
               : "bg-white text-muted-foreground border-border hover:border-amber-300"
           }`}
         >
-          Estoque Loja
+          Estoque Foz Guaçu
         </button>
         <button
           type="button"
@@ -9170,7 +9170,7 @@ function InventoryPanel({
                 ? "Estoque Motoboy"
                 : stockTab === "minas"
                   ? "Estoque Minas"
-                  : "Estoque e Reenvios"}
+                  : "Estoque Foz Guaçu"}
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
@@ -9323,7 +9323,7 @@ function InventoryPanel({
         <div className={`rounded-2xl border border-border bg-card p-4 flex flex-col h-full max-h-[560px] overflow-hidden ${isDeferredStockTab ? "xl:col-span-2" : ""}`}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <p className="text-sm font-semibold">
-              {isDeferredStockTab ? `Saldo ${stockTabLabel} por produto` : "Saldo atual por produto"}
+              {`Saldo ${stockTabLabel} por produto`}
             </p>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
@@ -9331,13 +9331,13 @@ function InventoryPanel({
               </span>
               <button
                 type="button"
-                title={isDeferredStockTab ? `Copiar estoque ${stockTabLabel}` : "Copiar estoque"}
+                title={`Copiar estoque ${stockTabLabel}`}
                 onClick={() => {
                   const lines = activeBalances
                     .filter((r) => r.quantity > 0)
                     .sort((a, b) => a.productName.localeCompare(b.productName, "pt-BR"))
                     .map((r) => `${r.quantity} un - ${r.productName}`);
-                  const label = isDeferredStockTab ? `Estoque ${stockTabLabel}` : "Estoque disponível";
+                  const label = `Estoque ${stockTabLabel}`;
                   const when = new Date().toLocaleString("pt-BR", {
                     day: "2-digit",
                     month: "2-digit",
@@ -9363,7 +9363,7 @@ function InventoryPanel({
                 id={stockTab === "motoboy" ? "copy-motoboy-stock-btn" : stockTab === "minas" ? "copy-minas-stock-btn" : "copy-stock-btn"}
                 className="text-xs px-2 py-1 rounded-md border border-border bg-muted hover:bg-accent transition-colors font-medium"
               >
-                {isDeferredStockTab ? `Copiar ${stockTabLabel}` : "Copiar estoque"}
+                {`Copiar ${stockTabLabel}`}
               </button>
             </div>
           </div>
@@ -10325,7 +10325,7 @@ function OrdersPanel({
         const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
         const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
         const minasProjection = buildOrderStockProjectionLines(order, minasInventoryBalances);
-        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Loja");
+        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Foz Guaçu");
         const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
         const minasMsg = formatStockProjectionToast(minasProjection, "estoque Minas");
         const projectionMsg = [lojaMsg, motoMsg, minasMsg].filter(Boolean).join("\n\n");
@@ -10365,7 +10365,7 @@ function OrdersPanel({
         const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
         const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
         const minasProjection = buildOrderStockProjectionLines(order, minasInventoryBalances);
-        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Loja");
+        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Foz Guaçu");
         const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
         const minasMsg = formatStockProjectionToast(minasProjection, "estoque Minas");
         const projectionMsg = [lojaMsg, motoMsg, minasMsg].filter(Boolean).join("\n\n");
@@ -10839,8 +10839,8 @@ function OrdersPanel({
           isDeferredDebitPool(pool)
             ? `Estoque ${inventoryPoolLabel(pool)} selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora).`
             : reserved
-              ? "Estoque Loja reservado para o pedido."
-              : "Estoque Loja selecionado.",
+              ? "Estoque Foz Guaçu reservado para o pedido."
+              : "Estoque Foz Guaçu selecionado.",
         );
       }
     } catch (err) {
@@ -12194,7 +12194,7 @@ function OrdersPanel({
                           : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
                       }`}
                     >
-                      Loja
+                      Foz Guaçu
                     </button>
                     <button
                       type="button"

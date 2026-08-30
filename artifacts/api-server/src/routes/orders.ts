@@ -986,7 +986,7 @@ function parseInventoryPool(raw: unknown): InventoryPoolKind | null {
 function inventoryPoolLabel(pool: InventoryPoolKind): string {
   if (pool === "motoboy") return "Motoboy";
   if (pool === "minas") return "Minas";
-  return "Loja";
+  return "Foz Guaçu";
 }
 
 function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
@@ -2645,7 +2645,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
             ? (reserveNow
               ? `Estoque ${inventoryPoolLabel(nextPool)} insuficiente para dar baixa: ${details}.`
               : `Estoque ${inventoryPoolLabel(nextPool)} insuficiente: ${details}.`)
-            : `Estoque Loja insuficiente para reservar: ${details}.`,
+            : `Estoque Foz Guaçu insuficiente para reservar: ${details}.`,
         });
         return;
       }
