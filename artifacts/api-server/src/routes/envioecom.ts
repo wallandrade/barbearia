@@ -20,6 +20,7 @@ import {
   clampEnvioEcomWeight,
   clampEnvioEcomDeclaredValue,
   ENVIOECOM_MAX_DECLARED_VALUE,
+  getDefaultDeclaredValue,
   isAwaitingPaymentStatus,
   isDeliveredStatus,
   getCurrentEnvioEcomOriginCep,
@@ -148,14 +149,21 @@ function formatDimString(value: unknown): string {
 const ENVIOECOM_SHIPMENT_ITEM_NAME_KEY = "envioecom_shipment_item_name";
 const ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT = "Mercadoria";
 const ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY = "envioecom_shipment_item_value";
+const ENVIOECOM_SHIPMENT_ITEM_QTY_KEY = "envioecom_shipment_item_qty";
+const ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT = 1;
+const ENVIOECOM_SHIPMENT_ITEM_QTY_MAX = 999;
 
-async function getEnvioEcomShipmentItemName(): Promise<string> {
+async function readSiteSetting(key: string): Promise<string> {
   const rows = await db
     .select({ value: siteSettingsTable.value })
     .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, ENVIOECOM_SHIPMENT_ITEM_NAME_KEY))
+    .where(eq(siteSettingsTable.key, key))
     .limit(1);
-  const raw = String(rows[0]?.value || "").trim().slice(0, 120);
+  return String(rows[0]?.value || "").trim();
+}
+
+async function getEnvioEcomShipmentItemName(): Promise<string> {
+  const raw = (await readSiteSetting(ENVIOECOM_SHIPMENT_ITEM_NAME_KEY)).slice(0, 120);
   return raw || ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT;
 }
 
@@ -168,21 +176,30 @@ function parseShipmentDeclaredValue(raw: unknown): number | null {
   return clampEnvioEcomDeclaredValue(n);
 }
 
-async function getEnvioEcomShipmentDeclaredValue(): Promise<number | null> {
-  const rows = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY))
-    .limit(1);
-  return parseShipmentDeclaredValue(rows[0]?.value);
+function parseShipmentItemQuantity(raw: unknown): number | null {
+  if (raw == null) return null;
+  const text = String(raw).trim().replace(",", ".");
+  if (!text) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.min(ENVIOECOM_SHIPMENT_ITEM_QTY_MAX, Math.max(1, Math.round(n)));
 }
 
-async function getEnvioEcomShipmentItemProfile(): Promise<{ name: string; declaredValue: number | null }> {
-  const [name, declaredValue] = await Promise.all([
+async function getEnvioEcomShipmentItemProfile(): Promise<{
+  name: string;
+  quantity: number;
+  declaredValue: number;
+}> {
+  const [nameRaw, qtyRaw, valueRaw] = await Promise.all([
     getEnvioEcomShipmentItemName(),
-    getEnvioEcomShipmentDeclaredValue(),
+    readSiteSetting(ENVIOECOM_SHIPMENT_ITEM_QTY_KEY),
+    readSiteSetting(ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY),
   ]);
-  return { name, declaredValue };
+  return {
+    name: nameRaw,
+    quantity: parseShipmentItemQuantity(qtyRaw) ?? ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT,
+    declaredValue: parseShipmentDeclaredValue(valueRaw) ?? getDefaultDeclaredValue(),
+  };
 }
 
 async function upsertSiteSetting(key: string, value: string): Promise<void> {
@@ -194,46 +211,26 @@ async function upsertSiteSetting(key: string, value: string): Promise<void> {
     });
 }
 
-async function buildShipmentItemsFromOrder(order: typeof ordersTable.$inferSelect) {
-  const { name: genericName, declaredValue } = await getEnvioEcomShipmentItemProfile();
-  if (declaredValue != null) {
-    return [
-      {
-        name: genericName,
-        quantity: 1,
-        unit_cost: declaredValue,
-      },
-    ];
-  }
-  const products = parseProducts(order.products);
-  if (!products.length) {
-    return [
-      {
-        name: genericName,
-        quantity: 1,
-        unit_cost: Number(order.subtotal || order.total || 0),
-      },
-    ];
-  }
-  // Nunca envia o nome real do catálogo — só o nome genérico configurado no painel Rastreios.
-  return products.map((p) => ({
-    name: genericName,
-    quantity: Math.max(1, Number(p.quantity) || 1),
-    unit_cost: Number(p.price) || 0,
-  }));
+/** Create EnvioEcom: sempre 1 linha de setting. Pedido/catálogo não entram em items. */
+function buildShipmentLabelItem(profile: {
+  name: string;
+  quantity: number;
+  declaredValue: number;
+}) {
+  return [
+    {
+      name: profile.name,
+      quantity: profile.quantity,
+      unit_cost: profile.declaredValue,
+    },
+  ];
 }
 
-function buildQuoteProductsFromOrder(
-  order: typeof ordersTable.$inferSelect,
-  declaredValue?: number | null,
-) {
+function buildQuoteProductsFromOrder(order: typeof ordersTable.$inferSelect) {
   const pack = consolidateOrderIntoSinglePackage({
     products: parseProducts(order.products),
     fallbackSubtotal: Number(order.subtotal || order.total || 0),
   });
-  if (declaredValue != null) {
-    pack.price = declaredValue;
-  }
   // Sempre 1 pacote — evita a EnvioEcom empilhar altura×qtd dos defaults e estourar 100cm.
   return [pack];
 }
@@ -510,8 +507,7 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
       return;
     }
 
-    const { declaredValue } = await getEnvioEcomShipmentItemProfile();
-    const products = buildQuoteProductsFromOrder(order, declaredValue);
+    const products = buildQuoteProductsFromOrder(order);
     const carriers =
       parseCarriersInput(req.body?.carriers) || getDefaultCarriersFromEnv();
     const { result: quote, accountId } = await withEnvioEcomAccount(readAccountId(req.body), async () =>
@@ -572,9 +568,10 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       return;
     }
 
-    const { declaredValue } = await getEnvioEcomShipmentItemProfile();
-    const quoteProducts = buildQuoteProductsFromOrder(order, declaredValue);
+    const quoteProducts = buildQuoteProductsFromOrder(order);
     const pack = buildPackageFromProducts(quoteProducts);
+    const labelProfile = await getEnvioEcomShipmentItemProfile();
+    const labelItems = buildShipmentLabelItem(labelProfile);
     // orderId único na EnvioEcom (evita DUPLICATE_ORDER em retentativas)
     const externalOrderNumber = `${order.orderNumber ?? "ped"}-${String(order.id).slice(0, 8)}`;
     const freightCost = formatMoneyString(req.body?.freight_cost ?? order.shippingCost ?? pack.cost ?? 0);
@@ -653,7 +650,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       width: formatDimString(pack.width),
       length: formatDimString(pack.length),
       weight: formatWeightString(pack.weight),
-      cost: formatMoneyString(declaredValue ?? pack.cost || order.subtotal || 0),
+      cost: formatMoneyString(labelProfile.quantity * labelProfile.declaredValue),
       name: String(order.clientName || "").trim().slice(0, 120) || "Cliente",
       document_number: document,
       phone_number: phone,
@@ -664,7 +661,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       localidade,
       uf,
       ...(order.addressComplement ? { complemento: String(order.addressComplement).trim().slice(0, 60) } : {}),
-      items: (await buildShipmentItemsFromOrder(order)).map((item) => ({
+      items: labelItems.map((item) => ({
         name: item.name,
         quantity: item.quantity,
         unit_cost: Number(formatMoneyString(item.unit_cost)),
@@ -1181,29 +1178,33 @@ router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, 
 });
 
 // --------------------------------------------------------------------------
-// GET/PUT /api/admin/envioecom/shipment-item-name — nome e valor genéricos no create/cotação
+// GET/PUT /api/admin/envioecom/shipment-item-name — nome/qty/valor só no create (não na cotação)
 // --------------------------------------------------------------------------
 router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req, res) => {
   try {
-    const { name, declaredValue } = await getEnvioEcomShipmentItemProfile();
+    const { name, quantity, declaredValue } = await getEnvioEcomShipmentItemProfile();
     res.json({
       ok: true,
       key: ENVIOECOM_SHIPMENT_ITEM_NAME_KEY,
       valueKey: ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY,
+      qtyKey: ENVIOECOM_SHIPMENT_ITEM_QTY_KEY,
       name,
       defaultName: ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT,
+      quantity,
+      defaultQuantity: ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT,
       declaredValue,
+      defaultDeclaredValue: getDefaultDeclaredValue(),
       maxDeclaredValue: ENVIOECOM_MAX_DECLARED_VALUE,
     });
   } catch (err) {
     console.error("[EnvioEcom] get shipment-item-name error:", err);
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao carregar nome/valor do produto EnvioEcom." });
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao carregar dados da etiqueta EnvioEcom." });
   }
 });
 
 router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, res) => {
   try {
-    const body = (req.body || {}) as { name?: unknown; declaredValue?: unknown };
+    const body = (req.body || {}) as { name?: unknown; declaredValue?: unknown; quantity?: unknown };
     const name = String(body.name || "").trim().slice(0, 120);
     if (!name) {
       res.status(400).json({
@@ -1213,35 +1214,48 @@ router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, 
       return;
     }
 
-    let declaredValue: number | null = null;
+    const current = await getEnvioEcomShipmentItemProfile();
+    let quantity = current.quantity;
+    if (body.quantity !== undefined) {
+      const raw = String(body.quantity ?? "").trim();
+      quantity = raw
+        ? parseShipmentItemQuantity(raw) ?? 0
+        : ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT;
+      if (!quantity) {
+        res.status(400).json({
+          error: "INVALID_QUANTITY",
+          message: `Quantidade inválida. Use um inteiro de 1 a ${ENVIOECOM_SHIPMENT_ITEM_QTY_MAX}.`,
+        });
+        return;
+      }
+    }
+
+    let declaredValue = current.declaredValue;
     if (body.declaredValue !== undefined) {
       const raw = String(body.declaredValue ?? "").trim();
-      if (raw) {
-        declaredValue = parseShipmentDeclaredValue(raw);
-        if (declaredValue == null) {
+      if (!raw) {
+        declaredValue = getDefaultDeclaredValue();
+      } else {
+        const parsed = parseShipmentDeclaredValue(raw);
+        if (parsed == null) {
           res.status(400).json({
             error: "INVALID_DECLARED_VALUE",
             message: `Valor declarado inválido. Use um número de 0 a ${ENVIOECOM_MAX_DECLARED_VALUE}.`,
           });
           return;
         }
+        declaredValue = parsed;
       }
-    } else {
-      declaredValue = await getEnvioEcomShipmentDeclaredValue();
     }
 
     await upsertSiteSetting(ENVIOECOM_SHIPMENT_ITEM_NAME_KEY, name);
-    if (body.declaredValue !== undefined) {
-      await upsertSiteSetting(
-        ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY,
-        declaredValue == null ? "" : formatMoneyString(declaredValue),
-      );
-    }
+    await upsertSiteSetting(ENVIOECOM_SHIPMENT_ITEM_QTY_KEY, String(quantity));
+    await upsertSiteSetting(ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY, formatMoneyString(declaredValue));
 
-    res.json({ ok: true, name, declaredValue });
+    res.json({ ok: true, name, quantity, declaredValue });
   } catch (err) {
     console.error("[EnvioEcom] put shipment-item-name error:", err);
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar nome/valor do produto EnvioEcom." });
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar dados da etiqueta EnvioEcom." });
   }
 });
 

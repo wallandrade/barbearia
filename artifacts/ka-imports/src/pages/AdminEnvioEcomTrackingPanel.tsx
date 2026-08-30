@@ -133,8 +133,10 @@ export default function AdminEnvioEcomTrackingPanel({
   const [configured, setConfigured] = useState(true);
   const [itemNameDraft, setItemNameDraft] = useState("Mercadoria");
   const [itemNameSaved, setItemNameSaved] = useState("Mercadoria");
-  const [itemValueDraft, setItemValueDraft] = useState("");
-  const [itemValueSaved, setItemValueSaved] = useState("");
+  const [itemQtyDraft, setItemQtyDraft] = useState("1");
+  const [itemQtySaved, setItemQtySaved] = useState("1");
+  const [itemValueDraft, setItemValueDraft] = useState("5,00");
+  const [itemValueSaved, setItemValueSaved] = useState("5,00");
   const [itemNameLoading, setItemNameLoading] = useState(true);
   const [itemNameSaving, setItemNameSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -152,21 +154,29 @@ export default function AdminEnvioEcomTrackingPanel({
       const data = await res.json() as {
         name?: string;
         defaultName?: string;
+        quantity?: number;
+        defaultQuantity?: number;
         declaredValue?: number | null;
+        defaultDeclaredValue?: number;
         message?: string;
       };
       if (!res.ok) {
-        toast.error(data.message || "Falha ao carregar nome/valor genérico EnvioEcom.");
+        toast.error(data.message || "Falha ao carregar dados da etiqueta EnvioEcom.");
         return;
       }
       const name = String(data.name || data.defaultName || "Mercadoria").trim() || "Mercadoria";
-      const valueText = formatDeclaredValueInput(data.declaredValue);
+      const qty = Math.max(1, Number(data.quantity || data.defaultQuantity || 1) || 1);
+      const valueText = formatDeclaredValueInput(
+        data.declaredValue ?? data.defaultDeclaredValue ?? 5,
+      ) || "5,00";
       setItemNameDraft(name);
       setItemNameSaved(name);
+      setItemQtyDraft(String(qty));
+      setItemQtySaved(String(qty));
       setItemValueDraft(valueText);
       setItemValueSaved(valueText);
     } catch {
-      toast.error("Erro ao carregar nome/valor genérico EnvioEcom.");
+      toast.error("Erro ao carregar dados da etiqueta EnvioEcom.");
     } finally {
       setItemNameLoading(false);
     }
@@ -178,13 +188,17 @@ export default function AdminEnvioEcomTrackingPanel({
       toast.error("Informe o nome genérico do produto.");
       return;
     }
-    const rawValue = itemValueDraft.trim().replace(",", ".");
-    if (rawValue) {
-      const parsed = Number(rawValue);
-      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 3000) {
-        toast.error("Valor declarado inválido. Use de 0 a 3000.");
-        return;
-      }
+    const rawQty = itemQtyDraft.trim() || "1";
+    const qty = Number(rawQty.replace(",", "."));
+    if (!Number.isFinite(qty) || qty < 1 || qty > 999) {
+      toast.error("Quantidade inválida. Use de 1 a 999.");
+      return;
+    }
+    const rawValue = itemValueDraft.trim().replace(",", ".") || "5";
+    const parsedValue = Number(rawValue);
+    if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 3000) {
+      toast.error("Valor declarado inválido. Use de 0 a 3000.");
+      return;
     }
     setItemNameSaving(true);
     try {
@@ -193,6 +207,7 @@ export default function AdminEnvioEcomTrackingPanel({
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
+          quantity: Math.round(qty),
           declaredValue: rawValue,
         }),
       });
@@ -200,24 +215,28 @@ export default function AdminEnvioEcomTrackingPanel({
         onUnauthorized();
         return;
       }
-      const data = await res.json() as { name?: string; declaredValue?: number | null; message?: string };
+      const data = await res.json() as {
+        name?: string;
+        quantity?: number;
+        declaredValue?: number | null;
+        message?: string;
+      };
       if (!res.ok) {
-        toast.error(data.message || "Falha ao salvar nome/valor genérico.");
+        toast.error(data.message || "Falha ao salvar dados da etiqueta.");
         return;
       }
       const saved = String(data.name || name).trim();
-      const savedValue = formatDeclaredValueInput(data.declaredValue);
+      const savedQty = String(Math.max(1, Number(data.quantity || qty) || 1));
+      const savedValue = formatDeclaredValueInput(data.declaredValue) || "5,00";
       setItemNameDraft(saved);
       setItemNameSaved(saved);
+      setItemQtyDraft(savedQty);
+      setItemQtySaved(savedQty);
       setItemValueDraft(savedValue);
       setItemValueSaved(savedValue);
-      toast.success(
-        savedValue
-          ? "Nome e valor genéricos salvos. Próximos creates EnvioEcom usarão esses dados."
-          : "Nome genérico salvo. Valor vazio: a EnvioEcom recebe o preço do pedido.",
-      );
+      toast.success("Etiqueta salva. Só o próximo create EnvioEcom usa esses dados.");
     } catch {
-      toast.error("Erro ao salvar nome/valor genérico.");
+      toast.error("Erro ao salvar dados da etiqueta.");
     } finally {
       setItemNameSaving(false);
     }
@@ -345,6 +364,7 @@ export default function AdminEnvioEcomTrackingPanel({
 
   const itemNameDirty =
     itemNameDraft.trim() !== itemNameSaved.trim() ||
+    itemQtyDraft.trim() !== itemQtySaved.trim() ||
     itemValueDraft.trim() !== itemValueSaved.trim();
 
   return (
@@ -391,11 +411,10 @@ export default function AdminEnvioEcomTrackingPanel({
 
       <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
         <div>
-          <p className="text-sm font-bold text-amber-950">Nome e valor no create EnvioEcom</p>
+          <p className="text-sm font-bold text-amber-950">Item da etiqueta EnvioEcom</p>
           <p className="text-xs text-amber-900/80 mt-0.5">
-            Nome e valor declarados vão para a API. O nome e o preço reais do site nunca entram.
-            Envios já criados não mudam — só os próximos creates e cotações.
-            Valor vazio usa o preço do pedido (ou R$ 5 se o produto não tiver medidas).
+            O create manda sempre 1 linha com estes dados. Pedido, estoque, comissão e cotação
+            (pacote 2×12×17, 0,3 kg, R$ 5) não mudam. Envios já gerados não mudam — só o próximo create.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
@@ -403,9 +422,20 @@ export default function AdminEnvioEcomTrackingPanel({
             value={itemNameDraft}
             onChange={(e) => setItemNameDraft(e.target.value.slice(0, 120))}
             disabled={itemNameLoading || itemNameSaving}
-            placeholder="Ex.: Mercadoria / Tela de celular"
+            placeholder="Ex.: Tela de celular"
             className="flex-1 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
             maxLength={120}
+          />
+          <input
+            value={itemQtyDraft}
+            onChange={(e) => {
+              const next = e.target.value.replace(/[^\d]/g, "").slice(0, 3);
+              setItemQtyDraft(next);
+            }}
+            disabled={itemNameLoading || itemNameSaving}
+            inputMode="numeric"
+            placeholder="Qtd (1)"
+            className="w-full sm:w-24 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
           />
           <input
             value={itemValueDraft}
@@ -415,7 +445,7 @@ export default function AdminEnvioEcomTrackingPanel({
             }}
             disabled={itemNameLoading || itemNameSaving}
             inputMode="decimal"
-            placeholder="Valor R$ (ex.: 50,00)"
+            placeholder="Valor R$ (5,00)"
             className="w-full sm:w-40 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
           />
           <Button
@@ -432,7 +462,7 @@ export default function AdminEnvioEcomTrackingPanel({
           <span className="font-semibold">
             {itemNameLoading
               ? "…"
-              : `${itemNameSaved}${itemValueSaved ? ` · R$ ${itemValueSaved}` : " · valor do pedido"}`}
+              : `${itemNameSaved} · qty ${itemQtySaved} · R$ ${itemValueSaved}`}
           </span>
         </p>
       </div>

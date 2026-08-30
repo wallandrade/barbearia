@@ -42,7 +42,8 @@ const ALLOWED_KEYS = [
   "admin_saved_brands",
   // EnvioEcom: nome genérico dos itens no create (nunca nome do catálogo)
   "envioecom_shipment_item_name",
-  // EnvioEcom: valor declarado genérico no create/cotação (nunca preço do catálogo, se preenchido)
+  // EnvioEcom: qty e valor da etiqueta no create (nunca catálogo)
+  "envioecom_shipment_item_qty",
   "envioecom_shipment_item_value",
 ];
 

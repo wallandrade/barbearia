@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | Create EnvioEcom: `items` = 1 linha das settings nome/qty/valor (defaults Mercadoria/1/R$5); cotação não usa esses settings | Pedido interno intacto; etiqueta genérica | Cotação 2×12×17 0,3kg R$5; webhook; contas |
 | 2026-08-30 | Conta EnvioEcom do Railway no seletor: label **São Paulo (servidor)** (`id=env`) | Só o nome no modal/painel | Token, CEP e contas cadastradas iguais |
 | 2026-08-30 | Sync estoque Motoboy+Minas (somente leitura): `GET /api/integrations/inventory/snapshot` + webhook `inventory.changed` | Espelho puxa/recebe os dois pools juntos | Loja, cobertura Motoboy, checkout iguais |
 | 2026-08-29 | Rastreios: valor declarado global (`envioecom_shipment_item_value`) no mesmo GET/PUT do nome | Quote/create usam o valor se preenchido (≤R$3000); item único qty 1 | Nome, webhook, contas iguais |
@@ -80,7 +81,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
 - Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
-- Create/cotação: **nome genérico** (`site_settings.envioecom_shipment_item_name`, default `Mercadoria`) e **valor declarado genérico** opcional (`envioecom_shipment_item_value`, 0–3000). Se o valor estiver preenchido, vira `items[].unit_cost` (1 item) + `cost`/`price` da cotação — nunca o preço do catálogo. Vazio = comportamento antigo (preço do pedido / R$5 sem medidas). Editável em Admin → Rastreios (`GET/PUT .../shipment-item-name` também devolve/grava `declaredValue`). Envios já criados não mudam.
+- Create: **`items` sempre 1 linha** das settings (`envioecom_shipment_item_name` default `Mercadoria`, `envioecom_shipment_item_qty` default 1, `envioecom_shipment_item_value` default R$5). Nunca nome/qty/preço do catálogo. Editável em Admin → Rastreios (`GET/PUT .../shipment-item-name` devolve/grava `name`, `quantity`, `declaredValue`). Cotação **não** usa esses settings (pacote 2×12×17, 0,3 kg, R$5). Envios já criados não mudam.
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
 - Cliente: card com Situação/EnvioEcom + eventos abertos (`status_history` da API → `envioecomStatusHistory`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` em `CustomerOrders.tsx`
 - Sync/soft-sync: `pickEffectiveShipmentStatus` — se `status` do envio ficar em Pronto/etiqueta mas o último `status_history` for Coletado/trânsito/entregue, grava o do histórico
