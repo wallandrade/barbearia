@@ -113,6 +113,11 @@ function groupBadgeClass(group: TrackingBoardItem["group"]): string {
   return freightStatusBadgeClass(null, group);
 }
 
+function formatDeclaredValueInput(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(Number(value))) return "";
+  return Number(value).toFixed(2).replace(".", ",");
+}
+
 export default function AdminEnvioEcomTrackingPanel({
   authHeaders,
   onUnauthorized,
@@ -128,6 +133,8 @@ export default function AdminEnvioEcomTrackingPanel({
   const [configured, setConfigured] = useState(true);
   const [itemNameDraft, setItemNameDraft] = useState("Mercadoria");
   const [itemNameSaved, setItemNameSaved] = useState("Mercadoria");
+  const [itemValueDraft, setItemValueDraft] = useState("");
+  const [itemValueSaved, setItemValueSaved] = useState("");
   const [itemNameLoading, setItemNameLoading] = useState(true);
   const [itemNameSaving, setItemNameSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -142,16 +149,24 @@ export default function AdminEnvioEcomTrackingPanel({
         onUnauthorized();
         return;
       }
-      const data = await res.json() as { name?: string; defaultName?: string; message?: string };
+      const data = await res.json() as {
+        name?: string;
+        defaultName?: string;
+        declaredValue?: number | null;
+        message?: string;
+      };
       if (!res.ok) {
-        toast.error(data.message || "Falha ao carregar nome genérico EnvioEcom.");
+        toast.error(data.message || "Falha ao carregar nome/valor genérico EnvioEcom.");
         return;
       }
       const name = String(data.name || data.defaultName || "Mercadoria").trim() || "Mercadoria";
+      const valueText = formatDeclaredValueInput(data.declaredValue);
       setItemNameDraft(name);
       setItemNameSaved(name);
+      setItemValueDraft(valueText);
+      setItemValueSaved(valueText);
     } catch {
-      toast.error("Erro ao carregar nome genérico EnvioEcom.");
+      toast.error("Erro ao carregar nome/valor genérico EnvioEcom.");
     } finally {
       setItemNameLoading(false);
     }
@@ -163,28 +178,46 @@ export default function AdminEnvioEcomTrackingPanel({
       toast.error("Informe o nome genérico do produto.");
       return;
     }
+    const rawValue = itemValueDraft.trim().replace(",", ".");
+    if (rawValue) {
+      const parsed = Number(rawValue);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 3000) {
+        toast.error("Valor declarado inválido. Use de 0 a 3000.");
+        return;
+      }
+    }
     setItemNameSaving(true);
     try {
       const res = await fetch(`${BASE}/api/admin/envioecom/shipment-item-name`, {
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({
+          name,
+          declaredValue: rawValue,
+        }),
       });
       if (res.status === 401) {
         onUnauthorized();
         return;
       }
-      const data = await res.json() as { name?: string; message?: string };
+      const data = await res.json() as { name?: string; declaredValue?: number | null; message?: string };
       if (!res.ok) {
-        toast.error(data.message || "Falha ao salvar nome genérico.");
+        toast.error(data.message || "Falha ao salvar nome/valor genérico.");
         return;
       }
       const saved = String(data.name || name).trim();
+      const savedValue = formatDeclaredValueInput(data.declaredValue);
       setItemNameDraft(saved);
       setItemNameSaved(saved);
-      toast.success("Nome genérico salvo. Novos creates EnvioEcom usarão esse nome.");
+      setItemValueDraft(savedValue);
+      setItemValueSaved(savedValue);
+      toast.success(
+        savedValue
+          ? "Nome e valor genéricos salvos. Próximos creates EnvioEcom usarão esses dados."
+          : "Nome genérico salvo. Valor vazio: a EnvioEcom recebe o preço do pedido.",
+      );
     } catch {
-      toast.error("Erro ao salvar nome genérico.");
+      toast.error("Erro ao salvar nome/valor genérico.");
     } finally {
       setItemNameSaving(false);
     }
@@ -310,7 +343,9 @@ export default function AdminEnvioEcomTrackingPanel({
     { key: "cancelled", group: "cancelled" as const, label: "Cancelados", value: summary?.cancelled ?? 0 },
   ]), [items.length, summary]);
 
-  const itemNameDirty = itemNameDraft.trim() !== itemNameSaved.trim();
+  const itemNameDirty =
+    itemNameDraft.trim() !== itemNameSaved.trim() ||
+    itemValueDraft.trim() !== itemValueSaved.trim();
 
   return (
     <div className="space-y-4">
@@ -356,10 +391,11 @@ export default function AdminEnvioEcomTrackingPanel({
 
       <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
         <div>
-          <p className="text-sm font-bold text-amber-950">Nome do produto no create EnvioEcom</p>
+          <p className="text-sm font-bold text-amber-950">Nome e valor no create EnvioEcom</p>
           <p className="text-xs text-amber-900/80 mt-0.5">
-            Esse nome é enviado para <span className="font-semibold">todos</span> os itens. O nome real do site nunca vai na API.
-            Envios já criados não mudam — só os próximos creates.
+            Nome e valor declarados vão para a API. O nome e o preço reais do site nunca entram.
+            Envios já criados não mudam — só os próximos creates e cotações.
+            Valor vazio usa o preço do pedido (ou R$ 5 se o produto não tiver medidas).
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
@@ -367,9 +403,20 @@ export default function AdminEnvioEcomTrackingPanel({
             value={itemNameDraft}
             onChange={(e) => setItemNameDraft(e.target.value.slice(0, 120))}
             disabled={itemNameLoading || itemNameSaving}
-            placeholder="Ex.: Mercadoria / Suplementos"
+            placeholder="Ex.: Mercadoria / Tela de celular"
             className="flex-1 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
             maxLength={120}
+          />
+          <input
+            value={itemValueDraft}
+            onChange={(e) => {
+              const next = e.target.value.replace(/[^\d.,]/g, "").slice(0, 8);
+              setItemValueDraft(next);
+            }}
+            disabled={itemNameLoading || itemNameSaving}
+            inputMode="decimal"
+            placeholder="Valor R$ (ex.: 50,00)"
+            className="w-full sm:w-40 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
           />
           <Button
             className="h-11 gap-1.5 bg-amber-700 hover:bg-amber-800"
@@ -377,11 +424,16 @@ export default function AdminEnvioEcomTrackingPanel({
             onClick={() => { void saveItemName(); }}
           >
             {itemNameSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {itemNameSaving ? "Salvando..." : "Salvar nome"}
+            {itemNameSaving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
         <p className="text-[11px] text-amber-900/70">
-          Atual: <span className="font-semibold">{itemNameLoading ? "…" : itemNameSaved}</span>
+          Atual:{" "}
+          <span className="font-semibold">
+            {itemNameLoading
+              ? "…"
+              : `${itemNameSaved}${itemValueSaved ? ` · R$ ${itemValueSaved}` : " · valor do pedido"}`}
+          </span>
         </p>
       </div>
 
