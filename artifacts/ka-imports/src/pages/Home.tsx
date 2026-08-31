@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { clearSellerContext } from "@/lib/utils";
-import { sortCategoryProducts } from "@/lib/catalog-sort";
+import { sortCategoryProducts, topSoldRanksById } from "@/lib/catalog-sort";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -459,7 +459,9 @@ export default function Home() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
-                {groupedFilteredProducts.map((group, groupIndex) => (
+                {groupedFilteredProducts.map((group, groupIndex) => {
+                  const salesRanks = topSoldRanksById(group.products);
+                  return (
                   <section key={group.category}>
                     <Link
                       href={sellerSlug
@@ -482,13 +484,19 @@ export default function Home() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: Math.min(absoluteIndex * 0.02, 0.3) }}
                           >
-                            <ProductCard product={product} sellerSlug={sellerSlug} priority={absoluteIndex < 4} />
+                            <ProductCard
+                              product={product}
+                              sellerSlug={sellerSlug}
+                              priority={absoluteIndex < 4}
+                              salesRank={salesRanks.get(product.id)}
+                            />
                           </motion.div>
                         );
                       })}
                     </div>
                   </section>
-                ))}
+                  );
+                })}
               </motion.div>
             )}
           </div>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { comparePeptideBrandOrder, isPeptideCategory, sortCategoryProducts } from "./catalog-sort";
+import { comparePeptideBrandOrder, isPeptideCategory, sortCategoryProducts, topSoldRanksById } from "./catalog-sort";
 
 test("reconhece Peptídeo com acento e caixa", () => {
   assert.equal(isPeptideCategory("Peptídeo"), true);
@@ -42,4 +42,19 @@ test("esgotado fica por último mesmo sendo BIOGENESIS", () => {
     { brand: "Glow", isSoldOut: false, name: "Glow" },
   );
   assert.ok(cmp > 0);
+});
+
+test("selo TOP 1 2 3 pelos mais vendidos da categoria", () => {
+  const ranks = topSoldRanksById([
+    { id: "a", soldQty: 10 },
+    { id: "b", soldQty: 40 },
+    { id: "c", soldQty: 0 },
+    { id: "d", soldQty: 25 },
+    { id: "e", soldQty: 7 },
+  ]);
+  assert.equal(ranks.get("b"), 1);
+  assert.equal(ranks.get("d"), 2);
+  assert.equal(ranks.get("a"), 3);
+  assert.equal(ranks.has("c"), false);
+  assert.equal(ranks.has("e"), false);
 });

@@ -9,6 +9,7 @@ interface ProductCardProps {
   product: Product;
   sellerSlug?: string;
   priority?: boolean;
+  salesRank?: 1 | 2 | 3;
 }
 
 type BulkDiscountTier = {
@@ -56,7 +57,7 @@ function hasVariantGroups(product: Product): boolean {
   });
 }
 
-export function ProductCard({ product, sellerSlug, priority = false }: ProductCardProps) {
+export function ProductCard({ product, sellerSlug, priority = false, salesRank }: ProductCardProps) {
   const hasPromo = product.promoPrice != null && product.promoPrice < product.price;
   const isSoldOut = isProductUnavailable(product);
   const isLaunch = (product as Product & { isLaunch?: boolean }).isLaunch === true;
@@ -94,11 +95,18 @@ export function ProductCard({ product, sellerSlug, priority = false }: ProductCa
           fetchPriority={priority ? "high" : "auto"}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
-        {hasPromo && (
-          <div className="absolute top-3 left-3 bg-destructive text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
-            OFERTA
-          </div>
-        )}
+        <div className="absolute top-3 left-3 flex flex-col items-start gap-1 z-10">
+          {hasPromo && (
+            <div className="bg-destructive text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+              OFERTA
+            </div>
+          )}
+          {salesRank ? (
+            <div className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+              {`TOP ${salesRank}`}
+            </div>
+          ) : null}
+        </div>
         {isSoldOut ? (
           <div className="absolute top-3 right-3 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
             ESGOTADO

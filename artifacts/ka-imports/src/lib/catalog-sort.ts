@@ -82,3 +82,23 @@ export function sortCategoryProducts<T extends CatalogSortable>(category: unknow
   const compare = isPeptideCategory(category) ? comparePeptideBrandOrder : compareDefaultCatalogOrder;
   return products.slice().sort(compare);
 }
+
+export type SalesRank = 1 | 2 | 3;
+
+export function topSoldRanksById<T extends { id?: string; soldQty?: number | null }>(
+  products: T[],
+): Map<string, SalesRank> {
+  const ranked = products
+    .map((product) => ({
+      id: String(product.id || "").trim(),
+      soldQty: Number(product.soldQty || 0),
+    }))
+    .filter((product) => product.id && Number.isFinite(product.soldQty) && product.soldQty > 0)
+    .sort((a, b) => b.soldQty - a.soldQty || a.id.localeCompare(b.id));
+
+  const ranks = new Map<string, SalesRank>();
+  for (let i = 0; i < ranked.length && i < 3; i += 1) {
+    ranks.set(ranked[i].id, (i + 1) as SalesRank);
+  }
+  return ranks;
+}
