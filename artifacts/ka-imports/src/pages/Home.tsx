@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { clearSellerContext } from "@/lib/utils";
+import { sortCategoryProducts } from "@/lib/catalog-sort";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -219,7 +220,7 @@ export default function Home() {
 
     return orderedCategories.map((category) => ({
       category,
-      products: groups.get(category) ?? [],
+      products: sortCategoryProducts(category, groups.get(category) ?? []),
     }));
   }, [data?.categories, filteredProducts]);
 

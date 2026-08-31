@@ -6,6 +6,7 @@ import { ProductCard } from "@/components/product/ProductCard";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
+import { sortCategoryProducts } from "@/lib/catalog-sort";
 
 export default function CategoryPage() {
   const [, setLocation] = useLocation();
@@ -28,10 +29,8 @@ export default function CategoryPage() {
 
   const filteredProducts = useMemo(() => {
     if (!data?.products) return [];
-    return data.products.filter((product) => {
-      const matches = product.category === categoryName;
-      return matches;
-    });
+    const matches = data.products.filter((product) => product.category === categoryName);
+    return sortCategoryProducts(categoryName, matches);
   }, [data, categoryName]);
 
   if (isLoading) {
