@@ -11,11 +11,11 @@ test("reconhece Peptídeo com acento e caixa", () => {
 
 test("Peptídeo agrupa marca e começa em BIOGENESIS", () => {
   const rows = [
-    { name: "Glow A", brand: "Glow", sortOrder: 1 },
-    { name: "Bio B", brand: "BIOGENESIS", sortOrder: 9 },
-    { name: "Zphc A", brand: "ZPHC", sortOrder: 1 },
-    { name: "Bio A", brand: "biogenesis", sortOrder: 1 },
-    { name: "Sem marca", brand: null, sortOrder: 1 },
+    { name: "Glow A", brand: "Glow", sortOrder: 1, soldQty: 80 },
+    { name: "Bio B", brand: "BIOGENESIS", sortOrder: 9, soldQty: 3 },
+    { name: "Zphc A", brand: "ZPHC", sortOrder: 1, soldQty: 10 },
+    { name: "Bio A", brand: "biogenesis", sortOrder: 1, soldQty: 50 },
+    { name: "Sem marca", brand: null, sortOrder: 1, soldQty: 99 },
   ];
   const sorted = sortCategoryProducts("Peptídeo", rows);
   assert.deepEqual(sorted.map((row) => row.name), [
@@ -25,6 +25,15 @@ test("Peptídeo agrupa marca e começa em BIOGENESIS", () => {
     "Zphc A",
     "Sem marca",
   ]);
+});
+
+test("Tirzepatida ordena do mais vendido para o menos", () => {
+  const sorted = sortCategoryProducts("Tirzepatida", [
+    { name: "Pouco", soldQty: 2, sortOrder: 1 },
+    { name: "Muito", soldQty: 40, sortOrder: 9 },
+    { name: "Nada", soldQty: 0, sortOrder: 1 },
+  ]);
+  assert.deepEqual(sorted.map((row) => row.name), ["Muito", "Pouco", "Nada"]);
 });
 
 test("esgotado fica por último mesmo sendo BIOGENESIS", () => {

@@ -5,6 +5,8 @@ import { eq, asc, desc, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadProductImageToR2 } from "../lib/r2";
+import { loadPaidProductSoldMaps } from "../lib/product-sales-db";
+import { emptyProductSoldMaps, soldQtyForProduct } from "../lib/product-sales";
 
 const router: IRouter = Router();
 const ALLOW_INLINE_IMAGE_FALLBACK = String(process.env.ALLOW_INLINE_IMAGE_FALLBACK || "true").toLowerCase() === "true";
@@ -287,18 +289,23 @@ router.get("/products", async (_req, res) => {
       .where(eq(productsTable.isActive, true))
       .orderBy(desc(productsTable.isLaunch), asc(productsTable.createdAt));
 
-    // Products with explicit positive position (1,2,3...) come first.
-    // Zero/negative means "no manual position" and is pushed to the end.
-    rows.sort((a, b) => {
-      const aSort = a.sortOrder > 0 ? a.sortOrder : Number.MAX_SAFE_INTEGER;
-      const bSort = b.sortOrder > 0 ? b.sortOrder : Number.MAX_SAFE_INTEGER;
-      if (aSort !== bSort) return aSort - bSort;
+    let soldMaps = emptyProductSoldMaps();
+    try {
+      soldMaps = await loadPaidProductSoldMaps();
+    } catch (err) {
+      console.error("[API] GET /api/products - sold qty:", err);
+    }
 
-      if (a.isLaunch !== b.isLaunch) return a.isLaunch ? -1 : 1;
-      return a.createdAt.getTime() - b.createdAt.getTime();
+    const products = rows.map((row) => ({
+      ...mapProduct(row),
+      soldQty: soldQtyForProduct(soldMaps, row.id, row.name),
+    }));
+    products.sort((a, b) => {
+      const aSoldOut = a.isSoldOut === true ? 1 : 0;
+      const bSoldOut = b.isSoldOut === true ? 1 : 0;
+      if (aSoldOut !== bSoldOut) return aSoldOut - bSoldOut;
+      return (Number(b.soldQty) || 0) - (Number(a.soldQty) || 0);
     });
-
-    const products   = rows.map((row) => mapProduct(row));
     const categories = [...new Set(products.map((p) => p.category))];
     const brands     = [...new Set(products.map((p) => p.brand).filter((b): b is string => Boolean(b)))];
     

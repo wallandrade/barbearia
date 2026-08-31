@@ -21,12 +21,18 @@ type CatalogSortable = {
   isSoldOut?: boolean | null;
   isLaunch?: boolean | null;
   sortOrder?: number | null;
+  soldQty?: number | null;
   createdAt?: string | Date | null;
 };
 
 function positionRank(sortOrder: unknown): number {
   const n = Number(sortOrder || 0);
   return n > 0 ? n : Number.MAX_SAFE_INTEGER;
+}
+
+function salesRank(soldQty: unknown): number {
+  const n = Number(soldQty || 0);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function brandGroupRank(brand: unknown): number {
@@ -40,6 +46,9 @@ function compareDefaultCatalogOrder(a: CatalogSortable, b: CatalogSortable): num
   const aSold = a.isSoldOut === true;
   const bSold = b.isSoldOut === true;
   if (aSold !== bSold) return aSold ? 1 : -1;
+
+  const salesDiff = salesRank(b.soldQty) - salesRank(a.soldQty);
+  if (salesDiff !== 0) return salesDiff;
 
   const sortDiff = positionRank(a.sortOrder) - positionRank(b.sortOrder);
   if (sortDiff !== 0) return sortDiff;
