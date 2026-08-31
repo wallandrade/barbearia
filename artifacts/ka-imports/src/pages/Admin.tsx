@@ -15230,6 +15230,7 @@ function ProductsPanel({
   const [productImageUploading, setProductImageUploading] = useState(false);
   const [productBackupExporting, setProductBackupExporting] = useState(false);
   const [productBackupRestoring, setProductBackupRestoring] = useState(false);
+  const [selectedBackupProductIds, setSelectedBackupProductIds] = useState<string[]>([]);
   const [costHistoryProductId, setCostHistoryProductId] = useState<string | null>(null);
   const [costHistoryProductName, setCostHistoryProductName] = useState("");
   const [costHistory, setCostHistory] = useState<Array<{ id: number; costPrice: number; changedAt: string }>>([]);
@@ -15380,8 +15381,15 @@ function ProductsPanel({
   const handleExportBackup = async () => {
     try {
       setProductBackupExporting(true);
-      const res = await fetch(`${BASE}/api/admin/products/export-backup`, { headers: authHeaders() });
-      const data = await res.json().catch(() => ({})) as { message?: string; exportedAt?: string } & Record<string, unknown>;
+      const selectedIds = selectedBackupProductIds.filter(Boolean);
+      const res = selectedIds.length > 0
+        ? await fetch(`${BASE}/api/admin/products/export-backup`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ ids: selectedIds }),
+          })
+        : await fetch(`${BASE}/api/admin/products/export-backup`, { headers: authHeaders() });
+      const data = await res.json().catch(() => ({})) as { message?: string; exportedAt?: string; productCount?: number } & Record<string, unknown>;
 
       if (!res.ok) {
         throw new Error(data?.message || "Falha ao exportar backup de produtos.");
@@ -15401,13 +15409,36 @@ function ProductsPanel({
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
 
-      toast.success("Backup de produtos baixado com sucesso!");
+      const exportedCount = Number(data.productCount);
+      toast.success(
+        selectedIds.length > 0
+          ? `Backup com ${Number.isFinite(exportedCount) ? exportedCount : selectedIds.length} produto(s) baixado.`
+          : "Backup de produtos baixado com sucesso!",
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao exportar backup de produtos.";
       toast.error(message);
     } finally {
       setProductBackupExporting(false);
     }
+  };
+
+  const toggleBackupProduct = (productId: string) => {
+    setSelectedBackupProductIds((current) => (
+      current.includes(productId)
+        ? current.filter((id) => id !== productId)
+        : [...current, productId]
+    ));
+  };
+
+  const selectVisibleProductsForBackup = () => {
+    const visibleIds = visibleProducts.map((product) => product.id);
+    setSelectedBackupProductIds((current) => Array.from(new Set([...current, ...visibleIds])));
+  };
+
+  const deselectVisibleProductsForBackup = () => {
+    const visibleIdSet = new Set(visibleProducts.map((product) => product.id));
+    setSelectedBackupProductIds((current) => current.filter((id) => !visibleIdSet.has(id)));
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -15681,9 +15712,14 @@ function ProductsPanel({
             onClick={handleExportBackup}
             className="gap-2"
             disabled={productBackupExporting}
+            title={selectedBackupProductIds.length > 0
+              ? `Baixa só os ${selectedBackupProductIds.length} produto(s) marcado(s)`
+              : "Nada marcado: baixa o catálogo inteiro"}
           >
             {productBackupExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Salvar backup
+            {selectedBackupProductIds.length > 0
+              ? `Salvar backup (${selectedBackupProductIds.length})`
+              : "Salvar backup"}
           </Button>
           <Button variant="outline" onClick={copyAllProductCosts} className="gap-2">
             <Copy className="w-4 h-4" />Copiar custo
@@ -15705,6 +15741,45 @@ function ProductsPanel({
           className="w-full h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
         />
       </div>
+
+      {products.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/20 px-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            {selectedBackupProductIds.length === 0
+              ? "Marque os produtos para um backup parcial. Sem marca, o backup inclui o catálogo inteiro."
+              : `${selectedBackupProductIds.length} produto(s) marcado(s) para o backup.`}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={selectVisibleProductsForBackup}
+              disabled={visibleProducts.length === 0}
+            >
+              Marcar visíveis
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={deselectVisibleProductsForBackup}
+              disabled={visibleProducts.length === 0 || !visibleProducts.some((product) => selectedBackupProductIds.includes(product.id))}
+            >
+              Desmarcar visíveis
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedBackupProductIds([])}
+              disabled={selectedBackupProductIds.length === 0}
+            >
+              Limpar seleção
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Product form modal */}
       <AnimatePresence>
@@ -16173,9 +16248,19 @@ function ProductsPanel({
         <div className="space-y-3">
           {visibleProducts.map((p) => {
             const effectivePrice = (p.promoPrice && (!p.promoEndsAt || new Date() < new Date(p.promoEndsAt))) ? p.promoPrice : p.price;
+            const isSelectedForBackup = selectedBackupProductIds.includes(p.id);
             return (
-              <div key={p.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${!p.isActive ? "opacity-60" : ""}`}>
+              <div key={p.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${!p.isActive ? "opacity-60" : ""} ${isSelectedForBackup ? "border-primary/50 ring-1 ring-primary/30" : ""}`}>
                 <div className="flex gap-4 p-4">
+                  <label className="flex items-start pt-1 flex-shrink-0 cursor-pointer" title="Incluir no backup">
+                    <input
+                      type="checkbox"
+                      checked={isSelectedForBackup}
+                      onChange={() => toggleBackupProduct(p.id)}
+                      className="h-4 w-4 mt-0.5 rounded border-border accent-primary"
+                    />
+                    <span className="sr-only">Selecionar {p.name} para backup</span>
+                  </label>
                   {/* Image */}
                   <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden border border-border bg-muted flex items-center justify-center">
                     {p.image ? (

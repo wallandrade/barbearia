@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-30 | `POST /api/admin/products/export-backup` exporta só `ids` (admin primário, máx. 500) | Backup parcial sem baixar o catálogo todo | GET sem ids = catálogo inteiro; restore igual |
 | 2026-08-30 | Restore de produtos ignora `deleteMissing`; API não apaga linhas de `products` nesse POST | Backup curto não apaga o catálogo | CRUD/DELETE individual iguais |
 | 2026-08-27 | Chat `/api/chat/ask` sempre ligado (ficha local); OpenAI só se houver chave | Bolha no login sem env OpenAI | Writes de pedido/PIX/KYC iguais |
 | 2026-08-11 | Baseline segurança/perf | Checklist operacional | Sem mudança de código |
@@ -38,6 +39,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 ## Admin catálogo
 
 - `POST /api/admin/products/restore-backup` **não apaga** produtos. `deleteMissing` no body é ignorado.
+- `GET /api/admin/products/export-backup` = catálogo inteiro (query `ids` opcional). `POST` com `{ ids }` = só esses produtos (`requirePrimaryAdmin`).
 
 ## Gateway / reconciliação
 

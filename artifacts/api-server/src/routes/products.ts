@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, productsTable, productCostHistoryTable, ordersTable } from "@workspace/db";
 import { db, productsTable, productCostHistoryTable, ordersTable, siteSettingsTable } from "@workspace/db";
-import { eq, asc, desc, gte } from "drizzle-orm";
+import { eq, asc, desc, gte, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadProductImageToR2 } from "../lib/r2";
@@ -448,24 +448,80 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
   }
 });
 
-/** GET /api/admin/products/export-backup */
-router.get("/admin/products/export-backup", requirePrimaryAdmin, async (_req, res) => {
-  try {
-    const [productRows, savedBrandRows] = await Promise.all([
-      db.select().from(productsTable).orderBy(asc(productsTable.createdAt)),
-      db.select({ value: siteSettingsTable.value }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "admin_saved_brands")).limit(1),
-    ]);
+function parseExportProductIds(raw: unknown): string[] | null {
+  if (raw == null) return null;
+  const values = Array.isArray(raw) ? raw : [raw];
+  const ids = Array.from(
+    new Set(
+      values
+        .flatMap((value) => String(value ?? "").split(","))
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  );
+  if (ids.length === 0) return null;
+  return ids.slice(0, 500);
+}
 
-    const savedBrands = normalizeSavedBrands(savedBrandRows[0]?.value);
-    const backup = {
+async function buildProductsBackupPayload(ids: string[] | null) {
+  const productQuery = ids
+    ? db.select().from(productsTable).where(inArray(productsTable.id, ids)).orderBy(asc(productsTable.createdAt))
+    : db.select().from(productsTable).orderBy(asc(productsTable.createdAt));
+
+  const [productRows, savedBrandRows] = await Promise.all([
+    productQuery,
+    db.select({ value: siteSettingsTable.value }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "admin_saved_brands")).limit(1),
+  ]);
+
+  if (ids && productRows.length === 0) {
+    return { error: "INVALID_INPUT" as const, message: "Nenhum produto encontrado para os IDs enviados." };
+  }
+
+  const savedBrands = normalizeSavedBrands(savedBrandRows[0]?.value);
+  return {
+    backup: {
       version: 1,
       exportedAt: new Date().toISOString(),
       productCount: productRows.length,
       savedBrands,
       products: productRows.map((product) => serializeProductBackup(product)),
-    };
+    },
+  };
+}
 
-    res.json(backup);
+/** GET /api/admin/products/export-backup — catálogo inteiro (ou ?ids=) */
+router.get("/admin/products/export-backup", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const ids = parseExportProductIds(req.query.ids);
+    const result = await buildProductsBackupPayload(ids);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error, message: result.message });
+      return;
+    }
+    res.json(result.backup);
+  } catch (err) {
+    console.error("Export products backup error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
+/** POST /api/admin/products/export-backup — só os ids enviados */
+router.post("/admin/products/export-backup", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const ids = parseExportProductIds((req.body as { ids?: unknown } | undefined)?.ids);
+    if (!ids) {
+      res.status(400).json({
+        error: "INVALID_INPUT",
+        message: "Envie ids de produtos para exportar, ou use GET para o catálogo inteiro.",
+      });
+      return;
+    }
+    const result = await buildProductsBackupPayload(ids);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error, message: result.message });
+      return;
+    }
+    res.json(result.backup);
   } catch (err) {
     console.error("Export products backup error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
