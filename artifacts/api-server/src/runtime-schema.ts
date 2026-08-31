@@ -917,6 +917,24 @@ async function ensureManualReturnItemsTable(databaseName: string): Promise<void>
   }
 }
 
+async function ensureOrderActivityTable(databaseName: string): Promise<void> {
+  if (await tableExists("order_activity", databaseName)) return;
+
+  await pool.query(`
+    CREATE TABLE order_activity (
+      id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+      order_id VARCHAR(255) NOT NULL,
+      type VARCHAR(64) NOT NULL,
+      label VARCHAR(255) NOT NULL,
+      actor_type VARCHAR(32) NOT NULL DEFAULT 'system',
+      actor_name VARCHAR(255) NULL,
+      detail TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY order_activity_order_id_created_idx (order_id, created_at)
+    )
+  `);
+}
+
 async function ensureProductCostHistoryTable(databaseName: string): Promise<void> {
   if (await tableExists("product_cost_history", databaseName)) return;
 
@@ -1050,6 +1068,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureManualReshipmentsTable(databaseName);
     await ensureManualReturnItemsTable(databaseName);
     await ensureProductCostHistoryTable(databaseName);
+    await ensureOrderActivityTable(databaseName);
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);
     await ensureSellerCommissionBatchesTable(databaseName);

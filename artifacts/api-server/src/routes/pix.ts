@@ -13,6 +13,7 @@ import {
 } from "../gateway";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { recordOrderActivity } from "../lib/order-activity";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
 import { allocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 
@@ -256,6 +257,15 @@ router.post("/pix/callback/:token", async (req, res) => {
         total: existing[0]?.total,
         source: "legacy_pix_callback",
       });
+      if (existing[0]?.id) {
+        void recordOrderActivity({
+          orderId: existing[0].id,
+          type: "status",
+          label: "Pago (PIX)",
+          actorType: "webhook",
+          actorName: "PIX",
+        });
+      }
     }
 
     res.json({ ok: true });

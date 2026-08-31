@@ -13,6 +13,7 @@ import {
 import { getCustomerSession } from "../middlewares/customer-auth";
 import { applyAffiliateCreditToOrder, ensureOrderCommission, normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { recordOrderActivity } from "../lib/order-activity";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
@@ -533,6 +534,14 @@ router.post("/checkout/pix", async (req, res) => {
       sellerCode: resolvedSellerCode,
       createdAt: new Date().toISOString(),
     });
+    void recordOrderActivity({
+      orderId,
+      type: "created",
+      label: "Pedido criado",
+      actorType: "customer",
+      actorName: String(client.name || "").trim() || null,
+      detail: "PIX",
+    });
 
     // Increment coupon usage if applicable
     if (normalizedCouponCode) {
@@ -549,6 +558,13 @@ router.post("/checkout/pix", async (req, res) => {
         clientName: client.name,
         total: amount,
         coveredByAffiliateCredit: true,
+      });
+      void recordOrderActivity({
+        orderId,
+        type: "status",
+        label: "Pago (crédito afiliado)",
+        actorType: "system",
+        actorName: "Sistema",
       });
       res.json({
         orderId,

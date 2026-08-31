@@ -20,10 +20,22 @@ import { fetchTransactionStatus, isPaymentConfirmed } from "../gateway";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { recordOrderActivity } from "../lib/order-activity";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
 import { requirePrimaryAdmin } from "./admin-auth";
 
 const router: IRouter = Router();
+
+function recordPixPaid(orderId: string, detail?: string | null) {
+  void recordOrderActivity({
+    orderId,
+    type: "status",
+    label: "Pago (PIX)",
+    actorType: "webhook",
+    actorName: "PIX",
+    detail: detail ?? null,
+  });
+}
 
 const WEBHOOK_SHARED_SECRET = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
 const WEBHOOK_DIRECT_TOKEN = String(process.env.WEBHOOK_DIRECT_TOKEN || WEBHOOK_SHARED_SECRET).trim();
@@ -122,6 +134,7 @@ async function handleCallback(body: GatewayCallback) {
               clientName: row.clientName,
               total: row.total,
             });
+            recordPixPaid(row.id);
           }
 
           console.log(`[WEBHOOK] Order ${row.id} updated to ${newStatus}`);
@@ -207,6 +220,7 @@ async function handleCallback(body: GatewayCallback) {
                   total: parentOrder[0].total,
                   source: "difference_charge",
                 });
+                recordPixPaid(row.orderId, "Cobrança de diferença");
               }
 
               if (newOrderStatus === "paid" || newOrderStatus === "completed") {
@@ -424,6 +438,7 @@ router.post("/webhook", async (req, res) => {
             total: rows[0]!.total,
             source: "universal_webhook",
           });
+          recordPixPaid(rawOrderId);
         }
         console.log(`[WEBHOOK/universal] Order ${rawOrderId} → ${newStatus}`);
         res.json({ ok: true, matched: true, updated: "order", id: rawOrderId, status: newStatus });
@@ -482,6 +497,7 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
           total: rows[0]!.total,
           source: "direct_order_webhook",
         });
+        recordPixPaid(orderId);
         console.log(`[WEBHOOK] Order ${orderId} paid via direct URL`);
       }
     }
@@ -559,6 +575,7 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
                 total: parentOrder[0].total,
                 source: "direct_charge_webhook",
               });
+              recordPixPaid(rows[0]!.orderId, "Cobrança de diferença");
             }
             console.log(`[WEBHOOK] Order ${rows[0]!.orderId} auto-updated to ${newOrderStatus} after diff charge (direct URL)`);
 

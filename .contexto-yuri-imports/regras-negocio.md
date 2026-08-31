@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-30
+> **Última atualização:** 2026-08-31
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -10,6 +10,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-31 | Admin: **Histórico do pedido** (linha do tempo em Detalhes). Tabela `order_activity`; ações admin/PIX/EE daqui pra frente. Pedido antigo mostra criado (+ enviado se já estava) | Só o card Detalhes | Status/pagamento/EE iguais |
 | 2026-08-30 | Admin catálogo: checkbox para backup parcial; **Salvar backup** com marca = só esses ids (`POST export-backup`); sem marca = catálogo inteiro (GET) | JSON menor; restaurar continua merge | Restaurar não apaga; formato do arquivo igual |
 | 2026-08-30 | Catálogo: selo **TOP 1/2/3** nos 3 mais vendidos de cada categoria | Só o badge no card; sem qty | Ordem de vendas e Peptídeo/BIOGENESIS iguais |
 | 2026-08-30 | Catálogo por categoria: mais vendido primeiro (pedidos paid/completed, sem filho de reenvio); sem selo na loja | Ordem dos cards; Peptídeo ainda junta marca / BIOGENESIS | Filtros; card sem ranking visível |
@@ -145,6 +146,7 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 - Cupons: `%` ou valor fixo, mínimo, limite de usos, elegibilidade — `coupons.ts` / schema `coupons`.
 - Admin Produtos: **Restaurar backup** só cria/atualiza pelo `id`. `POST /api/admin/products/restore-backup` **ignora** `deleteMissing` e não dá `DELETE` no catálogo. Apagar produto continua só no botão individual. **Salvar backup:** checkbox nos cards + Marcar/Desmarcar visíveis; nada marcado → `GET /api/admin/products/export-backup` (catálogo inteiro); com marca → `POST` com `{ ids }` (máx. 500). Formato JSON igual (`version`, `products`, `productCount`).
+- Admin Pedidos: em **Detalhes**, linha do tempo (`GET /api/admin/orders/:id/activity`, tabela `order_activity`). Grava daqui pra frente: status, observação, grupo, comprovante, edição, diferença PIX, prioridade, estoque, enviado, rastreio, EnvioEcom (criar/etiqueta/vincular/sync/cancelar), PIX pago, pedido criado. Pedido antigo: “Pedido criado” (e “enviado” se já estava). Quem fez + data. Não substitui a timeline de rastreio EE.
 - Catálogo **Peptídeo** (filtro na home e `/categoria/Peptídeo`): produtos da mesma marca juntos; **BIOGENESIS** primeiro; demais marcas A–Z; sem marca no fim; esgotado por último. Usa o campo `brand` do cadastro.
 - Catálogo (todas as categorias): ordem **mais vendido → menos vendido** (unidades em pedidos `paid`/`completed`, sem pedido filho de reenvio). Selo **TOP 1 / TOP 2 / TOP 3** nos 3 com `soldQty` > 0 da categoria (home e `/categoria/...`). Sem número de unidades no card. Em Peptídeo o selo segue as vendas, não a posição na grade (BIOGENESIS continua primeiro).
 - Order bumps: ofertas no checkout — `order-bumps`.

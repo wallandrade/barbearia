@@ -4,6 +4,7 @@ import { db, ordersTable, siteSettingsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
+import { recordAdminActivity } from "../lib/order-activity";
 import {
   EnvioEcomApiError,
   appendStatusHistory,
@@ -782,6 +783,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       }
     }
 
+    recordAdminActivity(req, order.id, "envioecom", "Criou envio EnvioEcom", shippingCompany);
     res.json({
       ok: true,
       orderId: order.id,
@@ -1008,6 +1010,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       })
       .where(eq(ordersTable.id, order.id));
 
+    recordAdminActivity(req, order.id, "envioecom", "Gerou etiqueta EnvioEcom", barcode || shipmentId || null);
     res.json({
       ok: true,
       barcode: barcode || null,
@@ -1101,6 +1104,14 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     }
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
+    const isLink = Boolean(bodyShipmentId || bodyBarcode);
+    recordAdminActivity(
+      req,
+      order.id,
+      "envioecom",
+      isLink ? "Vinculou EnvioEcom" : "Sincronizou EnvioEcom",
+      live.barcode || live.shipmentId || null,
+    );
     res.json({
       ok: true,
       tracking: publicTrackingPayload(refreshed[0]!),
@@ -1164,6 +1175,7 @@ router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, 
     });
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
+    recordAdminActivity(req, order.id, "envioecom", "Cancelou envio EnvioEcom", reason || null);
     res.json({
       ok: true,
       auto_cancelled: Boolean(result.auto_cancelled),

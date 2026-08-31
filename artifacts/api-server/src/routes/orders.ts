@@ -23,6 +23,7 @@ import { getReshipmentByOrderIds, getMotoboyStockMap, getMinasStockMap, register
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
@@ -1396,6 +1397,14 @@ router.post("/orders", async (req, res) => {
       sellerCode: resolvedSellerCode,
       createdAt: new Date().toISOString(),
     });
+    void recordOrderActivity({
+      orderId: id,
+      type: "created",
+      label: "Pedido criado",
+      actorType: "customer",
+      actorName: String(client.name || "").trim() || null,
+      detail: method ? `Pagamento: ${method}` : null,
+    });
 
     const [createdOrderRow] = await db
       .select({ orderNumber: ordersTable.orderNumber })
@@ -1678,6 +1687,35 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/admin/orders/:id/activity  (protected)
+// ---------------------------------------------------------------------------
+router.get("/admin/orders/:id/activity", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const existing = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const events = await listOrderActivity(id);
+    res.json({ events });
+  } catch (err) {
+    console.error("Admin order activity error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar histórico do pedido." });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/status  (protected)
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
@@ -1806,6 +1844,16 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
         source: "admin_manual",
       });
     }
+    const statusLabels: Record<string, string> = {
+      paid: "Marcou como pago",
+      completed: "Marcou como concluído",
+      cancelled: "Cancelou o pedido",
+      pending: "Marcou como pendente",
+      awaiting_payment: "Marcou aguardando pagamento",
+    };
+    if (currentStatus !== nextStatus) {
+      recordAdminActivity(req, id, "status", statusLabels[nextStatus] || `Status: ${nextStatus}`, `De ${currentStatus} para ${nextStatus}`);
+    }
     res.json({ ok: true, id, status });
   } catch (err) {
     console.error("Update order status error:", err);
@@ -1827,6 +1875,7 @@ router.patch("/admin/orders/:id/observation", requireAdminAuth, async (req, res)
     await db.update(ordersTable)
       .set({ observation: observation?.trim() || null, updatedAt: new Date() })
       .where(buildAdminOrderWhere(id, adminScope));
+    recordAdminActivity(req, id, "observation", "Alterou observações");
     res.json({ ok: true });
   } catch (err) {
     console.error("Update observation error:", err);
@@ -1875,6 +1924,12 @@ router.patch("/admin/orders/:id/whatsapp-group", requireAdminAuth, async (req, r
       return;
     }
 
+    recordAdminActivity(
+      req,
+      id,
+      "whatsapp_group",
+      normalizedGroup ? `Grupo WhatsApp: ${normalizedGroup}` : "Removeu grupo WhatsApp",
+    );
     res.json({ ok: true, order: mapOrder(updated[0]) });
   } catch (err) {
     console.error("Update whatsapp group error:", err);
@@ -1948,6 +2003,7 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
         source: "admin_proof",
       });
     }
+    recordAdminActivity(req, id, "proof", "Enviou comprovante");
     res.json({ ok: true, proofUrls: urls });
   } catch (err) {
     console.error("Upload proof error:", err);
@@ -2121,6 +2177,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     if (!updated[0]) { res.status(404).json({ error: "NOT_FOUND" }); return; }
 
     broadcastNotification({ type: "order_updated", data: { id } });
+    recordAdminActivity(req, id, "edit", "Editou o pedido", `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}`);
     res.json({ ok: true, order: mapOrder(updated[0]) });
   } catch (err) {
     console.error("Edit order error:", err);
@@ -2190,6 +2247,7 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
     });
 
     const expiresAt = new Date(Date.now() + PIX_DURATION_MS).toISOString();
+    recordAdminActivity(req, id, "difference_charge", "Criou cobrança de diferença", `R$ ${Number(amount).toFixed(2)}`);
     res.json({
       id: chargeId,
       transactionId: gatewayData.transactionId,
@@ -2527,6 +2585,7 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
       .limit(1);
 
     broadcastNotification({ type: "order_priority_updated", data: { id, isPrioridade } });
+    recordAdminActivity(req, id, "priority", isPrioridade ? "Marcou prioridade" : "Removeu prioridade");
     res.json({
       ok: true,
       id,
@@ -2675,6 +2734,14 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       type: "order_inventory_pool_updated",
       data: { id, inventoryPool: nextPool, inventoryReserved },
     });
+    const poolLabel = nextPool === "loja" ? "Foz Guaçu" : nextPool === "motoboy" ? "Motoboy" : nextPool === "minas" ? "Minas" : nextPool;
+    recordAdminActivity(
+      req,
+      id,
+      "inventory",
+      inventoryReserved ? `Baixa de estoque: ${poolLabel}` : `Estoque escolhido: ${poolLabel}`,
+      reserveNow ? "Dar baixa agora" : null,
+    );
     res.json({
       ok: true,
       order: updated[0] ? mapOrder(updated[0]) : null,
@@ -2881,6 +2948,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }
 
     broadcastNotification({ type: "order_enviado_updated", data: { id, enviado, inventoryPool } });
+    recordAdminActivity(req, id, "enviado", enviado ? "Marcou como enviado" : "Desmarcou enviado (pendente)");
     res.json({ ok: true, id, enviado, inventoryPool, inventoryReserved: alreadyReserved });
   } catch (err) {
     console.error("Update order enviado error:", err);
@@ -2943,6 +3011,7 @@ router.patch("/admin/orders/:id/tracking-code", requireAdminAuth, async (req, re
       .limit(1);
 
     broadcastNotification({ type: "order_tracking_updated", data: { id, trackingCode: normalized } });
+    recordAdminActivity(req, id, "tracking", "Atualizou código de rastreio", normalized);
     res.json({ ok: true, order: updated[0] ? mapOrder(updated[0]) : null });
   } catch (err) {
     console.error("Update order tracking code error:", err);
