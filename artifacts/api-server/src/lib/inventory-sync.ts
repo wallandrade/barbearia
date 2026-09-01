@@ -7,7 +7,8 @@ import {
   productsTable,
 } from "@workspace/db";
 import { signMotoboyCoverageBody } from "./motoboy-coverage-sync";
-import { buildProductNameMap, resolveProductName } from "./inventory-catalog";
+import { buildCatalogIndex, buildProductNameMap, resolveProductName } from "./inventory-catalog";
+import { enrichNameMapWithLegacyOrders } from "./inventory-resolve";
 
 export type InventorySyncPool = "motoboy" | "minas";
 
@@ -129,7 +130,11 @@ export async function getInventorySyncSnapshot(): Promise<InventorySyncSnapshot>
     db.select({ id: productsTable.id, name: productsTable.name }).from(productsTable),
   ]);
 
-  const nameById = buildProductNameMap(productsRows);
+  const nameById = await enrichNameMapWithLegacyOrders(
+    buildProductNameMap(productsRows),
+    buildCatalogIndex(productsRows),
+    [...motoboyRows, ...minasRows].map((row) => row.productId),
+  );
 
   return {
     syncedAt: new Date().toISOString(),

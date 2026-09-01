@@ -8562,9 +8562,9 @@ function findInventoryCatalogProduct(
     });
     if (exact) return exact;
   }
-  const name = String(productName || "").trim().toLowerCase();
+  const name = String(productName || "").trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
   if (name && name !== id.toLowerCase()) {
-    const named = products.filter((p) => String(p.name || "").trim().toLowerCase() === name);
+    const named = products.filter((p) => String(p.name || "").trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ") === name);
     if (named.length === 1) return named[0];
   }
   return undefined;

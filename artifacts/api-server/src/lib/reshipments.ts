@@ -2,11 +2,14 @@ import crypto from "crypto";
 import { allocateShippingSlot, releaseShippingSlot } from "./shipping-queue-allocator";
 import { scheduleInventoryChangedNotify } from "./inventory-sync";
 import {
-  buildProductNameMap,
+  collectStockLookupIds,
   mapInventoryBalanceRows,
   normalizeProductId,
+  pickDebitProductId,
+  remapInventoryItem,
   resolveProductName,
 } from "./inventory-catalog";
+import { fetchCatalogIndex, loadCatalogContext, enrichNameMapWithLegacyOrders } from "./inventory-resolve";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -40,6 +43,7 @@ type ReshipmentProduct = {
   id: string;
   name: string;
   quantity: number;
+  fallbackId?: string | null;
 };
 
 export type ReshipmentSource = "support" | "manual";
@@ -65,6 +69,50 @@ function toProducts(raw: unknown): ReshipmentProduct[] {
       quantity: Number(item?.quantity) || 0,
     }))
     .filter((item) => item.id && item.quantity > 0);
+}
+
+async function resolveReshipmentProducts(raw: unknown): Promise<ReshipmentProduct[]> {
+  const items = toProducts(raw);
+  if (items.length === 0) return [];
+  const index = await fetchCatalogIndex();
+  return items.map((item) => {
+    const remapped = remapInventoryItem(index, item.id, item.name);
+    return {
+      id: remapped.productId || item.id,
+      name: remapped.productName,
+      quantity: item.quantity,
+      fallbackId: remapped.fallbackProductId,
+    };
+  }).filter((item) => item.id && item.quantity > 0);
+}
+
+function mapQtyFromIds(map: Map<string, number>, ...ids: Array<string | null | undefined>): number {
+  let total = 0;
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const key = String(id || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    total += map.get(key) || 0;
+  }
+  return total;
+}
+
+function pickReshipmentDebit(
+  items: ReshipmentProduct[],
+  stock: Map<string, number>,
+): { ok: boolean; items: ReshipmentProduct[]; missing: string[] } {
+  const next: ReshipmentProduct[] = [];
+  const missing: string[] = [];
+  for (const item of items) {
+    const picked = pickDebitProductId(item.id, item.fallbackId, item.quantity, stock);
+    if (picked.available < item.quantity) {
+      missing.push(item.name);
+      continue;
+    }
+    next.push({ ...item, id: picked.productId });
+  }
+  return { ok: missing.length === 0, items: next, missing };
 }
 
 async function getStockMap(productIds: string[]): Promise<Map<string, number>> {
@@ -145,9 +193,11 @@ export async function ensureReshipmentReservation(params: {
     return { ok: false, notFound: true, missingProducts: [] };
   }
 
-  const items = params.source === "support"
-    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
-    : toProducts(rows[0].productsSnapshot);
+  const items = await resolveReshipmentProducts(
+    params.source === "support"
+      ? (rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot
+      : rows[0].productsSnapshot,
+  );
   if (items.length === 0) {
     return { ok: false, invalidProducts: true, missingProducts: [] };
   }
@@ -171,7 +221,7 @@ export async function ensureReshipmentReservation(params: {
   const remainingItems = items
     .map((item) => ({
       ...item,
-      quantity: Math.max(0, item.quantity - (reservedByProduct.get(item.id) || 0)),
+      quantity: Math.max(0, item.quantity - mapQtyFromIds(reservedByProduct, item.id, item.fallbackId)),
     }))
     .filter((item) => item.quantity > 0);
 
@@ -179,11 +229,10 @@ export async function ensureReshipmentReservation(params: {
     return { ok: true, missingProducts: [] };
   }
 
-  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
-  const stockByProduct = await getStockMap(productIds);
-  const missingProducts = remainingItems
-    .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
-    .map((item) => item.name);
+  const stockByProduct = await getStockMap(collectStockLookupIds(
+    remainingItems.map((item) => ({ productId: item.id, fallbackProductId: item.fallbackId })),
+  ));
+  const missingProducts = pickReshipmentDebit(remainingItems, stockByProduct).missing;
 
   if (missingProducts.length > 0) {
     return { ok: false, missingProducts };
@@ -223,9 +272,11 @@ export async function ensureReshipmentSendDebit(params: {
     return { ok: false, notFound: true, missingProducts: [], debitedProducts: [] };
   }
 
-  const items = params.source === "support"
-    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
-    : toProducts(rows[0].productsSnapshot);
+  const items = await resolveReshipmentProducts(
+    params.source === "support"
+      ? (rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot
+      : rows[0].productsSnapshot,
+  );
   if (items.length === 0) {
     return { ok: false, invalidProducts: true, missingProducts: [], debitedProducts: [] };
   }
@@ -262,7 +313,7 @@ export async function ensureReshipmentSendDebit(params: {
   const remainingItems = items
     .map((item) => ({
       ...item,
-      quantity: Math.max(0, item.quantity - Math.max(0, netDebitedByProduct.get(item.id) || 0)),
+      quantity: Math.max(0, item.quantity - Math.max(0, mapQtyFromIds(netDebitedByProduct, item.id, item.fallbackId))),
     }))
     .filter((item) => item.quantity > 0);
 
@@ -270,18 +321,16 @@ export async function ensureReshipmentSendDebit(params: {
     return { ok: true, missingProducts: [], debitedProducts: [] };
   }
 
-  const productIds = Array.from(new Set(remainingItems.map((item) => item.id)));
-  const stockByProduct = await getStockMap(productIds);
-  const missingProducts = remainingItems
-    .filter((item) => (stockByProduct.get(item.id) || 0) < item.quantity)
-    .map((item) => item.name);
-
-  if (missingProducts.length > 0) {
-    return { ok: false, missingProducts, debitedProducts: [] };
+  const stockByProduct = await getStockMap(collectStockLookupIds(
+    remainingItems.map((item) => ({ productId: item.id, fallbackProductId: item.fallbackId })),
+  ));
+  const debitPick = pickReshipmentDebit(remainingItems, stockByProduct);
+  if (!debitPick.ok) {
+    return { ok: false, missingProducts: debitPick.missing, debitedProducts: [] };
   }
 
   const debitedProducts: Array<{ productId: string; productName: string; quantity: number }> = [];
-  for (const item of remainingItems) {
+  for (const item of debitPick.items) {
     await registerInventoryEntry({
       productId: item.id,
       quantity: -item.quantity,
@@ -323,9 +372,11 @@ export async function ensureReshipmentSendReversal(params: {
     return { ok: false, notFound: true, restoredProducts: [] };
   }
 
-  const items = params.source === "support"
-    ? toProducts((rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot)
-    : toProducts(rows[0].productsSnapshot);
+  const items = await resolveReshipmentProducts(
+    params.source === "support"
+      ? (rows[0] as { orderProducts?: unknown; productsSnapshot?: unknown }).orderProducts ?? rows[0].productsSnapshot
+      : rows[0].productsSnapshot,
+  );
 
   if (items.length === 0) {
     return { ok: false, invalidProducts: true, restoredProducts: [] };
@@ -363,15 +414,18 @@ export async function ensureReshipmentSendReversal(params: {
   const restoredProducts: Array<{ productId: string; productName: string; quantity: number }> = [];
 
   for (const item of items) {
-    const netDebited = Math.max(0, netDebitedByProduct.get(item.id) || 0);
-    if (netDebited <= 0) continue;
-    await registerInventoryEntry({
-      productId: item.id,
-      quantity: netDebited,
-      reason: `Estorno de baixa do reenvio ${params.id}`,
-      referenceId: params.id,
-    });
-    restoredProducts.push({ productId: item.id, productName: item.name, quantity: netDebited });
+    const ids = [item.id, item.fallbackId].filter(Boolean) as string[];
+    for (const productId of [...new Set(ids)]) {
+      const netDebited = Math.max(0, netDebitedByProduct.get(productId) || 0);
+      if (netDebited <= 0) continue;
+      await registerInventoryEntry({
+        productId,
+        quantity: netDebited,
+        reason: `Estorno de baixa do reenvio ${params.id}`,
+        referenceId: params.id,
+      });
+      restoredProducts.push({ productId, productName: item.name, quantity: netDebited });
+    }
   }
 
   return { ok: true, restoredProducts };
@@ -383,7 +437,7 @@ export async function createOrRefreshReshipment(params: {
   productsRaw: unknown;
   resolvedReason?: string;
 }): Promise<{ id: string; status: ReshipmentStatus; missingProducts: string[] }> {
-  const items = toProducts(params.productsRaw);
+  const items = await resolveReshipmentProducts(params.productsRaw);
   const id = crypto.randomBytes(8).toString("hex");
 
   if (items.length === 0) {
@@ -410,9 +464,10 @@ export async function createOrRefreshReshipment(params: {
     .where(eq(reshipmentsTable.orderId, params.orderId))
     .limit(1);
 
-  const validProductIds = Array.from(new Set(validItems.map((item) => item.id)));
-  const stockByProduct = await getStockMap(validProductIds);
-  const enoughNow = hasEnoughStock(validItems, stockByProduct);
+  const stockByProduct = await getStockMap(collectStockLookupIds(
+    validItems.map((item) => ({ productId: item.id, fallbackProductId: item.fallbackId })),
+  ));
+  const enoughNow = pickReshipmentDebit(validItems, stockByProduct).ok;
   const keepAwaiting = existingRows[0]?.status === "reenvio_aguardando_estoque";
   const nextStatus: ReshipmentStatus = keepAwaiting
     ? "reenvio_aguardando_estoque"
@@ -728,12 +783,13 @@ export async function releasePendingReshipments(): Promise<number> {
   let released = 0;
 
   for (const row of pendingRows) {
-    const items = toProducts(row.productsSnapshot);
+    const items = await resolveReshipmentProducts(row.productsSnapshot);
     if (items.length === 0) continue;
 
-    const productIds = Array.from(new Set(items.map((item) => item.id)));
-    const stockByProduct = await getStockMap(productIds);
-    const canRelease = hasEnoughStock(items, stockByProduct);
+    const stockByProduct = await getStockMap(collectStockLookupIds(
+      items.map((item) => ({ productId: item.id, fallbackProductId: item.fallbackId })),
+    ));
+    const canRelease = pickReshipmentDebit(items, stockByProduct).ok;
 
     if (!canRelease) continue;
 
@@ -745,12 +801,13 @@ export async function releasePendingReshipments(): Promise<number> {
   }
 
   for (const row of pendingManualRows) {
-    const items = toProducts(row.productsSnapshot);
+    const items = await resolveReshipmentProducts(row.productsSnapshot);
     if (items.length === 0) continue;
 
-    const productIds = Array.from(new Set(items.map((item) => item.id)));
-    const stockByProduct = await getStockMap(productIds);
-    const canRelease = hasEnoughStock(items, stockByProduct);
+    const stockByProduct = await getStockMap(collectStockLookupIds(
+      items.map((item) => ({ productId: item.id, fallbackProductId: item.fallbackId })),
+    ));
+    const canRelease = pickReshipmentDebit(items, stockByProduct).ok;
 
     if (!canRelease) continue;
 
@@ -959,11 +1016,15 @@ type InventoryMovementOverview = {
   createdAt: string;
 };
 
-async function loadProductNameMap(): Promise<Map<string, string>> {
-  const productsRows = await db
-    .select({ id: productsTable.id, name: productsTable.name })
-    .from(productsTable);
-  return buildProductNameMap(productsRows);
+async function loadEnrichedInventoryNameMap(
+  candidateIds: Array<unknown>,
+): Promise<Map<string, string>> {
+  const catalog = await loadCatalogContext();
+  return enrichNameMapWithLegacyOrders(
+    catalog.nameMap,
+    catalog.index,
+    candidateIds.map((id) => normalizeProductId(id)),
+  );
 }
 
 function mapInventoryMovementOverview(
@@ -1006,15 +1067,18 @@ export async function getMotoboyInventoryOverview(): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
 }> {
-  const [balancesRows, nameMap, movementsRows] = await Promise.all([
+  const [balancesRows, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryMotoboyBalancesTable.productId, quantity: inventoryMotoboyBalancesTable.quantity })
       .from(inventoryMotoboyBalancesTable),
-    loadProductNameMap(),
     db
       .select()
       .from(inventoryMotoboyMovementsTable)
       .orderBy(asc(inventoryMotoboyMovementsTable.createdAt)),
+  ]);
+  const nameMap = await loadEnrichedInventoryNameMap([
+    ...balancesRows.map((row) => row.productId),
+    ...movementsRows.map((row) => row.productId),
   ]);
 
   return {
@@ -1107,15 +1171,18 @@ export async function getMinasInventoryOverview(): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
 }> {
-  const [balancesRows, nameMap, movementsRows] = await Promise.all([
+  const [balancesRows, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
       .from(inventoryMinasBalancesTable),
-    loadProductNameMap(),
     db
       .select()
       .from(inventoryMinasMovementsTable)
       .orderBy(asc(inventoryMinasMovementsTable.createdAt)),
+  ]);
+  const nameMap = await loadEnrichedInventoryNameMap([
+    ...balancesRows.map((row) => row.productId),
+    ...movementsRows.map((row) => row.productId),
   ]);
 
   return {
@@ -1285,15 +1352,18 @@ export async function getInventoryOverview(): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
 }> {
-  const [balancesRows, nameMap, movementsRows] = await Promise.all([
+  const [balancesRows, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
       .from(inventoryBalancesTable),
-    loadProductNameMap(),
     db
       .select()
       .from(inventoryMovementsTable)
       .orderBy(asc(inventoryMovementsTable.createdAt)),
+  ]);
+  const nameMap = await loadEnrichedInventoryNameMap([
+    ...balancesRows.map((row) => row.productId),
+    ...movementsRows.map((row) => row.productId),
   ]);
 
   return {

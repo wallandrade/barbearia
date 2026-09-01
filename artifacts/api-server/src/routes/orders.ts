@@ -20,6 +20,8 @@ import {
   resolveAffiliateByCode,
 } from "../lib/affiliates";
 import { getReshipmentByOrderIds, getMotoboyStockMap, getMinasStockMap, registerInventoryEntry, registerMotoboyInventoryEntry, registerMinasInventoryEntry } from "../lib/reshipments";
+import { fetchCatalogIndex } from "../lib/inventory-resolve";
+import { collectStockLookupIds, pickDebitProductId, remapInventoryItem } from "../lib/inventory-catalog";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
@@ -994,23 +996,27 @@ function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
   return pool === "motoboy" || pool === "minas";
 }
 
-async function resolveOrderInventoryItems(products: unknown): Promise<Array<{ productId: string; productName: string; quantity: number }>> {
+type ResolvedOrderInventoryItem = {
+  productId: string;
+  productName: string;
+  quantity: number;
+  fallbackProductId: string | null;
+};
+
+async function resolveOrderInventoryItems(products: unknown): Promise<ResolvedOrderInventoryItem[]> {
   const orderItems = parseOrderItemsForInventory(products);
   if (orderItems.length === 0) return [];
 
-  let resolvedItems = orderItems;
-  const missingIds = orderItems.filter((item) => !item.productId);
-  if (missingIds.length > 0) {
-    const productRows = await db
-      .select({ id: productsTable.id, name: productsTable.name })
-      .from(productsTable);
-    const productIdByName = new Map(productRows.map((row) => [String(row.name || "").trim().toLowerCase(), row.id] as const));
-    resolvedItems = orderItems.map((item) => {
-      if (item.productId) return item;
-      const byName = productIdByName.get(item.productName.trim().toLowerCase()) || null;
-      return { ...item, productId: byName };
-    });
-  }
+  const index = await fetchCatalogIndex();
+  const resolvedItems = orderItems.map((item) => {
+    const remapped = remapInventoryItem(index, item.productId, item.productName);
+    return {
+      productId: remapped.productId,
+      productName: remapped.productName,
+      quantity: item.quantity,
+      fallbackProductId: remapped.fallbackProductId,
+    };
+  });
 
   const stillMissing = resolvedItems.filter((item) => !item.productId);
   if (stillMissing.length > 0) {
@@ -1020,11 +1026,39 @@ async function resolveOrderInventoryItems(products: unknown): Promise<Array<{ pr
     throw err;
   }
 
-  return resolvedItems.map((item) => ({
-    productId: item.productId!,
-    productName: item.productName,
-    quantity: item.quantity,
-  }));
+  return resolvedItems;
+}
+
+async function pickOrderInventoryDebit(
+  pool: InventoryPoolKind,
+  items: ResolvedOrderInventoryItem[],
+): Promise<{
+  ok: true;
+  items: Array<{ productId: string; productName: string; quantity: number }>;
+} | {
+  ok: false;
+  details: string;
+}> {
+  if (items.length === 0) return { ok: true, items: [] };
+  const stockByProduct = await getStockMapForPool(pool, collectStockLookupIds(items));
+  const debitItems: Array<{ productId: string; productName: string; quantity: number }> = [];
+  const insufficient: string[] = [];
+  for (const item of items) {
+    const picked = pickDebitProductId(item.productId, item.fallbackProductId, item.quantity, stockByProduct);
+    if (picked.available < item.quantity) {
+      insufficient.push(`${item.productName} (precisa ${item.quantity}, disponível ${picked.available})`);
+      continue;
+    }
+    debitItems.push({
+      productId: picked.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+    });
+  }
+  if (insufficient.length > 0) {
+    return { ok: false, details: insufficient.join("; ") };
+  }
+  return { ok: true, items: debitItems };
 }
 
 async function getStockMapForPool(pool: InventoryPoolKind, productIds: string[]): Promise<Map<string, number>> {
@@ -2653,7 +2687,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       return;
     }
 
-    let resolvedItems: Array<{ productId: string; productName: string; quantity: number }>;
+    let resolvedItems: ResolvedOrderInventoryItem[];
     try {
       resolvedItems = await resolveOrderInventoryItems(order.products);
     } catch (err) {
@@ -2666,9 +2700,14 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     if (currentlyReserved && currentPool && resolvedItems.length > 0) {
       const shouldRelease = softSelect || currentPool !== nextPool;
       if (shouldRelease) {
+        const releasePick = await pickOrderInventoryDebit(currentPool, resolvedItems);
         await applyOrderInventoryDelta({
           pool: currentPool,
-          items: resolvedItems,
+          items: releasePick.ok ? releasePick.items : resolvedItems.map((item) => ({
+            productId: item.fallbackProductId || item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+          })),
           orderId: id,
           clientName: order.clientName || null,
           kind: "release",
@@ -2677,16 +2716,19 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     }
 
     if (resolvedItems.length > 0) {
-      const productIds = resolvedItems.map((item) => item.productId);
-      const stockByProduct = await getStockMapForPool(nextPool, productIds);
-      const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId) || 0) < item.quantity);
-      if (insufficient.length > 0) {
+      const nextPick = await pickOrderInventoryDebit(nextPool, resolvedItems);
+      if (!nextPick.ok) {
         // Re-reserva Loja se liberamos e a troca falhou
         if (currentlyReserved && currentPool === "loja" && (softSelect || currentPool !== nextPool)) {
           try {
+            const rollbackPick = await pickOrderInventoryDebit(currentPool, resolvedItems);
             await applyOrderInventoryDelta({
               pool: currentPool,
-              items: resolvedItems,
+              items: rollbackPick.ok ? rollbackPick.items : resolvedItems.map((item) => ({
+                productId: item.productId,
+                productName: item.productName,
+                quantity: item.quantity,
+              })),
               orderId: id,
               clientName: order.clientName || null,
               kind: "reserve",
@@ -2695,16 +2737,13 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
             console.error("Rollback inventory reserve failed:", rollbackErr);
           }
         }
-        const details = insufficient
-          .map((item) => `${item.productName} (precisa ${item.quantity}, disponível ${stockByProduct.get(item.productId) || 0})`)
-          .join("; ");
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
           message: isDeferredDebitPool(nextPool)
             ? (reserveNow
-              ? `Estoque ${inventoryPoolLabel(nextPool)} insuficiente para dar baixa: ${details}.`
-              : `Estoque ${inventoryPoolLabel(nextPool)} insuficiente: ${details}.`)
-            : `Estoque Foz Guaçu insuficiente para reservar: ${details}.`,
+              ? `Estoque ${inventoryPoolLabel(nextPool)} insuficiente para dar baixa: ${nextPick.details}.`
+              : `Estoque ${inventoryPoolLabel(nextPool)} insuficiente: ${nextPick.details}.`)
+            : `Estoque Foz Guaçu insuficiente para reservar: ${nextPick.details}.`,
         });
         return;
       }
@@ -2712,7 +2751,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       if (!softSelect) {
         await applyOrderInventoryDelta({
           pool: nextPool,
-          items: resolvedItems,
+          items: nextPick.items,
           orderId: id,
           clientName: order.clientName || null,
           kind: "reserve",
@@ -2875,7 +2914,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     const skipStockBecauseReserved = alreadyReserved;
 
     if (enviado !== wasEnviado && !skipStockBecauseReserved) {
-      let resolvedItems: Array<{ productId: string; productName: string; quantity: number }> = [];
+      let resolvedItems: ResolvedOrderInventoryItem[] = [];
       try {
         resolvedItems = await resolveOrderInventoryItems(order.products);
       } catch (err) {
@@ -2885,27 +2924,24 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       }
 
       if (resolvedItems.length > 0) {
-        const productIds = resolvedItems.map((item) => item.productId);
-        const stockByProduct = await getStockMapForPool(inventoryPool, productIds);
+        const debitPick = await pickOrderInventoryDebit(inventoryPool, resolvedItems);
 
-        if (enviado) {
-          const insufficient = resolvedItems.filter((item) => (stockByProduct.get(item.productId) || 0) < item.quantity);
-          if (insufficient.length > 0) {
-            const details = insufficient
-              .map((item) => `${item.productName} (precisa ${item.quantity}, disponível ${stockByProduct.get(item.productId) || 0})`)
-              .join("; ");
-            res.status(400).json({
-              error: "INSUFFICIENT_STOCK",
-              message: `Estoque ${inventoryPoolLabel(inventoryPool)} insuficiente para envio: ${details}.`,
-            });
-            return;
-          }
+        if (enviado && !debitPick.ok) {
+          res.status(400).json({
+            error: "INSUFFICIENT_STOCK",
+            message: `Estoque ${inventoryPoolLabel(inventoryPool)} insuficiente para envio: ${debitPick.details}.`,
+          });
+          return;
         }
 
         if (!(shouldSkipReturnToStock && !enviado)) {
           await applyOrderInventoryDelta({
             pool: inventoryPool,
-            items: resolvedItems,
+            items: debitPick.ok ? debitPick.items : resolvedItems.map((item) => ({
+              productId: item.productId,
+              productName: item.productName,
+              quantity: item.quantity,
+            })),
             orderId: id,
             clientName: order.clientName || null,
             kind: enviado ? "ship" : "unship",
