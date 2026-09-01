@@ -85,7 +85,7 @@ function freightStatusBadgeClass(
 ): string {
   const s = String(status || "").toLowerCase().trim();
 
-  if (/cancelad/.test(s) || group === "cancelled") {
+  if (/cancelad/.test(s) || /aguardando\s+cancelamento/.test(s) || group === "cancelled") {
     return "bg-red-50 text-red-800 border-red-200";
   }
   if (/entregue/.test(s) || group === "delivered") {

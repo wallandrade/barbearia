@@ -792,21 +792,30 @@ export async function resolveLiveShipmentRefs(input: {
     }
 
     scored.sort((a, b) => b.score - a.score);
-    if (scored[0]) {
+    const lockedId = shipmentId || found?.shipmentId || "";
+    const best = scored.find((row) => {
+      const st = String(row.picked.status || "");
+      if (isEnvioEcomCancelStatus(st) && row.picked.shipmentId !== lockedId) return false;
+      return true;
+    });
+    const keepLockedFound = Boolean(
+      found?.shipmentId && lockedId && found.shipmentId === lockedId && best?.picked.shipmentId !== lockedId,
+    );
+    if (best && !keepLockedFound) {
       console.log("[EnvioEcom] resolve match", {
-        score: scored[0].score,
-        shipmentId: scored[0].picked.shipmentId,
-        barcode: scored[0].picked.barcode,
-        status: scored[0].picked.status,
+        score: best.score,
+        shipmentId: best.picked.shipmentId,
+        barcode: best.picked.barcode,
+        status: best.picked.status,
       });
       found = {
-        ...scored[0].picked,
-        statusHistory: extractStatusHistoryFromShipment(scored[0].raw, "envioecom"),
+        ...best.picked,
+        statusHistory: extractStatusHistoryFromShipment(best.raw, "envioecom"),
         deliveryMode:
-          pickStringField(scored[0].raw, ["delivery_mode", "deliveryMode", "shipping_company", "carrier"]) || null,
-        raw: scored[0].raw,
+          pickStringField(best.raw, ["delivery_mode", "deliveryMode", "shipping_company", "carrier"]) || null,
+        raw: best.raw,
       };
-    } else {
+    } else if (!found) {
       console.warn("[EnvioEcom] resolve found no match", {
         lists: lists.length,
         destCep,
@@ -840,6 +849,33 @@ export async function resolveLiveShipmentRefs(input: {
 export function isAwaitingPaymentStatus(status: string | null | undefined): boolean {
   const s = String(status || "").trim().toLowerCase();
   return s === "aguardando pagamento" || s.includes("aguardando pagamento");
+}
+
+/** Cancelado ou fila de cancelamento na EnvioEcom — não gerar etiqueta desse envio. */
+export function isEnvioEcomCancelStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return /cancelad/.test(s) || /aguardando\s+cancelamento/.test(s);
+}
+
+/** orderId na EnvioEcom: estável no 1º create; sufixo novo depois de cancelar/desvincular (evita DUPLICATE_ORDER). */
+export function nextEnvioEcomExternalOrderNumber(
+  order: {
+    id: string;
+    orderNumber?: number | null;
+    envioecomExternalOrderNumber?: string | null;
+    envioecomShipmentId?: string | null;
+    envioecomBarcode?: string | null;
+    envioecomStatus?: string | null;
+  },
+  now = Date.now(),
+): string {
+  const base = `${order.orderNumber ?? "ped"}-${String(order.id).slice(0, 8)}`;
+  const prev = String(order.envioecomExternalOrderNumber || "").trim();
+  const unlinked = !String(order.envioecomShipmentId || "").trim() && !String(order.envioecomBarcode || "").trim();
+  const rotate = isEnvioEcomCancelStatus(order.envioecomStatus) || (unlinked && Boolean(prev));
+  if (!rotate) return prev || base;
+  return `${base}-${now.toString(36)}`.slice(0, 64);
 }
 
 export async function getShipment(identifier: string): Promise<{
@@ -1280,6 +1316,7 @@ export function isInTransitStatus(status: string): boolean {
  */
 export function isLabelReadyStatus(status: string): boolean {
   const s = status.toLowerCase();
+  if (isEnvioEcomCancelStatus(s)) return false;
   if (isAwaitingPickupStatus(s)) return true;
   return (
     s.includes("etiqueta emitida") ||

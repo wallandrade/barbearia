@@ -9708,9 +9708,16 @@ function isEnvioEcomPostedStatus(status: string | null | undefined): boolean {
   );
 }
 
+function isEnvioEcomCancelStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return /cancelad/.test(s) || /aguardando\s+cancelamento/.test(s);
+}
+
 function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   if (!s) return false;
+  if (isEnvioEcomCancelStatus(s)) return false;
   // Etiqueta já existe: aguardando coleta/postagem também sai da cópia 48h.
   if ((/aguardando/.test(s) && /colet/.test(s)) || /aguardando\s+postagem/.test(s)) return true;
   return (
@@ -9761,7 +9768,7 @@ function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolea
 function freightStatusBadgeClass(status: string | null | undefined): string {
   const s = String(status || "").toLowerCase().trim();
   if (!s) return "bg-yellow-100 text-yellow-800 border-yellow-200";
-  if (/cancelad/.test(s)) return "bg-red-50 text-red-800 border-red-200";
+  if (/cancelad/.test(s) || /aguardando\s+cancelamento/.test(s)) return "bg-red-50 text-red-800 border-red-200";
   if (/entregue/.test(s)) return "bg-emerald-50 text-emerald-800 border-emerald-200";
   if (/saiu para entrega|saiu p\/ entrega|em rota de entrega/.test(s)) {
     return "bg-sky-50 text-sky-800 border-sky-200";
@@ -10181,6 +10188,8 @@ function OrdersPanel({
         envioecomStatus: data.status,
         envioecomAccountId: data.accountId || envioecomQuoteModal?.accountId,
         trackingCode: data.barcode || (order as any).trackingCode,
+        envioecomLabelUrl: null,
+        trackingLabelUrl: null,
       });
       setEnvioecomQuoteModal(null);
       toast.success(
@@ -10318,6 +10327,10 @@ function OrdersPanel({
   };
 
   const generateEnvioEcomLabel = async (order: AdminOrder) => {
+    if (isEnvioEcomCancelStatus((order as { envioecomStatus?: string | null }).envioecomStatus)) {
+      toast.info("Envio em cancelamento. Clique em EnvioEcom para cotar e criar um envio novo.");
+      return;
+    }
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
       let knownShipmentId = String((order as any).envioecomShipmentId || "").trim();
@@ -10511,7 +10524,9 @@ function OrdersPanel({
     const reasonRaw = window.prompt("Motivo do cancelamento (opcional):", "Cancelado pelo admin");
     if (reasonRaw === null) return;
     const reason = reasonRaw.trim() || undefined;
-    if (!window.confirm("Cancelar o envio EnvioEcom deste pedido?")) return;
+    if (!window.confirm(
+      "Cancelar na EnvioEcom e soltar este pedido? A EE pode ficar em Aguardando cancelamento, mas aqui você poderá cotar e gerar etiqueta nova.",
+    )) return;
 
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
@@ -10524,6 +10539,7 @@ function OrdersPanel({
         ok?: boolean;
         status?: string;
         auto_cancelled?: boolean;
+        unlinked?: boolean;
         message?: string;
         tracking?: { status?: string | null };
       };
@@ -10533,11 +10549,18 @@ function OrdersPanel({
       }
       patchOrderLocal(order.id, {
         envioecomStatus: data.tracking?.status || data.status,
+        envioecomBarcode: null,
+        envioecomShipmentId: null,
+        envioecomTrackingKey: null,
+        envioecomLabelUrl: null,
+        trackingLabelUrl: null,
+        trackingCode: null,
+        envioecomDeliveryMode: null,
       });
       toast.success(
         data.auto_cancelled
-          ? "Envio cancelado automaticamente."
-          : (data.message || "Solicitação de cancelamento aberta."),
+          ? "Envio cancelado. Clique em EnvioEcom para criar etiqueta nova."
+          : (data.message || "Pedido solto. Clique em EnvioEcom para criar etiqueta nova."),
       );
     } catch {
       toast.error("Erro ao cancelar EnvioEcom.");

@@ -25,7 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-08-31 | Invariante cópia 48h × etiqueta EE (corpo + rule Cursor): Aguardando coleta **sai da cópia**; **não** é Enviado/estoque. Changelog não pode anular isso | Evita o buraco #928 voltar por linha nova de memória | Código de etiqueta/baixa igual |
+| 2026-08-31 | **Cancelar EE** pede cancelamento na EnvioEcom **e solta** o pedido (apaga ID/barcode/PDF). Create usa `orderId` novo. Etiqueta EE recusa envio em cancelamento | Dá para cotar/gerar etiqueta nova sem recair no 8880 antigo | Cotação, webhook de envio ativo, baixa na etiqueta iguais |
 | 2026-08-31 | Etiqueta EnvioEcom **baixa estoque** e tira da cópia 48h; **Coleta Recebida** conta como postado (`enviado` + baixa se ainda não). **Aguardando coleta/postagem** sai da cópia (etiqueta pronta) e **não** marca Enviado | Evita copiar de novo o que já tem etiqueta | Cotação/create iguais |
 | 2026-08-31 | Recadastro de produto: baixa de pedido/reenvio casa o **nome único** do catálogo se o id antigo sumiu; overview recupera o nome pelos pedidos antigos (foto no Admin) | Pedido velho baixa o saldo do produto novo; lista deixa de mostrar hash se o nome bater | Saldos continuam por `product_id`; sem merge automático de qty; API overview ainda não manda `image` |
 | 2026-08-31 | Admin: **Histórico do pedido** (linha do tempo em Detalhes). Tabela `order_activity`; ações admin/PIX/EE daqui pra frente. Pedido antigo mostra criado (+ enviado se já estava) | Só o card Detalhes | Status/pagamento/EE iguais |
@@ -211,6 +211,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 - **Resumo (aba Estoque):** só leitura. Soma qty Foz Guaçu+Motoboy+Minas × `costPrice` (empatado) e × preço de venda (promo se ativa). Sem entrada/saída. Alerta se custo 0 com saldo.
 - **Sync estoque Motoboy+Minas (espelho):** `GET /api/integrations/inventory/snapshot` (token `INVENTORY_SYNC_TOKEN` ou `MOTOBOY_SYNC_TOKEN`); webhook opcional `inventory.changed` (`INVENTORY_SYNC_WEBHOOK_*`). Outro sistema **só lê**; Yury grava.
 - **Etiqueta EnvioEcom:** ao gerar (PDF/R2 ou download local) **dá baixa** no pool do card (ou Foz Guaçu se nenhum) e marca `inventory_reserved`. Status vira **Etiqueta emitida** se ainda não estava em trânsito. Sem saldo: etiqueta sai mesmo assim e o toast avisa. Cópia 48h / Enviado: ver **Invariante — cópia 48h** no topo deste arquivo (não anular no changelog).
+- **Cancelar EE:** pede cancelamento na EnvioEcom (pode ficar *Aguardando cancelamento* lá) e **desvincula no Yury** (zera ID, barcode, PDF, `orderId` externo). Depois: **EnvioEcom** → cotar → criar (orderId com sufixo novo) → **Etiqueta EE**. Não clicar Etiqueta EE no envio antigo. Webhook do envio velho não reatacha. Estoque já baixado na etiqueta anterior **não** volta sozinho.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.
 
 ## Prova social e settings

@@ -26,8 +26,10 @@ import {
   isAwaitingPaymentStatus,
   isDeliveredStatus,
   getCurrentEnvioEcomOriginCep,
+  isEnvioEcomCancelStatus,
   isInTransitStatus,
   isLabelReadyStatus,
+  nextEnvioEcomExternalOrderNumber,
   isProvisionalEnvioEcomBarcode,
   mergeStatusHistoryWithTimeline,
   parseCarriersInput,
@@ -312,6 +314,41 @@ async function persistEnvioEcomAccountId(orderId: string, accountId: string | nu
     .where(eq(ordersTable.id, orderId));
 }
 
+/** Solta o envio no Yury para cotar/criar etiqueta nova. O cancelamento na EE pode continuar em fila. */
+async function unlinkEnvioEcomBinding(order: typeof ordersTable.$inferSelect) {
+  const barcode = String(order.envioecomBarcode || "").trim();
+  const tracking = String(order.trackingCode || "").trim();
+  const eeLabel = String((order as { envioecomLabelUrl?: string | null }).envioecomLabelUrl || "").trim();
+  const trackingLabel = String(order.trackingLabelUrl || "").trim();
+  await db
+    .update(ordersTable)
+    .set({
+      envioecomShipmentId: null,
+      envioecomBarcode: null,
+      envioecomTrackingKey: null,
+      envioecomLabelUrl: null,
+      envioecomFreightCost: null,
+      envioecomDeliveryMode: null,
+      envioecomExternalOrderNumber: null,
+      trackingLabelUrl: trackingLabel && eeLabel && trackingLabel !== eeLabel ? order.trackingLabelUrl : null,
+      ...(tracking && barcode && tracking !== barcode ? {} : { trackingCode: null }),
+      updatedAt: new Date(),
+    })
+    .where(eq(ordersTable.id, order.id));
+}
+
+function isBenignEnvioEcomCancelError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err || "");
+  const code = err instanceof EnvioEcomApiError ? String(err.code || "") : "";
+  return (
+    /cancelad/i.test(msg) ||
+    /já\s+cancel/i.test(msg) ||
+    /already\s+cancel/i.test(msg) ||
+    /aguardando\s+cancelamento/i.test(msg) ||
+    /ALREADY_CANCEL/i.test(code)
+  );
+}
+
 async function resolveLiveForOrder(
   order: typeof ordersTable.$inferSelect,
   extra?: { shipmentId?: string; barcode?: string; accountId?: string },
@@ -583,8 +620,8 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     const pack = buildPackageFromProducts(quoteProducts);
     const labelProfile = await getEnvioEcomShipmentItemProfile();
     const labelItems = buildShipmentLabelItem(labelProfile);
-    // orderId único na EnvioEcom (evita DUPLICATE_ORDER em retentativas)
-    const externalOrderNumber = `${order.orderNumber ?? "ped"}-${String(order.id).slice(0, 8)}`;
+    // orderId único na EnvioEcom (evita DUPLICATE_ORDER em retentativas; sufixo novo após cancelar)
+    const externalOrderNumber = nextEnvioEcomExternalOrderNumber(order);
     const freightCost = formatMoneyString(req.body?.freight_cost ?? order.shippingCost ?? pack.cost ?? 0);
     const deliveryTimeRaw = String(req.body?.delivery_time ?? "1").replace(/\D/g, "") || "1";
     const deliveryTime = String(Math.max(1, Number(deliveryTimeRaw) || 1));
@@ -746,7 +783,9 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
         envioecomFreightCost: freightCost,
         envioecomExternalOrderNumber: externalOrderNumber,
         envioecomAccountId: accountId,
-        ...(barcode && !order.trackingCode ? { trackingCode: barcode } : {}),
+        envioecomLabelUrl: null,
+        trackingLabelUrl: null,
+        ...(barcode ? { trackingCode: barcode } : {}),
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, order.id));
@@ -832,6 +871,15 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     }
 
     const { order } = loaded;
+    if (isEnvioEcomCancelStatus(order.envioecomStatus)) {
+      res.status(409).json({
+        error: "SHIPMENT_CANCELLED",
+        message:
+          "Este envio está cancelado ou aguardando cancelamento. Clique em EnvioEcom para cotar e criar um envio novo (não use Etiqueta EE neste).",
+      });
+      return;
+    }
+
     const bodyShipmentId = String(req.body?.shipment_id || req.body?.shipping_id || "").trim();
     const bodyBarcode = String(req.body?.barcode || "").trim();
 
@@ -893,6 +941,15 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
           status: live.status || order.envioecomStatus,
           barcode: barcode || null,
           shipmentId: shipmentId || null,
+        });
+        return;
+      }
+      if (isEnvioEcomCancelStatus(live.status)) {
+        res.status(409).json({
+          error: "SHIPMENT_CANCELLED",
+          message:
+            "A EnvioEcom marcou este envio como cancelado. Clique em Cancelar EE para soltar o pedido e depois EnvioEcom para criar um novo.",
+          status: live.status,
         });
         return;
       }
@@ -1187,33 +1244,52 @@ router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, 
     }
 
     const reason = String(req.body?.reason || "").trim() || undefined;
-    const { result, accountId } = await withEnvioEcomAccount(
-      String((order as { envioecomAccountId?: string | null }).envioecomAccountId || "") || undefined,
-      async () => cancelShipment(identifier, reason),
-    );
-    const status = String(result.status || (result.auto_cancelled ? "Cancelado" : "Aguardando cancelamento"));
+    let status = String(order.envioecomStatus || "Aguardando cancelamento");
+    let autoCancelled = false;
+    let message: string | null = null;
+    let raw: unknown = null;
+
+    try {
+      const { result, accountId } = await withEnvioEcomAccount(
+        String((order as { envioecomAccountId?: string | null }).envioecomAccountId || "") || undefined,
+        async () => cancelShipment(identifier, reason),
+      );
+      raw = result;
+      autoCancelled = Boolean(result.auto_cancelled);
+      status = String(result.status || (autoCancelled ? "Cancelado" : "Aguardando cancelamento"));
+      message = result.message || null;
+      await persistEnvioEcomAccountId(order.id, accountId);
+    } catch (err) {
+      if (!isEnvioEcomCancelStatus(order.envioecomStatus) && !isBenignEnvioEcomCancelError(err)) {
+        throw err;
+      }
+      status = isEnvioEcomCancelStatus(order.envioecomStatus)
+        ? String(order.envioecomStatus)
+        : "Aguardando cancelamento";
+      message = err instanceof Error ? err.message : "Cancelamento já solicitado na EnvioEcom.";
+    }
 
     await applyShipmentStatusToOrder({
       orderId: order.id,
       status,
-      barcode: order.envioecomBarcode,
-      shipmentId: order.envioecomShipmentId,
       deliveryMode: order.envioecomDeliveryMode,
-      description: reason || (result.message || "Cancelamento solicitado via admin"),
+      description: reason || message || "Cancelamento solicitado via admin — pedido solto para novo envio",
       updatedAt: new Date().toISOString(),
       source: "cancel",
-      accountId,
+      accountId: String((order as { envioecomAccountId?: string | null }).envioecomAccountId || "") || undefined,
     });
+    await unlinkEnvioEcomBinding(order);
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
     recordAdminActivity(req, order.id, "envioecom", "Cancelou envio EnvioEcom", reason || null);
     res.json({
       ok: true,
-      auto_cancelled: Boolean(result.auto_cancelled),
+      unlinked: true,
+      auto_cancelled: autoCancelled,
       status,
-      message: result.message || null,
+      message: message || "Pedido solto. Cote de novo em EnvioEcom para gerar etiqueta nova.",
       tracking: publicTrackingPayload(refreshed[0]!),
-      raw: result,
+      raw,
     });
   } catch (err) {
     mapApiError(err, res);
@@ -1745,6 +1821,28 @@ router.post("/webhook/envioecom", async (req, res) => {
 
     if (!order) {
       console.warn("[EnvioEcom webhook] order not found", { barcode, externalOrderNumber, shipmentId });
+      return;
+    }
+
+    const currentShipmentId = String(order.envioecomShipmentId || "").trim();
+    const currentBarcode = String(order.envioecomBarcode || "").trim();
+    const incomingShipmentId = shipmentId != null ? String(shipmentId).trim() : "";
+    const sameShipment =
+      (incomingShipmentId && currentShipmentId && incomingShipmentId === currentShipmentId) ||
+      (barcode && currentBarcode && barcode === currentBarcode) ||
+      (barcode && order.trackingCode && barcode === String(order.trackingCode));
+    if (currentShipmentId || currentBarcode) {
+      if (!sameShipment) {
+        console.log("[EnvioEcom webhook] ignore other shipment", {
+          orderId: order.id,
+          currentShipmentId,
+          incomingShipmentId,
+          status,
+        });
+        return;
+      }
+    } else if (isEnvioEcomCancelStatus(status) || !incomingShipmentId) {
+      console.log("[EnvioEcom webhook] ignore unlinked order", { orderId: order.id, status });
       return;
     }
 
