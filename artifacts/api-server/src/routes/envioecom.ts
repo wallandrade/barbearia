@@ -5,6 +5,7 @@ import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-au
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
+import { ensureOrderInventoryDebited, inventoryPoolLabel } from "../lib/order-inventory-debit";
 import {
   EnvioEcomApiError,
   appendStatusHistory,
@@ -403,6 +404,15 @@ async function applyShipmentStatusToOrder(params: {
     if (!order.enviado) {
       const existingAt = (order as { enviadoAt?: Date | null }).enviadoAt;
       patch.enviadoAt = existingAt ?? new Date();
+    }
+    if (!(order as { inventoryReserved?: boolean | null }).inventoryReserved) {
+      const debit = await ensureOrderInventoryDebited(order, {
+        reason: `Saída por status EnvioEcom (${params.status}) pedido ${order.id}`,
+      });
+      if (debit.reserved) {
+        patch.inventoryReserved = true;
+        patch.inventoryPool = debit.pool;
+      }
     }
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {
@@ -996,10 +1006,15 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       console.warn("[EnvioEcom] R2 upload failed, returning base64 fallback:", uploadErr);
     }
 
+    const currentStatus = String((order as { envioecomStatus?: string | null }).envioecomStatus || "").trim();
+    const keepCurrentStatus = isInTransitStatus(currentStatus) || isDeliveredStatus(currentStatus) || isLabelReadyStatus(currentStatus);
+    const nextStatus = keepCurrentStatus ? currentStatus : "Etiqueta emitida";
+
     await db
       .update(ordersTable)
       .set({
         envioecomLabelUrl: labelUrl,
+        envioecomStatus: nextStatus,
         ...(shipmentId ? { envioecomShipmentId: shipmentId } : {}),
         ...(barcode ? { envioecomBarcode: barcode } : {}),
         ...(trackingKey ? { envioecomTrackingKey: trackingKey } : {}),
@@ -1010,6 +1025,16 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       })
       .where(eq(ordersTable.id, order.id));
 
+    const inventory = await ensureOrderInventoryDebited(
+      {
+        ...order,
+        envioecomStatus: nextStatus,
+      },
+      {
+        reason: `Saída por etiqueta EnvioEcom pedido ${order.id}`,
+      },
+    );
+
     recordAdminActivity(req, order.id, "envioecom", "Gerou etiqueta EnvioEcom", barcode || shipmentId || null);
     res.json({
       ok: true,
@@ -1018,6 +1043,12 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       labelUrl,
       pdfBase64: labelUrl ? undefined : label.buffer.toString("base64"),
       contentType: label.contentType,
+      envioecomStatus: nextStatus,
+      inventoryReserved: inventory.reserved,
+      inventoryPool: inventory.pool,
+      inventoryAlreadyReserved: inventory.alreadyReserved,
+      inventoryWarning: inventory.ok ? null : inventory.details || "Estoque insuficiente para dar baixa na etiqueta.",
+      inventoryPoolLabel: inventoryPoolLabel(inventory.pool),
     });
   } catch (err) {
     mapApiError(err, res);

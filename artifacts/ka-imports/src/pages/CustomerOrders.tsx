@@ -130,7 +130,9 @@ function isPackingBeforePostStatus(status: string): boolean {
     s.includes("aguardando expedicao") ||
     s.includes("dc-e emitida") ||
     s.includes("dce emitida") ||
-    s.includes("envio criado")
+    s.includes("envio criado") ||
+    (/aguardando/.test(s) && /colet/.test(s)) ||
+    /aguardando\s+postagem/.test(s)
   );
 }
 
@@ -170,13 +172,17 @@ function isShippingDelivered(status: string): boolean {
 
 function isShippingInTransit(status: string): boolean {
   const s = status.toLowerCase();
+  if (/aguardando/.test(s) && /colet/.test(s)) return false;
+  if (/aguardando\s+postagem/.test(s)) return false;
   return (
     s.includes("trânsito") ||
     s.includes("transito") ||
     s.includes("postado") ||
     s.includes("expedido") ||
     s.includes("coletado") ||
+    /coleta\s+recebida/.test(s) ||
     s.includes("recebido") ||
+    s.includes("recebida") ||
     s.includes("saiu para entrega") ||
     s.includes("em rota")
   );

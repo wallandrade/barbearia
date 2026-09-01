@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-08-13
+> **Última atualização:** 2026-08-31
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-31 | Anti-padrão: changelog “Aguardando coleta não conta” **não** vale para a cópia 48h | Trava regressão da lista de envio | Testes/status EE iguais |
 | 2026-08-13 | Anti-padrão: busca só dígitos no admin não deve misturar nº pedido com telefone via `includes` | Documenta prioridade de `orderNumber` exato | Restante dos padrões iguais |
 | 2026-08-11 | Baseline de padrões + política de memória | Guia para agentes | Sem refactor de app |
 
@@ -58,6 +59,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - Commit automático sem pedido explícito do humano.
 - Inventar stack (Next/Nest/Prisma) sem evidência neste repo.
 - Na busca de pedidos do admin, tratar query só-dígitos com `includes` em telefone/nº parcial **antes** de igualdade em `orderNumber` — priorizar número exato do pedido.
+- Cópia 48h: **não** escrever que “Aguardando coleta não conta” — conta como etiqueta pronta (`isLabelReadyStatus`). Não meter aguardando coleta em `isInTransitStatus`. Ver invariante em `regras-negocio.md`.
 
 ## Manutenção da memória viva (obrigatória)
 

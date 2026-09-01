@@ -103,7 +103,7 @@ function freightStatusBadgeClass(
   if (/aguardando pagamento|envio criado/.test(s) || group === "awaiting") {
     return "bg-yellow-50 text-yellow-900 border-yellow-200";
   }
-  if (/expedido|recebido|coletado|postado|tr[aâ]nsito/.test(s) || group === "in_transit") {
+  if (/expedido|recebido|recebida|coletado|coleta recebida|postado|tr[aâ]nsito/.test(s) || group === "in_transit") {
     return "bg-slate-100 text-slate-700 border-slate-300";
   }
   return "bg-muted text-muted-foreground border-border";

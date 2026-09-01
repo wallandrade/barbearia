@@ -4033,17 +4033,19 @@ export default function Admin() {
   };
   const priorityDelayDays = (order: AdminOrder): number => Math.max(0, daysSince(order.createdAt));
 
+  const copyListExcludeFields = (o: AdminOrder) => ({
+    enviado: (o as { enviado?: boolean | null }).enviado,
+    envioecomStatus: (o as { envioecomStatus?: string | null }).envioecomStatus,
+    envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
+    trackingLabelUrl: (o as { trackingLabelUrl?: string | null }).trackingLabelUrl,
+    reshipmentStatus: (o as { reshipment?: { status?: string } }).reshipment?.status,
+  });
+
   const ordersParaEnviar = orders
     .filter((o) => {
+      if (isExcludedFromShippingCopyList(copyListExcludeFields(o))) return false;
       const isActiveReshipment = isActiveReshipmentOrder(o);
-      const isPendingNormalShipment =
-        (o.status === "paid" || o.status === "completed")
-        && !isExcludedFromShippingCopyList({
-          enviado: (o as { enviado?: boolean | null }).enviado,
-          envioecomStatus: (o as { envioecomStatus?: string | null }).envioecomStatus,
-          envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
-          reshipmentStatus: (o as { reshipment?: { status?: string } }).reshipment?.status,
-        });
+      const isPendingNormalShipment = o.status === "paid" || o.status === "completed";
       return isPendingNormalShipment || isActiveReshipment;
     })
     .sort((a, b) => {
@@ -4072,12 +4074,7 @@ export default function Admin() {
     .filter((o) => {
       if (!isMotoboyOrder(o)) return false;
       if (isCancelledOrderStatus(o.status)) return false;
-      if (isExcludedFromShippingCopyList({
-        enviado: (o as { enviado?: boolean | null }).enviado,
-        envioecomStatus: (o as { envioecomStatus?: string | null }).envioecomStatus,
-        envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
-        reshipmentStatus: (o as { reshipment?: { status?: string } }).reshipment?.status,
-      })) {
+      if (isExcludedFromShippingCopyList(copyListExcludeFields(o))) {
         return false;
       }
       return true;
@@ -9695,13 +9692,17 @@ function InventoryPanel({
 function isEnvioEcomPostedStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   if (!s) return false;
+  if (/aguardando/.test(s) && /colet/.test(s)) return false;
+  if (/aguardando\s+postagem/.test(s)) return false;
   return (
     s.includes("trânsito") ||
     s.includes("transito") ||
     s.includes("postado") ||
     s.includes("expedido") ||
     s.includes("coletado") ||
+    /coleta\s+recebida/.test(s) ||
     s.includes("recebido") ||
+    s.includes("recebida") ||
     s.includes("saiu para entrega") ||
     s.includes("entregue")
   );
@@ -9710,6 +9711,8 @@ function isEnvioEcomPostedStatus(status: string | null | undefined): boolean {
 function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   if (!s) return false;
+  // Etiqueta já existe: aguardando coleta/postagem também sai da cópia 48h.
+  if ((/aguardando/.test(s) && /colet/.test(s)) || /aguardando\s+postagem/.test(s)) return true;
   return (
     s.includes("etiqueta emitida") ||
     s.includes("etiqueta gerada") ||
@@ -9732,6 +9735,7 @@ function isExcludedFromShippingCopyList(order: {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  trackingLabelUrl?: string | null;
   reshipmentStatus?: string | null;
 }): boolean {
   if (order.enviado) return true;
@@ -9740,6 +9744,7 @@ function isExcludedFromShippingCopyList(order: {
   if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
   if (isEnvioEcomPostedStatus(order.envioecomStatus)) return true;
   if (String(order.envioecomLabelUrl || "").trim()) return true;
+  if (String(order.trackingLabelUrl || "").trim()) return true;
   return false;
 }
 
@@ -9769,7 +9774,7 @@ function freightStatusBadgeClass(status: string | null | undefined): string {
   if (/aguardando postagem|aguardando pagamento|envio criado/.test(s)) {
     return "bg-amber-50 text-amber-900 border-amber-200";
   }
-  if (/expedido|recebido|coletado|postado|tr[aâ]nsito/.test(s)) {
+  if (/expedido|recebido|recebida|coletado|coleta recebida|postado|tr[aâ]nsito/.test(s)) {
     return "bg-slate-100 text-slate-700 border-slate-300";
   }
   return "bg-teal-50 text-teal-900 border-teal-200";
@@ -10370,6 +10375,12 @@ function OrdersPanel({
         needsShipmentId?: boolean;
         shipmentId?: string | null;
         barcode?: string | null;
+        envioecomStatus?: string | null;
+        inventoryReserved?: boolean;
+        inventoryPool?: string | null;
+        inventoryAlreadyReserved?: boolean;
+        inventoryWarning?: string | null;
+        inventoryPoolLabel?: string | null;
       };
 
       const applyLabelSuccess = (payload: typeof data) => {
@@ -10379,22 +10390,20 @@ function OrdersPanel({
           envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
           envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
           trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
-          // Etiqueta não desfaz "Marcar como Enviado" manual.
+          envioecomStatus: payload.envioecomStatus || (order as any).envioecomStatus || "Etiqueta emitida",
+          ...(payload.inventoryReserved ? { inventoryReserved: true, inventoryPool: payload.inventoryPool } : {}),
         });
+        if (payload.inventoryReserved) {
+          setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: true }));
+        }
         if (payload.labelUrl) {
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
         }
-        // Só alerta: previsão Loja + Motoboy + Minas (sem reservar/baixar).
-        const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
-        const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
-        const minasProjection = buildOrderStockProjectionLines(order, minasInventoryBalances);
-        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Foz Guaçu");
-        const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
-        const minasMsg = formatStockProjectionToast(minasProjection, "estoque Minas");
-        const projectionMsg = [lojaMsg, motoMsg, minasMsg].filter(Boolean).join("\n\n");
-        if (projectionMsg) {
-          toast.message(projectionMsg, { duration: 16000 });
+        if (payload.inventoryWarning) {
+          toast.error(`Etiqueta ok, mas estoque não baixou: ${payload.inventoryWarning}`);
+        } else if (payload.inventoryReserved && !payload.inventoryAlreadyReserved) {
+          toast.success(`Baixa de estoque feita (${payload.inventoryPoolLabel || "Foz Guaçu"}). Pedido saiu da lista de copiar.`);
         }
       };
 
@@ -10425,17 +10434,8 @@ function OrdersPanel({
         );
         const url = URL.createObjectURL(blob);
         window.open(url, "_blank", "noopener,noreferrer");
-        toast.success("Etiqueta gerada (download local).");
-        const lojaProjection = buildOrderStockProjectionLines(order, inventoryBalances);
-        const motoProjection = buildOrderStockProjectionLines(order, motoboyInventoryBalances);
-        const minasProjection = buildOrderStockProjectionLines(order, minasInventoryBalances);
-        const lojaMsg = formatStockProjectionToast(lojaProjection, "estoque Foz Guaçu");
-        const motoMsg = formatStockProjectionToast(motoProjection, "estoque Motoboy");
-        const minasMsg = formatStockProjectionToast(minasProjection, "estoque Minas");
-        const projectionMsg = [lojaMsg, motoMsg, minasMsg].filter(Boolean).join("\n\n");
-        if (projectionMsg) {
-          toast.message(projectionMsg, { duration: 16000 });
-        }
+        applyLabelSuccess({ ...data, labelUrl: null });
+        toast.success("Etiqueta gerada (download local). Pedido saiu da lista de copiar.");
         return;
       }
       toast.success("Etiqueta processada.");
@@ -11853,6 +11853,7 @@ function OrdersPanel({
               enviado: enviados[order.id] || reshipmentIsSent,
               envioecomStatus,
               envioecomLabelUrl: (order as any).envioecomLabelUrl,
+              trackingLabelUrl: (order as any).trackingLabelUrl,
               reshipmentStatus: String(order?.reshipment?.status || ""),
             }) && (() => {
               const q = shippingQueueMap[order.id];

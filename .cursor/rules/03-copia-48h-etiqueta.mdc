@@ -1,0 +1,14 @@
+---
+description: Cópia 48h sai com etiqueta EnvioEcom; Aguardando coleta ≠ Enviado
+alwaysApply: true
+---
+
+# Cópia 48h × etiqueta EnvioEcom (não regressar)
+
+Pedido **sai** da cópia 48h / POSTAR ATÉ / lista de compra se **qualquer**: URL (`envioecomLabelUrl` / `trackingLabelUrl`) **ou** `isLabelReadyStatus` **ou** postado (Coleta Recebida / coletado / trânsito) **ou** `enviado`.
+
+`isLabelReadyStatus` / `isEnvioEcomLabelReadyStatus` **inclui** Aguardando coleta / ser coletado / postagem. **Nunca** tirar isso. **Nunca** pôr esses status em `isInTransitStatus` (não marca Enviado, não baixa estoque).
+
+**Fica na lista:** só `Envio criado`, Vincular barcode sem PDF, etiqueta HTTP 202.
+
+Funções: `isExcludedFromShippingCopyList` (`Admin.tsx`), `isLabelReadyStatus` (`lib/envioecom.ts`). Teste obrigatório: `envioecom-status.test.ts`. Changelog **não** pode dizer “Aguardando coleta não conta” para a cópia. Corpo: `.contexto-yuri-imports/regras-negocio.md` → Invariante.

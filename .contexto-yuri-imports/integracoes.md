@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-31 | Invariante: Aguardando coleta = etiqueta pronta (sai da cópia 48h); não é `isInTransitStatus` | Cópia não reabre pedido com etiqueta; Enviado só na coleta real | Cotação/create/webhook iguais |
 | 2026-08-31 | Snapshot estoque: nome de id órfão (recadastro) via pedidos + nome único do catálogo | Espelho deixa de receber hash se o nome bater | Token, URL, payload `balances` iguais |
 | 2026-08-30 | Snapshot/webhook estoque: `productName` casa `products.id` com trim/caixa (mesmo helper do Admin) | Espelho deixa de receber hash se o id existir no catálogo | Token, URL, payload `balances` iguais |
 | 2026-08-30 | Create EnvioEcom: `items` = 1 linha das settings nome/qty/valor (defaults Mercadoria/1/R$5); cotação não usa esses settings | Pedido interno intacto; etiqueta genérica | Cotação 2×12×17 0,3kg R$5; webhook; contas |
@@ -78,7 +79,8 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`
 - Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults
-- Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; etiqueta/pronto **não** marcam nem desmarcam `enviado` (manual prevalece; EE só liga em trânsito/entregue). Lista de cópia admin exclui por etiqueta EE **ou** `enviado`.
+- Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"; etiqueta/pronto **não** marcam nem desmarcam `enviado` (manual prevalece; EE só liga em trânsito/entregue / Coleta Recebida).
+- **Invariante cópia 48h (não regressar):** sai se URL da etiqueta **ou** `isLabelReadyStatus` (**inclui Aguardando coleta / ser coletado / postagem**) **ou** postado **ou** `enviado`. Fica na lista: só Envio criado, Vincular sem PDF, etiqueta 202. `isInTransitStatus` **exclui** aguardando coleta (não marcar Enviado). Detalhe: `regras-negocio.md` → Invariante. Teste: `envioecom-status.test.ts`.
 - Origem no create: **obrigatória** — `cep_origem` no body, senão CEP da conta escolhida / `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
 - Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)

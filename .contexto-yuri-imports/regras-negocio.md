@@ -6,10 +6,27 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 
 **Precedência:** código-fonte atual > esta memória > tipagens/gerados.
 
+## Invariante — cópia 48h × etiqueta EnvioEcom (não regressar)
+
+Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualquer** um for verdade:
+
+| Sai da cópia | Não sai |
+|--------------|---------|
+| URL da etiqueta (`envioecomLabelUrl` / `trackingLabelUrl`) | Só **Envio criado** (sem PDF) |
+| Status etiqueta pronta: `Etiqueta emitida/gerada`, `Pronto para envio`, **Aguardando coleta**, **Aguardando ser coletado**, **Aguardando postagem**, DC-e, processando envio, aguardando expedição | Só **Vincular EE** (barcode, sem PDF) |
+| Postado: Coleta Recebida / coletado / recebido / expedido / trânsito | Etiqueta ainda em processamento (HTTP 202) |
+| Badge **Enviado** ou reenvio fechado | |
+
+**Não misturar:** Aguardando coleta/postagem = etiqueta pronta (cópia). **Não** marca Enviado e **não** baixa estoque. Enviado/baixa = Coleta Recebida / coletado / trânsito **ou** clique **Marcar como Enviado**.
+
+**Proibido em changelog/código:** “Aguardando coleta não conta” para a **cópia**. Funções: `isExcludedFromShippingCopyList` + `isEnvioEcomLabelReadyStatus` (`Admin.tsx`); `isLabelReadyStatus` / `isInTransitStatus` (`lib/envioecom.ts`). Teste: `envioecom-status.test.ts`.
+
 ## Changelog
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-08-31 | Invariante cópia 48h × etiqueta EE (corpo + rule Cursor): Aguardando coleta **sai da cópia**; **não** é Enviado/estoque. Changelog não pode anular isso | Evita o buraco #928 voltar por linha nova de memória | Código de etiqueta/baixa igual |
+| 2026-08-31 | Etiqueta EnvioEcom **baixa estoque** e tira da cópia 48h; **Coleta Recebida** conta como postado (`enviado` + baixa se ainda não). **Aguardando coleta/postagem** sai da cópia (etiqueta pronta) e **não** marca Enviado | Evita copiar de novo o que já tem etiqueta | Cotação/create iguais |
 | 2026-08-31 | Recadastro de produto: baixa de pedido/reenvio casa o **nome único** do catálogo se o id antigo sumiu; overview recupera o nome pelos pedidos antigos (foto no Admin) | Pedido velho baixa o saldo do produto novo; lista deixa de mostrar hash se o nome bater | Saldos continuam por `product_id`; sem merge automático de qty; API overview ainda não manda `image` |
 | 2026-08-31 | Admin: **Histórico do pedido** (linha do tempo em Detalhes). Tabela `order_activity`; ações admin/PIX/EE daqui pra frente. Pedido antigo mostra criado (+ enviado se já estava) | Só o card Detalhes | Status/pagamento/EE iguais |
 | 2026-08-30 | Admin catálogo: checkbox para backup parcial; **Salvar backup** com marca = só esses ids (`POST export-backup`); sem marca = catálogo inteiro (GET) | JSON menor; restaurar continua merge | Restaurar não apaga; formato do arquivo igual |
@@ -189,11 +206,11 @@ Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no ap
 - **Reenviar (Suporte):** modal de itens (default = faltantes do ticket se houver, senão todos do pedido) → cria **pedido filho** em `orders` com `parent_order_id`, `shippingType = "Reenvio"`, `status = paid`, prioridade, observação `REENVIO DO PEDIDO {#pai} · TICKET {id}`; **não** gera PIX novo; total = só quantidade **extra** vs pai (pode ser R$ 0). Fila `reshipments` fica no **filho**. Endereço novo do chamado (se mais recente) aplica-se só no filho. Ticket → Resolvido · Reenvio (continua apontando o pedido original). Reenvios **já** ligados ao pedido pai permanecem como estão. **Lucro estimado** no card/stats do filho = R$ 0 (custo já no pedido original; não conta prejuízo). **Faturamento líquido** (`financial-summary`) também **exclui** custo/comissão/taxa gateway desses filhos. No card com `reshipments`: **não** mostra Marcar como Enviado / baixa Loja-Motoboy — só **Marcar Reenvio Enviado** ou **Cancelar Reenvio Enviado**. `reenvio_enviado` deixa o badge verde, liga `orders.enviado`, **sai da cópia 48h/72h/lista de compra** (mesmo se `enviado` ainda estiver falso no banco) e solta a vaga da fila. **Cancelar reenvio** (aguardando/pronto → `reenvio_resolvido_sem_entrada`) remove o pin da lista de hoje; distinto de **Cancelar Reenvio Enviado** (volta a pronto e desliga `enviado`).
 - Reenvios manuais (`manual_reshipments`) da aba estoque — fluxo separado.
 - Inventário loja (UI **Foz Guaçu**, chave `loja`): saldos e movimentos (`inventory_balances` / `inventory_movements`), retornos manuais (`manual_return_items`). Nome na lista vem do catálogo (`products.id`); se o id não existe mais (produto recadastrado), tenta o **nome único** atual e, senão, o nome gravado em pedidos antigos. Foto no Admin vem do cadastro (match id ou nome único), não do overview. **Baixa/reserva** do pedido: se o `products[].id` do pedido sumiu do catálogo, usa o produto atual com o mesmo nome (um só no cadastro); se o novo não tiver saldo, tenta o id antigo. Dois cadastros com o mesmo nome **não** vinculam. Recadastrar apagando o produto antigo sem repor o nome igual continua órfão.
-- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado** **ou** no botão **Dar baixa agora** (`reserveNow` → `inventory_reserved`). **Loja** continua reservando na escolha. Com reserva feita, Coletado EE / Marcar Enviado **não** baixam de novo. Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.
-- **Estoque Minas** (pool independente, mesmo padrão Motoboy): `inventory_minas_balances` / `inventory_minas_movements`; aba Admin Estoque → Minas (entrada/saída manual). No card, **Minas** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado** ou **Dar baixa agora**. Entrada Minas **não** debita Loja nem Motoboy. Reenvio manual / produto voltando ficam só na aba Loja.
+- **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado**, **Dar baixa agora** (`reserveNow` → `inventory_reserved`) **ou etiqueta EnvioEcom**. **Loja** continua reservando na escolha. Com reserva feita, Coletado EE / Marcar Enviado / etiqueta **não** baixam de novo. Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.
+- **Estoque Minas** (pool independente, mesmo padrão Motoboy): `inventory_minas_balances` / `inventory_minas_movements`; aba Admin Estoque → Minas (entrada/saída manual). No card, **Minas** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado**, **Dar baixa agora** **ou etiqueta EnvioEcom**. Entrada Minas **não** debita Loja nem Motoboy. Reenvio manual / produto voltando ficam só na aba Loja.
 - **Resumo (aba Estoque):** só leitura. Soma qty Foz Guaçu+Motoboy+Minas × `costPrice` (empatado) e × preço de venda (promo se ativa). Sem entrada/saída. Alerta se custo 0 com saldo.
 - **Sync estoque Motoboy+Minas (espelho):** `GET /api/integrations/inventory/snapshot` (token `INVENTORY_SYNC_TOKEN` ou `MOTOBOY_SYNC_TOKEN`); webhook opcional `inventory.changed` (`INVENTORY_SYNC_WEBHOOK_*`). Outro sistema **só lê**; Yury grava.
-- **Etiqueta EnvioEcom:** ao gerar, toast de **previsão** (saldo atual − qty do pedido) em Loja e Motoboy — **sem** reservar/baixar. Na aba Estoque Motoboy, pedidos com etiqueta e ainda não enviados aparecem como **linha imaginária** (exceto se já tiver `inventory_reserved`); a baixa real segue no Coletado/Enviado ou **Dar baixa agora**.
+- **Etiqueta EnvioEcom:** ao gerar (PDF/R2 ou download local) **dá baixa** no pool do card (ou Foz Guaçu se nenhum) e marca `inventory_reserved`. Status vira **Etiqueta emitida** se ainda não estava em trânsito. Sem saldo: etiqueta sai mesmo assim e o toast avisa. Cópia 48h / Enviado: ver **Invariante — cópia 48h** no topo deste arquivo (não anular no changelog).
 - Despesas de marketing e resumo financeiro: rotas dedicadas.
 
 ## Prova social e settings

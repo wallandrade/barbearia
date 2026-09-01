@@ -1249,26 +1249,38 @@ export function isDeliveredStatus(status: string): boolean {
   return s.includes("entregue") || s.includes("objeto entregue");
 }
 
+/** Ainda na loja com etiqueta: não marcar `enviado` / não baixar estoque. Sai da cópia 48h via isLabelReadyStatus. */
+export function isAwaitingPickupStatus(status: string): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (/aguardando/.test(s) && /colet/.test(s)) || /aguardando\s+postagem/.test(s);
+}
+
 /** Status em que o pacote já foi postado / em trânsito (marca `enviado`). */
 export function isInTransitStatus(status: string): boolean {
   const s = status.toLowerCase();
+  if (!s) return false;
+  if (isAwaitingPickupStatus(s)) return false;
   return (
     s.includes("trânsito") ||
     s.includes("transito") ||
     s.includes("postado") ||
     s.includes("expedido") ||
     s.includes("coletado") ||
+    /coleta\s+recebida/.test(s) ||
     s.includes("recebido") ||
+    s.includes("recebida") ||
     s.includes("saiu para entrega")
   );
 }
 
 /**
- * Etiqueta gerada / pronta para postagem.
- * Não marca `enviado` e também não desmarca (marcação manual prevalece).
+ * Etiqueta gerada / pronta para postagem (inclui Aguardando coleta).
+ * Sai da cópia 48h. Não marca `enviado`.
  */
 export function isLabelReadyStatus(status: string): boolean {
   const s = status.toLowerCase();
+  if (isAwaitingPickupStatus(s)) return true;
   return (
     s.includes("etiqueta emitida") ||
     s.includes("etiqueta gerada") ||

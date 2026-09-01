@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryBalancesTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, inventoryMinasMovementsTable, motoboyBookingsTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, inventoryMinasMovementsTable, motoboyBookingsTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -19,9 +19,17 @@ import {
   registerAffiliateLead,
   resolveAffiliateByCode,
 } from "../lib/affiliates";
-import { getReshipmentByOrderIds, getMotoboyStockMap, getMinasStockMap, registerInventoryEntry, registerMotoboyInventoryEntry, registerMinasInventoryEntry } from "../lib/reshipments";
-import { fetchCatalogIndex } from "../lib/inventory-resolve";
-import { collectStockLookupIds, pickDebitProductId, remapInventoryItem } from "../lib/inventory-catalog";
+import { getReshipmentByOrderIds } from "../lib/reshipments";
+import {
+  applyOrderInventoryDelta,
+  inventoryPoolLabel,
+  isDeferredDebitPool,
+  parseInventoryPool,
+  pickOrderInventoryDebit,
+  resolveOrderInventoryItems,
+  type InventoryPoolKind,
+  type ResolvedOrderInventoryItem,
+} from "../lib/order-inventory-debit";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
@@ -937,178 +945,6 @@ function pickDeterministicTrackingMatch(
   }
 
   return null;
-}
-
-function parseOrderItemsForInventory(raw: unknown): Array<{ productId: string | null; productName: string; quantity: number }> {
-  const parsed = Array.isArray(raw)
-    ? raw
-    : typeof raw === "string"
-      ? (() => {
-          try {
-            const value = JSON.parse(raw);
-            return Array.isArray(value) ? value : [];
-          } catch {
-            return [];
-          }
-        })()
-      : [];
-
-  const items = parsed
-    .map((item) => {
-      const row = item as { id?: unknown; name?: unknown; quantity?: unknown };
-      return {
-        productId: String(row?.id || "").trim() || null,
-        productName: String(row?.name || "Produto").trim() || "Produto",
-        quantity: Number(row?.quantity || 0),
-      };
-    })
-    .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
-
-  const grouped = new Map<string, { productId: string | null; productName: string; quantity: number }>();
-  for (const item of items) {
-    const key = item.productId ? `id:${item.productId}` : `name:${item.productName.toLowerCase()}`;
-    const prev = grouped.get(key);
-    grouped.set(key, {
-      productId: prev?.productId || item.productId,
-      productName: prev?.productName || item.productName,
-      quantity: (prev?.quantity || 0) + item.quantity,
-    });
-  }
-
-  return [...grouped.values()];
-}
-
-type InventoryPoolKind = "loja" | "motoboy" | "minas";
-
-function parseInventoryPool(raw: unknown): InventoryPoolKind | null {
-  const value = String(raw || "").toLowerCase().trim();
-  if (value === "loja" || value === "motoboy" || value === "minas") return value;
-  return null;
-}
-
-function inventoryPoolLabel(pool: InventoryPoolKind): string {
-  if (pool === "motoboy") return "Motoboy";
-  if (pool === "minas") return "Minas";
-  return "Foz Guaçu";
-}
-
-function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
-  return pool === "motoboy" || pool === "minas";
-}
-
-type ResolvedOrderInventoryItem = {
-  productId: string;
-  productName: string;
-  quantity: number;
-  fallbackProductId: string | null;
-};
-
-async function resolveOrderInventoryItems(products: unknown): Promise<ResolvedOrderInventoryItem[]> {
-  const orderItems = parseOrderItemsForInventory(products);
-  if (orderItems.length === 0) return [];
-
-  const index = await fetchCatalogIndex();
-  const resolvedItems = orderItems.map((item) => {
-    const remapped = remapInventoryItem(index, item.productId, item.productName);
-    return {
-      productId: remapped.productId,
-      productName: remapped.productName,
-      quantity: item.quantity,
-      fallbackProductId: remapped.fallbackProductId,
-    };
-  });
-
-  const stillMissing = resolvedItems.filter((item) => !item.productId);
-  if (stillMissing.length > 0) {
-    const names = stillMissing.map((item) => item.productName).join(", ");
-    const err = new Error(`Não foi possível mapear os produtos no estoque: ${names}.`) as Error & { code?: string };
-    err.code = "INVENTORY_PRODUCT_MAPPING_ERROR";
-    throw err;
-  }
-
-  return resolvedItems;
-}
-
-async function pickOrderInventoryDebit(
-  pool: InventoryPoolKind,
-  items: ResolvedOrderInventoryItem[],
-): Promise<{
-  ok: true;
-  items: Array<{ productId: string; productName: string; quantity: number }>;
-} | {
-  ok: false;
-  details: string;
-}> {
-  if (items.length === 0) return { ok: true, items: [] };
-  const stockByProduct = await getStockMapForPool(pool, collectStockLookupIds(items));
-  const debitItems: Array<{ productId: string; productName: string; quantity: number }> = [];
-  const insufficient: string[] = [];
-  for (const item of items) {
-    const picked = pickDebitProductId(item.productId, item.fallbackProductId, item.quantity, stockByProduct);
-    if (picked.available < item.quantity) {
-      insufficient.push(`${item.productName} (precisa ${item.quantity}, disponível ${picked.available})`);
-      continue;
-    }
-    debitItems.push({
-      productId: picked.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-    });
-  }
-  if (insufficient.length > 0) {
-    return { ok: false, details: insufficient.join("; ") };
-  }
-  return { ok: true, items: debitItems };
-}
-
-async function getStockMapForPool(pool: InventoryPoolKind, productIds: string[]): Promise<Map<string, number>> {
-  if (pool === "motoboy") return getMotoboyStockMap(productIds);
-  if (pool === "minas") return getMinasStockMap(productIds);
-  const balanceRows = productIds.length > 0
-    ? await db
-      .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
-      .from(inventoryBalancesTable)
-      .where(inArray(inventoryBalancesTable.productId, productIds))
-    : [];
-  const map = new Map<string, number>();
-  for (const row of balanceRows as Array<{ productId: string; quantity: number }>) {
-    map.set(String(row.productId), Number(row.quantity) || 0);
-  }
-  return map;
-}
-
-async function applyOrderInventoryDelta(params: {
-  pool: InventoryPoolKind;
-  items: Array<{ productId: string; productName: string; quantity: number }>;
-  orderId: string;
-  clientName: string | null;
-  kind: "reserve" | "release" | "ship" | "unship";
-}): Promise<void> {
-  const isExit = params.kind === "reserve" || params.kind === "ship";
-  const poolLabel = inventoryPoolLabel(params.pool);
-  const reasonByKind: Record<typeof params.kind, string> = {
-    reserve: `Reserva ${poolLabel} pedido ${params.orderId}`,
-    release: `Liberação reserva ${poolLabel} pedido ${params.orderId}`,
-    ship: `Saída ${poolLabel} por envio do pedido ${params.orderId}`,
-    unship: `Estorno ${poolLabel} de saída do pedido ${params.orderId}`,
-  };
-  for (const item of params.items) {
-    const qty = isExit ? -item.quantity : item.quantity;
-    const entry = {
-      productId: item.productId,
-      quantity: qty,
-      reason: reasonByKind[params.kind],
-      referenceId: params.orderId,
-      clientName: params.clientName,
-    };
-    if (params.pool === "motoboy") {
-      await registerMotoboyInventoryEntry(entry);
-    } else if (params.pool === "minas") {
-      await registerMinasInventoryEntry(entry);
-    } else {
-      await registerInventoryEntry(entry);
-    }
-  }
 }
 
 async function attachLegacyGuestOrdersToCustomer(userId: string, email: string): Promise<void> {
