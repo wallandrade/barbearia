@@ -38,7 +38,7 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
-import { computeSplitInsuranceAmount, resolveCheckoutInsurance } from "../lib/checkout-insurance";
+import { computeSplitInsuranceAmount, resolveCheckoutInsurance, computeInsuranceSnapshot } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 
 const router: IRouter = Router();
@@ -1164,6 +1164,12 @@ router.post("/orders", async (req, res) => {
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const resolvedIncludeInsurance = computedInsurance.includeInsurance;
+    const insuranceSnapshot = computeInsuranceSnapshot({
+      includeInsurance: resolvedIncludeInsurance,
+      subtotal: computedSubtotal,
+      insuranceAmount: computedInsuranceAmount,
+      keepPercent: insuranceConfig.keepPercent,
+    });
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 
     let normalizedCouponCode: string | null = null;
@@ -1221,6 +1227,11 @@ router.post("/orders", async (req, res) => {
       subtotal:          String(computedSubtotal),
       shippingCost:      String(computedShippingCost),
       insuranceAmount:   String(computedInsuranceAmount),
+      insuranceKeepAmount: String(insuranceSnapshot.keepAmount),
+      insuranceCashbackAmount: String(insuranceSnapshot.cashbackAmount),
+      insuranceClaimStatus: "none",
+      insuranceReshipCount: 0,
+      insuranceCashbackGranted: false,
       total:             String(computedTotal),
       status:            method === "card_simulation" ? "awaiting_payment" : "pending",
       paymentMethod:     method,
@@ -1958,6 +1969,12 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
           fallbackSubtotal: computedSubtotal,
         })
       : 0;
+    const insuranceSnapshot = computeInsuranceSnapshot({
+      includeInsurance: Boolean(current[0].includeInsurance),
+      subtotal: computedSubtotal,
+      insuranceAmount: computedInsuranceAmount,
+      keepPercent: insuranceConfig.keepPercent,
+    });
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
     let newStatus: string;
@@ -2022,6 +2039,8 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       products: resolvedProducts,
       subtotal: String(computedSubtotal),
       insuranceAmount: String(computedInsuranceAmount),
+      insuranceKeepAmount: String(insuranceSnapshot.keepAmount),
+      insuranceCashbackAmount: String(insuranceSnapshot.cashbackAmount),
       discountAmount: String(computedDiscountAmount),
       total: String(total),
       status: newStatus,
@@ -2339,6 +2358,13 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     subtotal:            Number(o.subtotal),
     shippingCost:        Number(o.shippingCost),
     insuranceAmount:     Number(o.insuranceAmount),
+    insuranceKeepAmount: o.insuranceKeepAmount != null ? Number(o.insuranceKeepAmount) : 0,
+    insuranceCashbackAmount: o.insuranceCashbackAmount != null ? Number(o.insuranceCashbackAmount) : 0,
+    insuranceClaimStatus: o.insuranceClaimStatus || "none",
+    insuranceReshipCount: Number(o.insuranceReshipCount || 0),
+    insuranceCashbackGranted: !!o.insuranceCashbackGranted,
+    insurancePixRefundDone: !!o.insurancePixRefundDone,
+    storeCreditUsed:     o.storeCreditUsed ? Number(o.storeCreditUsed) : null,
     total:               Number(o.total),
     status:              o.status,
     paymentMethod:       o.paymentMethod || "pix",

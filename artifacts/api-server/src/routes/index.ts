@@ -37,6 +37,7 @@ import brevoRouter from "./brevo";
 import envioecomRouter from "./envioecom";
 import bankStatementRouter from "./bank-statement";
 import peptideChatRouter from "./peptide-chat";
+import insuranceRouter from "./insurance";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -76,5 +77,6 @@ router.use(brevoRouter);
 router.use(envioecomRouter);
 router.use(bankStatementRouter);
 router.use(peptideChatRouter);
+router.use(insuranceRouter);
 
 export default router;

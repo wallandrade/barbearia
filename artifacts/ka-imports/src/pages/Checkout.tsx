@@ -28,9 +28,12 @@ import {
   parseInsuranceEnabled,
   parseInsuranceLabel,
   parseInsurancePercent,
+  parseInsuranceKeepPercent,
   parseInsuranceProductIds,
   parseOptionalInsurancePercent,
+  DEFAULT_CHECKOUT_INSURANCE,
 } from "@/lib/checkout-insurance";
+import { CheckoutInsuranceOffer } from "@/components/CheckoutInsuranceOffer";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
@@ -172,12 +175,11 @@ export default function Checkout() {
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [insuranceEnabled, setInsuranceEnabled] = useState(true);
   const [insurancePercent, setInsurancePercent] = useState(10);
+  const [insuranceKeepPercent, setInsuranceKeepPercent] = useState(10);
   const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
   const [insuranceProductIds, setInsuranceProductIds] = useState<string[]>([]);
-  const [insuranceLabel, setInsuranceLabel] = useState("Adicionar Seguro de Envio");
-  const [insuranceDescription, setInsuranceDescription] = useState(
-    "Seguro de envio que garante cobertura em caso de extravio, dano ou problemas na entrega.",
-  );
+  const [insuranceLabel, setInsuranceLabel] = useState(DEFAULT_CHECKOUT_INSURANCE.label);
+  const [insuranceDescription, setInsuranceDescription] = useState(DEFAULT_CHECKOUT_INSURANCE.description);
   const [showCardModal, setShowCardModal] = useState(false);
   const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string; orderRef: string } | null>(null);
   const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
@@ -200,6 +202,9 @@ export default function Checkout() {
   const [affiliateCreditAvailable, setAffiliateCreditAvailable] = useState(0);
   const [affiliateCreditLoading, setAffiliateCreditLoading] = useState(false);
   const [useAffiliateCredit, setUseAffiliateCredit] = useState(false);
+  const [storeCreditAvailable, setStoreCreditAvailable] = useState(0);
+  const [storeCreditLoading, setStoreCreditLoading] = useState(false);
+  const [useStoreCredit, setUseStoreCredit] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState({ pix: true, card: true, whatsapp: false });
   const [checkoutWhatsappNumber, setCheckoutWhatsappNumber] = useState("5535999768759");
   const [freeShippingMinStandard, setFreeShippingMinStandard] = useState<number | null>(null);
@@ -563,6 +568,7 @@ export default function Checkout() {
           if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
           setInsuranceEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]));
           setInsurancePercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.percent]));
+          setInsuranceKeepPercent(parseInsuranceKeepPercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]));
           setInsuranceProductPercent(parseOptionalInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]));
           setInsuranceProductIds(parseInsuranceProductIds(data[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]));
           setInsuranceLabel(parseInsuranceLabel(data[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
@@ -882,7 +888,9 @@ export default function Checkout() {
     : 0;
   const total = Math.max(0, subtotal + shippingCost + insuranceAmount - discountAmount);
   const affiliateCreditToApply = useAffiliateCredit ? Math.min(affiliateCreditAvailable, total) : 0;
-  const payableTotal = Math.max(0, total - affiliateCreditToApply);
+  const afterAffiliate = Math.max(0, total - affiliateCreditToApply);
+  const storeCreditToApply = useStoreCredit ? Math.min(storeCreditAvailable, afterAffiliate) : 0;
+  const payableTotal = Math.max(0, afterAffiliate - storeCreditToApply);
 
   // Card payment uses regular (non-promo) prices
   const cardSubtotal = getCardSubtotal();
@@ -907,11 +915,14 @@ export default function Checkout() {
     if (!token) {
       setAffiliateCreditAvailable(0);
       setUseAffiliateCredit(false);
+      setStoreCreditAvailable(0);
+      setUseStoreCredit(false);
       return;
     }
 
     let active = true;
     setAffiliateCreditLoading(true);
+    setStoreCreditLoading(true);
     fetch(`${BASE}/api/me/affiliate/credit-balance`, {
       headers: getCustomerAuthHeaders(),
     })
@@ -929,6 +940,25 @@ export default function Checkout() {
       })
       .finally(() => {
         if (active) setAffiliateCreditLoading(false);
+      });
+
+    fetch(`${BASE}/api/me/store-credit`, {
+      headers: getCustomerAuthHeaders(),
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { balance?: number };
+      })
+      .then((data) => {
+        if (!active) return;
+        const available = Number(data?.balance || 0);
+        setStoreCreditAvailable(Number.isFinite(available) ? available : 0);
+      })
+      .catch(() => {
+        if (active) setStoreCreditAvailable(0);
+      })
+      .finally(() => {
+        if (active) setStoreCreditLoading(false);
       });
 
     return () => {
@@ -1221,6 +1251,7 @@ export default function Checkout() {
           sellerCode,
           affiliateCode:   affiliateCode || undefined,
           useAffiliateCredit,
+          useStoreCredit,
           couponCode:      appliedCoupon?.code,
           discountAmount:  discountAmount > 0 ? discountAmount : undefined,
         }),
@@ -1237,6 +1268,7 @@ export default function Checkout() {
         pixImage?: string;
         expiresAt?: string;
         coveredByAffiliateCredit?: boolean;
+        coveredByStoreCredit?: boolean;
         affiliateCreditUsed?: number;
         remainingToPay?: number;
         message?: string;
@@ -1255,7 +1287,7 @@ export default function Checkout() {
         return;
       }
 
-      if (result.coveredByAffiliateCredit) {
+      if (result.coveredByAffiliateCredit || result.coveredByStoreCredit || result.status === "paid") {
         rememberAssignedSeller(result.sellerCode, result.sellerWhatsapp);
         const coveredOrderId = result.orderId || genId();
         if (result.orderId) {
@@ -2398,34 +2430,19 @@ export default function Checkout() {
               </div>
 
               {/* Insurance */}
-              {insuranceEnabled && (
-              <div className="pt-4 border-t border-border">
-                <label className="flex items-start gap-4 cursor-pointer group">
-                  <div className="relative flex items-center justify-center mt-1 shrink-0">
-                    <div
-                      onClick={() => setIncludeInsurance((v) => !v)}
-                      className={`w-6 h-6 rounded-md border-2 transition-colors flex items-center justify-center cursor-pointer ${includeInsurance ? "border-primary bg-primary" : "border-muted-foreground"}`}
-                    >
-                      {includeInsurance && <ShieldCheck className="w-4 h-4 text-white" />}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="font-bold text-foreground group-hover:text-primary transition-colors">
-                      {insuranceLabel} ({insuranceOfferSuffix})
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {insuranceDescription}
-                    </p>
-                    <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-800 flex items-start gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                        Pedidos sem seguro são de responsabilidade do comprador. Não nos responsabilizamos por problemas no transporte.
-                      </p>
-                    </div>
-                  </div>
-                </label>
-              </div>
-              )}
+              <CheckoutInsuranceOffer
+                enabled={insuranceEnabled}
+                includeInsurance={includeInsurance}
+                onToggle={() => setIncludeInsurance((v) => !v)}
+                label={insuranceLabel}
+                offerSuffix={insuranceOfferSuffix}
+                extraDescription={insuranceDescription}
+                subtotal={subtotal}
+                insuranceAmount={insuranceAmount}
+                keepPercent={insuranceKeepPercent}
+                chargedPercent={insurancePercent}
+                isLoggedIn={Boolean(getCustomerToken())}
+              />
             </div>
           </div>
 
@@ -2600,6 +2617,12 @@ export default function Checkout() {
                     <span>− {formatCurrency(affiliateCreditToApply)}</span>
                   </div>
                 )}
+                {useStoreCredit && storeCreditToApply > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>Saldo da loja aplicado</span>
+                    <span>− {formatCurrency(storeCreditToApply)}</span>
+                  </div>
+                )}
               </div>
 
               {/* Coupon field — hidden if bump is applied */}
@@ -2655,25 +2678,42 @@ export default function Checkout() {
               )}
 
               {getCustomerToken() && (
-                <div className="mb-4 pb-4 border-b border-border">
-                  <label className="flex items-center justify-between gap-3 cursor-pointer">
-                    <span className="text-sm font-medium text-foreground">Usar saldo de comissão</span>
-                    <input
-                      type="checkbox"
-                      checked={useAffiliateCredit}
-                      onChange={(e) => setUseAffiliateCredit(e.target.checked)}
-                      disabled={affiliateCreditLoading || affiliateCreditAvailable <= 0}
-                      className="w-4 h-4"
-                    />
-                  </label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Saldo disponível: {affiliateCreditLoading ? "carregando..." : formatCurrency(affiliateCreditAvailable)}
-                  </p>
-                  {useAffiliateCredit && affiliateCreditToApply > 0 && (
-                    <p className="text-xs text-blue-700 mt-1">
-                      Será aplicado {formatCurrency(affiliateCreditToApply)} neste pedido.
+                <div className="mb-4 pb-4 border-b border-border space-y-3">
+                  <div>
+                    <label className="flex items-center justify-between gap-3 cursor-pointer">
+                      <span className="text-sm font-medium text-foreground">Usar saldo de comissão</span>
+                      <input
+                        type="checkbox"
+                        checked={useAffiliateCredit}
+                        onChange={(e) => setUseAffiliateCredit(e.target.checked)}
+                        disabled={affiliateCreditLoading || affiliateCreditAvailable <= 0}
+                        className="w-4 h-4"
+                      />
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Saldo disponível: {affiliateCreditLoading ? "carregando..." : formatCurrency(affiliateCreditAvailable)}
                     </p>
-                  )}
+                  </div>
+                  <div>
+                    <label className="flex items-center justify-between gap-3 cursor-pointer">
+                      <span className="text-sm font-medium text-foreground">Usar saldo da loja (seguro)</span>
+                      <input
+                        type="checkbox"
+                        checked={useStoreCredit}
+                        onChange={(e) => setUseStoreCredit(e.target.checked)}
+                        disabled={storeCreditLoading || storeCreditAvailable <= 0}
+                        className="w-4 h-4"
+                      />
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Saldo disponível: {storeCreditLoading ? "carregando..." : formatCurrency(storeCreditAvailable)}
+                    </p>
+                    {useStoreCredit && storeCreditToApply > 0 && (
+                      <p className="text-xs text-emerald-700 mt-1">
+                        Será aplicado {formatCurrency(storeCreditToApply)} neste pedido.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

@@ -19,8 +19,9 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
-import { resolveCheckoutInsurance } from "../lib/checkout-insurance";
+import { resolveCheckoutInsurance, computeInsuranceSnapshot } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
+import { applyStoreCreditToOrder } from "../lib/store-credits";
 
 const router: IRouter = Router();
 
@@ -230,8 +231,9 @@ router.post("/checkout/pix", async (req, res) => {
     const {
       client, address, products, shippingType, includeInsurance,
       shippingCost,
-      sellerCode, couponCode,
+      sellerCode,       couponCode,
       useAffiliateCredit,
+      useStoreCredit,
     } = req.body as {
       client: { name: string; email: string; phone: string; document: string };
       address?: {
@@ -246,6 +248,7 @@ router.post("/checkout/pix", async (req, res) => {
       sellerCode?: string;
       couponCode?: string;
       useAffiliateCredit?: boolean;
+      useStoreCredit?: boolean;
     };
 
     const normalizedAffiliateCode = normalizeAffiliateCode(req.body?.affiliateCode);
@@ -388,6 +391,12 @@ router.post("/checkout/pix", async (req, res) => {
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const resolvedIncludeInsurance = computedInsurance.includeInsurance;
+    const insuranceSnapshot = computeInsuranceSnapshot({
+      includeInsurance: resolvedIncludeInsurance,
+      subtotal: computedSubtotal,
+      insuranceAmount: computedInsuranceAmount,
+      keepPercent: insuranceConfig.keepPercent,
+    });
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 
     let normalizedCouponCode: string | null = null;
@@ -457,6 +466,11 @@ router.post("/checkout/pix", async (req, res) => {
       subtotal:            String(computedSubtotal),
       shippingCost:        String(computedShippingCost),
       insuranceAmount:     String(computedInsuranceAmount),
+      insuranceKeepAmount: String(insuranceSnapshot.keepAmount),
+      insuranceCashbackAmount: String(insuranceSnapshot.cashbackAmount),
+      insuranceClaimStatus: "none",
+      insuranceReshipCount: 0,
+      insuranceCashbackGranted: false,
       total:               String(amount),
       status:              "pending",
       paymentMethod:       "pix",
@@ -474,26 +488,39 @@ router.post("/checkout/pix", async (req, res) => {
     const orderNumber = createdOrderRow?.orderNumber ?? null;
 
     let affiliateCreditUsed = 0;
+    let storeCreditUsed = 0;
     if (useAffiliateCredit === true && customerSession?.userId) {
       affiliateCreditUsed = await applyAffiliateCreditToOrder({
         userId: customerSession.userId,
         orderId,
         requestedAmount: amount,
       });
+    }
+    if (useStoreCredit === true && customerSession?.userId) {
+      storeCreditUsed = await applyStoreCreditToOrder({
+        userId: customerSession.userId,
+        orderId,
+        requestedAmount: Math.max(0, amount - affiliateCreditUsed),
+      });
+    }
 
-      if (affiliateCreditUsed > 0) {
-        const payableAmount = Math.max(0, amount - affiliateCreditUsed);
-        await db
-          .update(ordersTable)
-          .set({
-            total: String(payableAmount),
-            affiliateCreditUsed: String(affiliateCreditUsed),
-            paymentMethod: payableAmount <= 0 ? "affiliate_credit" : "pix",
-            status: payableAmount <= 0 ? "paid" : "pending",
-            updatedAt: new Date(),
-          })
-          .where(eq(ordersTable.id, orderId));
-      }
+    const creditsUsed = affiliateCreditUsed + storeCreditUsed;
+    if (creditsUsed > 0) {
+      const payableAmount = Math.max(0, amount - creditsUsed);
+      const method = payableAmount <= 0
+        ? (storeCreditUsed > 0 && affiliateCreditUsed <= 0 ? "store_credit" : "affiliate_credit")
+        : "pix";
+      await db
+        .update(ordersTable)
+        .set({
+          total: String(payableAmount),
+          affiliateCreditUsed: affiliateCreditUsed > 0 ? String(affiliateCreditUsed) : null,
+          storeCreditUsed: storeCreditUsed > 0 ? String(storeCreditUsed) : null,
+          paymentMethod: method,
+          status: payableAmount <= 0 ? "paid" : "pending",
+          updatedAt: new Date(),
+        })
+        .where(eq(ordersTable.id, orderId));
     }
 
     if (affiliateUserId) {
@@ -548,7 +575,7 @@ router.post("/checkout/pix", async (req, res) => {
       try { await incrementCouponUse(normalizedCouponCode); } catch { /* non-fatal */ }
     }
 
-    const payableAmount = Math.max(0, amount - affiliateCreditUsed);
+    const payableAmount = Math.max(0, amount - affiliateCreditUsed - storeCreditUsed);
     if (payableAmount <= 0) {
       await ensureOrderCommission(orderId);
       broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
@@ -557,12 +584,13 @@ router.post("/checkout/pix", async (req, res) => {
         status: "paid",
         clientName: client.name,
         total: amount,
-        coveredByAffiliateCredit: true,
+        coveredByAffiliateCredit: affiliateCreditUsed > 0,
+        coveredByStoreCredit: storeCreditUsed > 0,
       });
       void recordOrderActivity({
         orderId,
         type: "status",
-        label: "Pago (crédito afiliado)",
+        label: storeCreditUsed > 0 ? "Pago (saldo da loja)" : "Pago (crédito afiliado)",
         actorType: "system",
         actorName: "Sistema",
       });
@@ -573,8 +601,10 @@ router.post("/checkout/pix", async (req, res) => {
         guestAccessToken,
         isGuestOrder: !customerSession,
         status: "paid",
-        coveredByAffiliateCredit: true,
+        coveredByAffiliateCredit: affiliateCreditUsed > 0 && payableAmount <= 0,
+        coveredByStoreCredit: storeCreditUsed > 0 && payableAmount <= 0,
         affiliateCreditUsed,
+        storeCreditUsed,
         remainingToPay: 0,
         sellerCode: resolvedSellerCode,
         sellerWhatsapp: assignedSeller.whatsapp,

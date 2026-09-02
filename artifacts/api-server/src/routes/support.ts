@@ -5,6 +5,7 @@ import { db, ordersTable, supportTicketsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { createReshipmentChildOrder } from "../lib/reshipments";
+import { chooseInsuranceReship, InsuranceClaimError, markFirstLost } from "../lib/insurance-claims";
 
 const router: IRouter = Router();
 
@@ -155,6 +156,20 @@ async function loadOrderProductsByIds(orderIds: string[]): Promise<Map<string, A
   return map;
 }
 
+async function loadOrderInsuranceByIds(orderIds: string[]): Promise<Map<string, boolean>> {
+  const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
+  const map = new Map<string, boolean>();
+  if (uniqueIds.length === 0) return map;
+  const rows = await db
+    .select({ id: ordersTable.id, includeInsurance: ordersTable.includeInsurance })
+    .from(ordersTable)
+    .where(inArray(ordersTable.id, uniqueIds));
+  for (const row of rows) {
+    map.set(row.id, Boolean(row.includeInsurance));
+  }
+  return map;
+}
+
 function normalizeAddressChange(raw: unknown): AddressChangePayload | null {
   if (!raw || typeof raw !== "object") return null;
   const source = raw as Record<string, unknown>;
@@ -226,6 +241,9 @@ router.post("/support/orders-by-cpf", async (req, res) => {
         status: ordersTable.status,
         createdAt: ordersTable.createdAt,
         products: ordersTable.products,
+        includeInsurance: ordersTable.includeInsurance,
+        insuranceClaimStatus: ordersTable.insuranceClaimStatus,
+        parentOrderId: ordersTable.parentOrderId,
       })
       .from(ordersTable)
       .where(
@@ -250,6 +268,9 @@ router.post("/support/orders-by-cpf", async (req, res) => {
         quantity: Number(p?.quantity) || 0,
         price: Number(p?.price) || 0,
       })).filter((p) => p.id && p.quantity > 0),
+      includeInsurance: Boolean(row.includeInsurance),
+      insuranceClaimStatus: row.insuranceClaimStatus || "none",
+      parentOrderId: row.parentOrderId ?? null,
     }));
 
     res.json({ orders });
@@ -270,7 +291,7 @@ router.post("/support/tickets", async (req, res) => {
     const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const imageData = req.body?.imageData == null ? null : String(req.body.imageData);
     const problemTypeRaw = String(req.body?.problemType ?? "").trim().toLowerCase();
-    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other"
+    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other" || problemTypeRaw === "extravio"
       ? problemTypeRaw
       : "other";
     let addressChange: AddressChangePayload | null = null;
@@ -305,6 +326,7 @@ router.post("/support/tickets", async (req, res) => {
         total: ordersTable.total,
         createdAt: ordersTable.createdAt,
         products: ordersTable.products,
+        includeInsurance: ordersTable.includeInsurance,
       })
       .from(ordersTable)
       .where(
@@ -341,6 +363,10 @@ router.post("/support/tickets", async (req, res) => {
       }
     }
 
+    if (problemType === "extravio") {
+      if (!description) description = "Pedido nao chegou / extravio do envio.";
+    }
+
     if (description.length < 10) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Descreva o problema com pelo menos 10 caracteres." });
       return;
@@ -369,6 +395,14 @@ router.post("/support/tickets", async (req, res) => {
       orderCreatedAt: order.createdAt,
       updatedAt: new Date(),
     });
+
+    if (problemType === "extravio") {
+      try {
+        await markFirstLost(order.id);
+      } catch (err) {
+        if (!(err instanceof InsuranceClaimError)) throw err;
+      }
+    }
 
     broadcastNotification({
       type: "support_ticket_created",
@@ -412,6 +446,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         .orderBy(desc(supportTicketsTable.createdAt));
 
       const productsByOrder = await loadOrderProductsByIds(rows.map((row) => row.orderId));
+      const insuranceByOrder = await loadOrderInsuranceByIds(rows.map((row) => row.orderId));
       const tickets = rows.map((row) => {
         let addressChange: AddressChangePayload | null = null;
         if (row.addressChangeJson) {
@@ -440,6 +475,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
           createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
           updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
           orderProducts: productsByOrder.get(row.orderId) || [],
+          includeInsurance: insuranceByOrder.get(row.orderId) === true,
           problemType: row.problemType || null,
           missingProducts: parseMissingProductsJson(row.missingProductsJson),
         };
@@ -456,6 +492,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
       .orderBy(desc(supportTicketsTable.createdAt));
 
     const productsByOrder = await loadOrderProductsByIds(rows.map((row) => row.orderId));
+    const insuranceByOrder = await loadOrderInsuranceByIds(rows.map((row) => row.orderId));
     const tickets = rows.map((row) => {
       let addressChange: AddressChangePayload | null = null;
       if (row.addressChangeJson) {
@@ -484,6 +521,7 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
         updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
         orderProducts: productsByOrder.get(row.orderId) || [],
+        includeInsurance: insuranceByOrder.get(row.orderId) === true,
         problemType: row.problemType || null,
         missingProducts: parseMissingProductsJson(row.missingProductsJson),
       };
@@ -529,7 +567,7 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
     }
 
     const orderRows = await db
-      .select({ id: ordersTable.id, products: ordersTable.products })
+      .select()
       .from(ordersTable)
       .where(scope.hasGlobalAccess
         ? eq(ordersTable.id, ticket.orderId)
@@ -552,12 +590,28 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
     const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
     const addressOverride = parsedAddress && canApplyAddress ? parsedAddress : null;
 
-    const child = await createReshipmentChildOrder({
-      parentOrderId: order.id,
-      supportTicketId: ticket.id,
-      productsRaw,
-      addressOverride,
-    });
+    let child;
+    try {
+      if (ticket.problemType === "extravio") {
+        child = await chooseInsuranceReship({
+          orderId: order.id,
+          supportTicketId: ticket.id,
+        });
+      } else {
+        child = await createReshipmentChildOrder({
+          parentOrderId: order.id,
+          supportTicketId: ticket.id,
+          productsRaw,
+          addressOverride,
+        });
+      }
+    } catch (err) {
+      if (err instanceof InsuranceClaimError) {
+        res.status(400).json({ error: err.code, message: err.message });
+        return;
+      }
+      throw err;
+    }
 
     await db
       .update(supportTicketsTable)
@@ -618,6 +672,7 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
         id: supportTicketsTable.id,
         orderId: supportTicketsTable.orderId,
         addressChangeJson: supportTicketsTable.addressChangeJson,
+        problemType: supportTicketsTable.problemType,
       })
       .from(supportTicketsTable)
       .where(eq(supportTicketsTable.id, id))
@@ -639,12 +694,12 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
     let childOrderId: string | null = null;
     let childOrderNumber: number | null = null;
 
-    if (status === "resolved" && ticket.addressChangeJson) {
+    if (status === "resolved" && ticket.addressChangeJson && ticket.problemType !== "extravio") {
       const parsedAddress = parseAddressChangeJson(ticket.addressChangeJson);
       const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
 
       const orderRows = await db
-        .select({ id: ordersTable.id, products: ordersTable.products })
+        .select()
         .from(ordersTable)
         .where(scope.hasGlobalAccess
           ? eq(ordersTable.id, ticket.orderId)
@@ -653,17 +708,25 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
 
       const order = orderRows[0];
       if (order && parsedAddress) {
-        const child = await createReshipmentChildOrder({
-          parentOrderId: order.id,
-          supportTicketId: ticket.id,
-          productsRaw: order.products,
-          addressOverride: canApplyAddress ? parsedAddress : null,
-        });
-        reshipment = child.reshipment;
-        childOrderId = child.childOrderId;
-        childOrderNumber = child.childOrderNumber;
-        addressApplied = Boolean(canApplyAddress);
-        resolutionReason = "reenvio_autorizado";
+        try {
+          const child = await createReshipmentChildOrder({
+            parentOrderId: order.id,
+            supportTicketId: ticket.id,
+            productsRaw: order.products,
+            addressOverride: canApplyAddress ? parsedAddress : null,
+          });
+          reshipment = child.reshipment;
+          childOrderId = child.childOrderId;
+          childOrderNumber = child.childOrderNumber;
+          addressApplied = Boolean(canApplyAddress);
+          resolutionReason = "reenvio_autorizado";
+        } catch (err) {
+          if (err instanceof InsuranceClaimError) {
+            res.status(400).json({ error: err.code, message: err.message });
+            return;
+          }
+          throw err;
+        }
       }
     }
 

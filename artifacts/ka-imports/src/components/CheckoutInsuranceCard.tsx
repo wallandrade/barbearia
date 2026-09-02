@@ -7,10 +7,14 @@ import {
   formatInsurancePercent,
   parseInsuranceDescription,
   parseInsuranceEnabled,
+  parseInsuranceKeepPercent,
   parseInsuranceLabel,
   parseInsurancePercent,
   parseInsuranceProductIds,
   parseOptionalInsurancePercent,
+  cashbackPercent,
+  computeInsuranceAmount,
+  computeInsuranceSnapshot,
 } from "@/lib/checkout-insurance";
 
 type ProductOption = {
@@ -30,10 +34,12 @@ type Props = {
 export function CheckoutInsuranceCard({ settings, loading, products, onSave }: Props) {
   const enabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]);
   const savedPercent = parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.percent]);
+  const savedKeepPercent = parseInsuranceKeepPercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]);
   const savedProductPercent = parseOptionalInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]);
   const savedProductIds = parseInsuranceProductIds(settings[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]);
   const [label, setLabel] = useState(parseInsuranceLabel(settings[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
   const [percent, setPercent] = useState(String(savedPercent));
+  const [keepPercent, setKeepPercent] = useState(String(savedKeepPercent));
   const [productPercent, setProductPercent] = useState(savedProductPercent == null ? "" : String(savedProductPercent));
   const [productIds, setProductIds] = useState<string[]>(savedProductIds);
   const [description, setDescription] = useState(
@@ -42,6 +48,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
   const [dirty, setDirty] = useState({
     label: false,
     percent: false,
+    keepPercent: false,
     description: false,
     productPercent: false,
     productIds: false,
@@ -50,6 +57,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
   useEffect(() => {
     if (!dirty.label) setLabel(parseInsuranceLabel(settings[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
     if (!dirty.percent) setPercent(String(parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.percent])));
+    if (!dirty.keepPercent) setKeepPercent(String(parseInsuranceKeepPercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent])));
     if (!dirty.productPercent) {
       const next = parseOptionalInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]);
       setProductPercent(next == null ? "" : String(next));
@@ -58,16 +66,18 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
     if (!dirty.description) {
       setDescription(parseInsuranceDescription(settings[CHECKOUT_INSURANCE_SETTING_KEYS.description]));
     }
-  }, [settings, dirty.label, dirty.percent, dirty.productPercent, dirty.productIds, dirty.description]);
+  }, [settings, dirty.label, dirty.percent, dirty.keepPercent, dirty.productPercent, dirty.productIds, dirty.description]);
 
   const commitAll = async () => {
     const nextLabel = parseInsuranceLabel(label);
     const nextPercent = parseInsurancePercent(percent);
+    const nextKeepPercent = parseInsuranceKeepPercent(keepPercent);
     const nextProductPercent = parseOptionalInsurancePercent(productPercent);
     const nextProductIds = [...new Set(productIds.map((id) => id.trim()).filter(Boolean))];
     const nextDescription = parseInsuranceDescription(description);
     setLabel(nextLabel);
     setPercent(String(nextPercent));
+    setKeepPercent(String(nextKeepPercent));
     setProductPercent(nextProductPercent == null ? "" : String(nextProductPercent));
     setProductIds(nextProductIds);
     setDescription(nextDescription);
@@ -77,6 +87,9 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
     }
     if (nextPercent !== savedPercent) {
       await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.percent, String(nextPercent)));
+    }
+    if (nextKeepPercent !== savedKeepPercent) {
+      await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent, String(nextKeepPercent)));
     }
     if (nextProductPercent !== savedProductPercent) {
       await Promise.resolve(onSave(
@@ -92,14 +105,16 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
     if (nextDescription !== parseInsuranceDescription(settings[CHECKOUT_INSURANCE_SETTING_KEYS.description])) {
       await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.description, nextDescription));
     }
-    setDirty({ label: false, percent: false, description: false, productPercent: false, productIds: false });
+    setDirty({ label: false, percent: false, keepPercent: false, description: false, productPercent: false, productIds: false });
   };
 
   const previewPercent = parseInsurancePercent(percent);
+  const previewKeepPercent = parseInsuranceKeepPercent(keepPercent);
   const previewProductPercent = parseOptionalInsurancePercent(productPercent);
   const savingTexts = !!(
     loading[CHECKOUT_INSURANCE_SETTING_KEYS.label]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.percent]
+    || loading[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.description]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]
@@ -114,7 +129,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
             Seguro de Envio
           </h3>
           <p className="text-xs text-muted-foreground">
-            % padrão da loja para todos os produtos. Marque itens para cobrar um % especial só neles. Carrinho misto soma os dois.
+            % cobrado no checkout. A loja fica o % abaixo se entregar; o resto vira saldo do cliente. Sem seguro = sem reenvio por extravio.
           </p>
         </div>
         <button
@@ -168,6 +183,22 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
               setPercent(e.target.value);
             }}
             disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.percent]}
+            className="w-full h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">% que a loja fica (se entregar)</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={keepPercent}
+            onChange={(e) => {
+              setDirty((d) => ({ ...d, keepPercent: true }));
+              setKeepPercent(e.target.value);
+            }}
+            disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]}
             className="w-full h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
           />
         </div>
@@ -266,15 +297,32 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
       </div>
 
       {enabled && (
-        <div className="mt-4 p-4 rounded-xl border border-border bg-muted/20">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Prévia no checkout</p>
+        <div className="mt-4 p-4 rounded-xl border border-border bg-muted/20 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia no checkout</p>
           <p className="font-bold text-sm text-foreground">
             {parseInsuranceLabel(label)}{" "}
             ({productIds.length > 0 && previewProductPercent != null
               ? `+${formatInsurancePercent(previewPercent)}% / +${formatInsurancePercent(previewProductPercent)}%`
               : `+${formatInsurancePercent(previewPercent)}%`})
           </p>
-          <p className="text-xs text-muted-foreground mt-1">{parseInsuranceDescription(description)}</p>
+          <p className="text-xs text-muted-foreground">{parseInsuranceDescription(description)}</p>
+          {(() => {
+            const example = 733;
+            const charged = computeInsuranceAmount(example, true, previewPercent);
+            const snap = computeInsuranceSnapshot({
+              includeInsurance: true,
+              subtotal: example,
+              insuranceAmount: charged,
+              keepPercent: previewKeepPercent,
+            });
+            const backPct = cashbackPercent(previewPercent, previewKeepPercent);
+            const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+            return (
+              <p className="text-sm text-foreground pt-1">
+                Exemplo produto {brl(example)} → cobra {brl(charged)} · loja fica {brl(snap.keepAmount)} ({formatInsurancePercent(previewKeepPercent)}%) · saldo {brl(snap.cashbackAmount)} ({formatInsurancePercent(backPct)}%)
+              </p>
+            );
+          })()}
         </div>
       )}
     </div>

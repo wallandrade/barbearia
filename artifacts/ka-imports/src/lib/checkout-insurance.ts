@@ -1,6 +1,7 @@
 export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   enabled: "checkout_insurance_enabled",
   percent: "checkout_insurance_percent",
+  keepPercent: "checkout_insurance_keep_percent",
   label: "checkout_insurance_label",
   description: "checkout_insurance_description",
   productPercent: "checkout_insurance_product_percent",
@@ -10,8 +11,9 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
 export const DEFAULT_CHECKOUT_INSURANCE = {
   enabled: true,
   percent: 10,
+  keepPercent: 10,
   label: "Adicionar Seguro de Envio",
-  description: "Seguro de envio que garante cobertura em caso de extravio, dano ou problemas na entrega.",
+  description: "Se chegar, parte volta em saldo. Se a 1ª se perder, você escolhe reenvio (1 vez) ou estorno do produto.",
 };
 
 export type InsuranceLineItem = {
@@ -19,6 +21,43 @@ export type InsuranceLineItem = {
   quantity: number;
   price: number;
 };
+
+export type InsuranceSnapshot = {
+  keepAmount: number;
+  cashbackAmount: number;
+};
+
+export function roundInsuranceMoney(value: number): number {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+export function cashbackPercent(chargedPercent: number, keepPercent: number): number {
+  return Math.max(0, roundInsuranceMoney(chargedPercent - keepPercent));
+}
+
+export function computeInsuranceSnapshot(input: {
+  includeInsurance: boolean;
+  subtotal: number;
+  insuranceAmount: number;
+  keepPercent: number;
+}): InsuranceSnapshot {
+  if (!input.includeInsurance) return { keepAmount: 0, cashbackAmount: 0 };
+  const insurance = Math.max(0, roundInsuranceMoney(input.insuranceAmount));
+  if (insurance <= 0) return { keepAmount: 0, cashbackAmount: 0 };
+  const keepPct = Math.min(100, Math.max(0, Number(input.keepPercent) || 0));
+  const keepRaw = roundInsuranceMoney(Math.max(0, Number(input.subtotal) || 0) * (keepPct / 100));
+  const keepAmount = Math.min(insurance, keepRaw);
+  const cashbackAmount = roundInsuranceMoney(Math.max(0, insurance - keepAmount));
+  return { keepAmount, cashbackAmount };
+}
+
+export function parseInsuranceKeepPercent(raw: string | undefined | null): number {
+  const text = String(raw ?? "").trim().replace(",", ".");
+  if (!text) return DEFAULT_CHECKOUT_INSURANCE.keepPercent;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return DEFAULT_CHECKOUT_INSURANCE.keepPercent;
+  return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+}
 
 export function parseInsuranceEnabled(raw: string | undefined | null, defaultValue = true): boolean {
   if (raw == null || String(raw).trim() === "") return defaultValue;

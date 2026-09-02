@@ -23,6 +23,9 @@ type SupportOrder = {
   status: string;
   createdAt: string;
   products: SupportOrderItem[];
+  includeInsurance?: boolean;
+  insuranceClaimStatus?: string;
+  parentOrderId?: string | null;
 };
 
 type AddressChangePayload = {
@@ -35,7 +38,7 @@ type AddressChangePayload = {
   state: string;
 };
 
-type ProblemType = "missing_items" | "other" | "";
+type ProblemType = "missing_items" | "other" | "extravio" | "";
 
 type MissingSelection = {
   id: string;
@@ -342,7 +345,7 @@ export default function Support() {
     setTicketId(null);
   };
 
-  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
+  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || problemType === "extravio" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
 
   return (
     <AppLayout>
@@ -450,6 +453,22 @@ export default function Support() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setProblemType("extravio")}
+                        className={`rounded-xl border px-4 py-4 text-left transition ${
+                          problemType === "extravio"
+                            ? "border-amber-500 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">Não chegou / extravio</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {selectedOrder?.includeInsurance
+                            ? "Com seguro: reenvio 1 vez ou estorno do produto"
+                            : "Sem seguro: sem reenvio por extravio"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setProblemType("other")}
                         className={`rounded-xl border px-4 py-4 text-left transition ${
                           problemType === "other"
@@ -532,10 +551,10 @@ export default function Support() {
                   </div>
                 )}
 
-                {showDetailsStep && problemType && (problemType === "other" || selectedMissingProducts.length > 0) && (
+                {showDetailsStep && problemType && (problemType === "other" || problemType === "extravio" || selectedMissingProducts.length > 0) && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">
-                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : "4. Descreva o problema"}
+                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" ? "4. Rastreio e detalhes" : "4. Descreva o problema"}
                     </p>
                     <textarea
                       value={description}

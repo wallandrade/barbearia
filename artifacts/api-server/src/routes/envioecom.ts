@@ -6,6 +6,7 @@ import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
 import { ensureOrderInventoryDebited, inventoryPoolLabel } from "../lib/order-inventory-debit";
+import { grantInsuranceCashbackIfEligible } from "../lib/insurance-claims";
 import {
   EnvioEcomApiError,
   appendStatusHistory,
@@ -457,6 +458,11 @@ async function applyShipmentStatusToOrder(params: {
   }
 
   await db.update(ordersTable).set(patch).where(eq(ordersTable.id, order.id));
+  if (isDeliveredStatus(params.status)) {
+    void grantInsuranceCashbackIfEligible(order).catch((err) => {
+      console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
+    });
+  }
   return { updated: true };
 }
 

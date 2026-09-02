@@ -581,7 +581,8 @@ import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/page
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
-import { CheckoutInsuranceCard } from "@/components/CheckoutInsuranceCard";
+import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
+import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount } from "@/lib/checkout-insurance";
 
 
@@ -1072,7 +1073,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout" | "seguro";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1135,6 +1136,8 @@ const PRIMARY_ONLY_TABS = new Set<TabType>([
   "socialProof",
   "raffles",
   "configuracoes",
+  "checkout",
+  "seguro",
 ]);
 
 interface AdminRaffle {
@@ -1224,6 +1227,7 @@ interface SupportTicketRecord {
   createdAt: string;
   updatedAt: string;
   orderProducts?: Array<{ id: string; name: string; quantity: number; price: number }>;
+  includeInsurance?: boolean;
   problemType?: "missing_items" | "other" | string | null;
   missingProducts?: Array<{ id: string; name: string; quantity: number }>;
 }
@@ -2949,6 +2953,7 @@ export default function Admin() {
     else if (tab === "socialProof") { fetchSocialProof(); fetchProducts(); }
     else if (tab === "raffles")    fetchRaffles();
     else if (tab === "checkout")   { fetchSettings(); fetchProducts(); setLoading(false); }
+    else if (tab === "seguro")     { fetchSettings(); fetchProducts(); setLoading(false); }
     else setLoading(false);
   }, [tab, fetchOrders, fetchCharges, fetchUsers, fetchCustomers, fetchRecurringCustomers, fetchSupportTickets, fetchInventoryOverview, fetchCoupons, fetchProducts, fetchSettings, fetchClientErrors, fetchSellers, fetchSellerData, fetchCommissions, fetchExpenses, fetchShippingOptions, fetchMotoboyNeighborhoods, fetchCepRanges, fetchOrderBumpsData, fetchStatsData, fetchKycList, fetchSocialProof, fetchRaffles]);
 
@@ -4836,6 +4841,7 @@ export default function Admin() {
               { key: "socialProof",   label: "Prova Social",     icon: "ShoppingBag" },
               { key: "raffles",       label: "Rifas",            icon: "Ticket",      count: rafflesList.length || undefined },
               { key: "checkout",      label: "Checkout",         icon: "ShoppingBag" },
+              { key: "seguro",        label: "Seguro",           icon: "ShieldCheck" },
             ] : []),
             { key: "webhook",       label: "Webhook",          icon: "Link" },
           ] as Array<{ key: TabType; label: string; icon: string; count?: number }>).map(({ key, label, icon, count }) => (
@@ -5018,6 +5024,7 @@ export default function Admin() {
             }}
             shippingQueueMap={shippingQueueMap}
             onRefreshInventory={fetchInventoryOverview}
+            onRefreshOrders={fetchOrders}
           />
         ) : tab === "rastreios" ? (
           <AdminEnvioEcomTrackingPanel
@@ -7333,18 +7340,30 @@ export default function Admin() {
               )}
             </div>
 
-            <CheckoutInsuranceCard
-              settings={settings}
-              loading={settingsLoading}
-              products={(Array.isArray(products) ? products : []).map((p) => ({
-                id: p.id,
-                name: p.name,
-                image: p.image ?? null,
-                isActive: p.isActive !== false,
-              }))}
-              onSave={saveSetting}
-            />
+            <div className="bg-white rounded-2xl shadow-sm border border-border p-6">
+              <h3 className="font-semibold text-sm mb-1">Seguro de envio</h3>
+              <p className="text-xs text-muted-foreground mb-3">Percentuais, texto do checkout e saldo dos clientes ficam na aba <strong>Seguro</strong>.</p>
+              <button
+                type="button"
+                onClick={() => setTab("seguro")}
+                className="h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium"
+              >
+                Abrir aba Seguro
+              </button>
+            </div>
           </div>
+        ) : tab === "seguro" ? (
+          <AdminInsurancePanel
+            settings={settings}
+            loading={settingsLoading}
+            products={(Array.isArray(products) ? products : []).map((p) => ({
+              id: p.id,
+              name: p.name,
+              image: p.image ?? null,
+              isActive: p.isActive !== false,
+            }))}
+            onSave={saveSetting}
+          />
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
             <div className="rounded-xl border bg-gradient-to-br from-rose-50 to-orange-50/60 border-rose-200 p-5">
@@ -8341,6 +8360,11 @@ function SupportTicketsPanel({
                   {ticket.problemType === "missing_items" && (
                     <p className="text-xs font-semibold text-amber-700 mt-1">Tipo: Pedido veio faltando</p>
                   )}
+                  {ticket.problemType === "extravio" && (
+                    <p className="text-xs font-semibold text-amber-800 mt-1">
+                      Tipo: Não chegou / extravio{ticket.includeInsurance ? " · com seguro" : " · sem seguro (sem reenvio)"}
+                    </p>
+                  )}
                   {ticket.problemType === "other" && (
                     <p className="text-xs font-semibold text-slate-600 mt-1">Tipo: Outro problema</p>
                   )}
@@ -8358,7 +8382,14 @@ function SupportTicketsPanel({
                   {ticket.status !== "resolved" ? (
                     <>
                       <Button size="sm" onClick={() => onSetStatus(ticket.id, "resolved")}>Marcar resolvido</Button>
-                      <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => openReenviarModal(ticket)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-red-200 text-red-700 hover:bg-red-50"
+                        disabled={ticket.problemType === "extravio" && !ticket.includeInsurance}
+                        title={ticket.problemType === "extravio" && !ticket.includeInsurance ? "Sem seguro: extravio não tem reenvio" : undefined}
+                        onClick={() => openReenviarModal(ticket)}
+                      >
                         Reenviar
                       </Button>
                       <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onDelete(ticket.id)}>
@@ -9894,8 +9925,8 @@ function OrdersPanel({
   orders, statusUpdating, expandedOrder, setExpandedOrder,
   updateOrderStatus, setProofModal, setProofViewer, openWhatsApp,
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
-  onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups, onSetReshipmentStatus, onRemoveOrder,
-  shippingQueueMap, onRefreshInventory,
+  onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups,   onSetReshipmentStatus, onRemoveOrder,
+  shippingQueueMap, onRefreshInventory, onRefreshOrders,
 }: {
   allOrders: AdminOrder[];
   productImageById: Record<string, string>;
@@ -9934,6 +9965,7 @@ function OrdersPanel({
   onRemoveOrder: (id: string) => void;
   shippingQueueMap: Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }>;
   onRefreshInventory: () => void;
+  onRefreshOrders: () => void;
 }) {
 
   const normalizeIp = (ip?: string | null) => String(ip || "").trim().replace(/^::ffff:/, "") || "-";
@@ -12566,6 +12598,22 @@ function OrdersPanel({
                     <p>Subtotal: {formatCurrency(Number(order.subtotal))}</p>
                     <p>Frete: {formatCurrency(Number(order.shippingCost))}</p>
                     {order.includeInsurance && <p>Seguro: {formatCurrency(Number(order.insuranceAmount))}</p>}
+                    <AdminInsuranceClaimActions
+                      order={{
+                        id: order.id,
+                        parentOrderId: order.parentOrderId,
+                        includeInsurance: order.includeInsurance,
+                        insuranceAmount: Number(order.insuranceAmount || 0),
+                        insuranceKeepAmount: Number(order.insuranceKeepAmount || 0),
+                        insuranceCashbackAmount: Number(order.insuranceCashbackAmount || 0),
+                        insuranceClaimStatus: order.insuranceClaimStatus,
+                        insuranceReshipCount: Number(order.insuranceReshipCount || 0),
+                        insuranceCashbackGranted: Boolean(order.insuranceCashbackGranted),
+                        insurancePixRefundDone: Boolean(order.insurancePixRefundDone),
+                        subtotal: Number(order.subtotal || 0),
+                      }}
+                      onDone={() => { onRefreshOrders(); }}
+                    />
                     {((order.discountAmount || 0) > 0 || !!order.couponCode) && (
                       <p>
                         Desconto: <span className="text-green-700">-{formatCurrency(Number(order.discountAmount || 0))}</span>

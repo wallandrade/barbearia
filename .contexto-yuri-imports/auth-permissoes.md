@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-09-01
+> **Última atualização:** 2026-09-02
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,7 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-09-01 | Token de sync estoque também autentica `POST /api/integrations/inventory/exit` | Espelho baixa Motoboy/Minas sem sessão admin | Snapshot GET e cobertura Motoboy iguais |
+| 2026-09-02 | Carteira: `GET /api/me/store-credit`; ajuste `requirePrimaryAdmin`; sinistro admin `requireAdminAuth`; sinistro cliente no próprio pedido | Aba Seguro só primário | Afiliado e login iguais |
 | 2026-08-29 | CRUD contas EnvioEcom extras: gravar/apagar `requirePrimaryAdmin`; listar `requireAdminAuth` | Vendedor escolhe API no card; só primário cadastra token | Login/sessão iguais |
 | 2026-08-28 | Aba Admin **Biblioteca** fora de `PRIMARY_ONLY_TABS` | Todo admin vê as fichas | Chat `/api/chat/*` continua público |
 | 2026-08-27 | Chat `/api/chat/*` público (sem Bearer / sem checkout token) | Login consegue perguntar | Auth admin/cliente iguais |
@@ -34,6 +34,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Contas extras EnvioEcom: `POST/PUT/DELETE /api/admin/envioecom/accounts` = `requirePrimaryAdmin`; `GET` = qualquer admin autenticado (seletor no card).
 - **Não** há multi-tenant por `tenant_id`; isolamento = `sellerCode` + escopo.
 - Aba **Biblioteca** (fichas de compostos): todos os admins autenticados; não está em `PRIMARY_ONLY_TABS`. API das fichas continua pública (`/api/chat/*`).
+- Aba **Seguro**: `PRIMARY_ONLY_TABS`. `GET/POST /api/admin/store-credits*` = `requirePrimaryAdmin`. `POST /api/admin/orders/:id/insurance-claim` = `requireAdminAuth`.
 
 ## Portal Motoboy (link secreto)
 
@@ -65,6 +66,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Admin primário: impersonate `POST /api/admin/customers/:id/impersonate`.
 - Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha).
 - Chat de compostos (`/api/chat/*`): **público** (login ainda sem sessão); sem Bearer. Rate limit na rota.
+- Saldo da loja: `GET /api/me/store-credit` e `POST /api/me/orders/:id/insurance-claim` com `requireCustomerAuth` (só o próprio pedido).
 
 ## Checkout / anti-abuso (relacionado)
 

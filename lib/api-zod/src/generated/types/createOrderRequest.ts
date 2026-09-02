@@ -14,6 +14,7 @@ export interface CreateOrderRequest {
   products: CartItem[];
   shippingType: CreateOrderRequestShippingType;
   includeInsurance: boolean;
+  useStoreCredit?: boolean;
   subtotal: number;
   shippingCost: number;
   insuranceAmount: number;

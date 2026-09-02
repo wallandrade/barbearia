@@ -370,6 +370,8 @@ components:
           enum: [normal, express]
         includeInsurance:
           type: boolean
+        useStoreCredit:
+          type: boolean
         subtotal:
           type: number
         shippingCost:
@@ -478,6 +480,15 @@ components:
           type: number
         insuranceAmount:
           type: number
+        storeCreditUsed:
+          type: number
+          nullable: true
+        insuranceClaimStatus:
+          type: string
+          nullable: true
+        parentOrderId:
+          type: string
+          nullable: true
         total:
           type: number
         status:

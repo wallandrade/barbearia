@@ -175,6 +175,13 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "bank_deposit_posted_at", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_posted_at VARCHAR(10) NULL" },
     { name: "bank_deposit_matched_at", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_matched_at TIMESTAMP NULL" },
     { name: "parent_order_id", sql: "ALTER TABLE orders ADD COLUMN parent_order_id VARCHAR(255) NULL" },
+    { name: "insurance_keep_amount", sql: "ALTER TABLE orders ADD COLUMN insurance_keep_amount DECIMAL(10,2) NULL" },
+    { name: "insurance_cashback_amount", sql: "ALTER TABLE orders ADD COLUMN insurance_cashback_amount DECIMAL(10,2) NULL" },
+    { name: "insurance_claim_status", sql: "ALTER TABLE orders ADD COLUMN insurance_claim_status VARCHAR(32) NULL" },
+    { name: "insurance_reship_count", sql: "ALTER TABLE orders ADD COLUMN insurance_reship_count INT NULL" },
+    { name: "insurance_cashback_granted", sql: "ALTER TABLE orders ADD COLUMN insurance_cashback_granted TINYINT(1) NOT NULL DEFAULT 0" },
+    { name: "insurance_pix_refund_done", sql: "ALTER TABLE orders ADD COLUMN insurance_pix_refund_done TINYINT(1) NOT NULL DEFAULT 0" },
+    { name: "store_credit_used", sql: "ALTER TABLE orders ADD COLUMN store_credit_used DECIMAL(10,2) NULL" },
   ];
 
   for (const definition of definitions) {
@@ -1019,6 +1026,35 @@ async function ensureMarketingExpensesColumns(databaseName: string): Promise<voi
   }
 }
 
+async function ensureStoreCreditTables(databaseName: string): Promise<void> {
+  if (!(await tableExists("customer_store_credits", databaseName))) {
+    await pool.query(`
+      CREATE TABLE customer_store_credits (
+        user_id VARCHAR(255) NOT NULL PRIMARY KEY,
+        balance DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    console.log("[RuntimeSchema] Created table customer_store_credits");
+  }
+  if (!(await tableExists("customer_store_credit_ledger", databaseName))) {
+    await pool.query(`
+      CREATE TABLE customer_store_credit_ledger (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        order_id VARCHAR(255) NULL,
+        note VARCHAR(255) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY store_credit_ledger_type_order_unique (type, order_id),
+        KEY store_credit_ledger_user_id_idx (user_id)
+      )
+    `);
+    console.log("[RuntimeSchema] Created table customer_store_credit_ledger");
+  }
+}
+
 async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<void> {
   if (await tableExists(databaseName, "motoboy_price_proposals")) return;
   try {
@@ -1073,6 +1109,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureMarketingExpensesColumns(databaseName);
     await ensureSellerCommissionBatchesTable(databaseName);
     await ensureMotoboyPriceProposalsTable(databaseName);
+    await ensureStoreCreditTables(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

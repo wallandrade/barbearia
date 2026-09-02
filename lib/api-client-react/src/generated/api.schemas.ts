@@ -80,6 +80,7 @@ export interface CreateOrderRequest {
   products: CartItem[];
   shippingType: CreateOrderRequestShippingType;
   includeInsurance: boolean;
+  useStoreCredit?: boolean;
   subtotal: number;
   shippingCost: number;
   insuranceAmount: number;
@@ -122,6 +123,14 @@ export interface AdminOrder {
   subtotal: number;
   shippingCost: number;
   insuranceAmount: number;
+  insuranceKeepAmount?: number;
+  insuranceCashbackAmount?: number;
+  insuranceClaimStatus?: string | null;
+  insuranceReshipCount?: number;
+  insuranceCashbackGranted?: boolean;
+  insurancePixRefundDone?: boolean;
+  storeCreditUsed?: number | null;
+  parentOrderId?: string | null;
   total: number;
   status: string;
   paymentMethod?: string;

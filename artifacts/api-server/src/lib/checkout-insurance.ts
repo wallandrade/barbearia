@@ -1,6 +1,7 @@
 export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   enabled: "checkout_insurance_enabled",
   percent: "checkout_insurance_percent",
+  keepPercent: "checkout_insurance_keep_percent",
   label: "checkout_insurance_label",
   description: "checkout_insurance_description",
   productPercent: "checkout_insurance_product_percent",
@@ -8,13 +9,45 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
 } as const;
 
 export const DEFAULT_CHECKOUT_INSURANCE_PERCENT = 10;
+export const DEFAULT_CHECKOUT_INSURANCE_KEEP_PERCENT = 10;
 
 export type CheckoutInsuranceConfig = {
   enabled: boolean;
   percent: number;
+  keepPercent: number;
   productPercent: number | null;
   productIds: string[];
 };
+
+export type InsuranceSnapshot = {
+  keepAmount: number;
+  cashbackAmount: number;
+};
+
+export function roundMoney(value: number): number {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+export function cashbackPercent(chargedPercent: number, keepPercent: number): number {
+  return Math.max(0, roundMoney(chargedPercent - keepPercent));
+}
+
+/** Loja fica keep% do subtotal (teto = seguro cobrado); o resto do seguro vira saldo. */
+export function computeInsuranceSnapshot(input: {
+  includeInsurance: boolean;
+  subtotal: number;
+  insuranceAmount: number;
+  keepPercent: number;
+}): InsuranceSnapshot {
+  if (!input.includeInsurance) return { keepAmount: 0, cashbackAmount: 0 };
+  const insurance = Math.max(0, roundMoney(input.insuranceAmount));
+  if (insurance <= 0) return { keepAmount: 0, cashbackAmount: 0 };
+  const keepPct = Math.min(100, Math.max(0, Number(input.keepPercent) || 0));
+  const keepRaw = roundMoney(Math.max(0, Number(input.subtotal) || 0) * (keepPct / 100));
+  const keepAmount = Math.min(insurance, keepRaw);
+  const cashbackAmount = roundMoney(Math.max(0, insurance - keepAmount));
+  return { keepAmount, cashbackAmount };
+}
 
 export type InsuranceLineItem = {
   id: string;
@@ -28,11 +61,11 @@ export function parseInsuranceEnabledSetting(raw: unknown, defaultValue = true):
   return !["0", "false", "off", "no", "disabled"].includes(normalized);
 }
 
-export function parseInsurancePercentSetting(raw: unknown): number {
+export function parseInsurancePercentSetting(raw: unknown, defaultValue = DEFAULT_CHECKOUT_INSURANCE_PERCENT): number {
   const text = String(raw ?? "").trim().replace(",", ".");
-  if (!text) return DEFAULT_CHECKOUT_INSURANCE_PERCENT;
+  if (!text) return defaultValue;
   const n = Number(text);
-  if (!Number.isFinite(n)) return DEFAULT_CHECKOUT_INSURANCE_PERCENT;
+  if (!Number.isFinite(n)) return defaultValue;
   return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
 }
 

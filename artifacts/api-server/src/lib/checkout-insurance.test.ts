@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   computeInsuranceAmount,
   computeSplitInsuranceAmount,
+  computeInsuranceSnapshot,
+  cashbackPercent,
   DEFAULT_CHECKOUT_INSURANCE_PERCENT,
   parseInsuranceEnabledSetting,
   parseInsurancePercentSetting,
@@ -96,4 +98,40 @@ test("sem produtos especiais usa so o % padrao", () => {
     fallbackSubtotal: 200,
   });
   assert.equal(amount, 20);
+});
+
+test("54% cobrado e 10% da loja em T.G. 733", () => {
+  const insurance = computeInsuranceAmount(733, true, 54);
+  const snap = computeInsuranceSnapshot({
+    includeInsurance: true,
+    subtotal: 733,
+    insuranceAmount: insurance,
+    keepPercent: 10,
+  });
+  assert.equal(insurance, 395.82);
+  assert.equal(snap.keepAmount, 73.3);
+  assert.equal(snap.cashbackAmount, 322.52);
+  assert.equal(cashbackPercent(54, 10), 44);
+});
+
+test("keep nao passa do valor do seguro", () => {
+  const snap = computeInsuranceSnapshot({
+    includeInsurance: true,
+    subtotal: 733,
+    insuranceAmount: 20,
+    keepPercent: 10,
+  });
+  assert.equal(snap.keepAmount, 20);
+  assert.equal(snap.cashbackAmount, 0);
+});
+
+test("sem seguro snapshot zera", () => {
+  const snap = computeInsuranceSnapshot({
+    includeInsurance: false,
+    subtotal: 733,
+    insuranceAmount: 395.82,
+    keepPercent: 10,
+  });
+  assert.equal(snap.keepAmount, 0);
+  assert.equal(snap.cashbackAmount, 0);
 });

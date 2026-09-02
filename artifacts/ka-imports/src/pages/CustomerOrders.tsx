@@ -34,6 +34,11 @@ type CustomerOrder = {
   subtotal?: number;
   shippingCost?: number;
   insuranceAmount?: number;
+  includeInsurance?: boolean;
+  insuranceClaimStatus?: string | null;
+  insuranceCashbackAmount?: number;
+  storeCreditUsed?: number | null;
+  parentOrderId?: string | null;
   shippingType?: string;
   trackingCode?: string | null;
   envioecomBarcode?: string | null;
@@ -420,6 +425,8 @@ export default function CustomerOrders() {
   const [activeSection, setActiveSection] = useState<AccountSection>("orders");
   const [affiliateLoading, setAffiliateLoading] = useState(true);
   const [affiliateData, setAffiliateData] = useState<AffiliateDashboardResponse | null>(null);
+  const [storeCredit, setStoreCredit] = useState(0);
+  const [claimBusy, setClaimBusy] = useState<string | null>(null);
   const [pixelIdInput, setPixelIdInput] = useState("");
   const [isSavingPixel, setIsSavingPixel] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
@@ -496,16 +503,19 @@ export default function CustomerOrders() {
       }
 
       try {
-        const [ordersRes, affiliateRes] = await Promise.all([
+        const [ordersRes, affiliateRes, creditRes] = await Promise.all([
           fetch(`${BASE}/api/me/orders`, {
             headers: getCustomerAuthHeaders(),
           }),
           fetch(`${BASE}/api/me/affiliate/dashboard`, {
             headers: getCustomerAuthHeaders(),
           }),
+          fetch(`${BASE}/api/me/store-credit`, {
+            headers: getCustomerAuthHeaders(),
+          }),
         ]);
 
-        if (ordersRes.status === 401 || affiliateRes.status === 401) {
+        if (ordersRes.status === 401 || affiliateRes.status === 401 || creditRes.status === 401) {
           clearCustomerToken();
           if (active) setLocation("/login");
           return;
@@ -518,6 +528,9 @@ export default function CustomerOrders() {
         const ordersData = (await ordersRes.json()) as { orders?: CustomerOrder[] };
         const affiliatePayload = affiliateRes.ok
           ? ((await affiliateRes.json()) as AffiliateDashboardResponse)
+          : null;
+        const creditPayload = creditRes.ok
+          ? ((await creditRes.json()) as { balance?: number })
           : null;
 
         const normalizedAffiliatePayload = affiliatePayload
@@ -539,6 +552,7 @@ export default function CustomerOrders() {
         setProfileName(profile.name);
         setOrders(loadedOrders);
         setAffiliateData(normalizedAffiliatePayload);
+        setStoreCredit(Number(creditPayload?.balance || 0));
         setPixelIdInput(normalizedAffiliatePayload?.affiliate?.facebookPixelId || "");
 
         // Soft-sync EnvioEcom assim que a lista carrega (histórico já vem do BD).
@@ -665,6 +679,9 @@ export default function CustomerOrders() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">Minha conta</h1>
               <p className="text-sm text-muted-foreground mt-1">{profileName ? `Olá, ${profileName}` : "Área da sua conta"}</p>
+              <p className="text-sm text-emerald-800 mt-1">
+                Saldo da loja: <strong>{formatCurrency(storeCredit)}</strong>
+              </p>
             </div>
             <Button variant="outline" className="rounded-xl" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
@@ -707,6 +724,11 @@ export default function CustomerOrders() {
               {activeSection === "orders" && (
                 <>
                   <h2 className="font-semibold text-foreground mb-4">Seus pedidos</h2>
+                  {storeCredit > 0 && (
+                    <p className="text-sm text-emerald-800 mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      Saldo da loja disponível: <strong>{formatCurrency(storeCredit)}</strong> — use no checkout da próxima compra.
+                    </p>
+                  )}
                   
                   {/* Summary Cards */}
                   {!loading && orders.length > 0 && (
@@ -1101,6 +1123,86 @@ export default function CustomerOrders() {
                                     <div className="flex justify-between text-sm">
                                       <span className="text-muted-foreground">Seguro:</span>
                                       <span className="font-medium">{formatCurrency(order.insuranceAmount)}</span>
+                                    </div>
+                                  )}
+                                  {order.includeInsurance && (order.insuranceClaimStatus === "first_lost" || order.insuranceClaimStatus === "none") && !order.parentOrderId && (
+                                    <div className="pt-2 space-y-2">
+                                      {(order.insuranceClaimStatus === "first_lost" || order.insuranceClaimStatus === "none") && (
+                                        <p className="text-xs text-muted-foreground">
+                                          Se a 1ª se perdeu, escolha reenvio (1 vez) ou estorno do produto em saldo.
+                                        </p>
+                                      )}
+                                      {order.insuranceClaimStatus === "first_lost" && (
+                                        <div className="flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            disabled={claimBusy === order.id}
+                                            className="h-8 px-3 rounded-lg border text-xs"
+                                            onClick={async () => {
+                                              setClaimBusy(order.id);
+                                              try {
+                                                const res = await fetch(`${BASE}/api/me/orders/${order.id}/insurance-claim`, {
+                                                  method: "POST",
+                                                  headers: getCustomerAuthHeaders(),
+                                                  body: JSON.stringify({ action: "choose_reship" }),
+                                                });
+                                                const data = await res.json().catch(() => ({})) as { message?: string };
+                                                if (!res.ok) throw new Error(data.message || "Falha");
+                                                toast.success("Reenvio autorizado.");
+                                                setOrders((prev) => prev.map((item) => (
+                                                  item.id === order.id
+                                                    ? { ...item, insuranceClaimStatus: "reship_sent" }
+                                                    : item
+                                                )));
+                                              } catch (err) {
+                                                toast.error(err instanceof Error ? err.message : "Erro");
+                                              } finally {
+                                                setClaimBusy(null);
+                                              }
+                                            }}
+                                          >
+                                            Reenviar 1x
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={claimBusy === order.id}
+                                            className="h-8 px-3 rounded-lg border text-xs"
+                                            onClick={async () => {
+                                              setClaimBusy(order.id);
+                                              try {
+                                                const res = await fetch(`${BASE}/api/me/orders/${order.id}/insurance-claim`, {
+                                                  method: "POST",
+                                                  headers: getCustomerAuthHeaders(),
+                                                  body: JSON.stringify({ action: "choose_refund" }),
+                                                });
+                                                const data = await res.json().catch(() => ({})) as { message?: string };
+                                                if (!res.ok) throw new Error(data.message || "Falha");
+                                                toast.success("Estorno do produto em saldo.");
+                                                setOrders((prev) => prev.map((item) => (
+                                                  item.id === order.id
+                                                    ? { ...item, insuranceClaimStatus: "refund_product" }
+                                                    : item
+                                                )));
+                                                fetch(`${BASE}/api/me/store-credit`, { headers: getCustomerAuthHeaders() })
+                                                  .then(async (r) => (r.ok ? await r.json() as { balance?: number } : null))
+                                                  .then((payload) => {
+                                                    const next = Number(payload?.balance);
+                                                    if (Number.isFinite(next)) setStoreCredit(next);
+                                                  })
+                                                  .catch(() => {
+                                                    setStoreCredit((v) => v + Number(order.subtotal || 0));
+                                                  });
+                                              } catch (err) {
+                                                toast.error(err instanceof Error ? err.message : "Erro");
+                                              } finally {
+                                                setClaimBusy(null);
+                                              }
+                                            }}
+                                          >
+                                            Estornar produto
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                   <div className="flex justify-between text-sm font-semibold pt-2 border-t border-border/30">

@@ -2,6 +2,7 @@ import { db, siteSettingsTable } from "@workspace/db";
 import { inArray } from "drizzle-orm";
 import {
   CHECKOUT_INSURANCE_SETTING_KEYS,
+  DEFAULT_CHECKOUT_INSURANCE_KEEP_PERCENT,
   parseInsuranceEnabledSetting,
   parseInsurancePercentSetting,
   parseInsuranceProductIds,
@@ -16,6 +17,7 @@ export async function getCheckoutInsuranceConfig(): Promise<CheckoutInsuranceCon
     .where(inArray(siteSettingsTable.key, [
       CHECKOUT_INSURANCE_SETTING_KEYS.enabled,
       CHECKOUT_INSURANCE_SETTING_KEYS.percent,
+      CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent,
       CHECKOUT_INSURANCE_SETTING_KEYS.productPercent,
       CHECKOUT_INSURANCE_SETTING_KEYS.productIds,
     ]));
@@ -24,6 +26,10 @@ export async function getCheckoutInsuranceConfig(): Promise<CheckoutInsuranceCon
   return {
     enabled: parseInsuranceEnabledSetting(map[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]),
     percent: parseInsurancePercentSetting(map[CHECKOUT_INSURANCE_SETTING_KEYS.percent]),
+    keepPercent: parseInsurancePercentSetting(
+      map[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent],
+      DEFAULT_CHECKOUT_INSURANCE_KEEP_PERCENT,
+    ),
     productPercent: parseOptionalInsurancePercentSetting(map[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]),
     productIds: parseInsuranceProductIds(map[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]),
   };
