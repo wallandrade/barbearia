@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-08-31
+> **Última atualização:** 2026-09-01
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -25,6 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-01 | API integração: `POST /api/integrations/inventory/exit` baixa Motoboy/Minas (token do snapshot) | Outro sistema desconta o estoque Yury | Foz Guaçu (`loja`) igual; sem entrada por essa rota |
 | 2026-08-31 | **Cancelar EE** pede cancelamento na EnvioEcom **e solta** o pedido (apaga ID/barcode/PDF). Create usa `orderId` novo. Etiqueta EE recusa envio em cancelamento | Dá para cotar/gerar etiqueta nova sem recair no 8880 antigo | Cotação, webhook de envio ativo, baixa na etiqueta iguais |
 | 2026-08-31 | Etiqueta EnvioEcom **baixa estoque** e tira da cópia 48h; **Coleta Recebida** conta como postado (`enviado` + baixa se ainda não). **Aguardando coleta/postagem** sai da cópia (etiqueta pronta) e **não** marca Enviado | Evita copiar de novo o que já tem etiqueta | Cotação/create iguais |
 | 2026-08-31 | Recadastro de produto: baixa de pedido/reenvio casa o **nome único** do catálogo se o id antigo sumiu; overview recupera o nome pelos pedidos antigos (foto no Admin) | Pedido velho baixa o saldo do produto novo; lista deixa de mostrar hash se o nome bater | Saldos continuam por `product_id`; sem merge automático de qty; API overview ainda não manda `image` |
@@ -209,7 +210,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 - **Estoque Motoboy** (pool independente): `inventory_motoboy_balances` / `inventory_motoboy_movements`; aba Admin Estoque → Motoboy (entrada/saída manual). No card, **Motoboy** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado**, **Dar baixa agora** (`reserveNow` → `inventory_reserved`) **ou etiqueta EnvioEcom**. **Loja** continua reservando na escolha. Com reserva feita, Coletado EE / Marcar Enviado / etiqueta **não** baixam de novo. Trocar Loja→Motoboy libera reserva da Loja. Entrada Motoboy **não** debita a loja automaticamente.
 - **Estoque Minas** (pool independente, mesmo padrão Motoboy): `inventory_minas_balances` / `inventory_minas_movements`; aba Admin Estoque → Minas (entrada/saída manual). No card, **Minas** só grava `inventory_pool` (**sem** baixa na escolha); a baixa acontece em **Marcar Enviado**, **Dar baixa agora** **ou etiqueta EnvioEcom**. Entrada Minas **não** debita Loja nem Motoboy. Reenvio manual / produto voltando ficam só na aba Loja.
 - **Resumo (aba Estoque):** só leitura. Soma qty Foz Guaçu+Motoboy+Minas × `costPrice` (empatado) e × preço de venda (promo se ativa). Sem entrada/saída. Alerta se custo 0 com saldo.
-- **Sync estoque Motoboy+Minas (espelho):** `GET /api/integrations/inventory/snapshot` (token `INVENTORY_SYNC_TOKEN` ou `MOTOBOY_SYNC_TOKEN`); webhook opcional `inventory.changed` (`INVENTORY_SYNC_WEBHOOK_*`). Outro sistema **só lê**; Yury grava.
+- **Sync estoque Motoboy+Minas (espelho):** `GET /api/integrations/inventory/snapshot` (token `INVENTORY_SYNC_TOKEN` ou `MOTOBOY_SYNC_TOKEN`); `POST /api/integrations/inventory/exit` baixa Motoboy/Minas (mesmo token; `productId`+qty, `items[]` ou `orderId` Yury). Webhook opcional `inventory.changed`. Sem entrada de compra por essa API. Foz Guaçu não entra.
 - **Etiqueta EnvioEcom:** ao gerar (PDF/R2 ou download local) **dá baixa** no pool do card (ou Foz Guaçu se nenhum) e marca `inventory_reserved`. Status vira **Etiqueta emitida** se ainda não estava em trânsito. Sem saldo: etiqueta sai mesmo assim e o toast avisa. Cópia 48h / Enviado: ver **Invariante — cópia 48h** no topo deste arquivo (não anular no changelog).
 - **Cancelar EE:** pede cancelamento na EnvioEcom (pode ficar *Aguardando cancelamento* lá) e **desvincula no Yury** (zera ID, barcode, PDF, `orderId` externo). Depois: **EnvioEcom** → cotar → criar (orderId com sufixo novo) → **Etiqueta EE**. Não clicar Etiqueta EE no envio antigo. Webhook do envio velho não reatacha. Estoque já baixado na etiqueta anterior **não** volta sozinho.
 - Despesas de marketing e resumo financeiro: rotas dedicadas.

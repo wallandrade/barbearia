@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-08-30
+> **Última atualização:** 2026-09-01
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,7 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-08-30 | Sync estoque Motoboy+Minas: pull `INVENTORY_SYNC_TOKEN` (fallback `MOTOBOY_SYNC_TOKEN`); webhook HMAC opcional | Espelho lê saldos; sem escrita | Cobertura Motoboy / sessões iguais |
+| 2026-09-01 | Token de sync estoque também autentica `POST /api/integrations/inventory/exit` | Espelho baixa Motoboy/Minas sem sessão admin | Snapshot GET e cobertura Motoboy iguais |
 | 2026-08-29 | CRUD contas EnvioEcom extras: gravar/apagar `requirePrimaryAdmin`; listar `requireAdminAuth` | Vendedor escolhe API no card; só primário cadastra token | Login/sessão iguais |
 | 2026-08-28 | Aba Admin **Biblioteca** fora de `PRIMARY_ONLY_TABS` | Todo admin vê as fichas | Chat `/api/chat/*` continua público |
 | 2026-08-27 | Chat `/api/chat/*` público (sem Bearer / sem checkout token) | Login consegue perguntar | Auth admin/cliente iguais |
@@ -52,8 +52,8 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 ## Sync estoque Motoboy + Minas (espelho externo)
 
 - Pull: `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` ou, se vazio, `MOTOBOY_SYNC_TOKEN`. Sem token → 503.
+- Baixa: `POST /api/integrations/inventory/exit` — **mesmo token**. Só `motoboy` / `minas`.
 - Push: `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret pode cair no da cobertura). Sem URL = no-op.
-- Somente leitura: **não** há rota de entrada/saída para o token de sync.
 - Não usa sessão admin.
 
 ## Cliente (customer)

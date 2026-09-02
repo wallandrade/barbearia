@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-08-31
+> **Última atualização:** 2026-09-01
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-01 | POST `/api/integrations/inventory/exit` (mesmo token do snapshot) baixa Motoboy/Minas | Espelho pode descontar estoque Yury | Foz Guaçu (`loja`) continua só no Admin |
 | 2026-08-31 | Cancelar EE desvincula o pedido (ID/barcode/PDF); create gera `orderId` novo; etiqueta recusa cancelamento | Dá para emitir etiqueta nova sem DUPLICATE_ORDER no envio antigo | Cotação/webhook do envio ativo iguais |
 | 2026-08-31 | Snapshot estoque: nome de id órfão (recadastro) via pedidos + nome único do catálogo | Espelho deixa de receber hash se o nome bater | Token, URL, payload `balances` iguais |
 | 2026-08-30 | Snapshot/webhook estoque: `productName` casa `products.id` com trim/caixa (mesmo helper do Admin) | Espelho deixa de receber hash se o id existir no catálogo | Token, URL, payload `balances` iguais |
@@ -104,15 +105,15 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 - Lib: `lib/motoboy-coverage-sync.ts`; rota: `routes/motoboy-coverage-sync.ts`.
 - Fase 2 (proposta do espelho → Yury) **não** implementada.
 
-## Estoque Motoboy + Minas → espelho (somente leitura)
+## Estoque Motoboy + Minas → espelho
 
-Yury = **fonte da verdade**. O outro sistema **só lê** (não dá entrada/saída).
+Yury = **fonte da verdade**. Snapshot é leitura; **baixa** via POST de integração (mesmo token). **Não** há entrada de compra por essa API.
 
 - **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName` do catálogo se o id existir **ou** nome único/legado de pedido se o produto foi recadastrado, `quantity`).
-- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (admin e baixa de pedido), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
+- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token. Body: `{ pool: "motoboy"|"minas", productId, quantity }` ou `{ pool, items: [{ productId, quantity }] }` ou `{ pool, orderId }` (pedido Yury: id interno ou nº). Opcional `reason`, `referenceId` (retry não baixa de novo). Sem saldo → 400 `INSUFFICIENT_STOCK`. Se `orderId` e o pedido já tem `inventory_reserved`, devolve `alreadyDebited` sem descontar outra vez. **Não** aceita pool `loja` (Foz Guaçu).
+- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (admin, baixa de pedido **e** POST de integração), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
 - **Headers webhook:** iguais à cobertura (`X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp`).
 - Lib: `lib/inventory-sync.ts`; rota: `routes/inventory-sync.ts`.
-- **Não** há POST de escrita para o espelho.
 
 ## Storage
 

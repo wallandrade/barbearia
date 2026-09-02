@@ -9,8 +9,10 @@ import {
 import { signMotoboyCoverageBody } from "./motoboy-coverage-sync";
 import { buildCatalogIndex, buildProductNameMap, resolveProductName } from "./inventory-catalog";
 import { enrichNameMapWithLegacyOrders } from "./inventory-resolve";
+import type { InventorySyncPool } from "./inventory-exit-parse";
 
-export type InventorySyncPool = "motoboy" | "minas";
+export type { InventorySyncPool, InventoryExitItem, ParsedInventoryExit } from "./inventory-exit-parse";
+export { parseInventoryExitBody } from "./inventory-exit-parse";
 
 export type InventorySyncBalanceRow = {
   productId: string;
