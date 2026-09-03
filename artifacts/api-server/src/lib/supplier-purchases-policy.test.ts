@@ -4,6 +4,7 @@ import {
   canCompletePurchase,
   canFinalizePurchase,
   computePurchaseTotal,
+  missingPurchaseInventoryProductIds,
   parseSupplierPurchaseStatus,
   purchaseStatusLabel,
 } from "./supplier-purchases-policy";
@@ -38,4 +39,16 @@ test("rotulos de status falam em montar travar e pagar", () => {
   assert.equal(purchaseStatusLabel("draft"), "Montando compra");
   assert.equal(purchaseStatusLabel("ordered"), "Aguardando entrada no estoque");
   assert.equal(purchaseStatusLabel("completed"), "Concluída e paga");
+});
+
+test("entrada da compra nao entra de novo se ja tem movimento com o mesmo produto", () => {
+  const items = [
+    { productId: "tirz-15", quantity: 5 },
+    { productId: "tirz-15", quantity: 1 },
+    { productId: "reta-40", quantity: 2 },
+    { productId: "vazio", quantity: 0 },
+  ];
+  assert.deepEqual(missingPurchaseInventoryProductIds(items, []), ["tirz-15", "reta-40"]);
+  assert.deepEqual(missingPurchaseInventoryProductIds(items, ["tirz-15"]), ["reta-40"]);
+  assert.deepEqual(missingPurchaseInventoryProductIds(items, ["tirz-15", "reta-40"]), []);
 });

@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import {
   db,
+  inventoryMinasMovementsTable,
+  inventoryMotoboyMovementsTable,
+  inventoryMovementsTable,
   marketingExpensesTable,
   productCostHistoryTable,
   productsTable,
@@ -8,7 +11,7 @@ import {
   supplierPurchasesTable,
   suppliersTable,
 } from "@workspace/db";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { brazilExpensePeriod } from "./brazil-expense-period";
 import { inventoryPoolLabel, parseInventoryPool, type InventoryPoolKind } from "./order-inventory-debit";
 import {
@@ -16,7 +19,12 @@ import {
   registerMinasInventoryEntry,
   registerMotoboyInventoryEntry,
 } from "./reshipments";
-import { canCompletePurchase, computePurchaseTotal, roundPurchaseMoney } from "./supplier-purchases-policy";
+import {
+  canCompletePurchase,
+  computePurchaseTotal,
+  missingPurchaseInventoryProductIds,
+  roundPurchaseMoney,
+} from "./supplier-purchases-policy";
 
 export class SupplierPurchaseError extends Error {
   constructor(public code: string, message: string) {
@@ -60,6 +68,130 @@ async function applyInventoryEntry(pool: InventoryPoolKind, input: {
     return;
   }
   await registerInventoryEntry(payload);
+}
+
+function movementsTableForPool(pool: InventoryPoolKind) {
+  if (pool === "motoboy") return inventoryMotoboyMovementsTable;
+  if (pool === "minas") return inventoryMinasMovementsTable;
+  return inventoryMovementsTable;
+}
+
+async function loadPurchaseEntryProductIds(purchaseId: string, pool: InventoryPoolKind): Promise<Set<string>> {
+  const table = movementsTableForPool(pool);
+  const rows = await db
+    .select({ productId: table.productId })
+    .from(table)
+    .where(and(eq(table.referenceId, purchaseId), eq(table.type, "entry")));
+  return new Set(rows.map((row) => String(row.productId || "")));
+}
+
+export async function ensurePurchaseInventory(input: {
+  purchaseId: string;
+  inventoryPool: InventoryPoolKind;
+  supplierName: string;
+  items: Array<{ productId: string; quantity: unknown; costPrice: unknown }>;
+}): Promise<number> {
+  const poolLabel = inventoryPoolLabel(input.inventoryPool);
+  const supplierLabel = String(input.supplierName || "Fornecedor").trim() || "Fornecedor";
+  const already = await loadPurchaseEntryProductIds(input.purchaseId, input.inventoryPool);
+  const pendingIds = new Set(missingPurchaseInventoryProductIds(input.items, already));
+  const qtyByProduct = new Map<string, { quantity: number; costPrice: number }>();
+  for (const item of input.items) {
+    const productId = String(item.productId || "").trim();
+    const quantity = Math.max(0, Math.floor(Number(item.quantity) || 0));
+    const cost = roundPurchaseMoney(item.costPrice);
+    if (!productId || quantity <= 0 || !pendingIds.has(productId)) continue;
+    const prev = qtyByProduct.get(productId);
+    if (prev) {
+      prev.quantity += quantity;
+      prev.costPrice = cost;
+    } else {
+      qtyByProduct.set(productId, { quantity, costPrice: cost });
+    }
+  }
+
+  const now = new Date();
+  let applied = 0;
+
+  for (const [productId, item] of qtyByProduct) {
+    await applyInventoryEntry(input.inventoryPool, {
+      productId,
+      quantity: item.quantity,
+      reason: `Compra fornecedor ${supplierLabel} → ${poolLabel}`,
+      referenceId: input.purchaseId,
+    });
+    applied += 1;
+
+    const [product] = await db
+      .select({ costPrice: productsTable.costPrice })
+      .from(productsTable)
+      .where(eq(productsTable.id, productId))
+      .limit(1);
+    if (product && roundPurchaseMoney(product.costPrice) !== item.costPrice) {
+      await db
+        .update(productsTable)
+        .set({ costPrice: item.costPrice.toFixed(2), updatedAt: now })
+        .where(eq(productsTable.id, productId));
+      await db.insert(productCostHistoryTable).values({
+        productId,
+        costPrice: item.costPrice.toFixed(2),
+        changedAt: now,
+      });
+    }
+  }
+
+  return applied;
+}
+
+export async function purchaseInventoryApplied(input: {
+  purchaseId: string;
+  status: string | null | undefined;
+  inventoryPool: unknown;
+  items: Array<{ productId?: unknown; quantity?: unknown }>;
+}): Promise<boolean> {
+  if (String(input.status || "") !== "completed") return true;
+  const pool = parseInventoryPool(input.inventoryPool);
+  if (!pool) return false;
+  const already = await loadPurchaseEntryProductIds(input.purchaseId, pool);
+  return missingPurchaseInventoryProductIds(input.items, already).length === 0;
+}
+
+export async function loadPurchaseInventoryAppliedMap(
+  purchases: Array<{ id: string; status: string; inventoryPool: string | null }>,
+  itemsByPurchase: Map<string, Array<{ productId?: unknown; quantity?: unknown }>>,
+): Promise<Map<string, boolean>> {
+  const flags = new Map<string, boolean>();
+  const completed = purchases.filter((row) => row.status === "completed" && parseInventoryPool(row.inventoryPool));
+  if (completed.length === 0) return flags;
+
+  const ids = completed.map((row) => row.id);
+  const keysByPool: Record<InventoryPoolKind, Set<string>> = {
+    loja: new Set(),
+    motoboy: new Set(),
+    minas: new Set(),
+  };
+
+  for (const pool of Object.keys(keysByPool) as InventoryPoolKind[]) {
+    const table = movementsTableForPool(pool);
+    const rows = await db
+      .select({ referenceId: table.referenceId, productId: table.productId })
+      .from(table)
+      .where(and(inArray(table.referenceId, ids), eq(table.type, "entry")));
+    for (const row of rows) {
+      keysByPool[pool].add(`${row.referenceId}:${row.productId}`);
+    }
+  }
+
+  for (const purchase of completed) {
+    const pool = parseInventoryPool(purchase.inventoryPool);
+    if (!pool) {
+      flags.set(purchase.id, false);
+      continue;
+    }
+    const needed = missingPurchaseInventoryProductIds(itemsByPurchase.get(purchase.id) || [], []);
+    flags.set(purchase.id, needed.every((productId) => keysByPool[pool].has(`${purchase.id}:${productId}`)));
+  }
+  return flags;
 }
 
 async function writePurchaseExpense(input: {
@@ -118,11 +250,11 @@ export async function loadExpenseIds(ids: string[]): Promise<Set<string>> {
 export async function repairCompletedPurchaseExpenses(input?: {
   purchases?: Array<typeof supplierPurchasesTable.$inferSelect>;
   supplierNames?: Map<string, string>;
-}): Promise<number> {
+}): Promise<{ expenses: number; inventory: number }> {
   const purchases = input?.purchases
     ?? await db.select().from(supplierPurchasesTable).where(eq(supplierPurchasesTable.status, "completed"));
   const completed = purchases.filter((row) => row.status === "completed");
-  if (completed.length === 0) return 0;
+  if (completed.length === 0) return { expenses: 0, inventory: 0 };
 
   let names = input?.supplierNames;
   if (!names) {
@@ -131,13 +263,27 @@ export async function repairCompletedPurchaseExpenses(input?: {
   }
 
   const existingIds = await loadExpenseIds(completed.map((row) => row.expenseId || ""));
-  let repaired = 0;
+  let expenses = 0;
+  let inventory = 0;
 
   for (const purchase of completed) {
     const pool = parseInventoryPool(purchase.inventoryPool);
     const poolLabel = pool ? inventoryPoolLabel(pool) : "estoque";
     const supplierName = names.get(purchase.supplierId) || "Fornecedor";
     const at = purchase.completedAt || purchase.updatedAt || new Date();
+    const items = await db
+      .select()
+      .from(supplierPurchaseItemsTable)
+      .where(eq(supplierPurchaseItemsTable.purchaseId, purchase.id));
+
+    if (pool) {
+      inventory += await ensurePurchaseInventory({
+        purchaseId: purchase.id,
+        inventoryPool: pool,
+        supplierName,
+        items,
+      });
+    }
 
     if (purchase.expenseId && existingIds.has(purchase.expenseId)) {
       await alignPurchaseExpenseDates(purchase.expenseId, at);
@@ -160,10 +306,10 @@ export async function repairCompletedPurchaseExpenses(input?: {
         .set({ expenseId, updatedAt: new Date() })
         .where(eq(supplierPurchasesTable.id, purchase.id));
     }
-    repaired += 1;
+    expenses += 1;
   }
 
-  return repaired;
+  return { expenses, inventory };
 }
 
 export async function completeSupplierPurchase(input: {
@@ -203,7 +349,7 @@ export async function completeSupplierPurchase(input: {
   const supplierLabel = String(input.supplierName || "Fornecedor").trim() || "Fornecedor";
   const poolLabel = inventoryPoolLabel(pool);
 
-  const claimed = await db
+  await db
     .update(supplierPurchasesTable)
     .set({
       status: "completed",
@@ -215,40 +361,23 @@ export async function completeSupplierPurchase(input: {
     })
     .where(sql`${supplierPurchasesTable.id} = ${purchaseId} AND ${supplierPurchasesTable.status} = 'ordered'`);
 
-  if (Number((claimed as { rowsAffected?: number }).rowsAffected || 0) === 0) {
+  const [afterClaim] = await db
+    .select({ status: supplierPurchasesTable.status, expenseId: supplierPurchasesTable.expenseId })
+    .from(supplierPurchasesTable)
+    .where(eq(supplierPurchasesTable.id, purchaseId))
+    .limit(1);
+  const claimedOk = afterClaim?.status === "completed" && afterClaim.expenseId === expenseId;
+  if (!claimedOk) {
     throw new SupplierPurchaseError("NOT_ORDERED", "Essa compra já foi concluída ou ainda não foi travada.");
   }
 
   try {
-    for (const item of items) {
-      const quantity = Math.max(0, Math.floor(Number(item.quantity) || 0));
-      const cost = roundPurchaseMoney(item.costPrice);
-      if (quantity <= 0) continue;
-
-      await applyInventoryEntry(pool, {
-        productId: item.productId,
-        quantity,
-        reason: `Compra fornecedor ${supplierLabel} → ${poolLabel}`,
-        referenceId: purchaseId,
-      });
-
-      const [product] = await db
-        .select({ costPrice: productsTable.costPrice })
-        .from(productsTable)
-        .where(eq(productsTable.id, item.productId))
-        .limit(1);
-      if (product && roundPurchaseMoney(product.costPrice) !== cost) {
-        await db
-          .update(productsTable)
-          .set({ costPrice: cost.toFixed(2), updatedAt: now })
-          .where(eq(productsTable.id, item.productId));
-        await db.insert(productCostHistoryTable).values({
-          productId: item.productId,
-          costPrice: cost.toFixed(2),
-          changedAt: now,
-        });
-      }
-    }
+    await ensurePurchaseInventory({
+      purchaseId,
+      inventoryPool: pool,
+      supplierName: supplierLabel,
+      items,
+    });
 
     await writePurchaseExpense({
       expenseId,

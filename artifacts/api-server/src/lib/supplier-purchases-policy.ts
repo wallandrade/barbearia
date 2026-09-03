@@ -38,6 +38,23 @@ export function canCompletePurchase(status: string | null | undefined): { ok: tr
   return { ok: true };
 }
 
+export function missingPurchaseInventoryProductIds(
+  items: Array<{ productId?: unknown; quantity?: unknown }>,
+  existingEntryProductIds: Iterable<string>,
+): string[] {
+  const already = new Set([...existingEntryProductIds].map((id) => String(id || "").trim()).filter(Boolean));
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const productId = String(item.productId || "").trim();
+    const quantity = Math.max(0, Math.floor(Number(item.quantity) || 0));
+    if (!productId || quantity <= 0 || already.has(productId) || seen.has(productId)) continue;
+    seen.add(productId);
+    missing.push(productId);
+  }
+  return missing;
+}
+
 export function purchaseStatusLabel(status: string | null | undefined): string {
   const parsed = parseSupplierPurchaseStatus(status);
   if (parsed === "ordered") return "Aguardando entrada no estoque";

@@ -22,6 +22,7 @@ import {
   setReshipmentStatus,
 } from "../lib/reshipments";
 import { broadcastNotification } from "./notifications";
+import { repairCompletedPurchaseExpenses } from "../lib/supplier-purchases";
 
 const router: IRouter = Router();
 
@@ -78,6 +79,7 @@ async function isOrderInScope(orderId: string, scope: { hasGlobalAccess: boolean
 
 router.get("/admin/inventory/overview", requirePrimaryAdmin, async (_req, res) => {
   try {
+    await repairCompletedPurchaseExpenses();
     const [inventory, manualReturnItems] = await Promise.all([
       getInventoryOverview(),
       db
@@ -298,6 +300,7 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
 
 router.get("/admin/inventory/motoboy/overview", requirePrimaryAdmin, async (_req, res) => {
   try {
+    await repairCompletedPurchaseExpenses();
     const inventory = await getMotoboyInventoryOverview();
     res.json({
       balances: inventory.balances,
@@ -359,6 +362,7 @@ router.post("/admin/inventory/motoboy/entries", requirePrimaryAdmin, async (req,
 
 router.get("/admin/inventory/minas/overview", requirePrimaryAdmin, async (_req, res) => {
   try {
+    await repairCompletedPurchaseExpenses();
     const inventory = await getMinasInventoryOverview();
     res.json({
       balances: inventory.balances,

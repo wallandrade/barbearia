@@ -34,6 +34,7 @@ type Purchase = {
   inventoryPoolLabel: string | null;
   expenseId: string | null;
   expenseMissing?: boolean;
+  inventoryMissing?: boolean;
   expenseStatus?: string | null;
   totalAmount: number;
   items: PurchaseItem[];
@@ -178,7 +179,7 @@ function CartItemRow({
 }
 
 function PurchaseSteps({ status }: { status: string }) {
-  const current = status === "completed" ? 3 : status === "ordered" ? 2 : 1;
+  const current = status === "completed" ? 4 : status === "ordered" ? 2 : 1;
   const steps = [
     { n: 1, label: "Montar compra" },
     { n: 2, label: "Travar pedido" },
@@ -251,7 +252,11 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
         prodData = await publicRes.json().catch(() => ({})) as { products?: CatalogProduct[] };
       }
       const supData = await supRes.json().catch(() => ({})) as { suppliers?: Supplier[] };
-      const purData = await purRes.json().catch(() => ({})) as { purchases?: Purchase[]; repaired?: number };
+      const purData = await purRes.json().catch(() => ({})) as {
+        purchases?: Purchase[];
+        repaired?: number;
+        inventoryRepaired?: number;
+      };
       const nextSuppliers = Array.isArray(supData.suppliers) ? supData.suppliers : [];
       const nextPurchases = Array.isArray(purData.purchases) ? purData.purchases : [];
       setSuppliers(nextSuppliers);
@@ -263,7 +268,9 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
         const draft = nextPurchases.find((p) => p.status === "draft");
         return draft?.id ?? current;
       });
-      if (Number(purData.repaired || 0) > 0) {
+      if (Number(purData.inventoryRepaired || 0) > 0) {
+        toast.success("A mercadoria da compra entrou no estoque certo e já aparece nas movimentações.");
+      } else if (Number(purData.repaired || 0) > 0) {
         toast.success("Despesa da compra concluída foi gerada e já entra como paga.");
       }
       onCompletedRef.current?.();
@@ -648,10 +655,16 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                 )}
 
                 {purchase.status === "completed" && (
-                  <div className={`rounded-lg border px-3 py-2 text-xs ${purchase.expenseMissing ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
-                    {purchase.expenseMissing
-                      ? "Estoque já entrou, mas a despesa não foi gravada. Atualize a página — o sistema tenta gerar o lançamento pago."
-                      : `Despesa paga · ${formatCurrency(purchase.totalAmount)} · entrou no estoque ${purchase.inventoryPoolLabel || "escolhido"}.`}
+                  <div className={`rounded-lg border px-3 py-2 text-xs ${
+                    purchase.inventoryMissing || purchase.expenseMissing
+                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  }`}>
+                    {purchase.inventoryMissing
+                      ? "A despesa está lançada, mas o estoque ainda não entrou. Atualize a página — o sistema tenta dar a entrada no pool certo."
+                      : purchase.expenseMissing
+                        ? "Estoque já entrou, mas a despesa não foi gravada. Atualize a página — o sistema tenta gerar o lançamento pago."
+                        : `Despesa paga · ${formatCurrency(purchase.totalAmount)} · entrou no estoque ${purchase.inventoryPoolLabel || "escolhido"}.`}
                   </div>
                 )}
 

@@ -13,6 +13,8 @@ import { inventoryPoolLabel, parseInventoryPool } from "../lib/order-inventory-d
 import {
   completeSupplierPurchase,
   loadExpenseIds,
+  loadPurchaseInventoryAppliedMap,
+  purchaseInventoryApplied,
   recalcPurchaseTotal,
   repairCompletedPurchaseExpenses,
   SupplierPurchaseError,
@@ -54,7 +56,13 @@ async function loadPurchase(id: string) {
     .from(supplierPurchaseItemsTable)
     .where(eq(supplierPurchaseItemsTable.purchaseId, id));
   const existing = await loadExpenseIds(purchase.expenseId ? [purchase.expenseId] : []);
-  return mapPurchase(purchase, supplier?.name ?? null, items, existing.has(purchase.expenseId || ""));
+  const inventoryApplied = await purchaseInventoryApplied({
+    purchaseId: purchase.id,
+    status: purchase.status,
+    inventoryPool: purchase.inventoryPool,
+    items,
+  });
+  return mapPurchase(purchase, supplier?.name ?? null, items, existing.has(purchase.expenseId || ""), inventoryApplied);
 }
 
 function mapPurchase(
@@ -62,6 +70,7 @@ function mapPurchase(
   supplierName: string | null,
   items: Array<typeof supplierPurchaseItemsTable.$inferSelect>,
   expenseExists = false,
+  inventoryApplied = true,
 ) {
   const completed = purchase.status === "completed";
   return {
@@ -77,6 +86,7 @@ function mapPurchase(
     })(),
     expenseId: purchase.expenseId,
     expenseMissing: completed && !expenseExists,
+    inventoryMissing: completed && !inventoryApplied,
     expenseStatus: completed && expenseExists ? "paid" : null,
     totalAmount: Number(purchase.totalAmount || 0),
     note: purchase.note,
@@ -137,7 +147,7 @@ router.get("/admin/supplier-purchases", requireAdminAuth, async (_req, res) => {
       purchases,
       supplierNames: bySupplier,
     });
-    if (repaired > 0) {
+    if (repaired.expenses > 0 || repaired.inventory > 0) {
       purchases = await db.select().from(supplierPurchasesTable).orderBy(desc(supplierPurchasesTable.updatedAt));
     }
     const items = await db.select().from(supplierPurchaseItemsTable);
@@ -148,13 +158,16 @@ router.get("/admin/supplier-purchases", requireAdminAuth, async (_req, res) => {
       itemsByPurchase.set(item.purchaseId, list);
     }
     const existingExpenses = await loadExpenseIds(purchases.map((row) => row.expenseId || ""));
+    const inventoryFlags = await loadPurchaseInventoryAppliedMap(purchases, itemsByPurchase);
     res.json({
-      repaired,
+      repaired: repaired.expenses,
+      inventoryRepaired: repaired.inventory,
       purchases: purchases.map((purchase) => mapPurchase(
         purchase,
         bySupplier.get(purchase.supplierId) ?? null,
         itemsByPurchase.get(purchase.id) || [],
         existingExpenses.has(purchase.expenseId || ""),
+        purchase.status !== "completed" || Boolean(inventoryFlags.get(purchase.id)),
       )),
     });
   } catch (err) {
