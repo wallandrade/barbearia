@@ -62,6 +62,27 @@ export function assertInsuranceExtravioReshipAllowed(order: {
   }
 }
 
+/** Estorno do produto so na 1a perda, antes de reenviar. Depois do reenvio a garantia acabou. */
+export function assertInsuranceProductRefundAllowed(order: {
+  insuranceClaimStatus?: string | null;
+  insuranceReshipCount?: number | null;
+}): void {
+  const status = parseInsuranceClaimStatus(order.insuranceClaimStatus);
+  if (status === "refund_product" || status === "second_lost_refund") {
+    return;
+  }
+  if (
+    parseInsuranceReshipCount(order.insuranceReshipCount) >= 1
+    || status === "reship_sent"
+    || status === "reship_pending"
+  ) {
+    throw new InsuranceClaimError(
+      "RESHIP_DONE",
+      "A garantia cobre so 1 reenvio. Depois do reenvio nao devolve o produto.",
+    );
+  }
+}
+
 export function insuranceCashbackEligibility(order: {
   userId?: string | null;
   parentOrderId?: string | null;

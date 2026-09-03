@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertInsuranceExtravioReshipAllowed,
+  assertInsuranceProductRefundAllowed,
   insuranceCashbackEligibility,
   InsuranceClaimError,
 } from "./insurance-claims-policy";
@@ -110,4 +111,21 @@ test("sinistro aberto nao credita", () => {
     insuranceClaimStatus: "first_lost",
   });
   assert.deepEqual(result, { ok: false, skipped: "claim" });
+});
+
+test("depois do reenvio nao estorna o produto", () => {
+  assert.throws(
+    () => assertInsuranceProductRefundAllowed({
+      insuranceClaimStatus: "reship_sent",
+      insuranceReshipCount: 1,
+    }),
+    (err: unknown) => err instanceof InsuranceClaimError && err.code === "RESHIP_DONE",
+  );
+});
+
+test("1a perda ainda pode estornar o produto", () => {
+  assert.doesNotThrow(() => assertInsuranceProductRefundAllowed({
+    insuranceClaimStatus: "first_lost",
+    insuranceReshipCount: 0,
+  }));
 });

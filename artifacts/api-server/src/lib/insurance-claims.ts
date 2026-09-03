@@ -5,6 +5,7 @@ import { applyStoreCredit } from "./store-credits";
 import { computeInsuranceSnapshot } from "./checkout-insurance";
 import {
   assertInsuranceExtravioReshipAllowed,
+  assertInsuranceProductRefundAllowed,
   insuranceCashbackEligibility,
   parseInsuranceClaimStatus,
   parseInsuranceReshipCount,
@@ -14,6 +15,7 @@ import {
 export type { InsuranceClaimStatus } from "./insurance-claims-policy";
 export {
   assertInsuranceExtravioReshipAllowed,
+  assertInsuranceProductRefundAllowed,
   insuranceCashbackEligibility,
   InsuranceClaimError,
 };
@@ -55,7 +57,7 @@ export async function markFirstLost(orderId: string) {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
   if (!order) throw new InsuranceClaimError("NOT_FOUND", "Pedido nao encontrado.");
   if (order.parentOrderId) {
-    throw new InsuranceClaimError("USE_CHILD_SECOND", "Use a 2a perda no pedido de reenvio.");
+    throw new InsuranceClaimError("USE_PARENT", "Marque o extravio no pedido original, nao no reenvio.");
   }
   const status = parseInsuranceClaimStatus(order.insuranceClaimStatus);
   if (status !== "none") {
@@ -106,6 +108,7 @@ export async function chooseProductRefund(orderId: string) {
   if (status === "refund_product" || status === "second_lost_refund") {
     return { orderId: parent.id, status, credited: 0, already: true };
   }
+  assertInsuranceProductRefundAllowed(parent);
 
   const subtotal = money(parent.subtotal);
   let credited = 0;
@@ -143,29 +146,10 @@ export async function markSecondLost(orderId: string) {
   if (status === "second_lost_refund" || status === "refund_product") {
     return { orderId: parent.id, status, credited: 0, already: true };
   }
-  if (parseInsuranceReshipCount(parent.insuranceReshipCount) < 1 && status !== "reship_sent" && status !== "reship_pending") {
-    throw new InsuranceClaimError("NO_RESHIP", "Ainda nao houve o 1o reenvio. Marque a 1a perda.");
-  }
-
-  const subtotal = money(parent.subtotal);
-  let credited = 0;
-  if (parent.userId && subtotal > 0) {
-    const result = await applyStoreCredit({
-      userId: parent.userId,
-      amount: subtotal,
-      type: "product_refund",
-      orderId: parent.id,
-      note: `Estorno apos 2a perda pedido ${parent.id}`,
-    });
-    credited = Math.abs(result.applied);
-  }
-
-  await db
-    .update(ordersTable)
-    .set({ insuranceClaimStatus: "second_lost_refund", updatedAt: new Date() })
-    .where(eq(ordersTable.id, parent.id));
-
-  return { orderId: parent.id, status: "second_lost_refund" as const, credited, already: false };
+  throw new InsuranceClaimError(
+    "RESHIP_DONE",
+    "A garantia cobre so 1 reenvio. Depois do reenvio nao devolve o produto.",
+  );
 }
 
 export async function snapshotInsuranceOnCreate(input: {

@@ -100,9 +100,9 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
           </>
         )}
         {(isChild || status === "reship_sent" || status === "reship_pending") && (
-          <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs" onClick={() => void run("mark_second_lost")}>
-            {busy === "mark_second_lost" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reenvio perdeu (estorna produto)"}
-          </button>
+          <p className="text-xs text-amber-900 w-full">
+            Já reenviou 1 vez. A garantia acabou: não manda a terceira e não devolve o produto.
+          </p>
         )}
         {!isChild && !order.insuranceCashbackGranted && status === "none" && (
           <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs" onClick={() => void run("grant_cashback")}>

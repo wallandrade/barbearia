@@ -1,4 +1,4 @@
-import { ShieldCheck, AlertTriangle, PackageCheck, RotateCcw, Wallet } from "lucide-react";
+import { ShieldCheck, AlertTriangle, PackageCheck, RotateCcw } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { CHECKOUT_INSURANCE_CUSTOMER_LABEL, computeInsuranceSnapshot } from "@/lib/checkout-insurance";
 
@@ -84,14 +84,6 @@ export function CheckoutInsuranceOffer({
               Você escolhe: <strong>manda de novo, 1 vez só</strong> (a gente paga o frete) ou devolve{" "}
               <strong>{formatCurrency(subtotal)}</strong> do produto.
               Os {formatCurrency(previewAmount)} da garantia <strong>não voltam</strong>.
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5" /> Mandamos de novo e deu ruim de novo
-            </p>
-            <p className="text-sm text-slate-800 mt-1">
-              Não mandamos a terceira. Devolve {formatCurrency(subtotal)} do produto.
             </p>
           </div>
         </div>
