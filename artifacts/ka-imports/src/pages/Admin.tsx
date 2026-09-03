@@ -12619,43 +12619,6 @@ function OrdersPanel({
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   style={{ overflow: "hidden" }}
                   className="border-t border-border/50 bg-muted/30 px-5 sm:px-6 pb-5 pt-4">
-                  <div className="mb-4 rounded-xl border border-border bg-white p-4 max-w-2xl">
-                    <p className="text-sm font-bold text-slate-900">Histórico do pedido</p>
-                    <p className="text-xs text-muted-foreground mb-3">Tudo que foi feito neste pedido · mais recente em cima</p>
-                    {orderActivityById[order.id]?.loading && !orderActivityById[order.id]?.events?.length ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-                        <Loader2 className="w-4 h-4 animate-spin" />Carregando histórico...
-                      </div>
-                    ) : !orderActivityById[order.id]?.events?.length ? (
-                      <p className="text-sm text-muted-foreground py-2">
-                        Ainda sem ações registradas. O que for feito daqui pra frente aparece aqui.
-                      </p>
-                    ) : (
-                      <ol className="relative space-y-0">
-                        {orderActivityById[order.id].events.map((event, idx) => (
-                          <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
-                            {idx < orderActivityById[order.id].events.length - 1 && (
-                              <span className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200" aria-hidden />
-                            )}
-                            <span className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${idx === 0 ? "bg-sky-500 border-sky-500 text-white" : "bg-white border-sky-300 text-sky-600"}`}>
-                              <Clock className="w-3 h-3" />
-                            </span>
-                            <div className="min-w-0 flex-1 pt-0.5">
-                              <p className="text-sm font-semibold text-slate-800">{event.label}</p>
-                              {event.detail ? (
-                                <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">{event.detail}</p>
-                              ) : null}
-                              <p className="text-[11px] text-muted-foreground mt-1">
-                                {[event.actorName, `${formatDateBR(event.createdAt)} ${formatTimeBR(event.createdAt)}`.trim()]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </p>
-                            </div>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Produtos</p>
                   <div className="space-y-1">
                     {orderProducts.map((p, i) => {
@@ -12740,7 +12703,43 @@ function OrdersPanel({
                       {order.cardTotalActual && <p className="text-purple-800">Total cobrado: <strong>{formatCurrency(Number(order.cardTotalActual))}</strong></p>}
                     </div>
                   )}
-                  {/* Observation field */}
+                  <div className="mt-4 rounded-xl border border-border bg-white p-4 max-w-2xl">
+                    <p className="text-sm font-bold text-slate-900">Histórico do pedido</p>
+                    <p className="text-xs text-muted-foreground mb-3">Tudo que foi feito neste pedido · mais recente em cima</p>
+                    {orderActivityById[order.id]?.loading && !orderActivityById[order.id]?.events?.length ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+                        <Loader2 className="w-4 h-4 animate-spin" />Carregando histórico...
+                      </div>
+                    ) : !orderActivityById[order.id]?.events?.length ? (
+                      <p className="text-sm text-muted-foreground py-2">
+                        Ainda sem ações registradas. O que for feito daqui pra frente aparece aqui.
+                      </p>
+                    ) : (
+                      <ol className="relative space-y-0">
+                        {orderActivityById[order.id].events.map((event, idx) => (
+                          <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
+                            {idx < orderActivityById[order.id].events.length - 1 && (
+                              <span className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200" aria-hidden />
+                            )}
+                            <span className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${idx === 0 ? "bg-sky-500 border-sky-500 text-white" : "bg-white border-sky-300 text-sky-600"}`}>
+                              <Clock className="w-3 h-3" />
+                            </span>
+                            <div className="min-w-0 flex-1 pt-0.5">
+                              <p className="text-sm font-semibold text-slate-800">{event.label}</p>
+                              {event.detail ? (
+                                <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">{event.detail}</p>
+                              ) : null}
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                {[event.actorName, `${formatDateBR(event.createdAt)} ${formatTimeBR(event.createdAt)}`.trim()]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
                   <div className="mt-4">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Observações</label>
                     <ObservationField

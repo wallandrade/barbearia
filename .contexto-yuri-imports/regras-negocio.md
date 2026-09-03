@@ -25,6 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-03 | Card Detalhes: linha do tempo do pedido fica **abaixo** de Produtos (antes de Observações) | Só a ordem visual | Eventos/`order_activity` iguais |
 | 2026-09-03 | Faturamento líquido: `totalMarketingExpenses` só `expenseType=marketing`. Compra fornecedor / extravio não entram no card | Hamuldi não puxa o líquido; custo do produto continua na venda | Aba Despesas e `costPrice` na venda iguais |
 | 2026-09-03 | Carrinho da compra: lista de produtos com nome e foto já aparece ao montar, sem precisar digitar | Escolha visual no rascunho; busca continua filtrando | Entrada no estoque e despesa iguais |
 | 2026-09-03 | Compra concluída: entrada de estoque idempotente (`referenceId` = id da compra) + GET Despesas/Estoque repara saldo e movimentação se a despesa existia sem estoque | Hamuldi e novas compras entram no pool certo (Foz/Motoboy/Minas) sem duplicar | Despesa `compra_fornecedor` paga igual; extravio avulso igual |
@@ -178,7 +179,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 - Cupons: `%` ou valor fixo, mínimo, limite de usos, elegibilidade — `coupons.ts` / schema `coupons`.
 - Admin Produtos: **Restaurar backup** só cria/atualiza pelo `id`. `POST /api/admin/products/restore-backup` **ignora** `deleteMissing` e não dá `DELETE` no catálogo. Apagar produto continua só no botão individual. **Salvar backup:** checkbox nos cards + Marcar/Desmarcar visíveis; nada marcado → `GET /api/admin/products/export-backup` (catálogo inteiro); com marca → `POST` com `{ ids }` (máx. 500). Formato JSON igual (`version`, `products`, `productCount`).
-- Admin Pedidos: em **Detalhes**, linha do tempo (`GET /api/admin/orders/:id/activity`, tabela `order_activity`). Grava daqui pra frente: status, observação, grupo, comprovante, edição, diferença PIX, prioridade, estoque, enviado, rastreio, EnvioEcom (criar/etiqueta/vincular/sync/cancelar), PIX pago, pedido criado. Pedido antigo: “Pedido criado” (e “enviado” se já estava). Quem fez + data. Não substitui a timeline de rastreio EE.
+- Admin Pedidos: em **Detalhes**, linha do tempo abaixo de Produtos (`GET /api/admin/orders/:id/activity`, tabela `order_activity`). Grava daqui pra frente: status, observação, grupo, comprovante, edição, diferença PIX, prioridade, estoque, enviado, rastreio, EnvioEcom (criar/etiqueta/vincular/sync/cancelar), PIX pago, pedido criado. Pedido antigo: “Pedido criado” (e “enviado” se já estava). Quem fez + data. Não substitui a timeline de rastreio EE.
 - Catálogo **Peptídeo** (filtro na home e `/categoria/Peptídeo`): produtos da mesma marca juntos; **BIOGENESIS** primeiro; demais marcas A–Z; sem marca no fim; esgotado por último. Usa o campo `brand` do cadastro.
 - Catálogo (todas as categorias): ordem **mais vendido → menos vendido** (unidades em pedidos `paid`/`completed`, sem pedido filho de reenvio). Selo **TOP 1 / TOP 2 / TOP 3** nos 3 com `soldQty` > 0 da categoria (home e `/categoria/...`). Sem número de unidades no card. Em Peptídeo o selo segue as vendas, não a posição na grade (BIOGENESIS continua primeiro).
 - Order bumps: ofertas no checkout — `order-bumps`.
