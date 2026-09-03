@@ -1,8 +1,18 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import { and, desc, eq } from "drizzle-orm";
-import { db, inventoryBalancesTable, manualReshipmentsTable, manualReturnItemsTable, ordersTable, reshipmentsTable } from "@workspace/db";
+import {
+  db,
+  inventoryBalancesTable,
+  inventoryMinasBalancesTable,
+  inventoryMotoboyBalancesTable,
+  manualReshipmentsTable,
+  manualReturnItemsTable,
+  ordersTable,
+  reshipmentsTable,
+} from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
+import { resolveManualInventoryExit } from "../lib/inventory-resolve";
 import {
   createManualReshipment,
   ensureReshipmentReservation,
@@ -10,9 +20,7 @@ import {
   ensureReshipmentSendDebit,
   getInventoryOverview,
   getMotoboyInventoryOverview,
-  getMotoboyStockMap,
   getMinasInventoryOverview,
-  getMinasStockMap,
   listReshipments,
   registerInventoryEntry,
   registerMotoboyInventoryEntry,
@@ -185,7 +193,7 @@ router.patch("/admin/manual-return-items/:id/status", requirePrimaryAdmin, async
 
 router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) => {
   try {
-    const productId = String(req.body?.productId ?? "").trim();
+    let productId = String(req.body?.productId ?? "").trim();
     const quantity = Number(req.body?.quantity || 0);
     const movementType = String(req.body?.movementType ?? "entry").trim().toLowerCase();
     const entrySource = String(req.body?.entrySource ?? "purchase").trim().toLowerCase();
@@ -250,16 +258,15 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
     const signedQuantity = movementType === "exit" ? -quantity : quantity;
 
     if (signedQuantity < 0) {
-      const [balance] = await db
-        .select({ quantity: inventoryBalancesTable.quantity })
-        .from(inventoryBalancesTable)
-        .where(eq(inventoryBalancesTable.productId, productId))
-        .limit(1);
-      const current = Number(balance?.quantity || 0);
-      if (current < quantity) {
-        res.status(400).json({ error: "INSUFFICIENT_STOCK", message: `Saldo insuficiente. Disponível: ${current}.` });
+      const balancesRows = await db
+        .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
+        .from(inventoryBalancesTable);
+      const picked = await resolveManualInventoryExit(productId, quantity, balancesRows);
+      if (picked.available < quantity) {
+        res.status(400).json({ error: "INSUFFICIENT_STOCK", message: `Saldo insuficiente. Disponível: ${picked.available}.` });
         return;
       }
+      productId = picked.productId;
     }
 
     const resolvedReason = reason || (() => {
@@ -314,7 +321,7 @@ router.get("/admin/inventory/motoboy/overview", requirePrimaryAdmin, async (_req
 
 router.post("/admin/inventory/motoboy/entries", requirePrimaryAdmin, async (req, res) => {
   try {
-    const productId = String(req.body?.productId ?? "").trim();
+    let productId = String(req.body?.productId ?? "").trim();
     const quantity = Number(req.body?.quantity || 0);
     const movementType = String(req.body?.movementType ?? "entry").trim().toLowerCase();
     const reason = String(req.body?.reason ?? "").trim();
@@ -332,15 +339,18 @@ router.post("/admin/inventory/motoboy/entries", requirePrimaryAdmin, async (req,
     const signedQuantity = movementType === "exit" ? -quantity : quantity;
 
     if (signedQuantity < 0) {
-      const stockMap = await getMotoboyStockMap([productId]);
-      const current = stockMap.get(productId) || 0;
-      if (current < quantity) {
+      const balancesRows = await db
+        .select({ productId: inventoryMotoboyBalancesTable.productId, quantity: inventoryMotoboyBalancesTable.quantity })
+        .from(inventoryMotoboyBalancesTable);
+      const picked = await resolveManualInventoryExit(productId, quantity, balancesRows);
+      if (picked.available < quantity) {
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
-          message: `Saldo Motoboy insuficiente. Disponível: ${current}.`,
+          message: `Saldo Motoboy insuficiente. Disponível: ${picked.available}.`,
         });
         return;
       }
+      productId = picked.productId;
     }
 
     const resolvedReason = reason
@@ -376,7 +386,7 @@ router.get("/admin/inventory/minas/overview", requirePrimaryAdmin, async (_req, 
 
 router.post("/admin/inventory/minas/entries", requirePrimaryAdmin, async (req, res) => {
   try {
-    const productId = String(req.body?.productId ?? "").trim();
+    let productId = String(req.body?.productId ?? "").trim();
     const quantity = Number(req.body?.quantity || 0);
     const movementType = String(req.body?.movementType ?? "entry").trim().toLowerCase();
     const reason = String(req.body?.reason ?? "").trim();
@@ -394,15 +404,18 @@ router.post("/admin/inventory/minas/entries", requirePrimaryAdmin, async (req, r
     const signedQuantity = movementType === "exit" ? -quantity : quantity;
 
     if (signedQuantity < 0) {
-      const stockMap = await getMinasStockMap([productId]);
-      const current = stockMap.get(productId) || 0;
-      if (current < quantity) {
+      const balancesRows = await db
+        .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
+        .from(inventoryMinasBalancesTable);
+      const picked = await resolveManualInventoryExit(productId, quantity, balancesRows);
+      if (picked.available < quantity) {
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
-          message: `Saldo Minas insuficiente. Disponível: ${current}.`,
+          message: `Saldo Minas insuficiente. Disponível: ${picked.available}.`,
         });
         return;
       }
+      productId = picked.productId;
     }
 
     const resolvedReason = reason

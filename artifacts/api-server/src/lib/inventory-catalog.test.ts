@@ -4,11 +4,13 @@ import test from "node:test";
 import {
   buildCatalogIndex,
   buildProductNameMap,
+  inventoryNamesLooselyMatch,
   mergeLegacyNamesIntoMap,
   normalizeProductId,
   pickDebitProductId,
   remapInventoryItem,
   resolveInventoryCatalogRef,
+  resolveManualExitTarget,
   resolveProductName,
 } from "./inventory-catalog";
 
@@ -68,6 +70,57 @@ test("baixa: prefere saldo do produto novo e cai no id antigo se só ele tiver q
   const none = pickDebitProductId("novo-id", "hash-velho", 2, new Map([["novo-id", 0], ["hash-velho", 1]]));
   assert.equal(none.available, 1);
   assert.equal(none.productId, "novo-id");
+});
+
+test("saida manual: id órfão com qty usa o próprio id", () => {
+  const catalog = buildCatalogIndex([{ id: "novo-reta", name: "Retatrutida Gen Health 60mg (em pó liofilizado)" }]);
+  const picked = resolveManualExitTarget({
+    requestedId: "hash-velho",
+    quantity: 1,
+    catalog,
+    stock: new Map([["hash-velho", 1], ["novo-reta", 0]]),
+    namedBalances: [
+      { productId: "hash-velho", productName: "Retatrutida Gen Health 60mg", quantity: 1 },
+      { productId: "novo-reta", productName: "Retatrutida Gen Health 60mg (em pó liofilizado)", quantity: 0 },
+    ],
+  });
+  assert.equal(picked.productId, "hash-velho");
+  assert.equal(picked.available, 1);
+});
+
+test("saida manual: seletor do cadastro novo acha saldo órfão com sufixo no nome", () => {
+  assert.equal(
+    inventoryNamesLooselyMatch("Retatrutida Gen Health 60mg", "Retatrutida Gen Health 60mg (em pó liofilizado)"),
+    true,
+  );
+  const catalog = buildCatalogIndex([{ id: "novo-reta", name: "Retatrutida Gen Health 60mg (em pó liofilizado)" }]);
+  const picked = resolveManualExitTarget({
+    requestedId: "novo-reta",
+    quantity: 1,
+    catalog,
+    stock: new Map([["novo-reta", 0], ["hash-velho", 1]]),
+    namedBalances: [
+      { productId: "hash-velho", productName: "Retatrutida Gen Health 60mg", quantity: 1 },
+    ],
+  });
+  assert.equal(picked.productId, "hash-velho");
+  assert.equal(picked.available, 1);
+});
+
+test("saida manual: dois órfãos parecidos não chuta", () => {
+  const catalog = buildCatalogIndex([{ id: "novo", name: "Retatrutida 60mg (pó)" }]);
+  const picked = resolveManualExitTarget({
+    requestedId: "novo",
+    quantity: 1,
+    catalog,
+    stock: new Map([["novo", 0], ["a", 1], ["b", 1]]),
+    namedBalances: [
+      { productId: "a", productName: "Retatrutida 60mg", quantity: 1 },
+      { productId: "b", productName: "Retatrutida 60mg", quantity: 1 },
+    ],
+  });
+  assert.equal(picked.productId, "novo");
+  assert.equal(picked.available, 0);
 });
 
 test("overview: nome legado do pedido vira nome do catálogo recadastrado", () => {

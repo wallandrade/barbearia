@@ -3,8 +3,10 @@ import { db, ordersTable, productsTable } from "@workspace/db";
 import {
   buildCatalogIndex,
   buildProductNameMap,
+  mapInventoryBalanceRows,
   mergeLegacyNamesIntoMap,
   normalizeProductId,
+  resolveManualExitTarget,
   resolveProductName,
   type CatalogIndex,
 } from "./inventory-catalog";
@@ -99,4 +101,28 @@ export async function enrichNameMapWithLegacyOrders(
   if (orphans.length === 0) return nameMap;
   const legacy = await loadLegacyProductNamesById(orphans);
   return mergeLegacyNamesIntoMap(nameMap, index, legacy);
+}
+
+export async function resolveManualInventoryExit(
+  requestedId: string,
+  quantity: number,
+  balances: Array<{ productId: unknown; quantity: unknown }>,
+): Promise<{ productId: string; available: number }> {
+  const catalog = await loadCatalogContext();
+  const ids = balances.map((row) => normalizeProductId(row.productId));
+  const nameMap = await enrichNameMapWithLegacyOrders(catalog.nameMap, catalog.index, ids);
+  const namedBalances = mapInventoryBalanceRows(balances, nameMap);
+  const stock = new Map<string, number>();
+  for (const row of namedBalances) {
+    stock.set(row.productId, row.quantity);
+    const lower = row.productId.toLowerCase();
+    if (!stock.has(lower)) stock.set(lower, row.quantity);
+  }
+  return resolveManualExitTarget({
+    requestedId,
+    quantity,
+    catalog: catalog.index,
+    stock,
+    namedBalances,
+  });
 }

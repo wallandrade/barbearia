@@ -121,7 +121,63 @@ export function stockQtyFromMap(stock: Map<string, number>, productId: unknown):
   return 0;
 }
 
-/** Prefere o id do catálogo se houver saldo; senão o id antigo (saldo órfão). */
+/** Nome igual, ou o mais longo só acrescenta sufixo entre parênteses / traço. */
+export function inventoryNamesLooselyMatch(a: unknown, b: unknown): boolean {
+  const left = foldInventoryName(a);
+  const right = foldInventoryName(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
+  if (!longer.startsWith(shorter)) return false;
+  return /^\s*[\(\-–—]/.test(longer.slice(shorter.length));
+}
+
+export type NamedStockRow = {
+  productId: string;
+  productName: string;
+  quantity: number;
+};
+
+/**
+ * Saída manual: usa o id pedido se tiver saldo; senão o remap de recadastro;
+ * senão o único saldo órfão com o mesmo nome (ou nome + sufixo).
+ */
+export function resolveManualExitTarget(params: {
+  requestedId: string;
+  quantity: number;
+  catalog: CatalogIndex;
+  stock: Map<string, number>;
+  namedBalances: NamedStockRow[];
+}): { productId: string; available: number } {
+  const requestedId = normalizeProductId(params.requestedId);
+  const need = Number(params.quantity) || 0;
+  const requestedQty = stockQtyFromMap(params.stock, requestedId);
+  if (requestedId && requestedQty >= need) {
+    return { productId: requestedId, available: requestedQty };
+  }
+
+  const catalogRef = params.catalog.byId.get(requestedId) || params.catalog.byId.get(requestedId.toLowerCase());
+  const catalogName = String(catalogRef?.name || "").trim();
+  const remapped = remapInventoryItem(params.catalog, requestedId, catalogName);
+  const picked = pickDebitProductId(remapped.productId, remapped.fallbackProductId, need, params.stock);
+  if (picked.available >= need) return picked;
+
+  const targetName = catalogName || requestedId;
+  const positive = params.namedBalances.filter((row) => Number(row.quantity) > 0);
+  const matches = positive.filter((row) => inventoryNamesLooselyMatch(row.productName, targetName));
+  if (matches.length === 1) {
+    const row = matches[0]!;
+    return {
+      productId: normalizeProductId(row.productId),
+      available: Number(row.quantity) || 0,
+    };
+  }
+
+  return picked.available >= requestedQty
+    ? picked
+    : { productId: requestedId, available: requestedQty };
+}
+
 export function pickDebitProductId(
   primaryId: string,
   fallbackId: string | null | undefined,

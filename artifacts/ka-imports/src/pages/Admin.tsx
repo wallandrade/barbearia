@@ -9158,6 +9158,22 @@ function InventoryPanel({
     const display = resolveInventoryDisplay(products, row.productId, row.productName, row.image);
     return { ...row, displayName: display.name, displayImage: display.image };
   });
+  const catalogIdSet = new Set(
+    products.flatMap((product) => {
+      const id = String(product.id || "").trim();
+      return id ? [id, id.toLowerCase()] : [];
+    }),
+  );
+  const stockSelectProducts: BumpProduct[] = [
+    ...products.map((product) => ({ id: product.id, name: product.name, image: product.image })),
+    ...resolvedBalances
+      .filter((row) => Number(row.quantity) > 0 && !catalogIdSet.has(row.productId) && !catalogIdSet.has(row.productId.toLowerCase()))
+      .map((row) => ({
+        id: row.productId,
+        name: `${row.displayName} · ${row.quantity} un no estoque`,
+        image: row.displayImage || null,
+      })),
+  ];
   const filteredBalances = (normalizedBalanceSearch
     ? resolvedBalances.filter((row) => {
         const productName = String(row.displayName || "").toLowerCase();
@@ -9388,7 +9404,7 @@ function InventoryPanel({
           </select>
           <div className="md:col-span-2">
             <ProductSelect
-              products={products}
+              products={stockSelectProducts}
               value={entryForm.productId}
               onChange={(v) => setEntryForm((prev) => ({ ...prev, productId: v }))}
               placeholder="Pesquise e selecione o produto"
@@ -9415,6 +9431,9 @@ function InventoryPanel({
             {submitting ? "Salvando..." : entryForm.movementType === "exit" ? "Dar Saída" : "Dar Entrada"}
           </Button>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Para zerar um item da lista (mesmo recadastrado), clique nele ao lado: a saída usa o saldo daquela linha.
+        </p>
         {stockTab === "loja" && entryForm.movementType === "entry" && (
           <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
             <div className="md:col-span-3 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -9586,7 +9605,25 @@ function InventoryPanel({
                   const pendingQty = pendingForProduct.reduce((sum, line) => sum + line.orderQty, 0);
                   const projectedQty = row.quantity - pendingQty;
                   return (
-                    <div key={row.productId} className="rounded-lg border border-border px-3 py-2 gap-2">
+                    <button
+                      type="button"
+                      key={row.productId}
+                      title={row.quantity > 0 ? "Usar este saldo na saída" : undefined}
+                      onClick={() => {
+                        if (row.quantity <= 0) return;
+                        setEntryForm((prev) => ({
+                          ...prev,
+                          productId: row.productId,
+                          quantity: String(row.quantity),
+                          movementType: "exit",
+                        }));
+                      }}
+                      className={`w-full text-left rounded-lg border px-3 py-2 gap-2 ${
+                        entryForm.productId === row.productId
+                          ? "border-sky-400 bg-sky-50 ring-1 ring-sky-200"
+                          : "border-border"
+                      } ${row.quantity > 0 ? "hover:border-sky-300 cursor-pointer" : ""}`}
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           {image ? (
@@ -9612,7 +9649,7 @@ function InventoryPanel({
                           </p>
                         </div>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
