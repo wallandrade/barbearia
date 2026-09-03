@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, ImageOff, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -56,6 +56,123 @@ type Props = {
   onCompleted?: () => void;
 };
 
+function parseMoneyDraft(raw: string): number | null {
+  const n = Number(String(raw).trim().replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function parseQtyDraft(raw: string): number | null {
+  const n = Math.floor(Number(String(raw).trim().replace(",", ".")));
+  if (!Number.isFinite(n) || n < 1) return null;
+  return n;
+}
+
+function CartItemRow({
+  item,
+  image,
+  onCommit,
+  onRemove,
+}: {
+  item: PurchaseItem;
+  image?: string | null;
+  onCommit: (patch: { quantity?: number; costPrice?: number }) => void;
+  onRemove: () => void;
+}) {
+  const [qtyDraft, setQtyDraft] = useState(String(item.quantity));
+  const [costDraft, setCostDraft] = useState(String(item.costPrice));
+  const focused = useRef<"qty" | "cost" | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  useEffect(() => {
+    if (focused.current !== "qty") setQtyDraft(String(item.quantity));
+  }, [item.quantity]);
+
+  useEffect(() => {
+    if (focused.current !== "cost") setCostDraft(String(item.costPrice));
+  }, [item.costPrice]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (focused.current === "qty") {
+        const next = parseQtyDraft(qtyDraft);
+        if (next != null && next !== item.quantity) onCommitRef.current({ quantity: next });
+      }
+      if (focused.current === "cost") {
+        const next = parseMoneyDraft(costDraft);
+        if (next != null && next !== item.costPrice) onCommitRef.current({ costPrice: next });
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [qtyDraft, costDraft, item.quantity, item.costPrice]);
+
+  const commitQty = () => {
+    const next = parseQtyDraft(qtyDraft);
+    if (next == null) {
+      setQtyDraft(String(item.quantity));
+      return;
+    }
+    if (next !== item.quantity) onCommit({ quantity: next });
+  };
+
+  const commitCost = () => {
+    const next = parseMoneyDraft(costDraft);
+    if (next == null) {
+      setCostDraft(String(item.costPrice));
+      return;
+    }
+    if (next !== item.costPrice) onCommit({ costPrice: next });
+  };
+
+  const lineTotal = (() => {
+    const qty = parseQtyDraft(qtyDraft) ?? item.quantity;
+    const cost = parseMoneyDraft(costDraft) ?? item.costPrice;
+    return Math.round((qty * cost + Number.EPSILON) * 100) / 100;
+  })();
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-sm border rounded-lg px-3 py-3">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <ProductThumb src={image} alt={item.productName} />
+        <span className="min-w-0 truncate font-medium">{item.productName}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          Qtd
+          <input
+            type="text"
+            inputMode="numeric"
+            className="w-16 h-9 px-2 rounded border text-sm text-foreground"
+            value={qtyDraft}
+            onFocus={() => { focused.current = "qty"; }}
+            onChange={(e) => setQtyDraft(e.target.value)}
+            onBlur={() => { focused.current = null; commitQty(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          Custo
+          <input
+            type="text"
+            inputMode="decimal"
+            className="w-24 h-9 px-2 rounded border text-sm text-foreground"
+            value={costDraft}
+            onFocus={() => { focused.current = "cost"; }}
+            onChange={(e) => setCostDraft(e.target.value)}
+            onBlur={() => { focused.current = null; commitCost(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          />
+        </label>
+        <span className="w-28 text-right font-semibold">{formatCurrency(lineTotal)}</span>
+        <button type="button" className="text-rose-600 p-1" onClick={onRemove} aria-label="Remover item">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -71,15 +188,17 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [completePool, setCompletePool] = useState<Record<string, string>>({});
+  const patchSeqByItem = useRef<Record<string, number>>({});
 
   const activePurchase = purchases.find((p) => p.id === activePurchaseId) || null;
   const selectedProduct = catalog.find((p) => p.id === selectedProductId) || null;
 
   const filteredCatalog = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    const list = catalog.filter((p) => p.isActive !== false);
-    if (!q) return list.slice(0, 8);
-    return list.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
+    if (q.length < 1) return [];
+    return catalog
+      .filter((p) => p.isActive !== false && p.name.toLowerCase().includes(q))
+      .slice(0, 12);
   }, [catalog, productSearch]);
 
   const loadAll = useCallback(async () => {
@@ -215,12 +334,14 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
 
   const patchItem = async (item: PurchaseItem, patch: { quantity?: number; costPrice?: number }) => {
     if (!activePurchase) return;
+    const seq = (patchSeqByItem.current[item.id] = (patchSeqByItem.current[item.id] || 0) + 1);
     const res = await fetch(`${BASE}/api/admin/supplier-purchases/${activePurchase.id}/items/${item.id}`, {
       method: "PATCH",
       headers: authHeaders(),
       body: JSON.stringify(patch),
     });
     const data = await res.json().catch(() => ({})) as { purchase?: Purchase; message?: string };
+    if (patchSeqByItem.current[item.id] !== seq) return;
     if (!res.ok || !data.purchase) {
       toast.error(data.message || "Erro ao atualizar item.");
       return;
@@ -321,91 +442,87 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
       </div>
 
       {activePurchase?.status === "draft" && (
-        <div className="rounded-xl border border-border bg-white p-3 space-y-3">
+        <div className="rounded-xl border border-border bg-white p-4 space-y-5">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             Carrinho · {activePurchase.supplierName || "Fornecedor"}
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-            <input
-              value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
-              placeholder="Buscar produto..."
-              className="h-10 px-3 rounded-lg border border-border bg-white text-sm md:col-span-2"
-            />
-            <input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" placeholder="Qtd" />
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              className="h-10 px-3 rounded-lg border border-border bg-white text-sm"
-              placeholder={selectedProduct ? `Custo (${formatCurrency(Number(selectedProduct.costPrice || 0))})` : "Custo unitário"}
-            />
-          </div>
-          {filteredCatalog.length > 0 && (
-            <div className="max-h-56 overflow-auto divide-y border rounded-lg">
-              {filteredCatalog.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  disabled={busy === "add"}
-                  onClick={() => {
-                    setSelectedProductId(product.id);
-                    if (!cost) setCost(String(Number(product.costPrice || 0)));
-                    void addItem(product);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-3"
-                >
-                  <ProductThumb src={product.image} alt={product.name} />
-                  <span className="flex-1 min-w-0 truncate">{product.name}</span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">custo {formatCurrency(Number(product.costPrice || 0))}</span>
-                </button>
-              ))}
-            </div>
-          )}
 
-          {activePurchase.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum produto no carrinho.</p>
-          ) : (
-            <div className="space-y-2">
-              {activePurchase.items.map((item) => {
-                const catalogProduct = catalog.find((p) => p.id === item.productId);
-                return (
-                <div key={item.id} className="flex items-center gap-2 text-sm border rounded-lg px-3 py-2">
-                  <ProductThumb src={catalogProduct?.image} alt={item.productName} />
-                  <span className="flex-1 min-w-0 truncate font-medium">{item.productName}</span>
-                  <input
-                    type="number"
-                    min="1"
-                    className="w-16 h-8 px-2 rounded border text-sm"
-                    value={item.quantity}
-                    onChange={(e) => void patchItem(item, { quantity: Number(e.target.value) })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="w-24 h-8 px-2 rounded border text-sm"
-                    value={item.costPrice}
-                    onChange={(e) => void patchItem(item, { costPrice: Number(e.target.value) })}
-                  />
-                  <span className="w-24 text-right font-semibold">{formatCurrency(item.lineTotal)}</span>
-                  <button type="button" className="text-rose-600" onClick={() => void removeItem(item.id)}>
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                );
-              })}
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-sm font-semibold">Total {formatCurrency(activePurchase.totalAmount)}</span>
-                <Button type="button" disabled={busy === `finalize-${activePurchase.id}`} onClick={() => void finalize(activePurchase.id)}>
-                  {busy === `finalize-${activePurchase.id}` ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                  Finalizar pedido
-                </Button>
-              </div>
+          <div className="space-y-2">
+            <p className="text-sm font-semibold">Adicionar produto</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              <input
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                placeholder="Buscar produto..."
+                className="h-10 px-3 rounded-lg border border-border bg-white text-sm sm:col-span-2"
+              />
+              <input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" placeholder="Qtd" />
+              <input
+                type="text"
+                inputMode="decimal"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                className="h-10 px-3 rounded-lg border border-border bg-white text-sm"
+                placeholder={selectedProduct ? `Custo (${formatCurrency(Number(selectedProduct.costPrice || 0))})` : "Custo unitário"}
+              />
             </div>
-          )}
+            {productSearch.trim() ? (
+              filteredCatalog.length > 0 ? (
+                <div className="max-h-56 overflow-auto divide-y border rounded-lg bg-slate-50">
+                  {filteredCatalog.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      disabled={busy === "add"}
+                      onClick={() => {
+                        setSelectedProductId(product.id);
+                        if (!cost) setCost(String(Number(product.costPrice || 0)));
+                        void addItem(product);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-3 bg-white"
+                    >
+                      <ProductThumb src={product.image} alt={product.name} />
+                      <span className="flex-1 min-w-0 truncate">{product.name}</span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">custo {formatCurrency(Number(product.costPrice || 0))}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground px-1">Nenhum produto com esse nome.</p>
+              )
+            ) : (
+              <p className="text-xs text-muted-foreground px-1">Digite o nome para ver a lista de produtos.</p>
+            )}
+          </div>
+
+          <div className="border-t border-border pt-4 space-y-3">
+            <p className="text-sm font-semibold">Itens no carrinho</p>
+            {activePurchase.items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum produto no carrinho.</p>
+            ) : (
+              <div className="space-y-3">
+                {activePurchase.items.map((item) => {
+                  const catalogProduct = catalog.find((p) => p.id === item.productId);
+                  return (
+                    <CartItemRow
+                      key={item.id}
+                      item={item}
+                      image={catalogProduct?.image}
+                      onCommit={(patch) => void patchItem(item, patch)}
+                      onRemove={() => void removeItem(item.id)}
+                    />
+                  );
+                })}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+                  <span className="text-sm font-semibold">Total {formatCurrency(activePurchase.totalAmount)}</span>
+                  <Button type="button" disabled={busy === `finalize-${activePurchase.id}`} onClick={() => void finalize(activePurchase.id)}>
+                    {busy === `finalize-${activePurchase.id}` ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                    Finalizar pedido
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
