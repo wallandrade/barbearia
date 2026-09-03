@@ -177,7 +177,6 @@ export default function Checkout() {
   const [insuranceReducedEnabled, setInsuranceReducedEnabled] = useState(true);
   const [insurancePercent, setInsurancePercent] = useState(10);
   const [insuranceReducedPercent, setInsuranceReducedPercent] = useState(10);
-  const [insurancePercent, setInsurancePercent] = useState(10);
   const [insuranceKeepPercent, setInsuranceKeepPercent] = useState(10);
   const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
   const [insuranceProductIds, setInsuranceProductIds] = useState<string[]>([]);
