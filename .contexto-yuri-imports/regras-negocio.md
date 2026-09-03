@@ -25,6 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-03 | Aba Despesas: compra com fornecedor (carrinho + custo + finalizar + concluir no estoque) | Entra Foz/Motoboy/Minas e lança `compra_fornecedor` | Lançamento avulso de extravio/reenvio igual |
 | 2026-09-03 | Edição de pedido: redução (já pago − novo total) credita a carteira | Sobra vira saldo da loja; PIX de diferença usa prepaid efetivo | Acréscimo/PIX quando o valor sobe iguais |
 | 2026-09-03 | Dashboard Admin: card **Seguro pago** soma só `insurance_amount` de pedidos pagos no **período De/até** (`financial-summary`) | Segue o filtro de data como faturamento | PIX/links/cartão iguais |
 | 2026-09-03 | Motoboy por km **substitui** bairro: modos exclusivos (`motoboy_distance_enabled`) | Km ligado ignora `motoboy_neighborhoods`; desligado volta o bairro | Faixa CEP continua fallback; >200 km sem Motoboy |
@@ -225,6 +226,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 - **Etiqueta EnvioEcom:** ao gerar (PDF/R2 ou download local) **dá baixa** no pool do card (ou Foz Guaçu se nenhum) e marca `inventory_reserved`. Status vira **Etiqueta emitida** se ainda não estava em trânsito. Sem saldo: etiqueta sai mesmo assim e o toast avisa. Cópia 48h / Enviado: ver **Invariante — cópia 48h** no topo deste arquivo (não anular no changelog).
 - **Cancelar EE:** pede cancelamento na EnvioEcom (pode ficar *Aguardando cancelamento* lá) e **desvincula no Yury** (zera ID, barcode, PDF, `orderId` externo). Depois: **EnvioEcom** → cotar → criar (orderId com sufixo novo) → **Etiqueta EE**. Não clicar Etiqueta EE no envio antigo. Webhook do envio velho não reatacha. Estoque já baixado na etiqueta anterior **não** volta sozinho.
 - Despesas de marketing e resumo financeiro: rotas dedicadas. Dashboard Admin: card **Seguro pago** (`totalInsurancePaid` / `insurancePaidCount` em `GET /api/admin/financial-summary`) soma só `insurance_amount` de pedidos `paid`/`completed` com valor > 0, no **período De/até** (mesmo filtro do faturamento; segue o vendedor se filtrado). Exclui pedido filho de reenvio. Não soma `total` nem links avulsos.
+- **Compra com fornecedor** (aba Despesas): cadastro simples de fornecedor; rascunho tipo carrinho (produto, qtd, custo); **Finalizar pedido** trava itens (`ordered`); **Concluir compra** (admin primário) escolhe pool Foz Guaçu/Motoboy/Minas, dá entrada, atualiza `costPrice` se mudou e lança despesa `compra_fornecedor` paga. Tabelas `suppliers` / `supplier_purchases` / `supplier_purchase_items`.
 
 ## Prova social e settings
 

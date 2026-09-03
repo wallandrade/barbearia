@@ -948,6 +948,55 @@ async function ensureOrderActivityTable(databaseName: string): Promise<void> {
   `);
 }
 
+async function ensureSupplierPurchaseTables(databaseName: string): Promise<void> {
+  if (!(await tableExists("suppliers", databaseName))) {
+    await pool.query(`
+      CREATE TABLE suppliers (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        note TEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY suppliers_name_idx (name)
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_purchases", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_purchases (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        supplier_id VARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'draft',
+        inventory_pool VARCHAR(16) NULL,
+        expense_id VARCHAR(255) NULL,
+        total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        note TEXT NULL,
+        ordered_at TIMESTAMP NULL,
+        completed_at TIMESTAMP NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY supplier_purchases_supplier_id_idx (supplier_id),
+        KEY supplier_purchases_status_idx (status)
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_purchase_items", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_purchase_items (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        purchase_id VARCHAR(255) NOT NULL,
+        product_id VARCHAR(255) NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        quantity INT NOT NULL,
+        cost_price DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY supplier_purchase_items_purchase_id_idx (purchase_id),
+        KEY supplier_purchase_items_product_id_idx (product_id)
+      )
+    `);
+  }
+}
+
 async function ensureProductCostHistoryTable(databaseName: string): Promise<void> {
   if (await tableExists("product_cost_history", databaseName)) return;
 
@@ -1113,6 +1162,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureOrderActivityTable(databaseName);
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);
+    await ensureSupplierPurchaseTables(databaseName);
     await ensureSellerCommissionBatchesTable(databaseName);
     await ensureMotoboyPriceProposalsTable(databaseName);
     await ensureStoreCreditTables(databaseName);

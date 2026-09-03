@@ -71,6 +71,7 @@ function defaultChannelForExpenseType(expenseType: string): string {
     reenvio_frete: "Reenvio Frete",
     avaria: "Avaria",
     operacional: "Operacional",
+    compra_fornecedor: "Compra Fornecedor",
     outros: "Outros",
   };
   return labels[expenseType] || "Operacional";

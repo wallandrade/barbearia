@@ -582,6 +582,7 @@ import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
+import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchasesPanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
@@ -5296,7 +5297,7 @@ export default function Admin() {
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h2 className="text-xl font-bold text-foreground">Despesas operacionais</h2>
-                <p className="text-sm text-muted-foreground">Lance extravio, reenvio, avaria e demais custos para refletir no financeiro.</p>
+                <p className="text-sm text-muted-foreground">Lance extravio, reenvio, avaria, compra com fornecedor e demais custos para refletir no financeiro.</p>
               </div>
               <Button variant="outline" onClick={fetchExpenses} disabled={expensesLoading}>
                 {expensesLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
@@ -5323,6 +5324,8 @@ export default function Admin() {
               </div>
             </div>
 
+            <AdminSupplierPurchasesPanel isPrimary={isPrimary} onCompleted={() => { fetchExpenses(); fetchFinancialSummary(); }} />
+
             <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
               <p className="text-sm font-semibold">Novo lançamento</p>
               <form onSubmit={handleCreateExpense} className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -5334,6 +5337,7 @@ export default function Admin() {
                   <option value="reenvio_frete">Reenvio frete</option>
                   <option value="avaria">Avaria</option>
                   <option value="operacional">Operacional</option>
+                  <option value="compra_fornecedor">Compra fornecedor</option>
                   <option value="marketing">Marketing</option>
                   <option value="outros">Outros</option>
                 </select>
@@ -5371,6 +5375,7 @@ export default function Admin() {
                   <option value="reenvio_frete">Reenvio frete</option>
                   <option value="avaria">Avaria</option>
                   <option value="operacional">Operacional</option>
+                  <option value="compra_fornecedor">Compra fornecedor</option>
                   <option value="marketing">Marketing</option>
                   <option value="outros">Outros</option>
                 </select>

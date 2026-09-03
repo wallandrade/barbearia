@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-03 | Tabelas `suppliers` / `supplier_purchases` / `supplier_purchase_items` | Compra com fornecedor na aba Despesas | Estoques e lançamento avulso iguais |
 | 2026-09-03 | Coluna `orders.store_credit_from_edit` + ledger `order_edit_surplus` | Sobra de edição de pedido na carteira | `paidAmount` continua o PIX recebido |
 | 2026-09-02 | Tabelas `customer_store_credits` / `customer_store_credit_ledger` + colunas de seguro no pedido | Carteira de saldo e snapshot do seguro | Afiliado e PIX iguais |
 | 2026-08-31 | Tabela `order_activity` (+ runtime) para histórico do pedido no Admin | Eventos por `order_id` | Colunas de `orders` iguais |
@@ -54,7 +55,7 @@ Workspace: `pnpm-workspace.yaml` (`artifacts/*`, `lib/*`, `scripts`).
 
 Schemas em `lib/db/src/schema/*.ts` (export em `index.ts`):
 
-`orders`, `order_activity`, `custom_charges`, `admin_users`, `admin_sessions`, `customer_users`, `customer_store_credits`, `customer_store_credit_ledger`, `coupons`, `products`, `product_cost_history`, `site_settings`, `sellers`, `shipping_options`, `order_bumps`, `kyc_documents`, `social_proof_settings`, `social_proof_fake_entries`, `affiliates`, `affiliate_referrals`, `affiliate_commissions`, `affiliate_credit_uses`, `raffles`, `raffle_reservations`, `raffle_results`, `raffle_promotions`, `support_tickets`, `reshipments`, `manual_reshipments`, `inventory_balances`, `inventory_movements`, `inventory_motoboy_balances`, `inventory_motoboy_movements`, `inventory_minas_balances`, `inventory_minas_movements`, `manual_return_items`, `marketing_expenses`, `seller_commission_batches`, `motoboy_neighborhoods`, `motoboy_bookings`, `motoboy_cep_ranges`, `shipping_queue`.
+`orders`, `order_activity`, `custom_charges`, `admin_users`, `admin_sessions`, `customer_users`, `customer_store_credits`, `customer_store_credit_ledger`, `coupons`, `products`, `product_cost_history`, `site_settings`, `sellers`, `shipping_options`, `order_bumps`, `kyc_documents`, `social_proof_settings`, `social_proof_fake_entries`, `affiliates`, `affiliate_referrals`, `affiliate_commissions`, `affiliate_credit_uses`, `raffles`, `raffle_reservations`, `raffle_results`, `raffle_promotions`, `support_tickets`, `reshipments`, `manual_reshipments`, `inventory_balances`, `inventory_movements`, `inventory_motoboy_balances`, `inventory_motoboy_movements`, `inventory_minas_balances`, `inventory_minas_movements`, `manual_return_items`, `marketing_expenses`, `suppliers`, `supplier_purchases`, `supplier_purchase_items`, `seller_commission_batches`, `motoboy_neighborhoods`, `motoboy_bookings`, `motoboy_cep_ranges`, `shipping_queue`.
 
 ## Auth (resumo)
 

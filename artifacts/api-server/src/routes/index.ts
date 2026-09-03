@@ -39,6 +39,7 @@ import envioecomRouter from "./envioecom";
 import bankStatementRouter from "./bank-statement";
 import peptideChatRouter from "./peptide-chat";
 import insuranceRouter from "./insurance";
+import supplierPurchasesRouter from "./supplier-purchases";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -80,5 +81,6 @@ router.use(envioecomRouter);
 router.use(bankStatementRouter);
 router.use(peptideChatRouter);
 router.use(insuranceRouter);
+router.use(supplierPurchasesRouter);
 
 export default router;
