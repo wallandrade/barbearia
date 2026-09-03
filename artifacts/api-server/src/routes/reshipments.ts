@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { resolveManualInventoryExit } from "../lib/inventory-resolve";
+import { normalizeProductId } from "../lib/inventory-catalog";
 import {
   createManualReshipment,
   ensureReshipmentReservation,
@@ -432,6 +433,54 @@ router.post("/admin/inventory/minas/entries", requirePrimaryAdmin, async (req, r
   } catch (err) {
     console.error("Minas inventory entry error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao registrar movimento estoque Minas." });
+  }
+});
+
+router.post("/admin/inventory/zero-balances", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const pool = String(req.body?.pool ?? "loja").trim().toLowerCase();
+    if (pool !== "loja" && pool !== "motoboy" && pool !== "minas") {
+      res.status(400).json({ error: "INVALID_POOL", message: "Pool inválido." });
+      return;
+    }
+
+    const balancesRows = pool === "motoboy"
+      ? await db
+        .select({ productId: inventoryMotoboyBalancesTable.productId, quantity: inventoryMotoboyBalancesTable.quantity })
+        .from(inventoryMotoboyBalancesTable)
+      : pool === "minas"
+        ? await db
+          .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
+          .from(inventoryMinasBalancesTable)
+        : await db
+          .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
+          .from(inventoryBalancesTable);
+
+    const reason = pool === "motoboy"
+      ? "Zerar saldo manual Motoboy"
+      : pool === "minas"
+        ? "Zerar saldo manual Minas"
+        : "Zerar saldo manual Foz Guaçu";
+
+    let zeroed = 0;
+    for (const row of balancesRows) {
+      const productId = normalizeProductId(row.productId);
+      const quantity = Number(row.quantity) || 0;
+      if (!productId || quantity <= 0) continue;
+      if (pool === "motoboy") {
+        await registerMotoboyInventoryEntry({ productId, quantity: -quantity, reason });
+      } else if (pool === "minas") {
+        await registerMinasInventoryEntry({ productId, quantity: -quantity, reason });
+      } else {
+        await registerInventoryEntry({ productId, quantity: -quantity, reason });
+      }
+      zeroed += 1;
+    }
+
+    res.json({ ok: true, zeroed });
+  } catch (err) {
+    console.error("Zero inventory balances error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao zerar estoque." });
   }
 });
 

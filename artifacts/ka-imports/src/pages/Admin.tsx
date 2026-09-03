@@ -5788,6 +5788,28 @@ export default function Admin() {
                 setInventorySubmitting(false);
               }
             }}
+            onZeroBalances={async (pool) => {
+              setInventorySubmitting(true);
+              try {
+                const res = await fetch(`${BASE}/api/admin/inventory/zero-balances`, {
+                  method: "POST",
+                  headers: authHeaders(),
+                  body: JSON.stringify({ pool }),
+                });
+                const data = await res.json() as { zeroed?: number; message?: string };
+                if (!res.ok) {
+                  toast.error(data?.message || "Erro ao zerar estoque.");
+                  return;
+                }
+                fetchInventoryOverview();
+                const n = Number(data?.zeroed || 0);
+                toast.success(n > 0 ? `Estoque zerado: ${n} item(ns).` : "Nenhum item com saldo para zerar.");
+              } catch {
+                toast.error("Erro ao zerar estoque.");
+              } finally {
+                setInventorySubmitting(false);
+              }
+            }}
             onCreateManualReshipment={createManualReshipment}
             onResolvePendingReshipment={async (item, registerStockEntry) => {
               const manualReturnId = String(item.id || "").trim();
@@ -9031,6 +9053,7 @@ function InventoryPanel({
   onCreateEntry,
   onCreateMotoboyEntry,
   onCreateMinasEntry,
+  onZeroBalances,
   onCreateManualReshipment,
   onResolvePendingReshipment,
 }: {
@@ -9110,6 +9133,7 @@ function InventoryPanel({
   onCreateEntry: () => void;
   onCreateMotoboyEntry: () => void;
   onCreateMinasEntry: () => void;
+  onZeroBalances: (pool: InventoryPoolKind) => Promise<void>;
   onCreateManualReshipment: () => void;
   onResolvePendingReshipment: (item: ReshipmentRecord, registerStockEntry: boolean) => Promise<void>;
 }) {
@@ -9388,9 +9412,28 @@ function InventoryPanel({
                   : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" />Atualizar
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {activeBalances.some((row) => Number(row.quantity) > 0) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50"
+                disabled={submitting}
+                onClick={() => {
+                  const n = activeBalances.filter((row) => Number(row.quantity) > 0).length;
+                  if (!window.confirm(`Dar saída de ${n} item(ns) com saldo em ${stockTabLabel}? Isso zera o estoque desta aba.`)) {
+                    return;
+                  }
+                  void onZeroBalances(poolTab);
+                }}
+              >
+                Zerar saldo
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5" />Atualizar
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-2">
