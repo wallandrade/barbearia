@@ -4474,7 +4474,9 @@ export default function Admin() {
               <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
                 <span>Custo: <strong className="text-red-700">-{formatCurrency(Number(financialSummary?.totalCost) || 0)}</strong></span>
                 <span>Comissão: <strong className="text-amber-700">-{formatCurrency(Number(financialSummary?.totalCommission) || 0)}</strong></span>
-                <span>Gastos marketing: <strong className="text-red-700">-{formatCurrency(Number(financialSummary?.totalMarketingExpenses) || 0)}</strong></span>
+                {(Number(financialSummary?.totalMarketingExpenses) || 0) > 0 && (
+                  <span>Gastos marketing: <strong className="text-red-700">-{formatCurrency(Number(financialSummary?.totalMarketingExpenses) || 0)}</strong></span>
+                )}
                 {financialSummary && (
                   <>
                     <span>Taxas do gateway: <strong className="text-pink-700">-{formatCurrency(Number(financialSummary.totalGatewayFees) || 0)}</strong></span>

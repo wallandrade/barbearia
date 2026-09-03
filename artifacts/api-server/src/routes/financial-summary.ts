@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, marketingExpensesTable, ordersTable, productsTable, sellersTable, siteSettingsTable } from "@workspace/db";
 import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { isNetRevenueMarketingExpense } from "../lib/financial-summary-expenses";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
 const router: IRouter = Router();
@@ -314,7 +315,8 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       .where(and(...expenseConditions))
       .orderBy(desc(marketingExpensesTable.expenseDate), desc(marketingExpensesTable.createdAt), desc(marketingExpensesTable.id));
 
-    const marketingExpenses = expenseRows.map((row) => ({
+    const marketingExpenseRows = expenseRows.filter((row) => isNetRevenueMarketingExpense(row.expenseType));
+    const marketingExpenses = marketingExpenseRows.map((row) => ({
       id: row.id,
       sellerCode: row.sellerCode ?? null,
       expenseDate: row.expenseDate?.toISOString?.() ?? new Date().toISOString(),
