@@ -441,13 +441,13 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia no checkout</p>
           <div className="rounded-lg border border-border bg-white p-3">
             <p className="font-bold text-sm text-foreground">{parseInsuranceLabel(reducedLabel, DEFAULT_CHECKOUT_INSURANCE.reducedLabel)}</p>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground mt-1 whitespace-pre-line">
               {parseInsuranceDescription(reducedDescription, DEFAULT_CHECKOUT_INSURANCE.reducedDescription)}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-white p-3">
             <p className="font-bold text-sm text-foreground">{parseInsuranceLabel(label)}</p>
-            <p className="text-xs text-muted-foreground mt-1">{parseInsuranceDescription(description)}</p>
+            <p className="text-xs text-muted-foreground mt-1 whitespace-pre-line">{parseInsuranceDescription(description)}</p>
           </div>
           <p className="text-xs text-muted-foreground">
             Completo cobra{" "}

@@ -78,7 +78,7 @@ export function CheckoutInsuranceOffer({
               <p className="font-bold text-foreground">
                 {reducedTitle} — {formatCurrency(reducedAmount)}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">
                 {reducedBody}
               </p>
               {plan === "reduced" && (
@@ -113,7 +113,7 @@ export function CheckoutInsuranceOffer({
               <p className="font-bold text-foreground">
                 {fullTitle} — {formatCurrency(fullAmount)}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">
                 {fullBody}
               </p>
               {plan === "full" && (
