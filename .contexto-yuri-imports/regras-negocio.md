@@ -25,6 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-02 | Texto do plano completo no checkout: **Quero garantia 100%** | Mesma opção; só o nome | % , cobertura e preço iguais |
 | 2026-09-02 | Checkout: **completo** e **reduzido** (Admin liga cada um). Pedido grava `insurance_plan`. Reduzido 10% só extravio/roubo, sem saldo. Completo = o de antes | Cliente escolhe no checkout; suporte separa sumiu vs Receita/quebra | Pedido antigo com checkbox = completo |
 | 2026-09-02 | Garantia para no 1 reenvio: sem etapa “2ª perdeu → devolve o produto” | Checkout 2 caixas; API recusa estorno após reenvio | 1ª perda ainda escolhe reenvio ou estorno |
 | 2026-09-02 | Checkout da garantia em texto popular (reais, sem %): perder / apreender / quebrar | Cliente leigo entende; suporte usa o mesmo caso `extravio` | Conta 54/10/44 e 1 reenvio iguais |

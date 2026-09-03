@@ -16,7 +16,7 @@ export const DEFAULT_CHECKOUT_INSURANCE = {
   percent: 10,
   keepPercent: 10,
   reducedPercent: 10,
-  label: "Quero garantia se der ruim no caminho",
+  label: "Quero garantia 100%",
   description: "Vale se o correio perder, a Receita apreender ou chegar quebrado.",
 };
 
