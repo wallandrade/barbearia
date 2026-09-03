@@ -460,11 +460,11 @@ export default function Support() {
                             : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                       >
-                        <p className="text-sm font-semibold text-slate-900">Não chegou / extravio</p>
+                        <p className="text-sm font-semibold text-slate-900">Não chegou, apreenderam ou veio quebrado</p>
                         <p className="text-xs text-slate-500 mt-1">
                           {selectedOrder?.includeInsurance
-                            ? "Com seguro: reenvio 1 vez ou estorno do produto"
-                            : "Sem seguro: sem reenvio por extravio"}
+                            ? "Com garantia: a gente manda de novo 1 vez ou devolve o valor do produto"
+                            : "Sem garantia: se isso acontecer, não mandamos de novo"}
                         </p>
                       </button>
                       <button
@@ -477,7 +477,7 @@ export default function Support() {
                         }`}
                       >
                         <p className="text-sm font-semibold text-slate-900">Outro problema</p>
-                        <p className="text-xs text-slate-500 mt-1">Atraso, avaria, endereco e demais casos</p>
+                        <p className="text-xs text-slate-500 mt-1">Atraso, endereço errado e demais casos</p>
                       </button>
                     </div>
 
@@ -554,7 +554,7 @@ export default function Support() {
                 {showDetailsStep && problemType && (problemType === "other" || problemType === "extravio" || selectedMissingProducts.length > 0) && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">
-                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" ? "4. Rastreio e detalhes" : "4. Descreva o problema"}
+                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" ? "4. Rastreio e o que aconteceu" : "4. Descreva o problema"}
                     </p>
                     <textarea
                       value={description}

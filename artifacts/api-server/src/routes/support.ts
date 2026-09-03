@@ -364,7 +364,7 @@ router.post("/support/tickets", async (req, res) => {
     }
 
     if (problemType === "extravio") {
-      if (!description) description = "Pedido nao chegou / extravio do envio.";
+      if (!description) description = "Nao chegou, apreenderam ou veio quebrado.";
     }
 
     if (description.length < 10) {

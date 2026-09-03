@@ -1129,7 +1129,7 @@ export default function CustomerOrders() {
                                     <div className="pt-2 space-y-2">
                                       {(order.insuranceClaimStatus === "first_lost" || order.insuranceClaimStatus === "none") && (
                                         <p className="text-xs text-muted-foreground">
-                                          Se a 1ª se perdeu, escolha reenvio (1 vez) ou estorno do produto em saldo.
+                                          Se não chegou, apreenderam ou veio quebrado, escolha: mandar de novo (1 vez) ou devolver o valor do produto.
                                         </p>
                                       )}
                                       {order.insuranceClaimStatus === "first_lost" && (
@@ -1148,7 +1148,7 @@ export default function CustomerOrders() {
                                                 });
                                                 const data = await res.json().catch(() => ({})) as { message?: string };
                                                 if (!res.ok) throw new Error(data.message || "Falha");
-                                                toast.success("Reenvio autorizado.");
+                                                toast.success("Combinado: vamos mandar de novo.");
                                                 setOrders((prev) => prev.map((item) => (
                                                   item.id === order.id
                                                     ? { ...item, insuranceClaimStatus: "reship_sent" }
@@ -1161,7 +1161,7 @@ export default function CustomerOrders() {
                                               }
                                             }}
                                           >
-                                            Reenviar 1x
+                                            Mandar de novo
                                           </button>
                                           <button
                                             type="button"
@@ -1177,7 +1177,7 @@ export default function CustomerOrders() {
                                                 });
                                                 const data = await res.json().catch(() => ({})) as { message?: string };
                                                 if (!res.ok) throw new Error(data.message || "Falha");
-                                                toast.success("Estorno do produto em saldo.");
+                                                toast.success("Valor do produto volta como crédito na loja.");
                                                 setOrders((prev) => prev.map((item) => (
                                                   item.id === order.id
                                                     ? { ...item, insuranceClaimStatus: "refund_product" }
@@ -1199,7 +1199,7 @@ export default function CustomerOrders() {
                                               }
                                             }}
                                           >
-                                            Estornar produto
+                                            Devolver o produto
                                           </button>
                                         </div>
                                       )}

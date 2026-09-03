@@ -129,7 +129,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
             Seguro de Envio
           </h3>
           <p className="text-xs text-muted-foreground">
-            % cobrado no checkout. A loja fica o % abaixo se entregar; o resto vira saldo do cliente. Sem seguro = sem reenvio por extravio.
+            % cobrado (só você vê). No checkout o cliente lê um texto simples, em reais, com exemplos (perder, apreender, quebrar). Sem garantia = sem reenvio nesses casos.
           </p>
         </div>
         <button
@@ -157,7 +157,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
 
       <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${enabled ? "" : "opacity-60"}`}>
         <div className="sm:col-span-2">
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Nome no checkout</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Nome interno (o checkout usa um texto simples fixo)</label>
           <input
             type="text"
             value={label}
@@ -271,7 +271,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           </p>
         </div>
         <div className="sm:col-span-3">
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Descrição</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Nota interna (não aparece no checkout)</label>
           <textarea
             value={description}
             onChange={(e) => {

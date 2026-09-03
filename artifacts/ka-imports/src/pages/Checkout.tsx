@@ -21,17 +21,14 @@ import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
 import { formatCurrency, getActiveWhatsApp, getSellerSlugFromCheckoutPath, setSellerContext } from "@/lib/utils";
 import {
   CHECKOUT_INSURANCE_SETTING_KEYS,
+  CHECKOUT_INSURANCE_CUSTOMER_LABEL,
   catalogProductId,
   computeCartInsuranceAmount,
-  formatInsuranceOfferSuffix,
-  parseInsuranceDescription,
   parseInsuranceEnabled,
-  parseInsuranceLabel,
   parseInsurancePercent,
   parseInsuranceKeepPercent,
   parseInsuranceProductIds,
   parseOptionalInsurancePercent,
-  DEFAULT_CHECKOUT_INSURANCE,
 } from "@/lib/checkout-insurance";
 import { CheckoutInsuranceOffer } from "@/components/CheckoutInsuranceOffer";
 
@@ -178,8 +175,6 @@ export default function Checkout() {
   const [insuranceKeepPercent, setInsuranceKeepPercent] = useState(10);
   const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
   const [insuranceProductIds, setInsuranceProductIds] = useState<string[]>([]);
-  const [insuranceLabel, setInsuranceLabel] = useState(DEFAULT_CHECKOUT_INSURANCE.label);
-  const [insuranceDescription, setInsuranceDescription] = useState(DEFAULT_CHECKOUT_INSURANCE.description);
   const [showCardModal, setShowCardModal] = useState(false);
   const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string; orderRef: string } | null>(null);
   const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
@@ -571,8 +566,6 @@ export default function Checkout() {
           setInsuranceKeepPercent(parseInsuranceKeepPercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]));
           setInsuranceProductPercent(parseOptionalInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]));
           setInsuranceProductIds(parseInsuranceProductIds(data[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]));
-          setInsuranceLabel(parseInsuranceLabel(data[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
-          setInsuranceDescription(parseInsuranceDescription(data[CHECKOUT_INSURANCE_SETTING_KEYS.description]));
         }
       } catch {
         // Keep defaults enabled on network errors.
@@ -803,12 +796,6 @@ export default function Checkout() {
     () => couponProductsPayload.map((p) => ({ id: p.id, quantity: p.quantity, price: p.regularPrice })),
     [couponProductsPayload],
   );
-  const insuranceOfferSuffix = formatInsuranceOfferSuffix({
-    defaultPercent: insurancePercent,
-    specialPercent: insuranceProductPercent,
-    specialProductIds: insuranceProductIds,
-    itemIds: insuranceLineItems.map((item) => item.id),
-  });
   const eligibleProductSubtotal = useMemo(() => {
     if (!appliedCoupon) return 0;
     if (!appliedCoupon.eligibleProductIds.length) {
@@ -872,14 +859,15 @@ export default function Checkout() {
   const missingForFreeShipping = isFreeShippingEligible || freeShippingMinSubtotal == null
     ? 0
     : Math.max(0, freeShippingMinSubtotal - subtotal);
-  const insuranceAmount = computeCartInsuranceAmount({
-    includeInsurance: includeInsurance && insuranceEnabled,
+  const insurancePreviewAmount = computeCartInsuranceAmount({
+    includeInsurance: insuranceEnabled,
     defaultPercent: insurancePercent,
     specialPercent: insuranceProductPercent,
     specialProductIds: insuranceProductIds,
     items: insuranceLineItems,
     fallbackSubtotal: subtotal,
   });
+  const insuranceAmount = includeInsurance ? insurancePreviewAmount : 0;
   const baseTotal = subtotal + shippingCost + insuranceAmount;
   const discountAmount = appliedCoupon
     ? appliedCoupon.discountType === "percent"
@@ -1568,7 +1556,7 @@ export default function Checkout() {
           `Itens:\n${itemsText}\n\n` +
           `Subtotal: ${formatCurrency(subtotal)}\n` +
           `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-          (includeInsurance ? `Seguro de envio: +${formatCurrency(insuranceAmount)}\n` : "") +
+          (includeInsurance ? `Garantia se der ruim no caminho: +${formatCurrency(insuranceAmount)}\n` : "") +
           (discountAmount > 0
             ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
             : "") +
@@ -1699,7 +1687,7 @@ export default function Checkout() {
         `*Produtos:*\n${itemsText}\n\n` +
         `*Subtotal:* ${formatCurrency(cardSubtotal)}\n` +
         `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-        (includeInsurance ? `*Seguro de Envio:* Sim (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
+        (includeInsurance ? `*Garantia de envio:* Sim (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
         (cardDiscountAmount > 0
           ? `*Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(cardDiscountAmount)}\n`
           : "") +
@@ -2434,11 +2422,8 @@ export default function Checkout() {
                 enabled={insuranceEnabled}
                 includeInsurance={includeInsurance}
                 onToggle={() => setIncludeInsurance((v) => !v)}
-                label={insuranceLabel}
-                offerSuffix={insuranceOfferSuffix}
-                extraDescription={insuranceDescription}
                 subtotal={subtotal}
-                insuranceAmount={insuranceAmount}
+                previewAmount={insurancePreviewAmount}
                 keepPercent={insuranceKeepPercent}
                 isLoggedIn={Boolean(getCustomerToken())}
               />
@@ -2597,7 +2582,7 @@ export default function Checkout() {
                 )}
                 {includeInsurance && (
                   <div className="flex justify-between text-primary font-medium">
-                    <span>{insuranceLabel} ({insuranceOfferSuffix})</span>
+                    <span>{CHECKOUT_INSURANCE_CUSTOMER_LABEL}</span>
                     <span>{formatCurrency(insuranceAmount)}</span>
                   </div>
                 )}
@@ -2887,7 +2872,7 @@ export default function Checkout() {
 
                       {includeInsurance && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">{insuranceLabel}</span>
+                          <span className="text-muted-foreground">{CHECKOUT_INSURANCE_CUSTOMER_LABEL}</span>
                           <span className="font-medium">+{formatCurrency(cardInsuranceAmount)}</span>
                         </div>
                       )}

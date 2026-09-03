@@ -8362,7 +8362,7 @@ function SupportTicketsPanel({
                   )}
                   {ticket.problemType === "extravio" && (
                     <p className="text-xs font-semibold text-amber-800 mt-1">
-                      Tipo: Não chegou / extravio{ticket.includeInsurance ? " · com seguro" : " · sem seguro (sem reenvio)"}
+                      Tipo: Não chegou, apreenderam ou veio quebrado{ticket.includeInsurance ? " · com garantia" : " · sem garantia (sem reenvio)"}
                     </p>
                   )}
                   {ticket.problemType === "other" && (
@@ -8387,7 +8387,7 @@ function SupportTicketsPanel({
                         variant="outline"
                         className="border-red-200 text-red-700 hover:bg-red-50"
                         disabled={ticket.problemType === "extravio" && !ticket.includeInsurance}
-                        title={ticket.problemType === "extravio" && !ticket.includeInsurance ? "Sem seguro: extravio não tem reenvio" : undefined}
+                        title={ticket.problemType === "extravio" && !ticket.includeInsurance ? "Sem garantia: não manda de novo" : undefined}
                         onClick={() => openReenviarModal(ticket)}
                       >
                         Reenviar

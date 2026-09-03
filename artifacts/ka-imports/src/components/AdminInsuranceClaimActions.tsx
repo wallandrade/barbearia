@@ -62,7 +62,7 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
   if (!order.includeInsurance && !isChild) {
     return (
       <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-900 space-y-2">
-        <p>Sem seguro: extravio não tem reenvio. Dá para estornar o produto em saldo.</p>
+        <p>Sem garantia: se perder, apreender ou quebrar, não mandamos de novo. Dá para devolver o valor do produto em crédito.</p>
         {error && <p className="text-red-700">{error}</p>}
         <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs bg-white" onClick={() => void run("choose_refund")}>
           {busy === "choose_refund" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Estornar produto"}

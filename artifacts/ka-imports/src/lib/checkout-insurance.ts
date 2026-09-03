@@ -12,9 +12,11 @@ export const DEFAULT_CHECKOUT_INSURANCE = {
   enabled: true,
   percent: 10,
   keepPercent: 10,
-  label: "Adicionar Seguro de Envio",
-  description: "Se chegar, parte volta em saldo. Se a 1ª se perder, você escolhe reenvio (1 vez) ou estorno do produto.",
+  label: "Quero garantia se der ruim no caminho",
+  description: "Vale se o correio perder, a Receita apreender ou chegar quebrado.",
 };
+
+export const CHECKOUT_INSURANCE_CUSTOMER_LABEL = DEFAULT_CHECKOUT_INSURANCE.label;
 
 export type InsuranceLineItem = {
   id: string;
