@@ -38,7 +38,7 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
-import { computeSplitInsuranceAmount, resolveCheckoutInsurance, computeInsuranceSnapshot } from "../lib/checkout-insurance";
+import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan, parseInsurancePlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 
 const router: IRouter = Router();
@@ -1155,6 +1155,7 @@ router.post("/orders", async (req, res) => {
     const computedInsurance = resolveCheckoutInsurance({
       ...insuranceConfig,
       includeInsurance: Boolean(includeInsurance),
+      insurancePlan: req.body?.insurancePlan,
       subtotal: computedSubtotal,
       items: orderProducts.map((p: { id: string; quantity?: number; price?: number }) => ({
         id: p.id,
@@ -1164,8 +1165,9 @@ router.post("/orders", async (req, res) => {
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const resolvedIncludeInsurance = computedInsurance.includeInsurance;
-    const insuranceSnapshot = computeInsuranceSnapshot({
-      includeInsurance: resolvedIncludeInsurance,
+    const resolvedInsurancePlan = computedInsurance.insurancePlan;
+    const insuranceSnapshot = computeInsuranceSnapshotForPlan({
+      plan: resolvedInsurancePlan,
       subtotal: computedSubtotal,
       insuranceAmount: computedInsuranceAmount,
       keepPercent: insuranceConfig.keepPercent,
@@ -1224,6 +1226,7 @@ router.post("/orders", async (req, res) => {
       products: orderProducts,
       shippingType,
       includeInsurance:  resolvedIncludeInsurance,
+      insurancePlan:     resolvedInsurancePlan === "none" ? null : resolvedInsurancePlan,
       subtotal:          String(computedSubtotal),
       shippingCost:      String(computedShippingCost),
       insuranceAmount:   String(computedInsuranceAmount),
@@ -1959,18 +1962,17 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       ? Math.max(0, Number(discountAmount) || 0)
       : Math.max(0, Number(current[0].discountAmount) || 0);
     const insuranceConfig = await getCheckoutInsuranceConfig();
-    const computedInsuranceAmount = current[0].includeInsurance
-      ? computeSplitInsuranceAmount({
-          includeInsurance: true,
-          defaultPercent: insuranceConfig.percent,
-          specialPercent: insuranceConfig.productPercent,
-          specialProductIds: insuranceConfig.productIds,
-          items: resolvedProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
-          fallbackSubtotal: computedSubtotal,
-        })
-      : 0;
-    const insuranceSnapshot = computeInsuranceSnapshot({
+    const storedPlan = parseInsurancePlan(current[0].insurancePlan, Boolean(current[0].includeInsurance));
+    const computedInsurance = resolveCheckoutInsurance({
+      ...insuranceConfig,
       includeInsurance: Boolean(current[0].includeInsurance),
+      insurancePlan: storedPlan,
+      subtotal: computedSubtotal,
+      items: resolvedProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+    });
+    const computedInsuranceAmount = computedInsurance.insuranceAmount;
+    const insuranceSnapshot = computeInsuranceSnapshotForPlan({
+      plan: computedInsurance.insurancePlan,
       subtotal: computedSubtotal,
       insuranceAmount: computedInsuranceAmount,
       keepPercent: insuranceConfig.keepPercent,
@@ -2355,6 +2357,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     products,
     shippingType:        o.shippingType,
     includeInsurance:    o.includeInsurance,
+    insurancePlan:       parseInsurancePlan(o.insurancePlan, Boolean(o.includeInsurance)),
     subtotal:            Number(o.subtotal),
     shippingCost:        Number(o.shippingCost),
     insuranceAmount:     Number(o.insuranceAmount),

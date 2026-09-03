@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { clearCustomerToken, fetchCustomerProfile, getCustomerAuthHeaders } from "@/lib/customer-auth";
 import { formatCurrency, formatDateBR, getActiveWhatsApp } from "@/lib/utils";
+import { parseInsurancePlan } from "@/lib/checkout-insurance";
 import { Copy, DollarSign, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, AlertCircle, MessageCircle, Truck, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,6 +36,7 @@ type CustomerOrder = {
   shippingCost?: number;
   insuranceAmount?: number;
   includeInsurance?: boolean;
+  insurancePlan?: string | null;
   insuranceClaimStatus?: string | null;
   insuranceCashbackAmount?: number;
   storeCreditUsed?: number | null;
@@ -1129,7 +1131,9 @@ export default function CustomerOrders() {
                                     <div className="pt-2 space-y-2">
                                       {(order.insuranceClaimStatus === "first_lost" || order.insuranceClaimStatus === "none") && (
                                         <p className="text-xs text-muted-foreground">
-                                          Se não chegou, apreenderam ou veio quebrado, escolha: mandar de novo (1 vez) ou devolver o valor do produto.
+                                          {parseInsurancePlan(order.insurancePlan, order.includeInsurance) === "full"
+                                            ? "Se não chegou, apreenderam ou veio quebrado, escolha: mandar de novo (1 vez) ou devolver o valor do produto."
+                                            : "Se sumiu ou roubaram: a gente manda de novo 1 vez. Receita ou quebrado o reduzido não cobre."}
                                         </p>
                                       )}
                                       {order.insuranceClaimStatus === "first_lost" && (
@@ -1163,6 +1167,7 @@ export default function CustomerOrders() {
                                           >
                                             Mandar de novo
                                           </button>
+                                          {parseInsurancePlan(order.insurancePlan, order.includeInsurance) === "full" && (
                                           <button
                                             type="button"
                                             disabled={claimBusy === order.id}
@@ -1201,6 +1206,7 @@ export default function CustomerOrders() {
                                           >
                                             Devolver o produto
                                           </button>
+                                          )}
                                         </div>
                                       )}
                                     </div>

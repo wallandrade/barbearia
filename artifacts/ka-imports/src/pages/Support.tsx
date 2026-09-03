@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, ImagePlus, Loader2, Search, ShieldAlert, ShoppingBag } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
+import { insuranceCoversProblem, parseInsurancePlan } from "@/lib/checkout-insurance";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -24,6 +25,7 @@ type SupportOrder = {
   createdAt: string;
   products: SupportOrderItem[];
   includeInsurance?: boolean;
+  insurancePlan?: string;
   insuranceClaimStatus?: string;
   parentOrderId?: string | null;
 };
@@ -38,7 +40,7 @@ type AddressChangePayload = {
   state: string;
 };
 
-type ProblemType = "missing_items" | "other" | "extravio" | "";
+type ProblemType = "missing_items" | "other" | "extravio" | "apreensao" | "";
 
 type MissingSelection = {
   id: string;
@@ -345,7 +347,7 @@ export default function Support() {
     setTicketId(null);
   };
 
-  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || problemType === "extravio" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
+  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || problemType === "extravio" || problemType === "apreensao" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
 
   return (
     <AppLayout>
@@ -460,11 +462,27 @@ export default function Support() {
                             : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                       >
-                        <p className="text-sm font-semibold text-slate-900">Não chegou, apreenderam ou veio quebrado</p>
+                        <p className="text-sm font-semibold text-slate-900">Sumiu no correio ou roubaram</p>
                         <p className="text-xs text-slate-500 mt-1">
-                          {selectedOrder?.includeInsurance
-                            ? "Com garantia: a gente manda de novo 1 vez ou devolve o valor do produto"
-                            : "Sem garantia: se isso acontecer, não mandamos de novo"}
+                          {insuranceCoversProblem(parseInsurancePlan(selectedOrder?.insurancePlan, selectedOrder?.includeInsurance), "extravio")
+                            ? "Com garantia: a gente manda de novo 1 vez"
+                            : "Sem cobertura: não mandamos de novo"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProblemType("apreensao")}
+                        className={`rounded-xl border px-4 py-4 text-left transition ${
+                          problemType === "apreensao"
+                            ? "border-amber-500 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">Apreenderam ou veio quebrado</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {insuranceCoversProblem(parseInsurancePlan(selectedOrder?.insurancePlan, selectedOrder?.includeInsurance), "apreensao")
+                            ? "Seguro completo: manda de novo 1 vez ou devolve o produto"
+                            : "Reduzido/sem garantia: não cobre Receita nem quebra"}
                         </p>
                       </button>
                       <button
@@ -551,10 +569,10 @@ export default function Support() {
                   </div>
                 )}
 
-                {showDetailsStep && problemType && (problemType === "other" || problemType === "extravio" || selectedMissingProducts.length > 0) && (
+                {showDetailsStep && problemType && (problemType === "other" || problemType === "extravio" || problemType === "apreensao" || selectedMissingProducts.length > 0) && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">
-                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" ? "4. Rastreio e o que aconteceu" : "4. Descreva o problema"}
+                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" || problemType === "apreensao" ? "4. Rastreio e o que aconteceu" : "4. Descreva o problema"}
                     </p>
                     <textarea
                       value={description}

@@ -30,6 +30,7 @@ export async function grantInsuranceCashbackIfEligible(order: {
   userId?: string | null;
   parentOrderId?: string | null;
   includeInsurance?: boolean | null;
+  insurancePlan?: string | null;
   insuranceCashbackAmount?: string | number | null;
   insuranceCashbackGranted?: boolean | null;
   insuranceClaimStatus?: string | null;
@@ -73,10 +74,11 @@ export async function markFirstLost(orderId: string) {
 export async function chooseInsuranceReship(input: {
   orderId: string;
   supportTicketId?: string | null;
+  problemType?: string | null;
 }) {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, input.orderId)).limit(1);
   if (!order) throw new InsuranceClaimError("NOT_FOUND", "Pedido nao encontrado.");
-  assertInsuranceExtravioReshipAllowed(order);
+  assertInsuranceExtravioReshipAllowed(order, input.problemType || "extravio");
 
   const child = await createReshipmentChildOrder({
     parentOrderId: order.id,

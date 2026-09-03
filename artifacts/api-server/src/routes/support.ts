@@ -6,6 +6,7 @@ import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { createReshipmentChildOrder } from "../lib/reshipments";
 import { chooseInsuranceReship, InsuranceClaimError, markFirstLost } from "../lib/insurance-claims";
+import { insuranceCoversProblem, parseInsurancePlan } from "../lib/checkout-insurance";
 
 const router: IRouter = Router();
 
@@ -156,16 +157,21 @@ async function loadOrderProductsByIds(orderIds: string[]): Promise<Map<string, A
   return map;
 }
 
-async function loadOrderInsuranceByIds(orderIds: string[]): Promise<Map<string, boolean>> {
+async function loadOrderInsuranceByIds(orderIds: string[]): Promise<Map<string, { includeInsurance: boolean; insurancePlan: string }>> {
   const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
-  const map = new Map<string, boolean>();
+  const map = new Map<string, { includeInsurance: boolean; insurancePlan: string }>();
   if (uniqueIds.length === 0) return map;
   const rows = await db
-    .select({ id: ordersTable.id, includeInsurance: ordersTable.includeInsurance })
+    .select({
+      id: ordersTable.id,
+      includeInsurance: ordersTable.includeInsurance,
+      insurancePlan: ordersTable.insurancePlan,
+    })
     .from(ordersTable)
     .where(inArray(ordersTable.id, uniqueIds));
   for (const row of rows) {
-    map.set(row.id, Boolean(row.includeInsurance));
+    const plan = parseInsurancePlan(row.insurancePlan, Boolean(row.includeInsurance));
+    map.set(row.id, { includeInsurance: plan !== "none", insurancePlan: plan });
   }
   return map;
 }
@@ -242,6 +248,7 @@ router.post("/support/orders-by-cpf", async (req, res) => {
         createdAt: ordersTable.createdAt,
         products: ordersTable.products,
         includeInsurance: ordersTable.includeInsurance,
+        insurancePlan: ordersTable.insurancePlan,
         insuranceClaimStatus: ordersTable.insuranceClaimStatus,
         parentOrderId: ordersTable.parentOrderId,
       })
@@ -268,7 +275,8 @@ router.post("/support/orders-by-cpf", async (req, res) => {
         quantity: Number(p?.quantity) || 0,
         price: Number(p?.price) || 0,
       })).filter((p) => p.id && p.quantity > 0),
-      includeInsurance: Boolean(row.includeInsurance),
+      includeInsurance: parseInsurancePlan(row.insurancePlan, Boolean(row.includeInsurance)) !== "none",
+      insurancePlan: parseInsurancePlan(row.insurancePlan, Boolean(row.includeInsurance)),
       insuranceClaimStatus: row.insuranceClaimStatus || "none",
       parentOrderId: row.parentOrderId ?? null,
     }));
@@ -291,7 +299,7 @@ router.post("/support/tickets", async (req, res) => {
     const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const imageData = req.body?.imageData == null ? null : String(req.body.imageData);
     const problemTypeRaw = String(req.body?.problemType ?? "").trim().toLowerCase();
-    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other" || problemTypeRaw === "extravio"
+    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other" || problemTypeRaw === "extravio" || problemTypeRaw === "apreensao"
       ? problemTypeRaw
       : "other";
     let addressChange: AddressChangePayload | null = null;
@@ -327,6 +335,7 @@ router.post("/support/tickets", async (req, res) => {
         createdAt: ordersTable.createdAt,
         products: ordersTable.products,
         includeInsurance: ordersTable.includeInsurance,
+        insurancePlan: ordersTable.insurancePlan,
       })
       .from(ordersTable)
       .where(
@@ -364,7 +373,10 @@ router.post("/support/tickets", async (req, res) => {
     }
 
     if (problemType === "extravio") {
-      if (!description) description = "Nao chegou, apreenderam ou veio quebrado.";
+      if (!description) description = "Sumiu no correio ou roubaram.";
+    }
+    if (problemType === "apreensao") {
+      if (!description) description = "Apreenderam ou veio quebrado.";
     }
 
     if (description.length < 10) {
@@ -396,7 +408,8 @@ router.post("/support/tickets", async (req, res) => {
       updatedAt: new Date(),
     });
 
-    if (problemType === "extravio") {
+    const orderPlan = parseInsurancePlan(order.insurancePlan, Boolean(order.includeInsurance));
+    if (insuranceCoversProblem(orderPlan, problemType)) {
       try {
         await markFirstLost(order.id);
       } catch (err) {
@@ -475,7 +488,8 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
           createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
           updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
           orderProducts: productsByOrder.get(row.orderId) || [],
-          includeInsurance: insuranceByOrder.get(row.orderId) === true,
+          includeInsurance: insuranceByOrder.get(row.orderId)?.includeInsurance === true,
+          insurancePlan: insuranceByOrder.get(row.orderId)?.insurancePlan ?? "none",
           problemType: row.problemType || null,
           missingProducts: parseMissingProductsJson(row.missingProductsJson),
         };
@@ -521,7 +535,8 @@ router.get("/admin/support-tickets", requireAdminAuth, async (req, res) => {
         createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
         updatedAt: row.updatedAt?.toISOString() ?? new Date().toISOString(),
         orderProducts: productsByOrder.get(row.orderId) || [],
-        includeInsurance: insuranceByOrder.get(row.orderId) === true,
+        includeInsurance: insuranceByOrder.get(row.orderId)?.includeInsurance === true,
+        insurancePlan: insuranceByOrder.get(row.orderId)?.insurancePlan ?? "none",
         problemType: row.problemType || null,
         missingProducts: parseMissingProductsJson(row.missingProductsJson),
       };
@@ -592,10 +607,11 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
 
     let child;
     try {
-      if (ticket.problemType === "extravio") {
+      if (ticket.problemType === "extravio" || ticket.problemType === "apreensao") {
         child = await chooseInsuranceReship({
           orderId: order.id,
           supportTicketId: ticket.id,
+          problemType: ticket.problemType,
         });
       } else {
         child = await createReshipmentChildOrder({

@@ -19,7 +19,7 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
-import { resolveCheckoutInsurance, computeInsuranceSnapshot } from "../lib/checkout-insurance";
+import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 import { applyStoreCreditToOrder } from "../lib/store-credits";
 
@@ -230,6 +230,7 @@ router.post("/checkout/pix", async (req, res) => {
 
     const {
       client, address, products, shippingType, includeInsurance,
+      insurancePlan,
       shippingCost,
       sellerCode,       couponCode,
       useAffiliateCredit,
@@ -243,6 +244,7 @@ router.post("/checkout/pix", async (req, res) => {
       products?: CheckoutProductInput[];
       shippingType?: string;
       includeInsurance?: boolean;
+      insurancePlan?: string;
       shippingCost?: number;
       insuranceAmount?: number;
       sellerCode?: string;
@@ -386,13 +388,15 @@ router.post("/checkout/pix", async (req, res) => {
     const computedInsurance = resolveCheckoutInsurance({
       ...insuranceConfig,
       includeInsurance: Boolean(includeInsurance),
+      insurancePlan,
       subtotal: computedSubtotal,
       items: orderProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const resolvedIncludeInsurance = computedInsurance.includeInsurance;
-    const insuranceSnapshot = computeInsuranceSnapshot({
-      includeInsurance: resolvedIncludeInsurance,
+    const resolvedInsurancePlan = computedInsurance.insurancePlan;
+    const insuranceSnapshot = computeInsuranceSnapshotForPlan({
+      plan: resolvedInsurancePlan,
       subtotal: computedSubtotal,
       insuranceAmount: computedInsuranceAmount,
       keepPercent: insuranceConfig.keepPercent,
@@ -463,6 +467,7 @@ router.post("/checkout/pix", async (req, res) => {
       products:            orderProducts,
       shippingType:        shippingType || "Frete",
       includeInsurance:    resolvedIncludeInsurance,
+      insurancePlan:       resolvedInsurancePlan === "none" ? null : resolvedInsurancePlan,
       subtotal:            String(computedSubtotal),
       shippingCost:        String(computedShippingCost),
       insuranceAmount:     String(computedInsuranceAmount),
@@ -638,6 +643,7 @@ router.post("/checkout/pix", async (req, res) => {
           orderId,
           shippingType:     shippingType || "normal",
           includeInsurance: String(resolvedIncludeInsurance),
+          insurancePlan: resolvedInsurancePlan,
         },
         callbackUrl,
       });

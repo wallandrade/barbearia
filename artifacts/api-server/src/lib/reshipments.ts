@@ -714,6 +714,7 @@ export async function createReshipmentChildOrder(params: {
     products: childProducts,
     shippingType: "Reenvio",
     includeInsurance: false,
+    insurancePlan: null,
     subtotal: String(billableSubtotal),
     shippingCost: "0.00",
     insuranceAmount: "0.00",

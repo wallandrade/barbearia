@@ -5,6 +5,7 @@ import {
   computeInsuranceAmount,
   computeSplitInsuranceAmount,
   computeInsuranceSnapshot,
+  computeInsuranceSnapshotForPlan,
   cashbackPercent,
   effectiveChargedPercent,
   DEFAULT_CHECKOUT_INSURANCE_PERCENT,
@@ -141,5 +142,55 @@ test("sem seguro snapshot zera", () => {
     keepPercent: 10,
   });
   assert.equal(snap.keepAmount, 0);
+  assert.equal(snap.cashbackAmount, 0);
+});
+
+test("legado includeInsurance true vira plano completo", () => {
+  const resolved = resolveCheckoutInsurance({
+    enabled: true,
+    percent: 54,
+    includeInsurance: true,
+    subtotal: 850,
+  });
+  assert.equal(resolved.insurancePlan, "full");
+  assert.equal(resolved.insuranceAmount, 459);
+});
+
+test("reduzido cobra 10% sem % especial", () => {
+  const resolved = resolveCheckoutInsurance({
+    enabled: true,
+    percent: 54,
+    reducedPercent: 10,
+    insurancePlan: "reduced",
+    subtotal: 850,
+    productPercent: 20,
+    productIds: ["x"],
+    items: [{ id: "x", quantity: 1, price: 850 }],
+  });
+  assert.equal(resolved.insurancePlan, "reduced");
+  assert.equal(resolved.includeInsurance, true);
+  assert.equal(resolved.insuranceAmount, 85);
+});
+
+test("reduzido desligado no admin zera", () => {
+  const resolved = resolveCheckoutInsurance({
+    enabled: true,
+    percent: 54,
+    reducedEnabled: false,
+    insurancePlan: "reduced",
+    subtotal: 850,
+  });
+  assert.equal(resolved.insurancePlan, "none");
+  assert.equal(resolved.insuranceAmount, 0);
+});
+
+test("snapshot do reduzido nao gera saldo", () => {
+  const snap = computeInsuranceSnapshotForPlan({
+    plan: "reduced",
+    subtotal: 850,
+    insuranceAmount: 85,
+    keepPercent: 10,
+  });
+  assert.equal(snap.keepAmount, 85);
   assert.equal(snap.cashbackAmount, 0);
 });

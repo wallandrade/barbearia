@@ -21,14 +21,16 @@ import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
 import { formatCurrency, getActiveWhatsApp, getSellerSlugFromCheckoutPath, setSellerContext } from "@/lib/utils";
 import {
   CHECKOUT_INSURANCE_SETTING_KEYS,
-  CHECKOUT_INSURANCE_CUSTOMER_LABEL,
   catalogProductId,
   computeCartInsuranceAmount,
+  computeInsuranceAmount,
+  insurancePlanCustomerLabel,
   parseInsuranceEnabled,
   parseInsurancePercent,
   parseInsuranceKeepPercent,
   parseInsuranceProductIds,
   parseOptionalInsurancePercent,
+  type InsurancePlan,
 } from "@/lib/checkout-insurance";
 import { CheckoutInsuranceOffer } from "@/components/CheckoutInsuranceOffer";
 
@@ -169,8 +171,12 @@ export default function Checkout() {
   const [shippingLoading, setShippingLoading] = useState(true);
   const [queuePreview, setQueuePreview] = useState<{ availableSlots: number; deadlineHours: number } | null>(null);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
-  const [includeInsurance, setIncludeInsurance] = useState(false);
+  const [insurancePlan, setInsurancePlan] = useState<InsurancePlan>("none");
   const [insuranceEnabled, setInsuranceEnabled] = useState(true);
+  const [insuranceFullEnabled, setInsuranceFullEnabled] = useState(true);
+  const [insuranceReducedEnabled, setInsuranceReducedEnabled] = useState(true);
+  const [insurancePercent, setInsurancePercent] = useState(10);
+  const [insuranceReducedPercent, setInsuranceReducedPercent] = useState(10);
   const [insurancePercent, setInsurancePercent] = useState(10);
   const [insuranceKeepPercent, setInsuranceKeepPercent] = useState(10);
   const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
@@ -562,7 +568,10 @@ export default function Checkout() {
           }
           if (data["checkout_mode"] === "fast") setCheckoutMode("fast");
           setInsuranceEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]));
+          setInsuranceFullEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.fullEnabled], true));
+          setInsuranceReducedEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.reducedEnabled], true));
           setInsurancePercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.percent]));
+          setInsuranceReducedPercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent] ?? "10"));
           setInsuranceKeepPercent(parseInsuranceKeepPercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]));
           setInsuranceProductPercent(parseOptionalInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]));
           setInsuranceProductIds(parseInsuranceProductIds(data[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]));
@@ -576,8 +585,10 @@ export default function Checkout() {
   }, []);
 
   useEffect(() => {
-    if (!insuranceEnabled) setIncludeInsurance(false);
-  }, [insuranceEnabled]);
+    if (!insuranceEnabled) setInsurancePlan("none");
+    else if (insurancePlan === "full" && !insuranceFullEnabled) setInsurancePlan("none");
+    else if (insurancePlan === "reduced" && !insuranceReducedEnabled) setInsurancePlan("none");
+  }, [insuranceEnabled, insuranceFullEnabled, insuranceReducedEnabled, insurancePlan]);
 
   // Smart quantity increase — respects order bump tiers
   const handleQtyIncrease = useCallback((item: (typeof items)[0]) => {
@@ -859,15 +870,21 @@ export default function Checkout() {
   const missingForFreeShipping = isFreeShippingEligible || freeShippingMinSubtotal == null
     ? 0
     : Math.max(0, freeShippingMinSubtotal - subtotal);
-  const insurancePreviewAmount = computeCartInsuranceAmount({
-    includeInsurance: insuranceEnabled,
+  const insuranceFullPreview = computeCartInsuranceAmount({
+    includeInsurance: insuranceEnabled && insuranceFullEnabled,
     defaultPercent: insurancePercent,
     specialPercent: insuranceProductPercent,
     specialProductIds: insuranceProductIds,
     items: insuranceLineItems,
     fallbackSubtotal: subtotal,
   });
-  const insuranceAmount = includeInsurance ? insurancePreviewAmount : 0;
+  const insuranceReducedPreview = computeInsuranceAmount(subtotal, insuranceEnabled && insuranceReducedEnabled, insuranceReducedPercent);
+  const includeInsurance = insurancePlan !== "none";
+  const insuranceAmount = insurancePlan === "full"
+    ? insuranceFullPreview
+    : insurancePlan === "reduced"
+      ? insuranceReducedPreview
+      : 0;
   const baseTotal = subtotal + shippingCost + insuranceAmount;
   const discountAmount = appliedCoupon
     ? appliedCoupon.discountType === "percent"
@@ -887,14 +904,18 @@ export default function Checkout() {
       ? eligibleProductSubtotalCard * (appliedCoupon.discountValue / 100)
       : Math.min(appliedCoupon.discountValue, eligibleProductSubtotalCard)
     : 0;
-  const cardInsuranceAmount = computeCartInsuranceAmount({
-    includeInsurance: includeInsurance && insuranceEnabled,
-    defaultPercent: insurancePercent,
-    specialPercent: insuranceProductPercent,
-    specialProductIds: insuranceProductIds,
-    items: cardInsuranceLineItems,
-    fallbackSubtotal: cardSubtotal,
-  });
+  const cardInsuranceAmount = insurancePlan === "full"
+    ? computeCartInsuranceAmount({
+      includeInsurance: insuranceEnabled && insuranceFullEnabled,
+      defaultPercent: insurancePercent,
+      specialPercent: insuranceProductPercent,
+      specialProductIds: insuranceProductIds,
+      items: cardInsuranceLineItems,
+      fallbackSubtotal: cardSubtotal,
+    })
+    : insurancePlan === "reduced"
+      ? computeInsuranceAmount(cardSubtotal, insuranceEnabled && insuranceReducedEnabled, insuranceReducedPercent)
+      : 0;
   const cardBaseTotal = cardSubtotal + shippingCost + cardInsuranceAmount;
   const cardNetTotal = Math.max(0, cardBaseTotal - cardDiscountAmount);
 
@@ -1232,6 +1253,7 @@ export default function Checkout() {
           products: productsPayload,
           shippingType:    selectedShipping?.name ?? "Frete",
           includeInsurance,
+          insurancePlan,
           subtotal,
           shippingCost,
           insuranceAmount,
@@ -1314,6 +1336,7 @@ export default function Checkout() {
             shippingType:    selectedShipping?.name ?? "Frete",
             shippingCost,
             includeInsurance,
+            insurancePlan,
             insuranceAmount,
             subtotal,
             discountAmount:  discountAmount > 0 ? discountAmount : 0,
@@ -1357,6 +1380,7 @@ export default function Checkout() {
           amount:       Number(result.remainingToPay ?? payableTotal),
           shippingType: selectedShipping?.name ?? "Frete",
           includeInsurance,
+          insurancePlan,
           orderId,
           orderNumber: result.orderNumber ?? null,
           orderRef,
@@ -1390,6 +1414,7 @@ export default function Checkout() {
           shippingType:    selectedShipping?.name ?? "Frete",
           shippingCost,
           includeInsurance,
+          insurancePlan,
           insuranceAmount,
           subtotal,
           discountAmount:  discountAmount > 0 ? discountAmount : 0,
@@ -1491,6 +1516,7 @@ export default function Checkout() {
         products: productsPayload,
         shippingType: selectedShipping?.name ?? "Frete",
         includeInsurance,
+        insurancePlan,
         subtotal,
         shippingCost,
         insuranceAmount,
@@ -1556,7 +1582,7 @@ export default function Checkout() {
           `Itens:\n${itemsText}\n\n` +
           `Subtotal: ${formatCurrency(subtotal)}\n` +
           `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-          (includeInsurance ? `Garantia se der ruim no caminho: +${formatCurrency(insuranceAmount)}\n` : "") +
+          (includeInsurance ? `${insurancePlanCustomerLabel(insurancePlan)}: +${formatCurrency(insuranceAmount)}\n` : "") +
           (discountAmount > 0
             ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
             : "") +
@@ -1646,6 +1672,7 @@ export default function Checkout() {
         products: cardProductsPayload,
         shippingType: selectedShipping?.name ?? "Frete",
         includeInsurance,
+        insurancePlan,
         subtotal: cardSubtotal,
         shippingCost,
         insuranceAmount: cardInsuranceAmount,
@@ -1687,7 +1714,7 @@ export default function Checkout() {
         `*Produtos:*\n${itemsText}\n\n` +
         `*Subtotal:* ${formatCurrency(cardSubtotal)}\n` +
         `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-        (includeInsurance ? `*Garantia de envio:* Sim (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
+        (includeInsurance ? `*Garantia:* ${insurancePlanCustomerLabel(insurancePlan)} (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
         (cardDiscountAmount > 0
           ? `*Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(cardDiscountAmount)}\n`
           : "") +
@@ -2420,10 +2447,13 @@ export default function Checkout() {
               {/* Insurance */}
               <CheckoutInsuranceOffer
                 enabled={insuranceEnabled}
-                includeInsurance={includeInsurance}
-                onToggle={() => setIncludeInsurance((v) => !v)}
+                fullEnabled={insuranceFullEnabled}
+                reducedEnabled={insuranceReducedEnabled}
+                plan={insurancePlan}
+                onChange={setInsurancePlan}
                 subtotal={subtotal}
-                previewAmount={insurancePreviewAmount}
+                fullAmount={insuranceFullPreview}
+                reducedAmount={insuranceReducedPreview}
                 keepPercent={insuranceKeepPercent}
                 isLoggedIn={Boolean(getCustomerToken())}
               />
@@ -2582,7 +2612,7 @@ export default function Checkout() {
                 )}
                 {includeInsurance && (
                   <div className="flex justify-between text-primary font-medium">
-                    <span>{CHECKOUT_INSURANCE_CUSTOMER_LABEL}</span>
+                    <span>{insurancePlanCustomerLabel(insurancePlan)}</span>
                     <span>{formatCurrency(insuranceAmount)}</span>
                   </div>
                 )}
@@ -2872,7 +2902,7 @@ export default function Checkout() {
 
                       {includeInsurance && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">{CHECKOUT_INSURANCE_CUSTOMER_LABEL}</span>
+                          <span className="text-muted-foreground">{insurancePlanCustomerLabel(insurancePlan)}</span>
                           <span className="font-medium">+{formatCurrency(cardInsuranceAmount)}</span>
                         </div>
                       )}

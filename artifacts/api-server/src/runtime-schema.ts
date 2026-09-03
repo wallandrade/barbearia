@@ -181,6 +181,7 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "insurance_reship_count", sql: "ALTER TABLE orders ADD COLUMN insurance_reship_count INT NULL" },
     { name: "insurance_cashback_granted", sql: "ALTER TABLE orders ADD COLUMN insurance_cashback_granted TINYINT(1) NOT NULL DEFAULT 0" },
     { name: "insurance_pix_refund_done", sql: "ALTER TABLE orders ADD COLUMN insurance_pix_refund_done TINYINT(1) NOT NULL DEFAULT 0" },
+    { name: "insurance_plan", sql: "ALTER TABLE orders ADD COLUMN insurance_plan VARCHAR(16) NULL" },
     { name: "store_credit_used", sql: "ALTER TABLE orders ADD COLUMN store_credit_used DECIMAL(10,2) NULL" },
   ];
 

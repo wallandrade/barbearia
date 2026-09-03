@@ -33,12 +33,16 @@ type Props = {
 
 export function CheckoutInsuranceCard({ settings, loading, products, onSave }: Props) {
   const enabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]);
+  const fullEnabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.fullEnabled], true);
+  const reducedEnabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.reducedEnabled], true);
   const savedPercent = parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.percent]);
+  const savedReducedPercent = parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent]);
   const savedKeepPercent = parseInsuranceKeepPercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]);
   const savedProductPercent = parseOptionalInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]);
   const savedProductIds = parseInsuranceProductIds(settings[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]);
   const [label, setLabel] = useState(parseInsuranceLabel(settings[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
   const [percent, setPercent] = useState(String(savedPercent));
+  const [reducedPercent, setReducedPercent] = useState(String(savedReducedPercent));
   const [keepPercent, setKeepPercent] = useState(String(savedKeepPercent));
   const [productPercent, setProductPercent] = useState(savedProductPercent == null ? "" : String(savedProductPercent));
   const [productIds, setProductIds] = useState<string[]>(savedProductIds);
@@ -48,6 +52,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
   const [dirty, setDirty] = useState({
     label: false,
     percent: false,
+    reducedPercent: false,
     keepPercent: false,
     description: false,
     productPercent: false,
@@ -57,6 +62,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
   useEffect(() => {
     if (!dirty.label) setLabel(parseInsuranceLabel(settings[CHECKOUT_INSURANCE_SETTING_KEYS.label]));
     if (!dirty.percent) setPercent(String(parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.percent])));
+    if (!dirty.reducedPercent) setReducedPercent(String(parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent])));
     if (!dirty.keepPercent) setKeepPercent(String(parseInsuranceKeepPercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent])));
     if (!dirty.productPercent) {
       const next = parseOptionalInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]);
@@ -66,17 +72,19 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
     if (!dirty.description) {
       setDescription(parseInsuranceDescription(settings[CHECKOUT_INSURANCE_SETTING_KEYS.description]));
     }
-  }, [settings, dirty.label, dirty.percent, dirty.keepPercent, dirty.productPercent, dirty.productIds, dirty.description]);
+  }, [settings, dirty.label, dirty.percent, dirty.reducedPercent, dirty.keepPercent, dirty.productPercent, dirty.productIds, dirty.description]);
 
   const commitAll = async () => {
     const nextLabel = parseInsuranceLabel(label);
     const nextPercent = parseInsurancePercent(percent);
+    const nextReducedPercent = parseInsurancePercent(reducedPercent);
     const nextKeepPercent = parseInsuranceKeepPercent(keepPercent);
     const nextProductPercent = parseOptionalInsurancePercent(productPercent);
     const nextProductIds = [...new Set(productIds.map((id) => id.trim()).filter(Boolean))];
     const nextDescription = parseInsuranceDescription(description);
     setLabel(nextLabel);
     setPercent(String(nextPercent));
+    setReducedPercent(String(nextReducedPercent));
     setKeepPercent(String(nextKeepPercent));
     setProductPercent(nextProductPercent == null ? "" : String(nextProductPercent));
     setProductIds(nextProductIds);
@@ -87,6 +95,9 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
     }
     if (nextPercent !== savedPercent) {
       await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.percent, String(nextPercent)));
+    }
+    if (nextReducedPercent !== savedReducedPercent) {
+      await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent, String(nextReducedPercent)));
     }
     if (nextKeepPercent !== savedKeepPercent) {
       await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent, String(nextKeepPercent)));
@@ -105,7 +116,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
     if (nextDescription !== parseInsuranceDescription(settings[CHECKOUT_INSURANCE_SETTING_KEYS.description])) {
       await Promise.resolve(onSave(CHECKOUT_INSURANCE_SETTING_KEYS.description, nextDescription));
     }
-    setDirty({ label: false, percent: false, keepPercent: false, description: false, productPercent: false, productIds: false });
+    setDirty({ label: false, percent: false, reducedPercent: false, keepPercent: false, description: false, productPercent: false, productIds: false });
   };
 
   const previewPercent = parseInsurancePercent(percent);
@@ -114,6 +125,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
   const savingTexts = !!(
     loading[CHECKOUT_INSURANCE_SETTING_KEYS.label]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.percent]
+    || loading[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.description]
     || loading[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]
@@ -129,7 +141,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
             Seguro de Envio
           </h3>
           <p className="text-xs text-muted-foreground">
-            % cobrado (só você vê). No checkout o cliente lê um texto simples, em reais, com exemplos (perder, apreender, quebrar). Sem garantia = sem reenvio nesses casos.
+            % cobrado (só você vê). No checkout o cliente escolhe completo ou reduzido. Sem garantia = sem reenvio.
           </p>
         </div>
         <button
@@ -155,6 +167,27 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           : "Desativado — o checkbox de seguro some do checkout."}
       </div>
 
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 ${enabled ? "" : "opacity-60"}`}>
+        <button
+          type="button"
+          disabled={!enabled}
+          onClick={() => onSave(CHECKOUT_INSURANCE_SETTING_KEYS.fullEnabled, fullEnabled ? "0" : "1")}
+          className={`rounded-xl border px-3 py-2 text-left text-sm ${fullEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-border bg-muted/30 text-muted-foreground"}`}
+        >
+          <p className="font-semibold">Seguro completo</p>
+          <p className="text-xs mt-0.5">{fullEnabled ? "Aparece no checkout" : "Escondido no checkout"}</p>
+        </button>
+        <button
+          type="button"
+          disabled={!enabled}
+          onClick={() => onSave(CHECKOUT_INSURANCE_SETTING_KEYS.reducedEnabled, reducedEnabled ? "0" : "1")}
+          className={`rounded-xl border px-3 py-2 text-left text-sm ${reducedEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-border bg-muted/30 text-muted-foreground"}`}
+        >
+          <p className="font-semibold">Seguro reduzido</p>
+          <p className="text-xs mt-0.5">{reducedEnabled ? "Aparece no checkout (só extravio/roubo)" : "Escondido no checkout"}</p>
+        </button>
+      </div>
+
       <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${enabled ? "" : "opacity-60"}`}>
         <div className="sm:col-span-2">
           <label className="text-xs font-medium text-muted-foreground block mb-1">Nome interno (o checkout usa um texto simples fixo)</label>
@@ -171,7 +204,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">% padrão da loja</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">% do seguro completo</label>
           <input
             type="number"
             min={0}
@@ -183,6 +216,22 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
               setPercent(e.target.value);
             }}
             disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.percent]}
+            className="w-full h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">% do seguro reduzido</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={reducedPercent}
+            onChange={(e) => {
+              setDirty((d) => ({ ...d, reducedPercent: true }));
+              setReducedPercent(e.target.value);
+            }}
+            disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent]}
             className="w-full h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
           />
         </div>

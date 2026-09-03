@@ -3,6 +3,7 @@ import { inArray } from "drizzle-orm";
 import {
   CHECKOUT_INSURANCE_SETTING_KEYS,
   DEFAULT_CHECKOUT_INSURANCE_KEEP_PERCENT,
+  DEFAULT_CHECKOUT_INSURANCE_REDUCED_PERCENT,
   parseInsuranceEnabledSetting,
   parseInsurancePercentSetting,
   parseInsuranceProductIds,
@@ -20,6 +21,9 @@ export async function getCheckoutInsuranceConfig(): Promise<CheckoutInsuranceCon
       CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent,
       CHECKOUT_INSURANCE_SETTING_KEYS.productPercent,
       CHECKOUT_INSURANCE_SETTING_KEYS.productIds,
+      CHECKOUT_INSURANCE_SETTING_KEYS.fullEnabled,
+      CHECKOUT_INSURANCE_SETTING_KEYS.reducedEnabled,
+      CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent,
     ]));
 
   const map = Object.fromEntries(rows.map((row) => [row.key, row.value]));
@@ -32,5 +36,11 @@ export async function getCheckoutInsuranceConfig(): Promise<CheckoutInsuranceCon
     ),
     productPercent: parseOptionalInsurancePercentSetting(map[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]),
     productIds: parseInsuranceProductIds(map[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]),
+    fullEnabled: parseInsuranceEnabledSetting(map[CHECKOUT_INSURANCE_SETTING_KEYS.fullEnabled], true),
+    reducedEnabled: parseInsuranceEnabledSetting(map[CHECKOUT_INSURANCE_SETTING_KEYS.reducedEnabled], true),
+    reducedPercent: parseInsurancePercentSetting(
+      map[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent],
+      DEFAULT_CHECKOUT_INSURANCE_REDUCED_PERCENT,
+    ),
   };
 }

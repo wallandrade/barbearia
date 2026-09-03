@@ -30,6 +30,7 @@ export const ordersTable = mysqlTable("orders", {
   products: json("products").notNull(),
   shippingType: varchar("shipping_type", { length: 50 }).notNull(),
   includeInsurance: boolean("include_insurance").notNull().default(false),
+  insurancePlan: varchar("insurance_plan", { length: 16 }),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
   shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 }).notNull(),
   insuranceAmount: decimal("insurance_amount", { precision: 10, scale: 2 }).notNull(),

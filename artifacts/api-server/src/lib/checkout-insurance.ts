@@ -6,10 +6,16 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   description: "checkout_insurance_description",
   productPercent: "checkout_insurance_product_percent",
   productIds: "checkout_insurance_product_ids",
+  fullEnabled: "checkout_insurance_full_enabled",
+  reducedEnabled: "checkout_insurance_reduced_enabled",
+  reducedPercent: "checkout_insurance_reduced_percent",
 } as const;
 
 export const DEFAULT_CHECKOUT_INSURANCE_PERCENT = 10;
 export const DEFAULT_CHECKOUT_INSURANCE_KEEP_PERCENT = 10;
+export const DEFAULT_CHECKOUT_INSURANCE_REDUCED_PERCENT = 10;
+
+export type InsurancePlan = "none" | "full" | "reduced";
 
 export type CheckoutInsuranceConfig = {
   enabled: boolean;
@@ -17,6 +23,9 @@ export type CheckoutInsuranceConfig = {
   keepPercent: number;
   productPercent: number | null;
   productIds: string[];
+  fullEnabled: boolean;
+  reducedEnabled: boolean;
+  reducedPercent: number;
 };
 
 export type InsuranceSnapshot = {
@@ -133,27 +142,92 @@ export function computeSplitInsuranceAmount(input: {
   return Math.round(amount * 100) / 100;
 }
 
+export function parseInsurancePlan(raw: unknown, includeInsurance?: boolean | null): InsurancePlan {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "full" || s === "completo") return "full";
+  if (s === "reduced" || s === "reduzido") return "reduced";
+  if (s === "none" || s === "0" || s === "false" || s === "off") return "none";
+  if (includeInsurance === true) return "full";
+  return "none";
+}
+
+export function insuranceHasCoverage(plan: InsurancePlan): boolean {
+  return plan === "full" || plan === "reduced";
+}
+
+export function insuranceCoversProblem(plan: InsurancePlan, problemType: string | null | undefined): boolean {
+  const type = String(problemType || "").trim().toLowerCase();
+  if (plan === "full") return type === "extravio" || type === "apreensao";
+  if (plan === "reduced") return type === "extravio";
+  return false;
+}
+
+export function computeInsuranceSnapshotForPlan(input: {
+  plan: InsurancePlan;
+  subtotal: number;
+  insuranceAmount: number;
+  keepPercent: number;
+}): InsuranceSnapshot {
+  if (input.plan === "full") {
+    return computeInsuranceSnapshot({
+      includeInsurance: true,
+      subtotal: input.subtotal,
+      insuranceAmount: input.insuranceAmount,
+      keepPercent: input.keepPercent,
+    });
+  }
+  if (input.plan === "reduced") {
+    const insurance = Math.max(0, roundMoney(input.insuranceAmount));
+    return { keepAmount: insurance, cashbackAmount: 0 };
+  }
+  return { keepAmount: 0, cashbackAmount: 0 };
+}
+
 export function resolveCheckoutInsurance(input: {
   enabled: boolean;
   percent: number;
   productPercent?: number | null;
   productIds?: string[];
-  includeInsurance: boolean;
+  fullEnabled?: boolean;
+  reducedEnabled?: boolean;
+  reducedPercent?: number;
+  includeInsurance?: boolean;
+  insurancePlan?: unknown;
   subtotal: number;
   items?: InsuranceLineItem[];
-}): { includeInsurance: boolean; insuranceAmount: number } {
-  const includeInsurance = Boolean(input.includeInsurance) && input.enabled;
-  return {
-    includeInsurance,
-    insuranceAmount: computeSplitInsuranceAmount({
-      includeInsurance,
-      defaultPercent: input.percent,
-      specialPercent: input.productPercent ?? null,
-      specialProductIds: input.productIds ?? [],
-      items: input.items ?? [],
-      fallbackSubtotal: input.subtotal,
-    }),
-  };
+}): { includeInsurance: boolean; insuranceAmount: number; insurancePlan: InsurancePlan } {
+  if (!input.enabled) {
+    return { includeInsurance: false, insuranceAmount: 0, insurancePlan: "none" };
+  }
+  const fullEnabled = input.fullEnabled !== false;
+  const reducedEnabled = input.reducedEnabled !== false;
+  let plan = parseInsurancePlan(input.insurancePlan, input.includeInsurance);
+  if (plan === "full" && !fullEnabled) plan = "none";
+  if (plan === "reduced" && !reducedEnabled) plan = "none";
+
+  if (plan === "reduced") {
+    const reducedPercent = input.reducedPercent ?? DEFAULT_CHECKOUT_INSURANCE_REDUCED_PERCENT;
+    return {
+      includeInsurance: true,
+      insurancePlan: "reduced",
+      insuranceAmount: computeInsuranceAmount(input.subtotal, true, reducedPercent),
+    };
+  }
+  if (plan === "full") {
+    return {
+      includeInsurance: true,
+      insurancePlan: "full",
+      insuranceAmount: computeSplitInsuranceAmount({
+        includeInsurance: true,
+        defaultPercent: input.percent,
+        specialPercent: input.productPercent ?? null,
+        specialProductIds: input.productIds ?? [],
+        items: input.items ?? [],
+        fallbackSubtotal: input.subtotal,
+      }),
+    };
+  }
+  return { includeInsurance: false, insuranceAmount: 0, insurancePlan: "none" };
 }
 
 function uniqueIds(values: unknown[]): string[] {

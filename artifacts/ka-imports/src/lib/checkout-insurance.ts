@@ -6,17 +6,24 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   description: "checkout_insurance_description",
   productPercent: "checkout_insurance_product_percent",
   productIds: "checkout_insurance_product_ids",
+  fullEnabled: "checkout_insurance_full_enabled",
+  reducedEnabled: "checkout_insurance_reduced_enabled",
+  reducedPercent: "checkout_insurance_reduced_percent",
 } as const;
 
 export const DEFAULT_CHECKOUT_INSURANCE = {
   enabled: true,
   percent: 10,
   keepPercent: 10,
+  reducedPercent: 10,
   label: "Quero garantia se der ruim no caminho",
   description: "Vale se o correio perder, a Receita apreender ou chegar quebrado.",
 };
 
 export const CHECKOUT_INSURANCE_CUSTOMER_LABEL = DEFAULT_CHECKOUT_INSURANCE.label;
+export const CHECKOUT_INSURANCE_REDUCED_LABEL = "Quero garantia só se sumir ou roubarem";
+
+export type InsurancePlan = "none" | "full" | "reduced";
 
 export type InsuranceLineItem = {
   id: string;
@@ -175,4 +182,26 @@ export function computeCartInsuranceAmount(input: {
 
 export function catalogProductId(item: { id: string; bumpProductId?: string }): string {
   return String(item.bumpProductId ?? item.id ?? "").trim();
+}
+
+export function parseInsurancePlan(raw: unknown, includeInsurance?: boolean | null): InsurancePlan {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "full" || s === "completo") return "full";
+  if (s === "reduced" || s === "reduzido") return "reduced";
+  if (s === "none" || s === "0" || s === "false" || s === "off") return "none";
+  if (includeInsurance === true) return "full";
+  return "none";
+}
+
+export function insurancePlanCustomerLabel(plan: InsurancePlan): string {
+  if (plan === "reduced") return CHECKOUT_INSURANCE_REDUCED_LABEL;
+  if (plan === "full") return CHECKOUT_INSURANCE_CUSTOMER_LABEL;
+  return "";
+}
+
+export function insuranceCoversProblem(plan: InsurancePlan, problemType: string | null | undefined): boolean {
+  const type = String(problemType || "").trim().toLowerCase();
+  if (plan === "full") return type === "extravio" || type === "apreensao";
+  if (plan === "reduced") return type === "extravio";
+  return false;
 }

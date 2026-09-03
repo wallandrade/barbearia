@@ -16,6 +16,7 @@ type Props = {
     id: string;
     parentOrderId?: string | null;
     includeInsurance?: boolean;
+    insurancePlan?: string | null;
     insuranceAmount?: number;
     insuranceKeepAmount?: number;
     insuranceCashbackAmount?: number;
@@ -45,6 +46,9 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
   const [error, setError] = useState("");
   const status = String(order.insuranceClaimStatus || "none");
   const isChild = Boolean(order.parentOrderId);
+  const plan = String(order.insurancePlan || (order.includeInsurance ? "full" : "none"));
+  const isFull = plan === "full";
+  const isReduced = plan === "reduced";
 
   const run = async (action: string) => {
     setBusy(action);
@@ -78,7 +82,7 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
       </p>
       <p className="text-xs text-emerald-900">
         Cobrado {formatCurrency(Number(order.insuranceAmount || 0))}
-        {Number(order.insuranceCashbackAmount) > 0 ? ` · saldo se chegar ${formatCurrency(Number(order.insuranceCashbackAmount))}` : ""}
+        {isReduced ? " · reduzido (só extravio/roubo)" : isFull && Number(order.insuranceCashbackAmount) > 0 ? ` · saldo se chegar ${formatCurrency(Number(order.insuranceCashbackAmount))}` : ""}
         {" · "}status: {status}
         {order.insuranceCashbackGranted ? " · cashback já creditado" : ""}
       </p>
@@ -94,9 +98,11 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
             <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs" onClick={() => void run("choose_reship")}>
               {busy === "choose_reship" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reenviar (1x)"}
             </button>
+            {isFull && (
             <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs" onClick={() => void run("choose_refund")}>
               {busy === "choose_refund" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Estornar produto"}
             </button>
+            )}
           </>
         )}
         {(isChild || status === "reship_sent" || status === "reship_pending") && (
@@ -104,7 +110,7 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
             Já reenviou 1 vez. A garantia acabou: não manda a terceira e não devolve o produto.
           </p>
         )}
-        {!isChild && !order.insuranceCashbackGranted && status === "none" && (
+        {!isChild && isFull && !order.insuranceCashbackGranted && status === "none" && (
           <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs" onClick={() => void run("grant_cashback")}>
             {busy === "grant_cashback" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Creditar cashback"}
           </button>

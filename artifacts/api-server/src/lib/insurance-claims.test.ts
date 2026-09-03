@@ -116,6 +116,8 @@ test("sinistro aberto nao credita", () => {
 test("depois do reenvio nao estorna o produto", () => {
   assert.throws(
     () => assertInsuranceProductRefundAllowed({
+      includeInsurance: true,
+      insurancePlan: "full",
       insuranceClaimStatus: "reship_sent",
       insuranceReshipCount: 1,
     }),
@@ -125,7 +127,39 @@ test("depois do reenvio nao estorna o produto", () => {
 
 test("1a perda ainda pode estornar o produto", () => {
   assert.doesNotThrow(() => assertInsuranceProductRefundAllowed({
+    includeInsurance: true,
+    insurancePlan: "full",
     insuranceClaimStatus: "first_lost",
     insuranceReshipCount: 0,
   }));
+});
+
+test("reduzido nao estorna produto", () => {
+  assert.throws(
+    () => assertInsuranceProductRefundAllowed({
+      includeInsurance: true,
+      insurancePlan: "reduced",
+      insuranceClaimStatus: "first_lost",
+    }),
+    (err: unknown) => err instanceof InsuranceClaimError && err.code === "REDUCED_NO_REFUND",
+  );
+});
+
+test("reduzido nao reenvia apreensao ou quebrado", () => {
+  assert.throws(
+    () => assertInsuranceExtravioReshipAllowed({
+      includeInsurance: true,
+      insurancePlan: "reduced",
+    }, "apreensao"),
+    (err: unknown) => err instanceof InsuranceClaimError && err.code === "NO_COVERAGE",
+  );
+});
+
+test("reduzido reenvia extravio", () => {
+  assert.doesNotThrow(() => assertInsuranceExtravioReshipAllowed({
+    includeInsurance: true,
+    insurancePlan: "reduced",
+    insuranceClaimStatus: "first_lost",
+    insuranceReshipCount: 0,
+  }, "extravio"));
 });

@@ -583,7 +583,7 @@ import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
-import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount } from "@/lib/checkout-insurance";
+import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insuranceCoversProblem, insurancePlanCustomerLabel } from "@/lib/checkout-insurance";
 
 
 
@@ -1228,7 +1228,8 @@ interface SupportTicketRecord {
   updatedAt: string;
   orderProducts?: Array<{ id: string; name: string; quantity: number; price: number }>;
   includeInsurance?: boolean;
-  problemType?: "missing_items" | "other" | string | null;
+  insurancePlan?: string | null;
+  problemType?: "missing_items" | "other" | "extravio" | "apreensao" | string | null;
   missingProducts?: Array<{ id: string; name: string; quantity: number }>;
 }
 
@@ -8362,7 +8363,12 @@ function SupportTicketsPanel({
                   )}
                   {ticket.problemType === "extravio" && (
                     <p className="text-xs font-semibold text-amber-800 mt-1">
-                      Tipo: Não chegou, apreenderam ou veio quebrado{ticket.includeInsurance ? " · com garantia" : " · sem garantia (sem reenvio)"}
+                      Tipo: Sumiu ou roubaram{ticket.includeInsurance ? ` · ${insurancePlanCustomerLabel(parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance)) || "com garantia"}` : " · sem garantia (sem reenvio)"}
+                    </p>
+                  )}
+                  {ticket.problemType === "apreensao" && (
+                    <p className="text-xs font-semibold text-amber-800 mt-1">
+                      Tipo: Apreenderam ou veio quebrado{parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance) === "full" ? " · seguro completo" : " · sem cobertura de reenvio"}
                     </p>
                   )}
                   {ticket.problemType === "other" && (
@@ -8386,8 +8392,8 @@ function SupportTicketsPanel({
                         size="sm"
                         variant="outline"
                         className="border-red-200 text-red-700 hover:bg-red-50"
-                        disabled={ticket.problemType === "extravio" && !ticket.includeInsurance}
-                        title={ticket.problemType === "extravio" && !ticket.includeInsurance ? "Sem garantia: não manda de novo" : undefined}
+                        disabled={(ticket.problemType === "extravio" || ticket.problemType === "apreensao") && !insuranceCoversProblem(parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance), ticket.problemType)}
+                        title={(ticket.problemType === "extravio" || ticket.problemType === "apreensao") && !insuranceCoversProblem(parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance), ticket.problemType) ? "Sem cobertura: não manda de novo" : undefined}
                         onClick={() => openReenviarModal(ticket)}
                       >
                         Reenviar
@@ -12597,12 +12603,15 @@ function OrdersPanel({
                   <div className="mt-3 text-sm space-y-0.5 text-muted-foreground">
                     <p>Subtotal: {formatCurrency(Number(order.subtotal))}</p>
                     <p>Frete: {formatCurrency(Number(order.shippingCost))}</p>
-                    {order.includeInsurance && <p>Seguro: {formatCurrency(Number(order.insuranceAmount))}</p>}
+                    {order.includeInsurance && (
+                      <p>Seguro: {formatCurrency(Number(order.insuranceAmount))}{order.insurancePlan ? ` (${order.insurancePlan === "reduced" ? "reduzido" : "completo"})` : ""}</p>
+                    )}
                     <AdminInsuranceClaimActions
                       order={{
                         id: order.id,
                         parentOrderId: order.parentOrderId,
                         includeInsurance: order.includeInsurance,
+                        insurancePlan: order.insurancePlan,
                         insuranceAmount: Number(order.insuranceAmount || 0),
                         insuranceKeepAmount: Number(order.insuranceKeepAmount || 0),
                         insuranceCashbackAmount: Number(order.insuranceCashbackAmount || 0),
