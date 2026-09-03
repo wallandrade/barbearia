@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Loader2, Lock, Mail, User } from "lucide-react";
+import { Loader2, Lock, Mail, User, IdCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saveCustomerToken } from "@/lib/customer-auth";
 import { getStoredReferralCode } from "@/lib/affiliate";
@@ -21,6 +21,7 @@ export default function CustomerLogin() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [document, setDocument] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -41,8 +42,8 @@ export default function CustomerLogin() {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const affiliateCode = getStoredReferralCode();
       const payload = mode === "login"
-        ? { email: email.trim(), password }
-        : { name: name.trim(), email: email.trim(), password, affiliateCode: affiliateCode || undefined };
+        ? { email: email.trim(), password, document: document.trim() || undefined }
+        : { name: name.trim(), email: email.trim(), password, document: document.trim() || undefined, affiliateCode: affiliateCode || undefined };
 
       const res = await fetch(`${BASE}${endpoint}`, {
         method: "POST",
@@ -129,6 +130,25 @@ export default function CustomerLogin() {
                 className="w-full h-11 pl-9 pr-3 rounded-xl border border-input bg-white text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">CPF da compra (opcional)</label>
+            <div className="relative">
+              <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={document}
+                onChange={(e) => setDocument(e.target.value)}
+                placeholder="000.000.000-00"
+                autoComplete="off"
+                className="w-full h-11 pl-9 pr-3 rounded-xl border border-input bg-white text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Se comprou sem conta, use o mesmo e-mail ou o CPF da compra para puxar pedidos e o saldo da garantia.
+            </p>
           </div>
 
           <div className="space-y-1.5">

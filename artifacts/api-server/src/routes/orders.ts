@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, inventoryMinasMovementsTable, motoboyBookingsTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, inventoryMinasMovementsTable, motoboyBookingsTable, customerUsersTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
-import { desc, and, gte, lte, eq, inArray, isNull, sql } from "drizzle-orm";
+import { desc, and, gte, lte, eq, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth, verifyCurrentAdminPassword } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -38,6 +38,7 @@ import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShi
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
+import { claimGuestOrdersForCustomer } from "../lib/claim-guest-orders";
 import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan, parseInsurancePlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 
@@ -948,18 +949,21 @@ function pickDeterministicTrackingMatch(
 }
 
 async function attachLegacyGuestOrdersToCustomer(userId: string, email: string): Promise<void> {
-  const normalizedEmail = String(email || "").trim().toLowerCase();
-  if (!userId || !normalizedEmail) return;
-
-  await db
-    .update(ordersTable)
-    .set({ userId })
-    .where(
-      and(
-        isNull(ordersTable.userId),
-        sql`lower(trim(${ordersTable.clientEmail})) = ${normalizedEmail}`,
-      ),
-    );
+  if (!userId) return;
+  try {
+    const [user] = await db
+      .select({ document: customerUsersTable.document })
+      .from(customerUsersTable)
+      .where(eq(customerUsersTable.id, userId))
+      .limit(1);
+    await claimGuestOrdersForCustomer({
+      userId,
+      email,
+      document: user?.document,
+    });
+  } catch (err) {
+    console.warn("[orders] claim guest orders failed", userId, err);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ export const customerUsersTable = mysqlTable("customer_users", {
   id: varchar("id", { length: 255 }).primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).notNull().unique(),
+  document: varchar("document", { length: 32 }),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   salt: varchar("salt", { length: 255 }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),

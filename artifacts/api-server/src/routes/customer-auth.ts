@@ -12,15 +12,17 @@ import {
 } from "../middlewares/customer-auth";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
+import { claimGuestOrdersForCustomer, digitsOnlyDocument, isUsableCustomerDocument } from "../lib/claim-guest-orders";
 
 const router: IRouter = Router();
 
 router.post("/auth/register", async (req, res) => {
-  const { name, email, password, affiliateCode } = req.body as {
+  const { name, email, password, affiliateCode, document } = req.body as {
     name?: string;
     email?: string;
     password?: string;
     affiliateCode?: string;
+    document?: string;
   };
 
   if (!name || !email || !password) {
@@ -34,6 +36,7 @@ router.post("/auth/register", async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+  const normalizedDocument = isUsableCustomerDocument(document) ? digitsOnlyDocument(document) : null;
 
   try {
     const existing = await db
@@ -54,6 +57,7 @@ router.post("/auth/register", async (req, res) => {
       id,
       name: name.trim(),
       email: normalizedEmail,
+      document: normalizedDocument,
       passwordHash: hashPassword(password, salt),
       salt,
       updatedAt: new Date(),
@@ -69,6 +73,16 @@ router.post("/auth/register", async (req, res) => {
           referredEmail: normalizedEmail,
         });
       }
+    }
+
+    try {
+      await claimGuestOrdersForCustomer({
+        userId: id,
+        email: normalizedEmail,
+        document: normalizedDocument,
+      });
+    } catch (err) {
+      console.warn("[CustomerAuth] claim guest orders after register failed", id, err);
     }
 
     const session = createCustomerSession({ userId: id, email: normalizedEmail, name: name.trim() });
@@ -89,9 +103,10 @@ router.post("/auth/register", async (req, res) => {
 });
 
 router.post("/auth/login", async (req, res) => {
-  const { email, password } = req.body as {
+  const { email, password, document } = req.body as {
     email?: string;
     password?: string;
+    document?: string;
   };
 
   if (!email || !password) {
@@ -100,6 +115,7 @@ router.post("/auth/login", async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+  const loginDocument = isUsableCustomerDocument(document) ? digitsOnlyDocument(document) : null;
 
   try {
     const users = await db
@@ -118,6 +134,25 @@ router.post("/auth/login", async (req, res) => {
     if (candidateHash !== user.passwordHash) {
       res.status(401).json({ error: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos." });
       return;
+    }
+
+    let storedDocument = String(user.document || "").replace(/\D/g, "") || null;
+    if (loginDocument && !storedDocument) {
+      await db
+        .update(customerUsersTable)
+        .set({ document: loginDocument, updatedAt: new Date() })
+        .where(eq(customerUsersTable.id, user.id));
+      storedDocument = loginDocument;
+    }
+
+    try {
+      await claimGuestOrdersForCustomer({
+        userId: user.id,
+        email: user.email,
+        document: storedDocument || loginDocument,
+      });
+    } catch (err) {
+      console.warn("[CustomerAuth] claim guest orders after login failed", user.id, err);
     }
 
     const session = createCustomerSession({

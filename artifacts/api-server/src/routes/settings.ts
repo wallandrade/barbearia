@@ -25,6 +25,9 @@ const PUBLIC_KEYS  = [
 ];
 const ALLOWED_KEYS = [
   ...PUBLIC_KEYS,
+  "motoboy_distance_enabled",
+  "motoboy_origin_cep",
+  "motoboy_distance_config",
   "site_password", "payment_password",
   // Taxas do gateway permitidas
   "gateway_fee_percent",

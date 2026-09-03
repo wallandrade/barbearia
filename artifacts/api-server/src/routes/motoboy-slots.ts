@@ -8,6 +8,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 import { isMotoboySlotInPast, timeToMinutes } from "../lib/motoboy-slot-time";
+import { isMotoboyDistanceSlotId } from "../lib/motoboy-distance";
 
 const router: IRouter = Router();
 
@@ -23,10 +24,13 @@ function overlaps(aStart: number, aInterval: number, bStart: number, bInterval: 
 }
 
 /**
- * Checkout envia id de bairro OU `range_<id>` quando o preço veio de faixa CEP.
- * Resolve intervalHours nas duas tabelas.
+ * Checkout envia id de bairro, `range_<id>` (faixa CEP) ou `dist` (cotação por km).
+ * Resolve intervalHours nas tabelas; km usa 2h.
  */
 async function resolveIntervalHours(neighborhoodId: string): Promise<number | null> {
+  if (isMotoboyDistanceSlotId(neighborhoodId)) {
+    return 2;
+  }
   if (neighborhoodId.startsWith(RANGE_ID_PREFIX)) {
     const rangeId = neighborhoodId.slice(RANGE_ID_PREFIX.length);
     const rows = await db
@@ -69,7 +73,7 @@ router.get("/motoboy-slots/available", async (req, res) => {
 
     const intervalHours = await resolveIntervalHours(neighborhoodId);
     if (intervalHours == null) {
-      res.status(404).json({ error: "NOT_FOUND", message: "Bairro ou faixa de CEP não encontrada." });
+      res.status(404).json({ error: "NOT_FOUND", message: "Bairro, faixa de CEP ou cotação por km não encontrada." });
       return;
     }
 

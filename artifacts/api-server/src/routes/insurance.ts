@@ -9,6 +9,7 @@ import {
   listStoreCreditBalances,
   listStoreCreditLedger,
 } from "../lib/store-credits";
+import { claimGuestOrdersForCustomer } from "../lib/claim-guest-orders";
 import {
   InsuranceClaimError,
   chooseInsuranceReship,
@@ -35,6 +36,20 @@ router.get("/me/store-credit", requireCustomerAuth, async (req, res) => {
   if (!session) {
     res.status(401).json({ error: "UNAUTHORIZED" });
     return;
+  }
+  const [user] = await db
+    .select({ document: customerUsersTable.document, email: customerUsersTable.email })
+    .from(customerUsersTable)
+    .where(eq(customerUsersTable.id, session.userId))
+    .limit(1);
+  try {
+    await claimGuestOrdersForCustomer({
+      userId: session.userId,
+      email: user?.email || session.email,
+      document: user?.document,
+    });
+  } catch (err) {
+    console.warn("[store-credit] claim guest orders failed", session.userId, err);
   }
   const balance = await getStoreCreditBalance(session.userId);
   const ledger = await listStoreCreditLedger(session.userId, 20);

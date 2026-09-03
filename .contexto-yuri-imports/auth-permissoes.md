@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-02 | Cadastro/login cliente: CPF opcional; pedidos guest ligam por e-mail **ou** CPF (`customer_users.document`) | Saldo da garantia 100% pode cair depois do cadastro | Sessão in-memory; senha PBKDF2 |
 | 2026-09-02 | Carteira: `GET /api/me/store-credit`; ajuste `requirePrimaryAdmin`; sinistro admin `requireAdminAuth`; sinistro cliente no próprio pedido | Aba Seguro só primário | Afiliado e login iguais |
 | 2026-08-29 | CRUD contas EnvioEcom extras: gravar/apagar `requirePrimaryAdmin`; listar `requireAdminAuth` | Vendedor escolhe API no card; só primário cadastra token | Login/sessão iguais |
 | 2026-08-28 | Aba Admin **Biblioteca** fora de `PRIMARY_ONLY_TABS` | Todo admin vê as fichas | Chat `/api/chat/*` continua público |
@@ -59,12 +60,12 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 ## Cliente (customer)
 
-- Registro/login: `routes/customer-auth.ts` + `middlewares/customer-auth.ts`.
+- Registro/login: `routes/customer-auth.ts` + `middlewares/customer-auth.ts`. Cadastro/login aceitam **CPF opcional** (`document`); grava em `customer_users.document`.
+- Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha). Ao cadastrar/entrar/abrir Meus pedidos ou carteira, liga `userId` se o **e-mail ou o CPF** da compra bater (`claimGuestOrdersForCustomer`).
 - Sessão **em memória** via Bearer token (não tabela de sessão de cliente) — cai em restart/deploy.
 - Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original”.
 - Admin primário: `POST /api/admin/customers/:id/set-password` gera ou define nova senha e devolve o plaintext **uma vez**; UI Admin aba Clientes → botão **Senha**.
 - Admin primário: impersonate `POST /api/admin/customers/:id/impersonate`.
-- Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha).
 - Chat de compostos (`/api/chat/*`): **público** (login ainda sem sessão); sem Bearer. Rate limit na rota.
 - Saldo da loja: `GET /api/me/store-credit` e `POST /api/me/orders/:id/insurance-claim` com `requireCustomerAuth` (só o próprio pedido).
 

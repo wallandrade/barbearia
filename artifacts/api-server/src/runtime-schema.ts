@@ -404,22 +404,26 @@ async function ensureOrderBumpsColumns(databaseName: string): Promise<void> {
 }
 
 async function ensureCustomerUsersTable(databaseName: string): Promise<void> {
-  if (await tableExists("customer_users", databaseName)) {
+  if (!(await tableExists("customer_users", databaseName))) {
+    await pool.query(`
+      CREATE TABLE customer_users (
+        id VARCHAR(255) NOT NULL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        document VARCHAR(32) NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        salt VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY customer_users_email_unique (email)
+      )
+    `);
     return;
   }
 
-  await pool.query(`
-    CREATE TABLE customer_users (
-      id VARCHAR(255) NOT NULL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      password_hash VARCHAR(255) NOT NULL,
-      salt VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY customer_users_email_unique (email)
-    )
-  `);
+  if (!(await columnExists("customer_users", "document", databaseName))) {
+    await pool.query("ALTER TABLE customer_users ADD COLUMN document VARCHAR(32) NULL");
+  }
 }
 
 async function ensureAffiliatesTables(databaseName: string): Promise<void> {

@@ -583,6 +583,7 @@ import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
+import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insuranceCoversProblem, insurancePlanCustomerLabel } from "@/lib/checkout-insurance";
 
 
@@ -18245,6 +18246,12 @@ function FretePanel({
         </div>
       </div>
 
+      <MotoboyDistanceCard
+        settings={settings}
+        loading={settingsLoading}
+        onSave={onSaveSetting}
+      />
+
       {/* ------------------------------------------------------------------ */}
       {/* Motoboy por bairro                                                  */}
       {/* ------------------------------------------------------------------ */}
@@ -18426,7 +18433,8 @@ function FretePanel({
           <li>Quando o cliente informa o CEP no checkout, o sistema consulta a ViaCEP para identificar o bairro.</li>
           <li>Se o bairro estiver cadastrado aqui e <strong>ativo</strong>, a opção "Motoboy" aparecerá automaticamente com o valor correto.</li>
           <li>O match ignora acentos e sufixos entre parênteses (ex.: ViaCEP manda “Jardim Imperador (Zona Leste)” e o cadastro pode ser “Jardim Imperador”).</li>
-          <li>Se o bairro não estiver na lista, o sistema usa a <strong>faixa de CEP</strong> abaixo (rede de segurança da região — prefixos Correios da capital).</li>
+          <li>Se não houver bairro cadastrado, usa <strong>Motoboy por km</strong> (card acima): CEP de partida na Sé, Sé/centro R$ 50, demais faixas até 200 km. Acima disso o Motoboy some — consultar pessoalmente, sem cair na faixa de CEP.</li>
+          <li>Se o km não puder ser calculado (CEP sem coordenadas), o sistema usa a <strong>faixa de CEP</strong> abaixo (rede de segurança da região — prefixos Correios da capital).</li>
           <li>Prefira <strong>faixas de CEP por região</strong> (seed `seed-motoboy-cep-ranges-regioes.sql`) em vez de dezenas de microbairros. A faixa <strong>mais estreita</strong> ganha da “São Paulo — Geral”.</li>
           <li>Quando uma faixa Correios cobre vários distritos, o seed usa o <strong>maior</strong> preço Motoboy da zona (não cobra a menos).</li>
         </ul>
@@ -18439,7 +18447,8 @@ function FretePanel({
           Faixas de CEP (Fallback)
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Quando o bairro da ViaCEP não for encontrado na lista acima, o sistema usa a faixa de CEP mais específica que cobrir o CEP.
+          Quando o bairro da ViaCEP não for encontrado na lista acima e o Motoboy por km não cotar (desligado ou CEP sem coordenadas), o sistema usa a faixa de CEP mais específica que cobrir o CEP.
+          CEP acima de 200 km do ponto de partida <strong>não</strong> cai nesta faixa.
           Ex.: CEP 03935-080 (Jardim Imperador) cai em “São Mateus e região” e cobra o mesmo preço do distrito — sem cadastrar cada microbairro.
         </p>
 
