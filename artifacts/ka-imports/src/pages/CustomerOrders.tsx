@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { clearCustomerToken, fetchCustomerProfile, getCustomerAuthHeaders } from "@/lib/customer-auth";
 import { formatCurrency, formatDateBR, getActiveWhatsApp } from "@/lib/utils";
 import { parseInsurancePlan } from "@/lib/checkout-insurance";
-import { Copy, DollarSign, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, AlertCircle, MessageCircle, Truck, X } from "lucide-react";
+import { Copy, DollarSign, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, AlertCircle, MessageCircle, Truck, X, Bell } from "lucide-react";
 import { toast } from "sonner";
+import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -435,8 +436,15 @@ export default function CustomerOrders() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<string | null>(null);
   const [trackingSyncingIds, setTrackingSyncingIds] = useState<Record<string, boolean>>({});
+  const [obsReadTick, setObsReadTick] = useState(0);
   const ordersRef = useRef<CustomerOrder[]>([]);
+  const storeObsToastShownRef = useRef(false);
   ordersRef.current = orders;
+
+  const unreadStoreObsOrders = useMemo(
+    () => orders.filter((order) => isStoreObservationUnread(order.id, order.observation)),
+    [orders, obsReadTick],
+  );
 
   const applyTrackingToOrder = (orderId: string, tracking: TrackingInfo) => {
     setOrders((prev) =>
@@ -576,6 +584,31 @@ export default function CustomerOrders() {
     };
   }, [setLocation]);
 
+  useEffect(() => {
+    if (loading || storeObsToastShownRef.current) return;
+    if (unreadStoreObsOrders.length === 0) return;
+    storeObsToastShownRef.current = true;
+    const first = unreadStoreObsOrders[0];
+    const ref = first.orderNumber != null ? String(first.orderNumber) : first.id;
+    const extra =
+      unreadStoreObsOrders.length > 1
+        ? ` e mais ${unreadStoreObsOrders.length - 1} pedido${unreadStoreObsOrders.length > 2 ? "s" : ""}`
+        : "";
+    toast.info(`Nova mensagem da loja no pedido #${ref}${extra}`, {
+      description: "Abra os detalhes do pedido para ler a observação.",
+      duration: 8000,
+    });
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification("Mensagem da loja", {
+          body: `Pedido #${ref}: a loja deixou uma observação.`,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [loading, unreadStoreObsOrders]);
+
   // Poll leve enquanto o cliente está em Meus pedidos (só fretes em aberto).
   useEffect(() => {
     if (activeSection !== "orders" || loading) return;
@@ -642,8 +675,16 @@ export default function CustomerOrders() {
       return;
     }
 
-    setExpandedOrderId(orderId);
     const existingOrder = orders.find((o) => o.id === orderId);
+    if (isStoreObservationUnread(orderId, existingOrder?.observation)) {
+      markStoreObservationRead(orderId, existingOrder?.observation);
+      setObsReadTick((n) => n + 1);
+    }
+
+    setExpandedOrderId(orderId);
+    requestAnimationFrame(() => {
+      document.getElementById(`customer-order-${orderId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     if (existingOrder?.products) {
       return;
     }
@@ -703,6 +744,11 @@ export default function CustomerOrders() {
                 >
                   <Package className="w-4 h-4" />
                   Meus pedidos
+                  {unreadStoreObsOrders.length > 0 ? (
+                    <span className={`ml-auto inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${activeSection === "orders" ? "bg-white text-primary" : "bg-sky-600 text-white"}`}>
+                      {unreadStoreObsOrders.length}
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
@@ -727,6 +773,21 @@ export default function CustomerOrders() {
               {activeSection === "orders" && (
                 <>
                   <h2 className="font-semibold text-foreground mb-4">Seus pedidos</h2>
+                  {unreadStoreObsOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { void handleExpandOrder(unreadStoreObsOrders[0].id); }}
+                      className="mb-4 w-full text-left rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 hover:bg-sky-100/80 transition-colors"
+                    >
+                      <p className="flex items-center gap-2 text-sm font-semibold text-sky-900">
+                        <Bell className="w-4 h-4 shrink-0" />
+                        {unreadStoreObsOrders.length === 1
+                          ? `Nova mensagem da loja no pedido #${unreadStoreObsOrders[0].orderNumber ?? unreadStoreObsOrders[0].id}`
+                          : `A loja deixou mensagem em ${unreadStoreObsOrders.length} pedidos`}
+                      </p>
+                      <p className="text-xs text-sky-800/80 mt-1">Toque para ver a observação.</p>
+                    </button>
+                  )}
                   {storeCredit > 0 && (
                     <p className="text-sm text-emerald-800 mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
                       Saldo da loja disponível: <strong>{formatCurrency(storeCredit)}</strong> — use no checkout da próxima compra.
@@ -782,9 +843,10 @@ export default function CustomerOrders() {
                         const displayStatus = order.enviado ? "enviado" : order.status;
                         const trackingCode = order.envioecomBarcode || order.trackingCode || null;
                         const canTrack = hasTrackableShipment(order);
+                        const hasUnreadStoreObs = isStoreObservationUnread(order.id, order.observation);
 
                         return (
-                        <div key={order.id} className="border border-border rounded-2xl p-5 bg-white hover:shadow-md transition-shadow">
+                        <div id={`customer-order-${order.id}`} key={order.id} className={`border rounded-2xl p-5 bg-white hover:shadow-md transition-shadow ${hasUnreadStoreObs ? "border-sky-300 ring-2 ring-sky-100" : "border-border"}`}>
                           {/* Header: ID, Status Badge, Data */}
                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
                             <div className="flex items-start gap-3">
@@ -805,7 +867,15 @@ export default function CustomerOrders() {
                               </div>
                               <div>
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Pedido</p>
-                                <p className="text-lg font-bold text-foreground">#{orderRef}</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-lg font-bold text-foreground">#{orderRef}</p>
+                                  {hasUnreadStoreObs ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                                      <Bell className="w-3 h-3" />
+                                      Nova mensagem
+                                    </span>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                             <div className="flex flex-col sm:items-end gap-2">
@@ -817,6 +887,22 @@ export default function CustomerOrders() {
                               <p className="text-xs text-muted-foreground">{formatDateBR(order.createdAt)}</p>
                             </div>
                           </div>
+
+                          {hasUnreadStoreObs && expandedOrderId !== order.id && (
+                            <button
+                              type="button"
+                              onClick={() => { void handleExpandOrder(order.id); }}
+                              className="mb-4 w-full text-left rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 hover:bg-sky-100/80 transition-colors"
+                            >
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-800">
+                                <Bell className="w-3.5 h-3.5" />
+                                Nova mensagem da loja
+                              </span>
+                              <p className="text-sm text-sky-950 mt-1 line-clamp-2 whitespace-pre-wrap break-words">
+                                {String(order.observation || "").trim()}
+                              </p>
+                            </button>
+                          )}
 
                           {order.products && order.products.length > 0 && (
                             <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border/50 overflow-x-auto">
@@ -1105,8 +1191,15 @@ export default function CustomerOrders() {
                               )}
 
                               {String(order.observation || "").trim() ? (
-                                <div className="rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2.5">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-800 mb-1">Observação da loja</p>
+                                <div className={`rounded-lg px-3 py-2.5 ${hasUnreadStoreObs ? "border-2 border-sky-400 bg-sky-50" : "border border-sky-100 bg-sky-50/70"}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-800 mb-1">
+                                    Observação da loja
+                                    {hasUnreadStoreObs ? (
+                                      <span className="ml-2 inline-flex items-center rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold text-white normal-case tracking-normal">
+                                        Nova
+                                      </span>
+                                    ) : null}
+                                  </p>
                                   <p className="text-sm text-sky-950 whitespace-pre-wrap break-words">{String(order.observation).trim()}</p>
                                 </div>
                               ) : null}
