@@ -19,6 +19,8 @@ const PUBLIC_KEYS  = [
   "checkout_insurance_enabled", "checkout_insurance_percent", "checkout_insurance_label", "checkout_insurance_description",
   "checkout_insurance_product_percent", "checkout_insurance_product_ids", "checkout_insurance_keep_percent",
   "checkout_insurance_full_enabled", "checkout_insurance_reduced_enabled", "checkout_insurance_reduced_percent",
+  "checkout_insurance_full_label", "checkout_insurance_full_description",
+  "checkout_insurance_reduced_label", "checkout_insurance_reduced_description",
   "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text"
 ];
 const ALLOWED_KEYS = [

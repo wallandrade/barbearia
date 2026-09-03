@@ -30,6 +30,9 @@ import {
   parseInsuranceKeepPercent,
   parseInsuranceProductIds,
   parseOptionalInsurancePercent,
+  parseInsuranceLabel,
+  parseInsuranceDescription,
+  DEFAULT_CHECKOUT_INSURANCE,
   type InsurancePlan,
 } from "@/lib/checkout-insurance";
 import { CheckoutInsuranceOffer } from "@/components/CheckoutInsuranceOffer";
@@ -180,6 +183,10 @@ export default function Checkout() {
   const [insuranceKeepPercent, setInsuranceKeepPercent] = useState(10);
   const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
   const [insuranceProductIds, setInsuranceProductIds] = useState<string[]>([]);
+  const [insuranceFullLabel, setInsuranceFullLabel] = useState("");
+  const [insuranceFullDescription, setInsuranceFullDescription] = useState("");
+  const [insuranceReducedLabel, setInsuranceReducedLabel] = useState("");
+  const [insuranceReducedDescription, setInsuranceReducedDescription] = useState("");
   const [showCardModal, setShowCardModal] = useState(false);
   const [whatsappModalData, setWhatsappModalData] = useState<{ url: string; orderId: string; orderRef: string } | null>(null);
   const [isOpeningWhatsApp, setIsOpeningWhatsApp] = useState(false);
@@ -574,6 +581,16 @@ export default function Checkout() {
           setInsuranceKeepPercent(parseInsuranceKeepPercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]));
           setInsuranceProductPercent(parseOptionalInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]));
           setInsuranceProductIds(parseInsuranceProductIds(data[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]));
+          setInsuranceFullLabel(parseInsuranceLabel(data[CHECKOUT_INSURANCE_SETTING_KEYS.fullLabel]));
+          setInsuranceFullDescription(parseInsuranceDescription(data[CHECKOUT_INSURANCE_SETTING_KEYS.fullDescription]));
+          setInsuranceReducedLabel(parseInsuranceLabel(
+            data[CHECKOUT_INSURANCE_SETTING_KEYS.reducedLabel],
+            DEFAULT_CHECKOUT_INSURANCE.reducedLabel,
+          ));
+          setInsuranceReducedDescription(parseInsuranceDescription(
+            data[CHECKOUT_INSURANCE_SETTING_KEYS.reducedDescription],
+            DEFAULT_CHECKOUT_INSURANCE.reducedDescription,
+          ));
         }
       } catch {
         // Keep defaults enabled on network errors.
@@ -879,6 +896,7 @@ export default function Checkout() {
   });
   const insuranceReducedPreview = computeInsuranceAmount(subtotal, insuranceEnabled && insuranceReducedEnabled, insuranceReducedPercent);
   const includeInsurance = insurancePlan !== "none";
+  const insuranceCopy = { fullLabel: insuranceFullLabel, reducedLabel: insuranceReducedLabel };
   const insuranceAmount = insurancePlan === "full"
     ? insuranceFullPreview
     : insurancePlan === "reduced"
@@ -1581,7 +1599,7 @@ export default function Checkout() {
           `Itens:\n${itemsText}\n\n` +
           `Subtotal: ${formatCurrency(subtotal)}\n` +
           `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-          (includeInsurance ? `${insurancePlanCustomerLabel(insurancePlan)}: +${formatCurrency(insuranceAmount)}\n` : "") +
+          (includeInsurance ? `${insurancePlanCustomerLabel(insurancePlan, insuranceCopy)}: +${formatCurrency(insuranceAmount)}\n` : "") +
           (discountAmount > 0
             ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
             : "") +
@@ -1713,7 +1731,7 @@ export default function Checkout() {
         `*Produtos:*\n${itemsText}\n\n` +
         `*Subtotal:* ${formatCurrency(cardSubtotal)}\n` +
         `*Frete (${selectedShipping?.name ?? "Frete"}):* ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
-        (includeInsurance ? `*Garantia:* ${insurancePlanCustomerLabel(insurancePlan)} (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
+        (includeInsurance ? `*Garantia:* ${insurancePlanCustomerLabel(insurancePlan, insuranceCopy)} (+${formatCurrency(cardInsuranceAmount)})\n` : "") +
         (cardDiscountAmount > 0
           ? `*Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(cardDiscountAmount)}\n`
           : "") +
@@ -2455,6 +2473,10 @@ export default function Checkout() {
                 reducedAmount={insuranceReducedPreview}
                 keepPercent={insuranceKeepPercent}
                 isLoggedIn={Boolean(getCustomerToken())}
+                fullLabel={insuranceFullLabel}
+                fullDescription={insuranceFullDescription}
+                reducedLabel={insuranceReducedLabel}
+                reducedDescription={insuranceReducedDescription}
               />
             </div>
           </div>
@@ -2611,7 +2633,7 @@ export default function Checkout() {
                 )}
                 {includeInsurance && (
                   <div className="flex justify-between text-primary font-medium">
-                    <span>{insurancePlanCustomerLabel(insurancePlan)}</span>
+                    <span>{insurancePlanCustomerLabel(insurancePlan, insuranceCopy)}</span>
                     <span>{formatCurrency(insuranceAmount)}</span>
                   </div>
                 )}
@@ -2901,7 +2923,7 @@ export default function Checkout() {
 
                       {includeInsurance && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">{insurancePlanCustomerLabel(insurancePlan)}</span>
+                          <span className="text-muted-foreground">{insurancePlanCustomerLabel(insurancePlan, insuranceCopy)}</span>
                           <span className="font-medium">+{formatCurrency(cardInsuranceAmount)}</span>
                         </div>
                       )}

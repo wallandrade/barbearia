@@ -3,6 +3,7 @@ import { formatCurrency } from "@/lib/utils";
 import {
   CHECKOUT_INSURANCE_CUSTOMER_LABEL,
   CHECKOUT_INSURANCE_REDUCED_LABEL,
+  DEFAULT_CHECKOUT_INSURANCE,
   computeInsuranceSnapshot,
   type InsurancePlan,
 } from "@/lib/checkout-insurance";
@@ -18,6 +19,10 @@ type Props = {
   reducedAmount: number;
   keepPercent: number;
   isLoggedIn: boolean;
+  fullLabel?: string;
+  fullDescription?: string;
+  reducedLabel?: string;
+  reducedDescription?: string;
 };
 
 export function CheckoutInsuranceOffer({
@@ -31,8 +36,17 @@ export function CheckoutInsuranceOffer({
   reducedAmount,
   keepPercent,
   isLoggedIn,
+  fullLabel,
+  fullDescription,
+  reducedLabel,
+  reducedDescription,
 }: Props) {
   if (!enabled || (!fullEnabled && !reducedEnabled)) return null;
+
+  const fullTitle = String(fullLabel ?? "").trim() || CHECKOUT_INSURANCE_CUSTOMER_LABEL;
+  const reducedTitle = String(reducedLabel ?? "").trim() || CHECKOUT_INSURANCE_REDUCED_LABEL;
+  const fullBody = String(fullDescription ?? "").trim() || DEFAULT_CHECKOUT_INSURANCE.description;
+  const reducedBody = String(reducedDescription ?? "").trim() || DEFAULT_CHECKOUT_INSURANCE.reducedDescription;
 
   const { cashbackAmount } = computeInsuranceSnapshot({
     includeInsurance: true,
@@ -62,10 +76,10 @@ export function CheckoutInsuranceOffer({
             <div className={`w-5 h-5 mt-0.5 rounded-full border-2 shrink-0 ${plan === "reduced" ? "border-primary bg-primary" : "border-muted-foreground"}`} />
             <div className="min-w-0 flex-1">
               <p className="font-bold text-foreground">
-                {CHECKOUT_INSURANCE_REDUCED_LABEL} — {formatCurrency(reducedAmount)}
+                {reducedTitle} — {formatCurrency(reducedAmount)}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Cobre só se o correio perder ou roubarem. Não cobre Receita nem caixa quebrada.
+                {reducedBody}
               </p>
               {plan === "reduced" && (
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/80 p-2.5">
@@ -97,10 +111,10 @@ export function CheckoutInsuranceOffer({
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-bold text-foreground">
-                {CHECKOUT_INSURANCE_CUSTOMER_LABEL} — {formatCurrency(fullAmount)}
+                {fullTitle} — {formatCurrency(fullAmount)}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Vale se o correio perder, a Receita apreender ou chegar quebrado.
+                {fullBody}
               </p>
               {plan === "full" && (
                 <div className="mt-2 space-y-2">

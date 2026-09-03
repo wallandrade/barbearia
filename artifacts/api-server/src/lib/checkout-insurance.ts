@@ -9,6 +9,10 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   fullEnabled: "checkout_insurance_full_enabled",
   reducedEnabled: "checkout_insurance_reduced_enabled",
   reducedPercent: "checkout_insurance_reduced_percent",
+  fullLabel: "checkout_insurance_full_label",
+  fullDescription: "checkout_insurance_full_description",
+  reducedLabel: "checkout_insurance_reduced_label",
+  reducedDescription: "checkout_insurance_reduced_description",
 } as const;
 
 export const DEFAULT_CHECKOUT_INSURANCE_PERCENT = 10;

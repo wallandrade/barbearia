@@ -9,6 +9,10 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   fullEnabled: "checkout_insurance_full_enabled",
   reducedEnabled: "checkout_insurance_reduced_enabled",
   reducedPercent: "checkout_insurance_reduced_percent",
+  fullLabel: "checkout_insurance_full_label",
+  fullDescription: "checkout_insurance_full_description",
+  reducedLabel: "checkout_insurance_reduced_label",
+  reducedDescription: "checkout_insurance_reduced_description",
 } as const;
 
 export const DEFAULT_CHECKOUT_INSURANCE = {
@@ -18,10 +22,12 @@ export const DEFAULT_CHECKOUT_INSURANCE = {
   reducedPercent: 10,
   label: "Quero garantia 100%",
   description: "Vale se o correio perder, a Receita apreender ou chegar quebrado.",
+  reducedLabel: "Quero garantia só se sumir ou roubarem",
+  reducedDescription: "Cobre só se o correio perder ou roubarem. Não cobre Receita nem caixa quebrada.",
 };
 
 export const CHECKOUT_INSURANCE_CUSTOMER_LABEL = DEFAULT_CHECKOUT_INSURANCE.label;
-export const CHECKOUT_INSURANCE_REDUCED_LABEL = "Quero garantia só se sumir ou roubarem";
+export const CHECKOUT_INSURANCE_REDUCED_LABEL = DEFAULT_CHECKOUT_INSURANCE.reducedLabel;
 
 export type InsurancePlan = "none" | "full" | "reduced";
 
@@ -81,14 +87,20 @@ export function parseInsuranceEnabled(raw: string | undefined | null, defaultVal
   return !["0", "false", "off", "no", "disabled"].includes(normalized);
 }
 
-export function parseInsuranceLabel(raw: string | undefined | null): string {
+export function parseInsuranceLabel(
+  raw: string | undefined | null,
+  fallback = DEFAULT_CHECKOUT_INSURANCE.label,
+): string {
   const text = String(raw ?? "").trim();
-  return text || DEFAULT_CHECKOUT_INSURANCE.label;
+  return text || fallback;
 }
 
-export function parseInsuranceDescription(raw: string | undefined | null): string {
+export function parseInsuranceDescription(
+  raw: string | undefined | null,
+  fallback = DEFAULT_CHECKOUT_INSURANCE.description,
+): string {
   const text = String(raw ?? "").trim();
-  return text || DEFAULT_CHECKOUT_INSURANCE.description;
+  return text || fallback;
 }
 
 export function parseInsurancePercent(raw: string | undefined | null): number {
@@ -193,9 +205,20 @@ export function parseInsurancePlan(raw: unknown, includeInsurance?: boolean | nu
   return "none";
 }
 
-export function insurancePlanCustomerLabel(plan: InsurancePlan): string {
-  if (plan === "reduced") return CHECKOUT_INSURANCE_REDUCED_LABEL;
-  if (plan === "full") return CHECKOUT_INSURANCE_CUSTOMER_LABEL;
+export type InsurancePlanCopy = {
+  fullLabel?: string;
+  reducedLabel?: string;
+};
+
+export function insurancePlanCustomerLabel(plan: InsurancePlan, copy?: InsurancePlanCopy): string {
+  if (plan === "reduced") {
+    const text = String(copy?.reducedLabel ?? "").trim();
+    return text || CHECKOUT_INSURANCE_REDUCED_LABEL;
+  }
+  if (plan === "full") {
+    const text = String(copy?.fullLabel ?? "").trim();
+    return text || CHECKOUT_INSURANCE_CUSTOMER_LABEL;
+  }
   return "";
 }
 
