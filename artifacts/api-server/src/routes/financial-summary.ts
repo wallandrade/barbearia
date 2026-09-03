@@ -88,21 +88,48 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     }
 
     const { dateFrom, dateTo, sellerCode } = req.query as Record<string, string>;
-    const conditions = [];
-    if (dateFrom) conditions.push(gte(ordersTable.createdAt, toUTC(dateFrom, "00", "00", "00")));
-    if (dateTo) conditions.push(lte(ordersTable.createdAt, toUTC(dateTo, "23", "59", "59")));
-    // Considera apenas pedidos pagos
-    conditions.push(inArray(ordersTable.status, ["paid", "completed"]));
+    const sellerConditions = [];
     if (!adminScope.hasGlobalAccess) {
       if (sellerCode && sellerCode !== adminScope.sellerCode) {
         res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão para acessar outro seller." });
         return;
       }
-      conditions.push(eq(ordersTable.sellerCode, adminScope.sellerCode!));
+      sellerConditions.push(eq(ordersTable.sellerCode, adminScope.sellerCode!));
     } else if (sellerCode) {
-      conditions.push(eq(ordersTable.sellerCode, sellerCode));
+      sellerConditions.push(eq(ordersTable.sellerCode, sellerCode));
     }
-    const orders = await db.select().from(ordersTable).where(and(...conditions));
+
+    const conditions = [...sellerConditions];
+    if (dateFrom) conditions.push(gte(ordersTable.createdAt, toUTC(dateFrom, "00", "00", "00")));
+    if (dateTo) conditions.push(lte(ordersTable.createdAt, toUTC(dateTo, "23", "59", "59")));
+    // Considera apenas pedidos pagos
+    conditions.push(inArray(ordersTable.status, ["paid", "completed"]));
+
+    // Seguro pago em todo o histórico (ignora De/até). Só o insurance_amount, sem reenvio filho.
+    const insuranceConditions = [
+      ...sellerConditions,
+      inArray(ordersTable.status, ["paid", "completed"]),
+      sql`cast(${ordersTable.insuranceAmount} as decimal(12,2)) > 0`,
+      or(isNull(ordersTable.parentOrderId), eq(ordersTable.parentOrderId, "")),
+      sql`LOWER(TRIM(${ordersTable.shippingType})) <> 'reenvio'`,
+      or(
+        isNull(ordersTable.observation),
+        sql`UPPER(TRIM(${ordersTable.observation})) NOT LIKE 'REENVIO DO PEDIDO%'`,
+      ),
+    ];
+
+    const [orders, insuranceAgg] = await Promise.all([
+      db.select().from(ordersTable).where(and(...conditions)),
+      db
+        .select({
+          total: sql<string>`coalesce(sum(cast(${ordersTable.insuranceAmount} as decimal(12,2))), 0)`,
+          count: sql<number>`count(*)`,
+        })
+        .from(ordersTable)
+        .where(and(...insuranceConditions)),
+    ]);
+    const totalInsurancePaid = Number(Number(insuranceAgg[0]?.total || 0).toFixed(2));
+    const insurancePaidCount = Number(insuranceAgg[0]?.count || 0);
 
     // Customer recurrence in selected period
     const periodCustomerKeys = new Set<string>();
@@ -324,6 +351,8 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       totalMarketingExpenses,
       marketingExpenses,
       marketingExpensesByChannel,
+      totalInsurancePaid,
+      insurancePaidCount,
       realNetRevenue,
       customerRecurrence: {
         totalUniqueCustomers,

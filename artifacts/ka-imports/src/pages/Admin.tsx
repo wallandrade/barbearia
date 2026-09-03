@@ -1326,6 +1326,8 @@ export default function Admin() {
     whatsappEconomy: number;
     totalWithdrawFees: number;
     totalMarketingExpenses: number;
+    totalInsurancePaid?: number;
+    insurancePaidCount?: number;
     netRevenue: number;
     realNetRevenue: number;
     marketingExpenses?: Array<{
@@ -4520,7 +4522,23 @@ export default function Admin() {
           </div>
 
           {/* Row 2 — Cards individuais */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* Seguro pago — todo o histórico, só insuranceAmount */}
+            <div className="rounded-xl border p-4 bg-indigo-50 border-indigo-200">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Seguro pago
+                </p>
+                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-semibold">TODO O PERÍODO</span>
+              </div>
+              <p className="text-2xl font-bold text-indigo-800">
+                {formatCurrency(Number(financialSummary?.totalInsurancePaid) || 0)}
+              </p>
+              <p className="text-xs text-indigo-600 mt-1">
+                {financialSummary?.insurancePaidCount ?? 0} venda{(financialSummary?.insurancePaidCount ?? 0) !== 1 ? "s" : ""} com seguro
+              </p>
+              <p className="text-[11px] text-indigo-700/80 mt-0.5">Só o valor do seguro, não o total do pedido.</p>
+            </div>
             {/* PIX Loja */}
             <div className="rounded-xl border p-4 bg-blue-50 border-blue-200">
               <div className="flex items-center justify-between mb-2">
