@@ -6,6 +6,7 @@ import {
   computeSplitInsuranceAmount,
   computeInsuranceSnapshot,
   cashbackPercent,
+  effectiveChargedPercent,
   DEFAULT_CHECKOUT_INSURANCE_PERCENT,
   parseInsuranceEnabledSetting,
   parseInsurancePercentSetting,
@@ -112,6 +113,13 @@ test("54% cobrado e 10% da loja em T.G. 733", () => {
   assert.equal(snap.keepAmount, 73.3);
   assert.equal(snap.cashbackAmount, 322.52);
   assert.equal(cashbackPercent(54, 10), 44);
+});
+
+test("% de saldo usa o cobrado deste carrinho nao o padrao da loja", () => {
+  const insurance = computeInsuranceAmount(850, true, 54);
+  assert.equal(insurance, 459);
+  assert.equal(effectiveChargedPercent(850, insurance), 54);
+  assert.equal(cashbackPercent(effectiveChargedPercent(850, insurance), 10), 44);
 });
 
 test("keep nao passa do valor do seguro", () => {

@@ -35,6 +35,13 @@ export function cashbackPercent(chargedPercent: number, keepPercent: number): nu
   return Math.max(0, roundInsuranceMoney(chargedPercent - keepPercent));
 }
 
+/** % efetivo cobrado neste carrinho (seguro / subtotal), inclusive com % especial. */
+export function effectiveChargedPercent(subtotal: number, insuranceAmount: number): number {
+  const base = Math.max(0, Number(subtotal) || 0);
+  if (base <= 0) return 0;
+  return roundInsuranceMoney((Math.max(0, Number(insuranceAmount) || 0) / base) * 100);
+}
+
 export function computeInsuranceSnapshot(input: {
   includeInsurance: boolean;
   subtotal: number;

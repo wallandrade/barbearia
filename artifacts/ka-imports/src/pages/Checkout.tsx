@@ -2440,7 +2440,6 @@ export default function Checkout() {
                 subtotal={subtotal}
                 insuranceAmount={insuranceAmount}
                 keepPercent={insuranceKeepPercent}
-                chargedPercent={insurancePercent}
                 isLoggedIn={Boolean(getCustomerToken())}
               />
             </div>

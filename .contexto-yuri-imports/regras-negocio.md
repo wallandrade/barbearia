@@ -25,7 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-09-02 | Aba Admin **Seguro**: % cobrado, % da loja, cashback = cobrado−fica; carteira `customer_store_credits`; 1 reenvio de extravio ou estorno do produto; 2ª perda estorna produto | Checkout 3 passos; sem seguro = sem reenvio por extravio | “Veio faltando” e Motoboy iguais |
+| 2026-09-02 | Checkout: % de saldo do seguro usa o cobrado **deste carrinho** (ex. 54% especial → 44%), não o % padrão da loja | Texto “volta R$ X (Y%)” bate com o valor | Cálculo do saldo em reais igual |
 | 2026-09-01 | API integração: `POST /api/integrations/inventory/exit` baixa Motoboy/Minas (token do snapshot) | Outro sistema desconta o estoque Yury | Foz Guaçu (`loja`) igual; sem entrada por essa rota |
 | 2026-08-31 | **Cancelar EE** pede cancelamento na EnvioEcom **e solta** o pedido (apaga ID/barcode/PDF). Create usa `orderId` novo. Etiqueta EE recusa envio em cancelamento | Dá para cotar/gerar etiqueta nova sem recair no 8880 antigo | Cotação, webhook de envio ativo, baixa na etiqueta iguais |
 | 2026-08-31 | Etiqueta EnvioEcom **baixa estoque** e tira da cópia 48h; **Coleta Recebida** conta como postado (`enviado` + baixa se ainda não). **Aguardando coleta/postagem** sai da cópia (etiqueta pronta) e **não** marca Enviado | Evita copiar de novo o que já tem etiqueta | Cotação/create iguais |

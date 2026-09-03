@@ -32,6 +32,12 @@ export function cashbackPercent(chargedPercent: number, keepPercent: number): nu
   return Math.max(0, roundMoney(chargedPercent - keepPercent));
 }
 
+export function effectiveChargedPercent(subtotal: number, insuranceAmount: number): number {
+  const base = Math.max(0, Number(subtotal) || 0);
+  if (base <= 0) return 0;
+  return roundMoney((Math.max(0, Number(insuranceAmount) || 0) / base) * 100);
+}
+
 /** Loja fica keep% do subtotal (teto = seguro cobrado); o resto do seguro vira saldo. */
 export function computeInsuranceSnapshot(input: {
   includeInsurance: boolean;

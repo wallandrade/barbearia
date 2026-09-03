@@ -1,6 +1,6 @@
 import { ShieldCheck, AlertTriangle, PackageCheck, RotateCcw, Wallet } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { cashbackPercent, computeInsuranceSnapshot, formatInsurancePercent } from "@/lib/checkout-insurance";
+import { cashbackPercent, computeInsuranceSnapshot, effectiveChargedPercent, formatInsurancePercent } from "@/lib/checkout-insurance";
 
 type Props = {
   enabled: boolean;
@@ -12,7 +12,6 @@ type Props = {
   subtotal: number;
   insuranceAmount: number;
   keepPercent: number;
-  chargedPercent: number;
   isLoggedIn: boolean;
 };
 
@@ -26,18 +25,17 @@ export function CheckoutInsuranceOffer({
   subtotal,
   insuranceAmount,
   keepPercent,
-  chargedPercent,
   isLoggedIn,
 }: Props) {
   if (!enabled) return null;
 
-  const cashbackPct = cashbackPercent(chargedPercent, keepPercent);
   const { keepAmount, cashbackAmount } = computeInsuranceSnapshot({
     includeInsurance: true,
     subtotal,
     insuranceAmount,
     keepPercent,
   });
+  const cashbackPct = cashbackPercent(effectiveChargedPercent(subtotal, insuranceAmount), keepPercent);
 
   return (
     <div className="pt-4 border-t border-border">
