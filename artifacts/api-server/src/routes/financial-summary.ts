@@ -105,10 +105,9 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     // Considera apenas pedidos pagos
     conditions.push(inArray(ordersTable.status, ["paid", "completed"]));
 
-    // Seguro pago em todo o histórico (ignora De/até). Só o insurance_amount, sem reenvio filho.
+    // Seguro pago no período selecionado — só insurance_amount, sem reenvio filho.
     const insuranceConditions = [
-      ...sellerConditions,
-      inArray(ordersTable.status, ["paid", "completed"]),
+      ...conditions,
       sql`cast(${ordersTable.insuranceAmount} as decimal(12,2)) > 0`,
       or(isNull(ordersTable.parentOrderId), eq(ordersTable.parentOrderId, "")),
       sql`LOWER(TRIM(${ordersTable.shippingType})) <> 'reenvio'`,

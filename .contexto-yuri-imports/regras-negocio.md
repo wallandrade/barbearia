@@ -25,7 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-09-03 | Dashboard Admin: card **Seguro pago** soma só `insurance_amount` de pedidos pagos em **todo o histórico** (`financial-summary`) | Noção do seguro cobrado; ignora De/até | PIX/links/cartão e líquido do período iguais |
+| 2026-09-03 | Dashboard Admin: card **Seguro pago** soma só `insurance_amount` de pedidos pagos no **período De/até** (`financial-summary`) | Segue o filtro de data como faturamento | PIX/links/cartão iguais |
 | 2026-09-03 | Motoboy por km **substitui** bairro: modos exclusivos (`motoboy_distance_enabled`) | Km ligado ignora `motoboy_neighborhoods`; desligado volta o bairro | Faixa CEP continua fallback; >200 km sem Motoboy |
 | 2026-09-02 | Compra guest + cadastro depois: puxa pedidos e saldo da garantia 100% pelo **e-mail ou CPF** da compra (se já entregue) | Cadastro/login com CPF opcional; carteira atualiza | Plano, % e 1 reenvio iguais |
 | 2026-09-02 | Texto do plano completo no checkout: **Quero garantia 100%** | Mesma opção; só o nome | % , cobertura e preço iguais |
@@ -223,7 +223,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 - **Sync estoque Motoboy+Minas (espelho):** `GET /api/integrations/inventory/snapshot` (token `INVENTORY_SYNC_TOKEN` ou `MOTOBOY_SYNC_TOKEN`); `POST /api/integrations/inventory/exit` baixa Motoboy/Minas (mesmo token; `productId`+qty, `items[]` ou `orderId` Yury). Webhook opcional `inventory.changed`. Sem entrada de compra por essa API. Foz Guaçu não entra.
 - **Etiqueta EnvioEcom:** ao gerar (PDF/R2 ou download local) **dá baixa** no pool do card (ou Foz Guaçu se nenhum) e marca `inventory_reserved`. Status vira **Etiqueta emitida** se ainda não estava em trânsito. Sem saldo: etiqueta sai mesmo assim e o toast avisa. Cópia 48h / Enviado: ver **Invariante — cópia 48h** no topo deste arquivo (não anular no changelog).
 - **Cancelar EE:** pede cancelamento na EnvioEcom (pode ficar *Aguardando cancelamento* lá) e **desvincula no Yury** (zera ID, barcode, PDF, `orderId` externo). Depois: **EnvioEcom** → cotar → criar (orderId com sufixo novo) → **Etiqueta EE**. Não clicar Etiqueta EE no envio antigo. Webhook do envio velho não reatacha. Estoque já baixado na etiqueta anterior **não** volta sozinho.
-- Despesas de marketing e resumo financeiro: rotas dedicadas. Dashboard Admin: card **Seguro pago** (`totalInsurancePaid` / `insurancePaidCount` em `GET /api/admin/financial-summary`) soma só `insurance_amount` de pedidos `paid`/`completed` com valor > 0, **todo o histórico** (não usa De/até; segue o vendedor se filtrado). Exclui pedido filho de reenvio. Não soma `total` nem links avulsos.
+- Despesas de marketing e resumo financeiro: rotas dedicadas. Dashboard Admin: card **Seguro pago** (`totalInsurancePaid` / `insurancePaidCount` em `GET /api/admin/financial-summary`) soma só `insurance_amount` de pedidos `paid`/`completed` com valor > 0, no **período De/até** (mesmo filtro do faturamento; segue o vendedor se filtrado). Exclui pedido filho de reenvio. Não soma `total` nem links avulsos.
 
 ## Prova social e settings
 
