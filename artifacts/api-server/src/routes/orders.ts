@@ -33,6 +33,7 @@ import {
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
@@ -1349,7 +1350,7 @@ router.get("/me/orders", requireCustomerAuth, async (req, res) => {
       .where(eq(ordersTable.userId, customerSession.userId))
       .orderBy(desc(ordersTable.createdAt));
 
-    const mapped = await enrichOrdersWithProductImages(orders.map(mapOrder));
+    const mapped = await enrichOrdersWithProductImages(orders.map((row) => mapOrderForCustomer(row)));
     res.json({ orders: mapped });
   } catch (err) {
     console.error("Customer orders error:", err);
@@ -1385,7 +1386,7 @@ router.get("/me/orders/:id", requireCustomerAuth, async (req, res) => {
       return;
     }
 
-    const [order] = await enrichOrdersWithProductImages([mapOrder(rows[0])]);
+    const [order] = await enrichOrdersWithProductImages([mapOrderForCustomer(rows[0])]);
     res.json({ order });
   } catch (err) {
     console.error("Customer order detail error:", err);
@@ -1417,7 +1418,7 @@ router.get("/orders/guest/:id", async (req, res) => {
       return;
     }
 
-    const [order] = await enrichOrdersWithProductImages([mapOrder(rows[0])]);
+    const [order] = await enrichOrdersWithProductImages([mapOrderForCustomer(rows[0])]);
     res.json({ order });
   } catch (err) {
     console.error("Guest order access error:", err);
@@ -1765,11 +1766,27 @@ router.patch("/admin/orders/:id/observation", requireAdminAuth, async (req, res)
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { observation } = req.body as { observation?: string };
+    const { observation, observationVisibleToCustomer } = req.body as {
+      observation?: string;
+      observationVisibleToCustomer?: unknown;
+    };
+    const visibleInBody = observationVisibleToCustomer !== undefined;
+    const visible = isObservationVisibleToCustomer(observationVisibleToCustomer);
     await db.update(ordersTable)
-      .set({ observation: observation?.trim() || null, updatedAt: new Date() })
+      .set({
+        observation: observation?.trim() || null,
+        ...(visibleInBody ? { observationVisibleToCustomer: visible } : {}),
+        updatedAt: new Date(),
+      })
       .where(buildAdminOrderWhere(id, adminScope));
-    recordAdminActivity(req, id, "observation", "Alterou observações");
+    recordAdminActivity(
+      req,
+      id,
+      "observation",
+      visibleInBody
+        ? (visible ? "Alterou observações (visível na conta)" : "Alterou observações (interno)")
+        : "Alterou observações",
+    );
     res.json({ ok: true });
   } catch (err) {
     console.error("Update observation error:", err);
@@ -2422,6 +2439,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     discountAmount:         o.discountAmount ? Number(o.discountAmount) : null,
     affiliateCreditUsed:    o.affiliateCreditUsed ? Number(o.affiliateCreditUsed) : null,
     observation:            o.observation,
+    observationVisibleToCustomer: isObservationVisibleToCustomer(o.observationVisibleToCustomer),
     cardInstallmentsActual: o.cardInstallmentsActual,
     cardInstallmentValue:   o.cardInstallmentValue ? Number(o.cardInstallmentValue) : null,
     cardTotalActual:        o.cardTotalActual ? Number(o.cardTotalActual) : null,
@@ -2463,6 +2481,18 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     bankDepositPayerName:   (o as any).bankDepositPayerName ?? null,
     bankDepositPostedAt:    (o as any).bankDepositPostedAt ?? null,
     bankDepositMatchedAt:   (o as any).bankDepositMatchedAt?.toISOString?.() ?? null,
+  };
+}
+
+function mapOrderForCustomer(o: typeof ordersTable.$inferSelect) {
+  const mapped = mapOrder(o);
+  const { observationVisibleToCustomer: _flag, ...rest } = mapped;
+  return {
+    ...rest,
+    observation: customerVisibleObservation({
+      observation: mapped.observation,
+      observationVisibleToCustomer: mapped.observationVisibleToCustomer,
+    }),
   };
 }
 

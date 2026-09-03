@@ -49,6 +49,7 @@ type CustomerOrder = {
   envioecomStatusHistory?: TrackingHistoryEvent[];
   envioecomShipmentId?: string | null;
   envioecomTrackingKey?: string | null;
+  observation?: string | null;
   distanceKmFromCustomerCity?: number | null;
   distancePackageCity?: string | null;
   distanceCustomerCity?: string | null;
@@ -1102,6 +1103,13 @@ export default function CustomerOrders() {
                                   </div>
                                 </div>
                               )}
+
+                              {String(order.observation || "").trim() ? (
+                                <div className="rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-800 mb-1">Observação da loja</p>
+                                  <p className="text-sm text-sky-950 whitespace-pre-wrap break-words">{String(order.observation).trim()}</p>
+                                </div>
+                              ) : null}
 
                               {/* Breakdown */}
                               {(order.subtotal || order.shippingCost || order.insuranceAmount) && (

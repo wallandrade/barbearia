@@ -184,6 +184,10 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "insurance_plan", sql: "ALTER TABLE orders ADD COLUMN insurance_plan VARCHAR(16) NULL" },
     { name: "store_credit_used", sql: "ALTER TABLE orders ADD COLUMN store_credit_used DECIMAL(10,2) NULL" },
     { name: "store_credit_from_edit", sql: "ALTER TABLE orders ADD COLUMN store_credit_from_edit DECIMAL(10,2) NULL" },
+    {
+      name: "observation_visible_to_customer",
+      sql: "ALTER TABLE orders ADD COLUMN observation_visible_to_customer TINYINT(1) NOT NULL DEFAULT 0",
+    },
   ];
 
   for (const definition of definitions) {

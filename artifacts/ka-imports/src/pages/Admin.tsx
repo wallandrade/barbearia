@@ -3262,12 +3262,14 @@ export default function Admin() {
     } finally { setCardPaidSubmitting(false); }
   };
 
-  const updateOrderObservation = async (id: string, observation: string) => {
+  const updateOrderObservation = async (id: string, observation: string, observationVisibleToCustomer = false) => {
     try {
       await fetch(`${BASE}/api/admin/orders/${id}/observation`, {
-        method: "PATCH", headers: authHeaders(), body: JSON.stringify({ observation }),
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ observation, observationVisibleToCustomer }),
       });
-      setOrders((prev) => prev.map((o) => o.id === id ? { ...o, observation } : o));
+      setOrders((prev) => prev.map((o) => o.id === id ? { ...o, observation, observationVisibleToCustomer } : o));
     } catch { toast.error("Erro ao salvar observação."); }
   };
 
@@ -10056,7 +10058,7 @@ function OrdersPanel({
   setProofViewer: (url: string) => void;
   openWhatsApp: (order: AdminOrder) => void;
   onOpenCardPaidModal: (id: string) => void;
-  updateOrderObservation: (id: string, observation: string) => void;
+  updateOrderObservation: (id: string, observation: string, visibleToCustomer?: boolean) => void;
   isPrimary: boolean;
   onEditOrder: (order: AdminOrder) => void;
   onOpenKycModal: (orderId: string) => void;
@@ -12744,7 +12746,9 @@ function OrdersPanel({
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Observações</label>
                     <ObservationField
                       value={order.observation ?? ""}
-                      onSave={(val) => updateOrderObservation(order.id, val)}
+                      visibleToCustomer={Boolean(order.observationVisibleToCustomer)}
+                      showCustomerToggle
+                      onSave={(val, visible) => updateOrderObservation(order.id, val, visible)}
                     />
                   </div>
                 </motion.div>
@@ -13295,24 +13299,62 @@ function formatAmountAdmin(raw: string) {
   return n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
-function ObservationField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function ObservationField({
+  value,
+  visibleToCustomer = false,
+  showCustomerToggle = false,
+  onSave,
+}: {
+  value: string;
+  visibleToCustomer?: boolean;
+  showCustomerToggle?: boolean;
+  onSave: (v: string, visibleToCustomer: boolean) => void;
+}) {
   const [text, setText] = useState(value);
+  const [visible, setVisible] = useState(visibleToCustomer);
   const [saved, setSaved] = useState(false);
   useEffect(() => { setText(value); }, [value]);
-  const save = () => { onSave(text); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  useEffect(() => { setVisible(visibleToCustomer); }, [visibleToCustomer]);
+  const save = (nextVisible = visible) => {
+    onSave(text, nextVisible);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
   return (
-    <div className="flex gap-2 items-end">
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={2}
-        placeholder="Nenhuma observação"
-        className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background resize-none outline-none focus:border-primary"
-      />
-      <Button size="sm" variant="outline" onClick={save} className="shrink-0 gap-1.5 text-xs">
-        {saved ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Save className="w-3.5 h-3.5" />}
-        {saved ? "Salvo" : "Salvar"}
-      </Button>
+    <div className="space-y-2">
+      <div className="flex gap-2 items-end">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          placeholder="Nenhuma observação"
+          className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background resize-none outline-none focus:border-primary"
+        />
+        <Button size="sm" variant="outline" onClick={() => save()} className="shrink-0 gap-1.5 text-xs">
+          {saved ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Save className="w-3.5 h-3.5" />}
+          {saved ? "Salvo" : "Salvar"}
+        </Button>
+      </div>
+      {showCustomerToggle && (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="rounded border-border"
+            checked={visible}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setVisible(next);
+              onSave(text, next);
+            }}
+          />
+          {visible ? (
+            <Eye className="w-3.5 h-3.5 text-sky-700" />
+          ) : (
+            <EyeOff className="w-3.5 h-3.5" />
+          )}
+          <span>{visible ? "Cliente vê na conta" : "Só o admin vê (interno)"}</span>
+        </label>
+      )}
     </div>
   );
 }
