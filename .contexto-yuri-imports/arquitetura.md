@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-09-02
+> **Última atualização:** 2026-09-03
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-03 | Coluna `orders.store_credit_from_edit` + ledger `order_edit_surplus` | Sobra de edição de pedido na carteira | `paidAmount` continua o PIX recebido |
 | 2026-09-02 | Tabelas `customer_store_credits` / `customer_store_credit_ledger` + colunas de seguro no pedido | Carteira de saldo e snapshot do seguro | Afiliado e PIX iguais |
 | 2026-08-31 | Tabela `order_activity` (+ runtime) para histórico do pedido no Admin | Eventos por `order_id` | Colunas de `orders` iguais |
 | 2026-08-30 | Tabelas `inventory_minas_balances` / `inventory_minas_movements` | Terceiro pool de estoque (Minas) | Loja e Motoboy iguais |

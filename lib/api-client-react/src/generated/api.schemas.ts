@@ -130,6 +130,8 @@ export interface AdminOrder {
   insuranceCashbackGranted?: boolean;
   insurancePixRefundDone?: boolean;
   storeCreditUsed?: number | null;
+  storeCreditFromEdit?: number;
+  paidAmount?: number | null;
   parentOrderId?: string | null;
   total: number;
   status: string;

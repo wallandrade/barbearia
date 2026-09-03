@@ -1,6 +1,7 @@
 import { db, ordersTable } from "@workspace/db";
 import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import { grantInsuranceCashbackIfEligible } from "./insurance-claims";
+import { creditOrderEditSurplus } from "./order-edit-surplus";
 import {
   digitsOnlyDocument,
   isOrderDeliveredForInsuranceCashback,
@@ -49,6 +50,11 @@ export async function claimGuestOrdersForCustomer(input: {
   const owned = await db.select().from(ordersTable).where(eq(ordersTable.userId, userId));
   let cashbackGranted = 0;
   for (const order of owned) {
+    try {
+      await creditOrderEditSurplus(order);
+    } catch (err) {
+      console.warn("[claim-guest-orders] order edit surplus failed", order.id, err);
+    }
     if (!isOrderDeliveredForInsuranceCashback(order)) continue;
     try {
       const result = await grantInsuranceCashbackIfEligible(order);

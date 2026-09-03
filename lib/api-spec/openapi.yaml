@@ -483,6 +483,12 @@ components:
         storeCreditUsed:
           type: number
           nullable: true
+        storeCreditFromEdit:
+          type: number
+          description: Soma já creditada na carteira por redução na edição do pedido
+        paidAmount:
+          type: number
+          nullable: true
         insuranceClaimStatus:
           type: string
           nullable: true

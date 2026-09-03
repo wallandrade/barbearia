@@ -565,7 +565,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -3717,21 +3717,33 @@ export default function Admin() {
         toast.error(message);
         return;
       }
-      const data = await res.json() as { ok: boolean; order: AdminOrder };
+      const data = await res.json() as {
+        ok: boolean;
+        order: AdminOrder;
+        walletCredit?: { credited?: number; skipped?: string | null };
+      };
       setOrders((prev) => prev.map((o) => o.id === editOrderModal.id ? { ...data.order, proofUrls: o.proofUrls } : o));
-      toast.success("Pedido editado com sucesso!");
-      const paidAmount = editOrderModal.paidAmount ?? null;
+      const creditedWallet = Number(data.walletCredit?.credited || 0);
+      if (creditedWallet > 0.01) {
+        toast.success(`Pedido editado. ${formatCurrency(creditedWallet)} creditado na carteira do cliente.`);
+      } else if (data.walletCredit?.skipped === "no_account") {
+        toast.success("Pedido editado. Cliente sem conta — a redução não foi para a carteira.");
+      } else if (data.walletCredit?.skipped === "credit_error") {
+        toast.success("Pedido editado. Não foi possível creditar a carteira agora — use o ajuste na aba Seguro.");
+      } else {
+        toast.success("Pedido editado com sucesso!");
+      }
+      const paidAmount = (data.order.paidAmount ?? editOrderModal.paidAmount) ?? null;
+      const alreadyInWallet = Number(data.order.storeCreditFromEdit ?? editOrderModal.storeCreditFromEdit ?? 0);
       const isPixOrder = editOrderModal.paymentMethod === "pix" || editOrderModal.paymentMethod === "whatsapp_pix";
 
       if (paidAmount != null && paidAmount > 0) {
-        // Order has a recorded paid amount — use it as the reference
-        const diff = total - paidAmount;
+        const effectivePaid = Math.max(0, paidAmount - alreadyInWallet);
+        const diff = total - effectivePaid;
         if (diff > 0.01) {
-          // New total exceeds what was paid → offer diff PIX for the exact difference
           setDiffOrder({ order: nextOrderSnapshot, diff, isPaid: true });
           setDiffPixResult(null);
         }
-        // If diff <= 0 → backend already reverted status to "paid", nothing to do
       } else {
         // No paidAmount recorded — determine if the order was ever paid
         const diff = total - originalTotal;
@@ -7881,7 +7893,10 @@ export default function Admin() {
                       : 0;
                     const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editDiscount || 0));
                     const hasPaidAmount = (editOrderModal.paidAmount ?? 0) > 0;
-                    const refValue = hasPaidAmount ? (editOrderModal.paidAmount ?? 0) : editOrderModal.total;
+                    const alreadyInWallet = Number(editOrderModal.storeCreditFromEdit || 0);
+                    const refValue = hasPaidAmount
+                      ? Math.max(0, (editOrderModal.paidAmount ?? 0) - alreadyInWallet)
+                      : editOrderModal.total;
                     const diff = total - refValue;
                     return (
                       <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-sm space-y-1">
@@ -7895,11 +7910,22 @@ export default function Admin() {
                             <span>Já pago</span><span>{formatCurrency(editOrderModal.paidAmount ?? 0)}</span>
                           </div>
                         )}
+                        {alreadyInWallet > 0.01 && (
+                          <div className="flex justify-between text-xs text-emerald-700">
+                            <span>Já na carteira</span><span>{formatCurrency(alreadyInWallet)}</span>
+                          </div>
+                        )}
                         {Math.abs(diff) > 0.01 && (
                           <div className={`flex justify-between text-xs font-bold rounded px-1.5 py-0.5 mt-1 ${diff > 0 ? "text-orange-700 bg-orange-50" : "text-green-700 bg-green-50"}`}>
-                            <span>{diff > 0 ? (hasPaidAmount ? "PIX de diferença" : "Acréscimo") : "Redução"}</span>
+                            <span>{diff > 0 ? (hasPaidAmount ? "PIX de diferença" : "Acréscimo") : "Vai para a carteira"}</span>
                             <span>{diff > 0 ? "+" : ""}{formatCurrency(diff)}</span>
                           </div>
+                        )}
+                        {diff < -0.01 && (
+                          <p className="text-[11px] text-emerald-800 flex items-start gap-1 pt-1">
+                            <Wallet className="w-3 h-3 mt-0.5 shrink-0" />
+                            Ao salvar, a redução entra na carteira se o cliente tiver conta na loja.
+                          </p>
                         )}
                       </div>
                     );

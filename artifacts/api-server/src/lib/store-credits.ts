@@ -10,7 +10,8 @@ export type StoreCreditType =
   | "insurance_cashback"
   | "order_apply"
   | "product_refund"
-  | "admin_adjust";
+  | "admin_adjust"
+  | "order_edit_surplus";
 
 function randomId(): string {
   return crypto.randomBytes(8).toString("hex");
@@ -59,6 +60,8 @@ export async function applyStoreCredit(input: {
   type: StoreCreditType;
   orderId?: string | null;
   note?: string | null;
+  /** Soma no lancamento existente do mesmo type+orderId (edicao de pedido pode reduzir mais de uma vez). */
+  accumulate?: boolean;
 }): Promise<{ applied: number; balance: number; duplicate: boolean }> {
   const userId = String(input.userId || "").trim();
   const amount = roundMoney(input.amount);
@@ -73,7 +76,7 @@ export async function applyStoreCredit(input: {
         .from(customerStoreCreditLedgerTable)
         .where(sql`${customerStoreCreditLedgerTable.type} = ${input.type} AND ${customerStoreCreditLedgerTable.orderId} = ${input.orderId}`)
         .limit(1);
-      if (existing[0]) {
+      if (existing[0] && !input.accumulate) {
         const bal = await tx
           .select({ balance: customerStoreCreditsTable.balance })
           .from(customerStoreCreditsTable)
@@ -84,6 +87,45 @@ export async function applyStoreCredit(input: {
           balance: Number(bal[0]?.balance || 0),
           duplicate: true,
         };
+      }
+      if (existing[0] && input.accumulate) {
+        await tx.execute(sql`SELECT user_id FROM customer_store_credits WHERE user_id = ${userId} FOR UPDATE`);
+        const currentRows = await tx
+          .select({ balance: customerStoreCreditsTable.balance })
+          .from(customerStoreCreditsTable)
+          .where(eq(customerStoreCreditsTable.userId, userId))
+          .limit(1);
+        const current = roundMoney(Number(currentRows[0]?.balance || 0));
+        let next = roundMoney(current + amount);
+        let applied = amount;
+        if (amount < 0 && next < 0) {
+          applied = roundMoney(-current);
+          next = 0;
+        }
+        if (applied === 0) {
+          return { applied: 0, balance: current, duplicate: false };
+        }
+        if (currentRows[0]) {
+          await tx
+            .update(customerStoreCreditsTable)
+            .set({ balance: next.toFixed(2), updatedAt: new Date() })
+            .where(eq(customerStoreCreditsTable.userId, userId));
+        } else {
+          await tx.insert(customerStoreCreditsTable).values({
+            userId,
+            balance: next.toFixed(2),
+            updatedAt: new Date(),
+          });
+        }
+        const ledgerTotal = roundMoney(Number(existing[0].amount || 0) + applied);
+        await tx
+          .update(customerStoreCreditLedgerTable)
+          .set({
+            amount: ledgerTotal.toFixed(2),
+            note: input.note || null,
+          })
+          .where(eq(customerStoreCreditLedgerTable.id, existing[0].id));
+        return { applied, balance: next, duplicate: false };
       }
     }
 

@@ -41,6 +41,8 @@ export const ordersTable = mysqlTable("orders", {
   insuranceCashbackGranted: boolean("insurance_cashback_granted").notNull().default(false),
   insurancePixRefundDone: boolean("insurance_pix_refund_done").notNull().default(false),
   storeCreditUsed: decimal("store_credit_used", { precision: 10, scale: 2 }),
+  /** Soma ja creditada na carteira por reducao na edicao do pedido (paidAmount continua o PIX recebido). */
+  storeCreditFromEdit: decimal("store_credit_from_edit", { precision: 10, scale: 2 }),
   total: decimal("total", { precision: 10, scale: 2 }).notNull(),
   status: varchar("status", { length: 50 }).notNull().default("pending"),
   paymentMethod: varchar("payment_method", { length: 50 }).default("pix"),

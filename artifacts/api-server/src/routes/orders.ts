@@ -41,6 +41,12 @@ import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
 import { claimGuestOrdersForCustomer } from "../lib/claim-guest-orders";
 import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan, parseInsurancePlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
+import { creditOrderEditSurplus } from "../lib/order-edit-surplus";
+import {
+  nextStatusAfterOrderEdit,
+  roundOrderMoney,
+  shouldFillMissingPaidAmount,
+} from "../lib/order-edit-surplus-policy";
 
 const router: IRouter = Router();
 
@@ -1938,6 +1944,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     const currentTotal   = Number(current[0].total);
     const currentStatus  = current[0].status;
     const paidAmount     = current[0].paidAmount ? Number(current[0].paidAmount) : null;
+    const storeCreditFromEdit = roundOrderMoney(current[0].storeCreditFromEdit);
     const isPaid         = currentStatus === "paid" || currentStatus === "completed";
 
     // Fetch catalog products to resolve prices with bulk-discount tiers
@@ -1983,23 +1990,19 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     });
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
-    let newStatus: string;
-    if (paidAmount !== null) {
-      // Order has a recorded paid amount — use it as the reference for all comparisons
-      if (total > paidAmount + 0.01) {
-        // New total exceeds what was paid → wait for the difference
-        newStatus = "awaiting_payment";
-      } else {
-        // New total is at or below what was paid → fully paid again
-        newStatus = "paid";
-      }
-    } else if (isPaid && total > currentTotal + 0.01) {
-      // Paid order (no paidAmount recorded yet) edited UP → flag for difference
-      newStatus = "awaiting_payment";
-    } else {
-      // Unpaid order or no change in direction — keep current status
-      newStatus = currentStatus;
+    let recordedPaidAmount = paidAmount;
+    if (shouldFillMissingPaidAmount({ paidAmount: recordedPaidAmount, isPaidStatus: isPaid })) {
+      recordedPaidAmount = currentTotal;
     }
+
+    const newStatus = nextStatusAfterOrderEdit({
+      currentStatus,
+      newTotal: total,
+      paidAmount: recordedPaidAmount,
+      storeCreditFromEdit,
+      isPaidStatus: isPaid,
+      previousTotal: currentTotal,
+    });
 
     const nextAddressCep = address?.cep !== undefined ? String(address.cep || "").trim() || null : undefined;
     const nextAddressStreet = address?.street !== undefined ? String(address.street || "").trim() || null : undefined;
@@ -2063,17 +2066,47 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     if (nextClientPhone !== undefined) updates.clientPhone = nextClientPhone;
     if (nextClientEmail !== undefined) updates.clientEmail = nextClientEmail;
     if (nextClientDocument !== undefined) updates.clientDocument = nextClientDocument;
+    if (recordedPaidAmount != null && recordedPaidAmount > 0 && paidAmount == null) {
+      updates.paidAmount = String(recordedPaidAmount);
+    }
 
     await db.update(ordersTable)
       .set(updates)
       .where(buildAdminOrderWhere(id, adminScope));
 
+    let walletCredit: Awaited<ReturnType<typeof creditOrderEditSurplus>> = {
+      credited: 0,
+      skipped: null,
+      balance: null,
+      userId: null,
+    };
+    try {
+      walletCredit = await creditOrderEditSurplus({
+        id,
+        userId: current[0].userId,
+        clientEmail: nextClientEmail !== undefined ? nextClientEmail : current[0].clientEmail,
+        clientDocument: nextClientDocument !== undefined ? nextClientDocument : current[0].clientDocument,
+        total,
+        paidAmount: recordedPaidAmount,
+        storeCreditFromEdit,
+        status: newStatus,
+      });
+    } catch (err) {
+      console.warn("[edit-order] wallet credit failed", id, err);
+      walletCredit = { credited: 0, skipped: "credit_error", balance: null, userId: null };
+    }
+
     const updated = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
     if (!updated[0]) { res.status(404).json({ error: "NOT_FOUND" }); return; }
 
     broadcastNotification({ type: "order_updated", data: { id } });
-    recordAdminActivity(req, id, "edit", "Editou o pedido", `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}`);
-    res.json({ ok: true, order: mapOrder(updated[0]) });
+    const walletNote = walletCredit.credited > 0
+      ? ` · carteira +${walletCredit.credited.toFixed(2)}`
+      : walletCredit.skipped === "no_account"
+        ? " · reducao sem conta (carteira nao creditada)"
+        : "";
+    recordAdminActivity(req, id, "edit", "Editou o pedido", `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}`);
+    res.json({ ok: true, order: mapOrder(updated[0]), walletCredit });
   } catch (err) {
     console.error("Edit order error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao editar pedido." });
@@ -2372,6 +2405,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     insuranceCashbackGranted: !!o.insuranceCashbackGranted,
     insurancePixRefundDone: !!o.insurancePixRefundDone,
     storeCreditUsed:     o.storeCreditUsed ? Number(o.storeCreditUsed) : null,
+    storeCreditFromEdit: o.storeCreditFromEdit ? Number(o.storeCreditFromEdit) : 0,
     total:               Number(o.total),
     status:              o.status,
     paymentMethod:       o.paymentMethod || "pix",
