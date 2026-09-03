@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle, ImageOff, Loader2, Plus, Trash2 } from "lucide-react";
+import { CheckCircle, ChevronDown, ChevronUp, ImageOff, Loader2, Package, Plus, Trash2, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -33,8 +33,12 @@ type Purchase = {
   inventoryPool: string | null;
   inventoryPoolLabel: string | null;
   expenseId: string | null;
+  expenseMissing?: boolean;
+  expenseStatus?: string | null;
   totalAmount: number;
   items: PurchaseItem[];
+  orderedAt?: string | null;
+  completedAt?: string | null;
 };
 
 type Supplier = { id: string; name: string };
@@ -173,6 +177,35 @@ function CartItemRow({
   );
 }
 
+function PurchaseSteps({ status }: { status: string }) {
+  const current = status === "completed" ? 3 : status === "ordered" ? 2 : 1;
+  const steps = [
+    { n: 1, label: "Montar compra" },
+    { n: 2, label: "Travar pedido" },
+    { n: 3, label: "Entrada no estoque" },
+  ];
+  return (
+    <ol className="grid grid-cols-3 gap-2 text-[11px] sm:text-xs">
+      {steps.map((step) => {
+        const done = current > step.n;
+        const active = current === step.n;
+        return (
+          <li
+            key={step.n}
+            className={`rounded-lg border px-2 py-1.5 text-center ${
+              done ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : active ? "border-amber-300 bg-amber-50 text-amber-950 font-semibold"
+                  : "border-border bg-white text-muted-foreground"
+            }`}
+          >
+            {step.n}. {step.label}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -189,6 +222,9 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [completePool, setCompletePool] = useState<Record<string, string>>({});
   const patchSeqByItem = useRef<Record<string, number>>({});
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
 
   const activePurchase = purchases.find((p) => p.id === activePurchaseId) || null;
   const selectedProduct = catalog.find((p) => p.id === selectedProductId) || null;
@@ -215,7 +251,7 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
         prodData = await publicRes.json().catch(() => ({})) as { products?: CatalogProduct[] };
       }
       const supData = await supRes.json().catch(() => ({})) as { suppliers?: Supplier[] };
-      const purData = await purRes.json().catch(() => ({})) as { purchases?: Purchase[] };
+      const purData = await purRes.json().catch(() => ({})) as { purchases?: Purchase[]; repaired?: number };
       const nextSuppliers = Array.isArray(supData.suppliers) ? supData.suppliers : [];
       const nextPurchases = Array.isArray(purData.purchases) ? purData.purchases : [];
       setSuppliers(nextSuppliers);
@@ -227,6 +263,10 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
         const draft = nextPurchases.find((p) => p.status === "draft");
         return draft?.id ?? current;
       });
+      if (Number(purData.repaired || 0) > 0) {
+        toast.success("Despesa da compra concluída foi gerada e já entra como paga.");
+      }
+      onCompletedRef.current?.();
     } catch {
       toast.error("Erro ao carregar compras com fornecedor.");
     } finally {
@@ -372,11 +412,11 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
       });
       const data = await res.json().catch(() => ({})) as { purchase?: Purchase; message?: string };
       if (!res.ok || !data.purchase) {
-        toast.error(data.message || "Erro ao finalizar pedido.");
+        toast.error(data.message || "Erro ao travar o pedido.");
         return;
       }
       replacePurchase(data.purchase);
-      toast.success("Pedido finalizado. Agora conclua a compra e escolha o estoque.");
+      toast.success("Pedido travado. Agora escolha o estoque e dê entrada.");
     } finally {
       setBusy(null);
     }
@@ -397,11 +437,11 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
       });
       const data = await res.json().catch(() => ({})) as { purchase?: Purchase; message?: string; inventoryPoolLabel?: string };
       if (!res.ok || !data.purchase) {
-        toast.error(data.message || "Erro ao concluir compra.");
+        toast.error(data.message || "Erro ao dar entrada no estoque.");
         return;
       }
       replacePurchase(data.purchase);
-      toast.success(`Compra concluída. Entrou no estoque ${data.inventoryPoolLabel || inventoryPool}.`);
+      toast.success(`Entrada feita no estoque ${data.inventoryPoolLabel || inventoryPool}. Despesa lançada como paga.`);
       onCompleted?.();
     } finally {
       setBusy(null);
@@ -409,13 +449,20 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
   };
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-4">
-      <div>
-        <p className="text-sm font-semibold text-foreground">Compra com fornecedor</p>
-        <p className="text-xs text-muted-foreground">
-          Monte o carrinho com custo de cada item, finalize o pedido e depois conclua escolhendo o estoque (Foz Guaçu, Motoboy ou Minas).
-        </p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+          <Package className="w-5 h-5 text-amber-700" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Comprar mercadoria do fornecedor</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Aqui entra estoque e já lança a despesa como <span className="font-medium text-foreground">paga</span>. Não use o formulário de extravio/reenvio para isso.
+          </p>
+        </div>
       </div>
+
+      <PurchaseSteps status={activePurchase?.status || purchases.find((p) => p.status === "ordered")?.status || purchases.find((p) => p.status === "draft")?.status || (purchases.some((p) => p.status === "completed") ? "completed" : "draft")} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
@@ -428,7 +475,7 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
           <input
             value={newSupplierName}
             onChange={(e) => setNewSupplierName(e.target.value)}
-            placeholder="Novo fornecedor"
+            placeholder="Cadastrar fornecedor"
             className="h-10 flex-1 px-3 rounded-lg border border-border bg-white text-sm"
           />
           <Button type="button" variant="outline" className="h-10" disabled={creatingSupplier} onClick={() => void createSupplier()}>
@@ -442,9 +489,9 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
       </div>
 
       {activePurchase?.status === "draft" && (
-        <div className="rounded-xl border border-border bg-white p-4 space-y-5">
+        <div className="rounded-xl border border-border bg-slate-50/60 p-4 space-y-5">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Carrinho · {activePurchase.supplierName || "Fornecedor"}
+            1. Montar compra · {activePurchase.supplierName || "Fornecedor"}
           </p>
 
           <div className="space-y-2">
@@ -517,7 +564,7 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                   <span className="text-sm font-semibold">Total {formatCurrency(activePurchase.totalAmount)}</span>
                   <Button type="button" disabled={busy === `finalize-${activePurchase.id}`} onClick={() => void finalize(activePurchase.id)}>
                     {busy === `finalize-${activePurchase.id}` ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                    Finalizar pedido
+                    Travar pedido
                   </Button>
                 </div>
               </div>
@@ -526,57 +573,114 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
         </div>
       )}
 
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Compras</p>
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recibos das compras</p>
         {loading && purchases.length === 0 ? (
           <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Carregando...</p>
         ) : purchases.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma compra ainda.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma compra ainda. Escolha o fornecedor e clique em Nova compra.</p>
         ) : (
-          purchases.map((purchase) => (
-            <div key={purchase.id} className="rounded-xl border bg-white p-3 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold">{purchase.supplierName || "Fornecedor"}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {purchase.statusLabel} · {purchase.items.length} item(ns) · {formatCurrency(purchase.totalAmount)}
-                    {purchase.inventoryPoolLabel ? ` · ${purchase.inventoryPoolLabel}` : ""}
-                  </p>
+          purchases.map((purchase) => {
+            const expanded = Boolean(expandedIds[purchase.id]);
+            const paid = purchase.status === "completed" && !purchase.expenseMissing;
+            return (
+              <div key={purchase.id} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{purchase.supplierName || "Fornecedor"}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {purchase.items.length} item(ns) · {formatCurrency(purchase.totalAmount)}
+                      {purchase.completedAt ? ` · ${formatDateOnlyBR(purchase.completedAt)}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    {purchase.status === "draft" && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-slate-50 text-slate-700">Montando</span>
+                    )}
+                    {purchase.status === "ordered" && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900">Aguardando estoque</span>
+                    )}
+                    {paid && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800">Paga</span>
+                    )}
+                    {purchase.inventoryPoolLabel && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-sky-200 bg-sky-50 text-sky-800 inline-flex items-center gap-1">
+                        <Warehouse className="w-3 h-3" />
+                        {purchase.inventoryPoolLabel}
+                      </span>
+                    )}
+                    {purchase.status === "draft" && (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setActivePurchaseId(purchase.id)}>
+                        Continuar
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                {purchase.status === "draft" && (
-                  <Button type="button" size="sm" variant="outline" onClick={() => setActivePurchaseId(purchase.id)}>
-                    Continuar
-                  </Button>
+
+                {purchase.status === "ordered" && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 space-y-2">
+                    <p className="text-xs font-medium text-amber-950">3. Onde essa mercadoria entra? A despesa é lançada paga nesse clique.</p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <select
+                        value={completePool[purchase.id] || ""}
+                        onChange={(e) => setCompletePool((c) => ({ ...c, [purchase.id]: e.target.value }))}
+                        className="h-10 px-3 rounded-lg border border-border bg-white text-sm flex-1"
+                      >
+                        <option value="">Estoque de destino</option>
+                        <option value="loja">Foz Guaçu</option>
+                        <option value="motoboy">Motoboy</option>
+                        <option value="minas">Minas</option>
+                      </select>
+                      <Button
+                        type="button"
+                        className="h-10"
+                        disabled={!isPrimary || busy === `complete-${purchase.id}`}
+                        onClick={() => void complete(purchase.id)}
+                      >
+                        {busy === `complete-${purchase.id}` ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                        Dar entrada no estoque
+                      </Button>
+                    </div>
+                    {!isPrimary && (
+                      <p className="text-xs text-amber-800">Só o admin primário dá entrada no estoque.</p>
+                    )}
+                  </div>
+                )}
+
+                {purchase.status === "completed" && (
+                  <div className={`rounded-lg border px-3 py-2 text-xs ${purchase.expenseMissing ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+                    {purchase.expenseMissing
+                      ? "Estoque já entrou, mas a despesa não foi gravada. Atualize a página — o sistema tenta gerar o lançamento pago."
+                      : `Despesa paga · ${formatCurrency(purchase.totalAmount)} · entrou no estoque ${purchase.inventoryPoolLabel || "escolhido"}.`}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground inline-flex items-center gap-1 hover:text-foreground"
+                  onClick={() => setExpandedIds((c) => ({ ...c, [purchase.id]: !expanded }))}
+                >
+                  {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  {expanded ? "Ocultar itens" : "Ver itens"}
+                </button>
+                {expanded && (
+                  <div className="space-y-2">
+                    {purchase.items.map((item) => {
+                      const catalogProduct = catalog.find((p) => p.id === item.productId);
+                      return (
+                        <div key={item.id} className="flex items-center gap-3 text-sm border rounded-lg px-3 py-2 bg-slate-50">
+                          <ProductThumb src={catalogProduct?.image} alt={item.productName} />
+                          <span className="flex-1 min-w-0 truncate">{item.productName}</span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">{item.quantity} × {formatCurrency(item.costPrice)}</span>
+                          <span className="text-sm font-semibold whitespace-nowrap">{formatCurrency(item.lineTotal)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-              {purchase.status === "ordered" && (
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <select
-                    value={completePool[purchase.id] || ""}
-                    onChange={(e) => setCompletePool((c) => ({ ...c, [purchase.id]: e.target.value }))}
-                    className="h-10 px-3 rounded-lg border border-border bg-white text-sm flex-1"
-                  >
-                    <option value="">Estoque de destino</option>
-                    <option value="loja">Foz Guaçu</option>
-                    <option value="motoboy">Motoboy</option>
-                    <option value="minas">Minas</option>
-                  </select>
-                  <Button
-                    type="button"
-                    className="h-10"
-                    disabled={!isPrimary || busy === `complete-${purchase.id}`}
-                    onClick={() => void complete(purchase.id)}
-                  >
-                    {busy === `complete-${purchase.id}` ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                    Concluir compra
-                  </Button>
-                </div>
-              )}
-              {!isPrimary && purchase.status === "ordered" && (
-                <p className="text-xs text-amber-800">Só o admin primário conclui e dá entrada no estoque.</p>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

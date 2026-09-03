@@ -12,7 +12,9 @@ import { requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { inventoryPoolLabel, parseInventoryPool } from "../lib/order-inventory-debit";
 import {
   completeSupplierPurchase,
+  loadExpenseIds,
   recalcPurchaseTotal,
+  repairCompletedPurchaseExpenses,
   SupplierPurchaseError,
 } from "../lib/supplier-purchases";
 import {
@@ -51,14 +53,17 @@ async function loadPurchase(id: string) {
     .select()
     .from(supplierPurchaseItemsTable)
     .where(eq(supplierPurchaseItemsTable.purchaseId, id));
-  return mapPurchase(purchase, supplier?.name ?? null, items);
+  const existing = await loadExpenseIds(purchase.expenseId ? [purchase.expenseId] : []);
+  return mapPurchase(purchase, supplier?.name ?? null, items, existing.has(purchase.expenseId || ""));
 }
 
 function mapPurchase(
   purchase: typeof supplierPurchasesTable.$inferSelect,
   supplierName: string | null,
   items: Array<typeof supplierPurchaseItemsTable.$inferSelect>,
+  expenseExists = false,
 ) {
+  const completed = purchase.status === "completed";
   return {
     id: purchase.id,
     supplierId: purchase.supplierId,
@@ -71,6 +76,8 @@ function mapPurchase(
       return pool ? inventoryPoolLabel(pool) : null;
     })(),
     expenseId: purchase.expenseId,
+    expenseMissing: completed && !expenseExists,
+    expenseStatus: completed && expenseExists ? "paid" : null,
     totalAmount: Number(purchase.totalAmount || 0),
     note: purchase.note,
     orderedAt: toISO(purchase.orderedAt),
@@ -123,9 +130,16 @@ router.post("/admin/suppliers", requireAdminAuth, async (req, res) => {
 
 router.get("/admin/supplier-purchases", requireAdminAuth, async (_req, res) => {
   try {
-    const purchases = await db.select().from(supplierPurchasesTable).orderBy(desc(supplierPurchasesTable.updatedAt));
+    let purchases = await db.select().from(supplierPurchasesTable).orderBy(desc(supplierPurchasesTable.updatedAt));
     const suppliers = await db.select().from(suppliersTable);
     const bySupplier = new Map(suppliers.map((row) => [row.id, row.name]));
+    const repaired = await repairCompletedPurchaseExpenses({
+      purchases,
+      supplierNames: bySupplier,
+    });
+    if (repaired > 0) {
+      purchases = await db.select().from(supplierPurchasesTable).orderBy(desc(supplierPurchasesTable.updatedAt));
+    }
     const items = await db.select().from(supplierPurchaseItemsTable);
     const itemsByPurchase = new Map<string, Array<typeof supplierPurchaseItemsTable.$inferSelect>>();
     for (const item of items) {
@@ -133,11 +147,14 @@ router.get("/admin/supplier-purchases", requireAdminAuth, async (_req, res) => {
       list.push(item);
       itemsByPurchase.set(item.purchaseId, list);
     }
+    const existingExpenses = await loadExpenseIds(purchases.map((row) => row.expenseId || ""));
     res.json({
+      repaired,
       purchases: purchases.map((purchase) => mapPurchase(
         purchase,
         bySupplier.get(purchase.supplierId) ?? null,
         itemsByPurchase.get(purchase.id) || [],
+        existingExpenses.has(purchase.expenseId || ""),
       )),
     });
   } catch (err) {

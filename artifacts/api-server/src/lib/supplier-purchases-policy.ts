@@ -40,7 +40,7 @@ export function canCompletePurchase(status: string | null | undefined): { ok: tr
 
 export function purchaseStatusLabel(status: string | null | undefined): string {
   const parsed = parseSupplierPurchaseStatus(status);
-  if (parsed === "ordered") return "Pedido finalizado";
-  if (parsed === "completed") return "Compra concluída";
-  return "Rascunho";
+  if (parsed === "ordered") return "Aguardando entrada no estoque";
+  if (parsed === "completed") return "Concluída e paga";
+  return "Montando compra";
 }

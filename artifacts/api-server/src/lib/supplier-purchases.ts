@@ -6,8 +6,10 @@ import {
   productsTable,
   supplierPurchaseItemsTable,
   supplierPurchasesTable,
+  suppliersTable,
 } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
+import { brazilExpensePeriod } from "./brazil-expense-period";
 import { inventoryPoolLabel, parseInventoryPool, type InventoryPoolKind } from "./order-inventory-debit";
 import {
   registerInventoryEntry,
@@ -60,6 +62,110 @@ async function applyInventoryEntry(pool: InventoryPoolKind, input: {
   await registerInventoryEntry(payload);
 }
 
+async function writePurchaseExpense(input: {
+  expenseId: string;
+  purchaseId: string;
+  supplierName: string;
+  poolLabel: string;
+  totalAmount: number;
+  at?: Date | null;
+}): Promise<void> {
+  const now = new Date();
+  const period = brazilExpensePeriod(input.at || now);
+  const supplierLabel = String(input.supplierName || "Fornecedor").trim() || "Fornecedor";
+  await db.insert(marketingExpensesTable).values({
+    id: input.expenseId,
+    sellerCode: null,
+    expenseType: "compra_fornecedor",
+    status: "paid",
+    referenceOrderId: null,
+    referenceReshipmentId: null,
+    expenseDate: period.expenseDate,
+    expenseStartDate: period.expenseStartDate,
+    expenseEndDate: period.expenseEndDate,
+    channel: "Compra Fornecedor",
+    amount: input.totalAmount.toFixed(2),
+    note: `Compra ${supplierLabel} · estoque ${input.poolLabel} · compra ${input.purchaseId}`,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+async function alignPurchaseExpenseDates(expenseId: string, at?: Date | null): Promise<void> {
+  const period = brazilExpensePeriod(at || new Date());
+  await db
+    .update(marketingExpensesTable)
+    .set({
+      expenseDate: period.expenseDate,
+      expenseStartDate: period.expenseStartDate,
+      expenseEndDate: period.expenseEndDate,
+      status: "paid",
+      updatedAt: new Date(),
+    })
+    .where(eq(marketingExpensesTable.id, expenseId));
+}
+
+export async function loadExpenseIds(ids: string[]): Promise<Set<string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return new Set();
+  const rows = await db
+    .select({ id: marketingExpensesTable.id })
+    .from(marketingExpensesTable)
+    .where(inArray(marketingExpensesTable.id, unique));
+  return new Set(rows.map((row) => row.id));
+}
+
+export async function repairCompletedPurchaseExpenses(input?: {
+  purchases?: Array<typeof supplierPurchasesTable.$inferSelect>;
+  supplierNames?: Map<string, string>;
+}): Promise<number> {
+  const purchases = input?.purchases
+    ?? await db.select().from(supplierPurchasesTable).where(eq(supplierPurchasesTable.status, "completed"));
+  const completed = purchases.filter((row) => row.status === "completed");
+  if (completed.length === 0) return 0;
+
+  let names = input?.supplierNames;
+  if (!names) {
+    const suppliers = await db.select({ id: suppliersTable.id, name: suppliersTable.name }).from(suppliersTable);
+    names = new Map(suppliers.map((row) => [row.id, row.name]));
+  }
+
+  const existingIds = await loadExpenseIds(completed.map((row) => row.expenseId || ""));
+  let repaired = 0;
+
+  for (const purchase of completed) {
+    const pool = parseInventoryPool(purchase.inventoryPool);
+    const poolLabel = pool ? inventoryPoolLabel(pool) : "estoque";
+    const supplierName = names.get(purchase.supplierId) || "Fornecedor";
+    const at = purchase.completedAt || purchase.updatedAt || new Date();
+
+    if (purchase.expenseId && existingIds.has(purchase.expenseId)) {
+      await alignPurchaseExpenseDates(purchase.expenseId, at);
+      continue;
+    }
+
+    const expenseId = purchase.expenseId || crypto.randomUUID();
+    const totalAmount = roundPurchaseMoney(purchase.totalAmount);
+    await writePurchaseExpense({
+      expenseId,
+      purchaseId: purchase.id,
+      supplierName,
+      poolLabel,
+      totalAmount,
+      at,
+    });
+    if (!purchase.expenseId || purchase.expenseId !== expenseId) {
+      await db
+        .update(supplierPurchasesTable)
+        .set({ expenseId, updatedAt: new Date() })
+        .where(eq(supplierPurchasesTable.id, purchase.id));
+    }
+    repaired += 1;
+  }
+
+  return repaired;
+}
+
 export async function completeSupplierPurchase(input: {
   purchaseId: string;
   inventoryPool: unknown;
@@ -80,7 +186,7 @@ export async function completeSupplierPurchase(input: {
 
   const allowed = canCompletePurchase(purchase.status);
   if (!allowed.ok) {
-    throw new SupplierPurchaseError("NOT_ORDERED", "Finalize o pedido antes de concluir a compra.");
+    throw new SupplierPurchaseError("NOT_ORDERED", "Trave o pedido antes de dar entrada no estoque.");
   }
 
   const items = await db
@@ -110,7 +216,7 @@ export async function completeSupplierPurchase(input: {
     .where(sql`${supplierPurchasesTable.id} = ${purchaseId} AND ${supplierPurchasesTable.status} = 'ordered'`);
 
   if (Number((claimed as { rowsAffected?: number }).rowsAffected || 0) === 0) {
-    throw new SupplierPurchaseError("NOT_ORDERED", "Essa compra já foi concluída ou ainda não foi finalizada.");
+    throw new SupplierPurchaseError("NOT_ORDERED", "Essa compra já foi concluída ou ainda não foi travada.");
   }
 
   try {
@@ -144,21 +250,13 @@ export async function completeSupplierPurchase(input: {
       }
     }
 
-    await db.insert(marketingExpensesTable).values({
-      id: expenseId,
-      sellerCode: null,
-      expenseType: "compra_fornecedor",
-      status: "paid",
-      referenceOrderId: null,
-      referenceReshipmentId: null,
-      expenseDate: now,
-      expenseStartDate: now,
-      expenseEndDate: now,
-      channel: "Compra Fornecedor",
-      amount: totalAmount.toFixed(2),
-      note: `Compra ${supplierLabel} · estoque ${poolLabel} · compra ${purchaseId}`,
-      createdAt: now,
-      updatedAt: now,
+    await writePurchaseExpense({
+      expenseId,
+      purchaseId,
+      supplierName: supplierLabel,
+      poolLabel,
+      totalAmount,
+      at: now,
     });
   } catch (err) {
     await db

@@ -1399,6 +1399,7 @@ export default function Admin() {
     referenceReshipmentId: "",
     channel: "",
   });
+  const [adHocExpenseOpen, setAdHocExpenseOpen] = useState(false);
   const [pendingReshipments, setPendingReshipments] = useState<ReshipmentRecord[]>([]);
   const [activeManualReturnItemId, setActiveManualReturnItemId] = useState<string | null>(null);
   const [inventoryEntryForm, setInventoryEntryForm] = useState({
@@ -5293,11 +5294,11 @@ export default function Admin() {
             </div>
           </div>
         ) : tab === "expenses" ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
+          <div className="space-y-5">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <h2 className="text-xl font-bold text-foreground">Despesas operacionais</h2>
-                <p className="text-sm text-muted-foreground">Lance extravio, reenvio, avaria, compra com fornecedor e demais custos para refletir no financeiro.</p>
+                <p className="text-sm text-muted-foreground">Duas coisas diferentes: compra de mercadoria (estoque + despesa paga) e lançamento avulso (extravio, reenvio, avaria).</p>
               </div>
               <Button variant="outline" onClick={fetchExpenses} disabled={expensesLoading}>
                 {expensesLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
@@ -5306,15 +5307,18 @@ export default function Admin() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="rounded-xl border p-4 bg-white">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lançamentos</p>
-                <p className="text-2xl font-bold mt-1">{expenses.length}</p>
+              <div className="rounded-xl border border-slate-200 p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Compras de fornecedor</p>
+                <p className="text-2xl font-bold mt-1 text-amber-800">
+                  {formatCurrency(expenses
+                    .filter((item) => String(item.expenseType || "") === "compra_fornecedor")
+                    .reduce((sum, item) => sum + Number(item.amount || 0), 0))}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {expenses.filter((item) => String(item.expenseType || "") === "compra_fornecedor").length} no filtro
+                </p>
               </div>
-              <div className="rounded-xl border p-4 bg-white">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total do filtro</p>
-                <p className="text-2xl font-bold mt-1 text-rose-700">{formatCurrency(expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</p>
-              </div>
-              <div className="rounded-xl border p-4 bg-white">
+              <div className="rounded-xl border border-slate-200 p-4 bg-white">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Extravio + Reenvio</p>
                 <p className="text-2xl font-bold mt-1 text-orange-700">
                   {formatCurrency(expenses
@@ -5322,13 +5326,29 @@ export default function Admin() {
                     .reduce((sum, item) => sum + Number(item.amount || 0), 0))}
                 </p>
               </div>
+              <div className="rounded-xl border border-slate-200 p-4 bg-white">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total do período</p>
+                <p className="text-2xl font-bold mt-1 text-rose-700">{formatCurrency(expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">{expenses.length} lançamento(s)</p>
+              </div>
             </div>
 
             <AdminSupplierPurchasesPanel isPrimary={isPrimary} onCompleted={() => { fetchExpenses(); fetchFinancialSummary(); }} />
 
-            <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
-              <p className="text-sm font-semibold">Novo lançamento</p>
-              <form onSubmit={handleCreateExpense} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between gap-2 text-left"
+                onClick={() => setAdHocExpenseOpen((open) => !open)}
+              >
+                <div>
+                  <p className="text-sm font-semibold">Lançamento avulso</p>
+                  <p className="text-xs text-muted-foreground">Extravio, reenvio, avaria ou marketing. Não entra estoque.</p>
+                </div>
+                {adHocExpenseOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+              </button>
+              {adHocExpenseOpen && (
+              <form onSubmit={handleCreateExpense} className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
                 <input type="date" value={expenseForm.expenseStartDate} onChange={(e) => setExpenseForm((c) => ({ ...c, expenseStartDate: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
                 <input type="date" value={expenseForm.expenseEndDate} onChange={(e) => setExpenseForm((c) => ({ ...c, expenseEndDate: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
                 <select value={expenseForm.expenseType} onChange={(e) => setExpenseForm((c) => ({ ...c, expenseType: e.target.value }))} className="h-10 px-3 rounded-lg border border-border bg-white text-sm">
@@ -5362,9 +5382,11 @@ export default function Admin() {
                   Lançar despesa
                 </Button>
               </form>
+              )}
             </div>
 
-            <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <p className="text-sm font-semibold">Lista do período</p>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                 <input type="date" value={expenseDateFrom} onChange={(e) => setExpenseDateFrom(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
                 <input type="date" value={expenseDateTo} onChange={(e) => setExpenseDateTo(e.target.value)} className="h-10 px-3 rounded-lg border border-border bg-white text-sm" />
@@ -5390,19 +5412,39 @@ export default function Admin() {
               {expensesLoading ? (
                 <div className="py-8 text-center text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />Carregando despesas...</div>
               ) : expenses.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">Nenhuma despesa encontrada para o filtro atual.</div>
+                <div className="py-8 text-center text-muted-foreground">Nenhuma despesa neste período. Compra de fornecedor aparece aqui depois da entrada no estoque.</div>
               ) : (
                 <div className="space-y-2 max-h-[520px] overflow-auto pr-1">
-                  {expenses.map((item) => (
-                    <div key={item.id} className="rounded-xl border border-border bg-white p-3 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{String(item.expenseType || "outros").replace(/_/g, " ")}</p>
+                  {expenses.map((item) => {
+                    const typeLabel: Record<string, string> = {
+                      extravio: "Extravio",
+                      reenvio_mercadoria: "Reenvio mercadoria",
+                      reenvio_frete: "Reenvio frete",
+                      avaria: "Avaria",
+                      operacional: "Operacional",
+                      compra_fornecedor: "Compra fornecedor",
+                      marketing: "Marketing",
+                      outros: "Outros",
+                    };
+                    const statusLabel = item.status === "paid" ? "Paga" : item.status === "reversed" ? "Estornada" : "Aberta";
+                    const statusClass = item.status === "paid"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : item.status === "reversed"
+                        ? "border-slate-200 bg-slate-50 text-slate-600"
+                        : "border-amber-200 bg-amber-50 text-amber-900";
+                    return (
+                    <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-3 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                          <p className="text-sm font-semibold text-foreground">{typeLabel[String(item.expenseType || "outros")] || String(item.expenseType || "outros").replace(/_/g, " ")}</p>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusClass}`}>{statusLabel}</span>
+                        </div>
                         <p className="text-xs text-muted-foreground">{formatDateBR(item.expenseStartDate || item.expenseDate)} até {formatDateBR(item.expenseEndDate || item.expenseDate)}</p>
-                        <p className="text-xs text-muted-foreground">Status: {item.status} · Canal: {item.channel || "-"}</p>
+                        <p className="text-xs text-muted-foreground">Canal: {item.channel || "-"}</p>
                         {(item.referenceOrderId || item.referenceReshipmentId) && (
                           <p className="text-xs text-muted-foreground">Pedido: {item.referenceOrderId || "-"} · Reenvio: {item.referenceReshipmentId || "-"}</p>
                         )}
-                        {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
+                        {item.note ? <p className="text-xs text-slate-600 mt-1">{item.note}</p> : null}
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
@@ -5419,7 +5461,8 @@ export default function Admin() {
                         </Button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

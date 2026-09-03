@@ -5,6 +5,7 @@ import {
   canFinalizePurchase,
   computePurchaseTotal,
   parseSupplierPurchaseStatus,
+  purchaseStatusLabel,
 } from "./supplier-purchases-policy";
 
 test("status so aceita draft ordered completed", () => {
@@ -31,4 +32,10 @@ test("concluir so depois de finalizar o pedido", () => {
   assert.equal(canCompletePurchase("ordered").ok, true);
   assert.equal(canCompletePurchase("draft").ok, false);
   assert.equal(canCompletePurchase("completed").ok, false);
+});
+
+test("rotulos de status falam em montar travar e pagar", () => {
+  assert.equal(purchaseStatusLabel("draft"), "Montando compra");
+  assert.equal(purchaseStatusLabel("ordered"), "Aguardando entrada no estoque");
+  assert.equal(purchaseStatusLabel("completed"), "Concluída e paga");
 });
