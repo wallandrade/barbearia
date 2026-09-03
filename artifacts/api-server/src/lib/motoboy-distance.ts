@@ -122,6 +122,11 @@ export function parseMotoboyDistanceEnabled(raw: string | undefined | null, defa
   return !["0", "false", "off", "no", "disabled"].includes(normalized);
 }
 
+/** Km e bairro são exclusivos: km ligado não consulta cadastro de bairros. */
+export function shouldLookupMotoboyNeighborhoods(distanceEnabled: boolean): boolean {
+  return !distanceEnabled;
+}
+
 export function parseMotoboyOriginCep(raw: string | undefined | null): string {
   const cep = normalizeCep(raw);
   return cep.length === 8 ? cep : DEFAULT_MOTOBOY_ORIGIN_CEP;

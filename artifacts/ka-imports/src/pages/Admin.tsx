@@ -584,6 +584,7 @@ import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
+import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insuranceCoversProblem, insurancePlanCustomerLabel } from "@/lib/checkout-insurance";
 
 
@@ -17797,6 +17798,7 @@ function FretePanel({
     createdAt: string;
   }>>([]);
   const [proposalBusy, setProposalBusy] = useState<string | null>(null);
+  const kmModeEnabled = parseMotoboyDistanceEnabled(settings["motoboy_distance_enabled"]);
 
   useEffect(() => {
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
@@ -18253,16 +18255,22 @@ function FretePanel({
       />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Motoboy por bairro                                                  */}
+      {/* Motoboy por bairro — inativo no checkout se km estiver ligado       */}
       {/* ------------------------------------------------------------------ */}
-      <div className="bg-white rounded-2xl shadow-sm border border-border p-6">
+      <div className={`bg-white rounded-2xl shadow-sm border border-border p-6 ${kmModeEnabled ? "opacity-60" : ""}`}>
         <h3 className="font-semibold text-base mb-1 flex items-center gap-2">
           <IconLucide name="Bike" className="w-4 h-4 text-primary" />
           Entrega por Motoboy — Bairros Atendidos
         </h3>
-        <p className="text-xs text-muted-foreground mb-4">Cadastre os bairros que o motoboy atende e o valor cobrado. Quando o cliente digitar o CEP no checkout, o bairro será identificado automaticamente e a opção de motoboy será exibida com o valor correto.</p>
+        {kmModeEnabled ? (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
+            Motoboy por km está ligado: estes bairros <strong>não entram no checkout</strong>. Desligue o km acima para voltar a cobrar por bairro.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground mb-4">Cadastre os bairros que o motoboy atende e o valor cobrado. Quando o cliente digitar o CEP no checkout, o bairro será identificado automaticamente e a opção de motoboy será exibida com o valor correto.</p>
+        )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${kmModeEnabled ? "pointer-events-none" : ""}`}>
           <div>
             <label className="block text-xs font-medium mb-1">Bairro *</label>
             <input
@@ -18310,14 +18318,14 @@ function FretePanel({
             />
           </div>
         </div>
-        <Button className="mt-4" onClick={onMotoboyCreate} disabled={motoboyCreating}>
+        <Button className="mt-4" onClick={onMotoboyCreate} disabled={motoboyCreating || kmModeEnabled}>
           {motoboyCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
           Adicionar Bairro
         </Button>
       </div>
 
       {/* Motoboy list */}
-      <div className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+      <div className={`bg-white rounded-2xl shadow-sm border border-border overflow-hidden ${kmModeEnabled ? "opacity-60 pointer-events-none" : ""}`}>
         <div className="px-6 py-4 border-b">
           <h3 className="font-semibold text-base flex items-center gap-2">
             <IconLucide name="MapPin" className="w-4 h-4 text-primary" />
@@ -18430,11 +18438,11 @@ function FretePanel({
       <div className="bg-orange-50 border border-orange-100 rounded-2xl px-6 py-4 text-xs text-orange-700 space-y-1">
         <p className="font-semibold flex items-center gap-1"><IconLucide name="Bike" className="w-3.5 h-3.5" />Como funciona o Motoboy</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>Quando o cliente informa o CEP no checkout, o sistema consulta a ViaCEP para identificar o bairro.</li>
-          <li>Se o bairro estiver cadastrado aqui e <strong>ativo</strong>, a opção "Motoboy" aparecerá automaticamente com o valor correto.</li>
-          <li>O match ignora acentos e sufixos entre parênteses (ex.: ViaCEP manda “Jardim Imperador (Zona Leste)” e o cadastro pode ser “Jardim Imperador”).</li>
-          <li>Se não houver bairro cadastrado, usa <strong>Motoboy por km</strong> (card acima): CEP de partida na Sé, Sé/centro R$ 50, demais faixas até 200 km. Acima disso o Motoboy some — consultar pessoalmente, sem cair na faixa de CEP.</li>
-          <li>Se o km não puder ser calculado (CEP sem coordenadas), o sistema usa a <strong>faixa de CEP</strong> abaixo (rede de segurança da região — prefixos Correios da capital).</li>
+          <li><strong>Km e bairro não misturam.</strong> Km ligado = checkout ignora bairros cadastrados. Km desligado = volta o preço por bairro.</li>
+          <li>Quando o cliente informa o CEP, o sistema consulta a ViaCEP para rua/bairro/cidade.</li>
+          <li>Com <strong>km ligado</strong>: cobra pela distância a partir da Sé (centro R$ 50; demais faixas até 200 km). Acima disso o Motoboy some — consultar pessoalmente, sem faixa de CEP.</li>
+          <li>Com <strong>km desligado</strong>: se o bairro estiver cadastrado e ativo, aparece Motoboy com o valor do cadastro (match ignora acentos e sufixos entre parênteses).</li>
+          <li>Se o modo da vez não cotar (CEP sem coordenadas no km, ou bairro não cadastrado), usa a <strong>faixa de CEP</strong> abaixo.</li>
           <li>Prefira <strong>faixas de CEP por região</strong> (seed `seed-motoboy-cep-ranges-regioes.sql`) em vez de dezenas de microbairros. A faixa <strong>mais estreita</strong> ganha da “São Paulo — Geral”.</li>
           <li>Quando uma faixa Correios cobre vários distritos, o seed usa o <strong>maior</strong> preço Motoboy da zona (não cobra a menos).</li>
         </ul>
@@ -18447,8 +18455,8 @@ function FretePanel({
           Faixas de CEP (Fallback)
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Quando o bairro da ViaCEP não for encontrado na lista acima e o Motoboy por km não cotar (desligado ou CEP sem coordenadas), o sistema usa a faixa de CEP mais específica que cobrir o CEP.
-          CEP acima de 200 km do ponto de partida <strong>não</strong> cai nesta faixa.
+          Rede de segurança se o modo ativo não cotar: km ligado sem coordenadas no CEP, ou km desligado sem bairro cadastrado.
+          A faixa mais específica que cobrir o CEP ganha. CEP acima de 200 km com km ligado <strong>não</strong> cai nesta faixa.
           Ex.: CEP 03935-080 (Jardim Imperador) cai em “São Mateus e região” e cobra o mesmo preço do distrito — sem cadastrar cada microbairro.
         </p>
 

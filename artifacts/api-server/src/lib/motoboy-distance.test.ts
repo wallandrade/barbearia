@@ -9,6 +9,7 @@ import {
   parseMotoboyDistanceConfig,
   priceForBilledKm,
   quoteMotoboyDistance,
+  shouldLookupMotoboyNeighborhoods,
 } from "./motoboy-distance";
 
 test("haversine mesmo ponto = 0", () => {
@@ -104,4 +105,9 @@ test("slot id dist", () => {
   assert.equal(isMotoboyDistanceSlotId("dist"), true);
   assert.equal(isMotoboyDistanceSlotId("dist_abc"), true);
   assert.equal(isMotoboyDistanceSlotId("range_1"), false);
+});
+
+test("km ligado ignora bairros; km desligado usa bairros", () => {
+  assert.equal(shouldLookupMotoboyNeighborhoods(true), false);
+  assert.equal(shouldLookupMotoboyNeighborhoods(false), true);
 });

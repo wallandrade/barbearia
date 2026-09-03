@@ -10,6 +10,7 @@ import {
   parseMotoboyDistanceEnabled,
   parseMotoboyOriginCep,
   quoteMotoboyDistance,
+  shouldLookupMotoboyNeighborhoods,
   stripAccents,
   type MotoboyDistanceConfig,
 } from "./motoboy-distance";
@@ -109,8 +110,9 @@ export async function lookupMotoboyCoverage(input: {
   const cep = normalizeCep(input.cep);
   const bairro = String(input.bairro ?? "").trim();
   const cidade = String(input.cidade ?? "").trim();
+  const settings = await loadDistanceSettings();
 
-  if (bairro) {
+  if (shouldLookupMotoboyNeighborhoods(settings.enabled) && bairro) {
     const neighborhood = await findNeighborhood(bairro, cidade);
     if (neighborhood) {
       return {
@@ -127,7 +129,6 @@ export async function lookupMotoboyCoverage(input: {
     }
   }
 
-  const settings = await loadDistanceSettings();
   if (settings.enabled && cep.length === 8) {
     const destCoords = await geocodeCepBrasilApi(cep);
     let km: number | null = null;
