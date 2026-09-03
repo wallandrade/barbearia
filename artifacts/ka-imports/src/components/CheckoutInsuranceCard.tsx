@@ -374,7 +374,26 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           />
         </div>
         <div className="sm:col-span-2">
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Produtos com % especial</label>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <label className="text-xs font-medium text-muted-foreground">Produtos com % especial</label>
+            {products.length > 0 && (
+              <button
+                type="button"
+                disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]}
+                onClick={() => {
+                  const allIds = [...new Set(products.map((p) => p.id).filter(Boolean))];
+                  const allSelected = allIds.length > 0 && allIds.every((id) => productIds.includes(id));
+                  setDirty((d) => ({ ...d, productIds: true }));
+                  setProductIds(allSelected ? [] : allIds);
+                }}
+                className="text-xs font-medium text-primary hover:underline disabled:opacity-50 disabled:no-underline"
+              >
+                {products.every((p) => !p.id || productIds.includes(p.id)) && productIds.length > 0
+                  ? "Desmarcar todos"
+                  : "Selecionar todos"}
+              </button>
+            )}
+          </div>
           <div className="max-h-56 overflow-auto rounded-xl border-2 border-border bg-muted/20 p-2 space-y-1">
             {products.length === 0 ? (
               <p className="text-xs text-muted-foreground px-2 py-2">Nenhum produto carregado. Abra a aba Produtos ou aguarde.</p>
