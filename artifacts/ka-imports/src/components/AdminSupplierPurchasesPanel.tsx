@@ -232,10 +232,9 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
 
   const filteredCatalog = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    if (q.length < 1) return [];
-    return catalog
-      .filter((p) => p.isActive !== false && p.name.toLowerCase().includes(q))
-      .slice(0, 12);
+    const active = catalog.filter((p) => p.isActive !== false);
+    const list = q ? active.filter((p) => p.name.toLowerCase().includes(q)) : active;
+    return [...list].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [catalog, productSearch]);
 
   const loadAll = useCallback(async () => {
@@ -520,32 +519,30 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                 placeholder={selectedProduct ? `Custo (${formatCurrency(Number(selectedProduct.costPrice || 0))})` : "Custo unitário"}
               />
             </div>
-            {productSearch.trim() ? (
-              filteredCatalog.length > 0 ? (
-                <div className="max-h-56 overflow-auto divide-y border rounded-lg bg-slate-50">
-                  {filteredCatalog.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      disabled={busy === "add"}
-                      onClick={() => {
-                        setSelectedProductId(product.id);
-                        if (!cost) setCost(String(Number(product.costPrice || 0)));
-                        void addItem(product);
-                      }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-3 bg-white"
-                    >
-                      <ProductThumb src={product.image} alt={product.name} />
-                      <span className="flex-1 min-w-0 truncate">{product.name}</span>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">custo {formatCurrency(Number(product.costPrice || 0))}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground px-1">Nenhum produto com esse nome.</p>
-              )
+            {filteredCatalog.length > 0 ? (
+              <div className="max-h-80 overflow-auto divide-y border rounded-lg bg-slate-50">
+                {filteredCatalog.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    disabled={busy === "add"}
+                    onClick={() => {
+                      setSelectedProductId(product.id);
+                      if (!cost) setCost(String(Number(product.costPrice || 0)));
+                      void addItem(product);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-3 bg-white"
+                  >
+                    <ProductThumb src={product.image} alt={product.name} />
+                    <span className="flex-1 min-w-0 truncate">{product.name}</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">custo {formatCurrency(Number(product.costPrice || 0))}</span>
+                  </button>
+                ))}
+              </div>
             ) : (
-              <p className="text-xs text-muted-foreground px-1">Digite o nome para ver a lista de produtos.</p>
+              <p className="text-xs text-muted-foreground px-1">
+                {productSearch.trim() ? "Nenhum produto com esse nome." : "Nenhum produto no catálogo."}
+              </p>
             )}
           </div>
 
