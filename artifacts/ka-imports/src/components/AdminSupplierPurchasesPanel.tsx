@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle, Loader2, Plus, Trash2 } from "lucide-react";
+import { CheckCircle, ImageOff, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
@@ -38,6 +38,18 @@ type Purchase = {
 };
 
 type Supplier = { id: string; name: string };
+
+function ProductThumb({ src, alt }: { src?: string | null; alt: string }) {
+  const url = String(src || "").trim();
+  if (url) {
+    return <img src={url} alt={alt} className="w-10 h-10 rounded-md object-cover flex-shrink-0 border border-border bg-white" />;
+  }
+  return (
+    <div className="w-10 h-10 rounded-md bg-muted flex-shrink-0 border border-border flex items-center justify-center">
+      <ImageOff className="w-4 h-4 text-muted-foreground/60" />
+    </div>
+  );
+}
 
 type Props = {
   isPrimary: boolean;
@@ -332,7 +344,7 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
             />
           </div>
           {filteredCatalog.length > 0 && (
-            <div className="max-h-40 overflow-auto divide-y border rounded-lg">
+            <div className="max-h-56 overflow-auto divide-y border rounded-lg">
               {filteredCatalog.map((product) => (
                 <button
                   key={product.id}
@@ -343,9 +355,10 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                     if (!cost) setCost(String(Number(product.costPrice || 0)));
                     void addItem(product);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center justify-between gap-2"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-3"
                 >
-                  <span className="truncate">{product.name}</span>
+                  <ProductThumb src={product.image} alt={product.name} />
+                  <span className="flex-1 min-w-0 truncate">{product.name}</span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">custo {formatCurrency(Number(product.costPrice || 0))}</span>
                 </button>
               ))}
@@ -356,8 +369,11 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
             <p className="text-sm text-muted-foreground">Nenhum produto no carrinho.</p>
           ) : (
             <div className="space-y-2">
-              {activePurchase.items.map((item) => (
+              {activePurchase.items.map((item) => {
+                const catalogProduct = catalog.find((p) => p.id === item.productId);
+                return (
                 <div key={item.id} className="flex items-center gap-2 text-sm border rounded-lg px-3 py-2">
+                  <ProductThumb src={catalogProduct?.image} alt={item.productName} />
                   <span className="flex-1 min-w-0 truncate font-medium">{item.productName}</span>
                   <input
                     type="number"
@@ -379,7 +395,8 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-              ))}
+                );
+              })}
               <div className="flex items-center justify-between pt-1">
                 <span className="text-sm font-semibold">Total {formatCurrency(activePurchase.totalAmount)}</span>
                 <Button type="button" disabled={busy === `finalize-${activePurchase.id}`} onClick={() => void finalize(activePurchase.id)}>
