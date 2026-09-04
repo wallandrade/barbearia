@@ -934,6 +934,40 @@ async function ensureManualReturnItemsTable(databaseName: string): Promise<void>
   }
 }
 
+async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
+  if (await tableExists("order_shipments", databaseName)) return;
+
+  await pool.query(`
+    CREATE TABLE order_shipments (
+      id VARCHAR(255) NOT NULL PRIMARY KEY,
+      order_id VARCHAR(255) NOT NULL,
+      package_index INT NOT NULL DEFAULT 1,
+      inventory_pool VARCHAR(16) NOT NULL,
+      items JSON NOT NULL,
+      enviado TINYINT(1) NOT NULL DEFAULT 0,
+      enviado_at TIMESTAMP NULL,
+      inventory_reserved TINYINT(1) NOT NULL DEFAULT 0,
+      envioecom_shipment_id VARCHAR(64) NULL,
+      envioecom_barcode VARCHAR(64) NULL,
+      envioecom_tracking_key VARCHAR(128) NULL,
+      envioecom_delivery_mode VARCHAR(128) NULL,
+      envioecom_status VARCHAR(255) NULL,
+      envioecom_status_updated_at TIMESTAMP NULL,
+      envioecom_status_history JSON NULL,
+      envioecom_label_url MEDIUMTEXT NULL,
+      envioecom_freight_cost DECIMAL(10,2) NULL,
+      envioecom_external_order_number VARCHAR(64) NULL,
+      envioecom_account_id VARCHAR(64) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY order_shipments_order_id_idx (order_id),
+      KEY order_shipments_barcode_idx (envioecom_barcode),
+      KEY order_shipments_shipment_id_idx (envioecom_shipment_id),
+      KEY order_shipments_external_order_idx (envioecom_external_order_number)
+    )
+  `);
+}
+
 async function ensureOrderActivityTable(databaseName: string): Promise<void> {
   if (await tableExists("order_activity", databaseName)) return;
 
@@ -1164,6 +1198,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureManualReturnItemsTable(databaseName);
     await ensureProductCostHistoryTable(databaseName);
     await ensureOrderActivityTable(databaseName);
+    await ensureOrderShipmentsTable(databaseName);
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);
     await ensureSupplierPurchaseTables(databaseName);

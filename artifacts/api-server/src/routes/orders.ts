@@ -30,6 +30,16 @@ import {
   type InventoryPoolKind,
   type ResolvedOrderInventoryItem,
 } from "../lib/order-inventory-debit";
+import {
+  attachShipmentsToMappedOrders,
+  ensurePackageInventoryDebited,
+  listOrderShipments,
+  OrderShipmentError,
+  releasePackageInventoryIfReserved,
+  rollupOrderFromPackages,
+  saveOrderShipmentAllocation,
+  updateOrderShipment,
+} from "../lib/order-shipments";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
@@ -1351,7 +1361,8 @@ router.get("/me/orders", requireCustomerAuth, async (req, res) => {
       .orderBy(desc(ordersTable.createdAt));
 
     const mapped = await enrichOrdersWithProductImages(orders.map((row) => mapOrderForCustomer(row)));
-    res.json({ orders: mapped });
+    const withPackages = await attachShipmentsToMappedOrders(mapped);
+    res.json({ orders: withPackages });
   } catch (err) {
     console.error("Customer orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
@@ -1387,7 +1398,8 @@ router.get("/me/orders/:id", requireCustomerAuth, async (req, res) => {
     }
 
     const [order] = await enrichOrdersWithProductImages([mapOrderForCustomer(rows[0])]);
-    res.json({ order });
+    const [withPackages] = await attachShipmentsToMappedOrders([order]);
+    res.json({ order: withPackages });
   } catch (err) {
     console.error("Customer order detail error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedido." });
@@ -1419,7 +1431,8 @@ router.get("/orders/guest/:id", async (req, res) => {
     }
 
     const [order] = await enrichOrdersWithProductImages([mapOrderForCustomer(rows[0])]);
-    res.json({ order });
+    const [withPackages] = await attachShipmentsToMappedOrders([order]);
+    res.json({ order: withPackages });
   } catch (err) {
     console.error("Guest order access error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedido." });
@@ -1574,7 +1587,8 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
       return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     });
 
-    res.json({ orders: prioritized });
+    const withPackages = await attachShipmentsToMappedOrders(prioritized);
+    res.json({ orders: withPackages });
   } catch (err) {
     console.error("Admin orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
@@ -2566,6 +2580,66 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
 });
 
 // ---------------------------------------------------------------------------
+// GET/PUT /api/admin/orders/:id/shipments — divisão EnvioEcom por estoque
+// ---------------------------------------------------------------------------
+router.get("/admin/orders/:id/shipments", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+    const rows = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    if (!rows[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+    const [mapped] = await attachShipmentsToMappedOrders([mapOrder(rows[0])]);
+    res.json({ ok: true, orderId: rows[0].id, packages: mapped.envioecomPackages });
+  } catch (err) {
+    console.error("List order shipments error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar pacotes do pedido." });
+  }
+});
+
+router.put("/admin/orders/:id/shipments", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+    const rows = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    const order = rows[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+    const packagesInput = Array.isArray(req.body?.packages) ? req.body.packages : [];
+    const saved = await saveOrderShipmentAllocation(order, packagesInput);
+    recordAdminActivity(
+      req,
+      order.id,
+      "envioecom",
+      saved.packages.length >= 2 ? "Dividiu envio EnvioEcom por estoque" : "Removeu divisão de envio",
+      saved.packages.map((pkg) => pkg.inventoryPoolLabel).join(" + ") || null,
+    );
+    const [mapped] = await attachShipmentsToMappedOrders([mapOrder(order)]);
+    res.json({
+      ok: true,
+      inheritedPool: saved.inheritedPool,
+      packages: saved.packages,
+      order: { ...mapped, envioecomPackages: saved.packages },
+    });
+  } catch (err) {
+    if (err instanceof OrderShipmentError) {
+      res.status(err.status).json({ error: err.code, message: err.message });
+      return;
+    }
+    console.error("Save order shipments error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar divisão de envio." });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/inventory-pool  (protected)
 // Loja: reserva (baixa imediata). Motoboy/Minas: só grava preferência — baixa ao Enviado/postagem,
 // salvo reserveNow=true (botão "Dar baixa agora" no card).
@@ -2601,6 +2675,15 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       res.status(400).json({
         error: "ORDER_ALREADY_SHIPPED",
         message: "Pedido já marcado como enviado. Desmarque o envio antes de trocar o estoque.",
+      });
+      return;
+    }
+
+    const splitForPool = await listOrderShipments(order.id);
+    if (splitForPool.length >= 2) {
+      res.status(409).json({
+        error: "SPLIT_SHIPMENT",
+        message: "Pedido com envio dividido. A baixa de estoque é por pacote (etiqueta EnvioEcom de cada origem).",
       });
       return;
     }
@@ -2762,6 +2845,70 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     }) | undefined;
     if (!order) {
       res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const splitPackages = await listOrderShipments(id);
+    if (splitPackages.length >= 2) {
+      const wasSplitEnviado = !!order.enviado;
+      if (wasSplitEnviado && !enviado) {
+        const providedPassword = String(adminPassword || "").trim();
+        if (!providedPassword) {
+          res.status(403).json({ error: "PASSWORD_REQUIRED", message: "Senha do admin é obrigatória para desfazer envio." });
+          return;
+        }
+        const passwordOk = await verifyCurrentAdminPassword(req, providedPassword);
+        if (!passwordOk) {
+          res.status(403).json({ error: "INVALID_ADMIN_PASSWORD", message: "Senha do admin inválida." });
+          return;
+        }
+        for (const pkg of splitPackages) {
+          await releasePackageInventoryIfReserved(order, pkg);
+        }
+      }
+      if (enviado && !wasSplitEnviado) {
+        for (const pkg of splitPackages) {
+          if (pkg.inventoryReserved) continue;
+          const debit = await ensurePackageInventoryDebited(order, pkg, {
+            reason: `Saída por enviado manual pacote ${pkg.id} pedido ${order.id}`,
+          });
+          if (!debit.ok) {
+            res.status(400).json({
+              error: "INSUFFICIENT_STOCK",
+              message: debit.details || "Estoque insuficiente em um dos pacotes.",
+            });
+            return;
+          }
+        }
+        const now = new Date();
+        for (const pkg of splitPackages) {
+          await updateOrderShipment(pkg.id, {
+            enviado: true,
+            enviadoAt: pkg.enviadoAt || now,
+            inventoryReserved: true,
+          });
+        }
+      }
+      if (!enviado && wasSplitEnviado) {
+        for (const pkg of splitPackages) {
+          await updateOrderShipment(pkg.id, { enviado: false, enviadoAt: null });
+        }
+      }
+      await rollupOrderFromPackages(id);
+      await db.update(ordersTable).set({
+        enviado,
+        enviadoAt: enviado ? ((order as { enviadoAt?: Date | null }).enviadoAt ?? new Date()) : null,
+        inventoryReserved: enviado,
+        updatedAt: new Date(),
+      } as Record<string, unknown>).where(buildAdminOrderWhere(id, adminScope));
+      if (enviado) {
+        await db.update(motoboyBookingsTable)
+          .set({ isReleased: true })
+          .where(eq(motoboyBookingsTable.orderId, id));
+      }
+      broadcastNotification({ type: "order_enviado_updated", data: { id, enviado } });
+      recordAdminActivity(req, id, "enviado", enviado ? "Marcou como enviado" : "Desmarcou enviado (pendente)");
+      res.json({ ok: true, id, enviado, split: true, inventoryReserved: enviado });
       return;
     }
 

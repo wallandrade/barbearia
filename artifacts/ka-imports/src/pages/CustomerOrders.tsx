@@ -50,6 +50,15 @@ type CustomerOrder = {
   envioecomStatusHistory?: TrackingHistoryEvent[];
   envioecomShipmentId?: string | null;
   envioecomTrackingKey?: string | null;
+  envioecomPackages?: Array<{
+    id: string;
+    inventoryPoolLabel?: string;
+    enviado?: boolean;
+    envioecomBarcode?: string | null;
+    envioecomStatus?: string | null;
+    envioecomDeliveryMode?: string | null;
+    envioecomStatusHistory?: TrackingHistoryEvent[];
+  }>;
   observation?: string | null;
   distanceKmFromCustomerCity?: number | null;
   distancePackageCity?: string | null;
@@ -68,6 +77,7 @@ type TrackingInfo = {
   history?: TrackingHistoryEvent[];
   labelUrl?: string | null;
   hasShipment?: boolean;
+  packages?: CustomerOrder["envioecomPackages"];
   /** Distância aproximada cidade do pacote → cidade do cliente (km). */
   distanceKmFromCustomerCity?: number | null;
   distancePackageCity?: string | null;
@@ -201,6 +211,8 @@ const MANUAL_DELIVERED_AFTER_MS = 15 * 24 * 60 * 60 * 1000;
 
 /** Pedido com vínculo EnvioEcom — “Entregue” só quando a API disser entregue. */
 function hasEnvioEcomLink(order: CustomerOrder): boolean {
+  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
+  if (packages.some((pkg) => pkg.envioecomBarcode || pkg.envioecomStatus)) return true;
   return Boolean(
     order.envioecomShipmentId ||
       order.envioecomTrackingKey ||
@@ -211,6 +223,15 @@ function hasEnvioEcomLink(order: CustomerOrder): boolean {
 }
 
 function isEnvioEcomDelivered(order: CustomerOrder): boolean {
+  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
+  if (packages.length >= 2) {
+    return packages.every((pkg) => {
+      const current = normalizeShippingStatus(pkg.envioecomStatus);
+      if (current && isShippingDelivered(current)) return true;
+      const history = Array.isArray(pkg.envioecomStatusHistory) ? pkg.envioecomStatusHistory : [];
+      return history.some((ev) => isShippingDelivered(String(ev.status || "")));
+    });
+  }
   const current = normalizeShippingStatus(order.envioecomStatus);
   if (current && isShippingDelivered(current)) return true;
   const history = Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
@@ -324,6 +345,7 @@ function mergeTrackingIntoOrder(order: CustomerOrder, tracking: TrackingInfo): C
     envioecomStatusHistory: Array.isArray(tracking.history)
       ? tracking.history
       : (order.envioecomStatusHistory || []),
+    ...(Array.isArray(tracking.packages) ? { envioecomPackages: tracking.packages } : {}),
     distanceKmFromCustomerCity:
       tracking.distanceKmFromCustomerCity !== undefined
         ? tracking.distanceKmFromCustomerCity
@@ -981,6 +1003,21 @@ export default function CustomerOrders() {
                                   </span>
                                 )}
                               </div>
+                              {Array.isArray(order.envioecomPackages) && order.envioecomPackages.length >= 2 && (
+                                <div className="space-y-2">
+                                  {order.envioecomPackages.map((pkg) => (
+                                    <div key={pkg.id} className="rounded-lg border border-blue-100 bg-white/70 px-2 py-1.5">
+                                      <p className="text-[11px] font-semibold text-blue-900">
+                                        {pkg.inventoryPoolLabel || "Pacote"}
+                                        {pkg.envioecomStatus ? ` · ${toCustomerFriendlyShippingLabel(pkg.envioecomStatus) || pkg.envioecomStatus}` : ""}
+                                      </p>
+                                      {pkg.envioecomBarcode && (
+                                        <p className="text-xs font-mono text-blue-950 break-all">Código: {pkg.envioecomBarcode}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                               {order.envioecomStatus && (() => {
                                 const friendly = toCustomerFriendlyShippingLabel(order.envioecomStatus);
                                 const hint = customerShippingHint(order.envioecomStatus);

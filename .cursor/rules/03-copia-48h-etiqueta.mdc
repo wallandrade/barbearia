@@ -7,8 +7,10 @@ alwaysApply: true
 
 Pedido **sai** da cópia 48h / POSTAR ATÉ / lista de compra se **qualquer**: URL (`envioecomLabelUrl` / `trackingLabelUrl`) **ou** `isLabelReadyStatus` **ou** postado (Coleta Recebida / coletado / trânsito) **ou** `enviado`.
 
+Pedido **dividido** (2+ linhas em `order_shipments`): a mesma regra vale **por pacote** — o pedido só sai quando **todos** os pacotes já têm etiqueta pronta / URL / postado / enviado. Um PDF em Minas **não** tira o pacote Motoboy da lista.
+
 `isLabelReadyStatus` / `isEnvioEcomLabelReadyStatus` **inclui** Aguardando coleta / ser coletado / postagem. **Nunca** tirar isso. **Nunca** pôr esses status em `isInTransitStatus` (não marca Enviado, não baixa estoque).
 
-**Fica na lista:** só `Envio criado`, Vincular barcode sem PDF, etiqueta HTTP 202.
+**Fica na lista:** só `Envio criado`, Vincular barcode sem PDF, etiqueta HTTP 202. No split: fica enquanto **algum** pacote ainda estiver nesses estados.
 
-Funções: `isExcludedFromShippingCopyList` (`Admin.tsx`), `isLabelReadyStatus` (`lib/envioecom.ts`). Teste obrigatório: `envioecom-status.test.ts`. Changelog **não** pode dizer “Aguardando coleta não conta” para a cópia. Corpo: `.contexto-yuri-imports/regras-negocio.md` → Invariante.
+Funções: `isExcludedFromShippingCopyList` (`Admin.tsx`), `isSplitOrderExcludedFromShippingCopyList` (`order-shipments-logic.ts`), `isLabelReadyStatus` (`lib/envioecom.ts`). Teste obrigatório: `envioecom-status.test.ts` + `order-shipments.test.ts`. Changelog **não** pode dizer “Aguardando coleta não conta” para a cópia. Corpo: `.contexto-yuri-imports/regras-negocio.md` → Invariante.

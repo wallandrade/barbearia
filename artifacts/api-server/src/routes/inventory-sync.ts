@@ -20,6 +20,7 @@ import {
   pickOrderInventoryDebit,
   resolveOrderInventoryItems,
 } from "../lib/order-inventory-debit";
+import { listOrderShipments } from "../lib/order-shipments";
 import {
   getMinasStockMap,
   getMotoboyStockMap,
@@ -166,6 +167,14 @@ router.post("/integrations/inventory/exit", async (req, res) => {
       const order = await findOrderForIntegrationExit(orderId);
       if (!order) {
         res.status(404).json({ error: "NOT_FOUND", message: "Pedido Yury não encontrado." });
+        return;
+      }
+      const splitPackages = await listOrderShipments(order.id);
+      if (splitPackages.length >= 2) {
+        res.status(409).json({
+          error: "SPLIT_SHIPMENT",
+          message: "Pedido com envio dividido. Baixe por pool+itens, não por orderId inteiro.",
+        });
         return;
       }
       const savedPool = parseInventoryPool((order as { inventoryPool?: string | null }).inventoryPool);

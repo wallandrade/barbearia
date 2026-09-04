@@ -578,6 +578,7 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
+import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
@@ -4065,6 +4066,7 @@ export default function Admin() {
     envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
     trackingLabelUrl: (o as { trackingLabelUrl?: string | null }).trackingLabelUrl,
     reshipmentStatus: (o as { reshipment?: { status?: string } }).reshipment?.status,
+    envioecomPackages: (o as { envioecomPackages?: Array<{ enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null }> }).envioecomPackages,
   });
 
   const ordersParaEnviar = orders
@@ -9959,9 +9961,23 @@ function isExcludedFromShippingCopyList(order: {
   envioecomLabelUrl?: string | null;
   trackingLabelUrl?: string | null;
   reshipmentStatus?: string | null;
+  envioecomPackages?: Array<{
+    enviado?: boolean | null;
+    envioecomStatus?: string | null;
+    envioecomLabelUrl?: string | null;
+  }>;
 }): boolean {
   if (order.enviado) return true;
   if (isClosedReshipmentStatus(order.reshipmentStatus)) return true;
+  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
+  if (packages.length >= 2) {
+    return packages.every((pkg) => {
+      if (pkg.enviado) return true;
+      if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;
+      if (isEnvioEcomPostedStatus(pkg.envioecomStatus)) return true;
+      return Boolean(String(pkg.envioecomLabelUrl || "").trim());
+    });
+  }
   // Etiqueta pronta OU já coletado/expedido/etc. — não volta na cópia 48h.
   if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
   if (isEnvioEcomPostedStatus(order.envioecomStatus)) return true;
@@ -10192,12 +10208,14 @@ function OrdersPanel({
     originZipcode?: string | null;
     accountId?: string | null;
     accountName?: string | null;
+    packageId?: string | null;
   }>(null);
   const [envioecomLinkModal, setEnvioecomLinkModal] = useState<null | {
     order: AdminOrder;
     /** Após vincular, tenta gerar etiqueta PDF */
     continueToLabel?: boolean;
     accountId?: string | null;
+    packageId?: string | null;
   }>(null);
   const [envioecomLinkDraft, setEnvioecomLinkDraft] = useState("");
   const [envioecomAccounts, setEnvioecomAccounts] = useState<EnvioEcomAccountPublic[]>([]);
@@ -10205,7 +10223,10 @@ function OrdersPanel({
     order: AdminOrder;
     purpose: "quote" | "link";
     continueToLabel?: boolean;
+    packageId?: string | null;
   }>(null);
+  const [splitShipmentModal, setSplitShipmentModal] = useState<AdminOrder | null>(null);
+  const [splitShipmentSaving, setSplitShipmentSaving] = useState(false);
   const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [trackingReview, setTrackingReview] = useState<null | {
     order: AdminOrder;
@@ -10295,7 +10316,7 @@ function OrdersPanel({
     "BUSLOG envioEcom",
   ] as const;
 
-  const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[], accountId?: string | null) => {
+  const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[], accountId?: string | null, packageId?: string | null) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
       const selected = (carriers ?? envioecomSelectedCarriers).filter(Boolean);
@@ -10305,6 +10326,7 @@ function OrdersPanel({
         body: JSON.stringify({
           ...(selected.length ? { carriers: selected } : {}),
           ...(accountId ? { accountId } : {}),
+          ...(packageId ? { packageId } : {}),
         }),
       });
       const data = await res.json() as {
@@ -10329,6 +10351,7 @@ function OrdersPanel({
         originZipcode: data.origin_zipcode ? String(data.origin_zipcode) : null,
         accountId: usedAccountId,
         accountName: envioecomAccountNameById(usedAccountId),
+        packageId: packageId || null,
       });
     } catch {
       toast.error("Erro ao cotar EnvioEcom.");
@@ -10337,7 +10360,7 @@ function OrdersPanel({
     }
   };
 
-  const startEnvioEcomQuote = async (order: AdminOrder) => {
+  const startEnvioEcomQuote = async (order: AdminOrder, packageId?: string | null) => {
     const list = selectableEnvioEcomAccounts.length
       ? envioecomAccounts
       : await refreshEnvioEcomAccounts();
@@ -10347,10 +10370,10 @@ function OrdersPanel({
       return;
     }
     if (ready.length === 1) {
-      void quoteEnvioEcom(order, undefined, ready[0].id);
+      void quoteEnvioEcom(order, undefined, ready[0].id, packageId);
       return;
     }
-    setEnvioecomAccountPicker({ order, purpose: "quote" });
+    setEnvioecomAccountPicker({ order, purpose: "quote", packageId });
   };
 
   const createEnvioEcomShipment = async (
@@ -10375,6 +10398,7 @@ function OrdersPanel({
           delivery_time: quote.delivery_time != null ? String(quote.delivery_time) : undefined,
           ...(cepOrigem.length === 8 ? { cep_origem: cepOrigem } : {}),
           ...(envioecomQuoteModal?.accountId ? { accountId: envioecomQuoteModal.accountId } : {}),
+          ...(envioecomQuoteModal?.packageId ? { packageId: envioecomQuoteModal.packageId } : {}),
         }),
       });
       const data = await res.json() as {
@@ -10387,6 +10411,8 @@ function OrdersPanel({
         details?: unknown;
         error?: string;
         accountId?: string | null;
+        packages?: unknown[];
+        packageId?: string | null;
       };
       if (!res.ok) {
         const extra =
@@ -10406,6 +10432,7 @@ function OrdersPanel({
         trackingCode: data.barcode || (order as any).trackingCode,
         envioecomLabelUrl: null,
         trackingLabelUrl: null,
+        ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
       });
       setEnvioecomQuoteModal(null);
       toast.success(
@@ -10433,7 +10460,7 @@ function OrdersPanel({
     return { barcode: value.replace(/\s+/g, "") };
   };
 
-  const openEnvioEcomLinkModal = (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string; accountId?: string | null }) => {
+  const openEnvioEcomLinkModal = (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string; accountId?: string | null; packageId?: string | null }) => {
     const prefill =
       opts?.prefill ??
       String((order as any).envioecomShipmentId || (order as any).envioecomBarcode || (order as any).trackingCode || "");
@@ -10442,10 +10469,11 @@ function OrdersPanel({
       order,
       continueToLabel: !!opts?.continueToLabel,
       accountId: opts?.accountId || (order as { envioecomAccountId?: string | null }).envioecomAccountId || null,
+      packageId: opts?.packageId || null,
     });
   };
 
-  const startEnvioEcomLink = async (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string }) => {
+  const startEnvioEcomLink = async (order: AdminOrder, opts?: { continueToLabel?: boolean; prefill?: string; packageId?: string | null }) => {
     const existingAccountId = String((order as { envioecomAccountId?: string | null }).envioecomAccountId || "");
     if (existingAccountId) {
       openEnvioEcomLinkModal(order, { ...opts, accountId: existingAccountId });
@@ -10463,7 +10491,7 @@ function OrdersPanel({
       openEnvioEcomLinkModal(order, { ...opts, accountId: ready[0].id });
       return;
     }
-    setEnvioecomAccountPicker({ order, purpose: "link", continueToLabel: opts?.continueToLabel });
+    setEnvioecomAccountPicker({ order, purpose: "link", continueToLabel: opts?.continueToLabel, packageId: opts?.packageId });
   };
 
   const linkEnvioEcomShipment = async (order: AdminOrder, rawRef: string, opts?: { continueToLabel?: boolean }) => {
@@ -10481,6 +10509,7 @@ function OrdersPanel({
         body: JSON.stringify({
           ...parsed,
           ...(envioecomLinkModal?.accountId ? { accountId: envioecomLinkModal.accountId } : {}),
+          ...(envioecomLinkModal?.packageId ? { packageId: envioecomLinkModal.packageId } : {}),
         }),
       });
       const data = await res.json() as {
@@ -10533,7 +10562,7 @@ function OrdersPanel({
           envioecomStatus: status,
           trackingCode: barcode || (order as any).trackingCode,
         } as AdminOrder;
-        await generateEnvioEcomLabel(linkedOrder);
+        await generateEnvioEcomLabel(linkedOrder, envioecomLinkModal?.packageId);
       }
     } catch {
       toast.error("Erro ao vincular EnvioEcom.");
@@ -10542,7 +10571,7 @@ function OrdersPanel({
     }
   };
 
-  const generateEnvioEcomLabel = async (order: AdminOrder) => {
+  const generateEnvioEcomLabel = async (order: AdminOrder, packageId?: string | null) => {
     if (isEnvioEcomCancelStatus((order as { envioecomStatus?: string | null }).envioecomStatus)) {
       toast.info("Envio em cancelamento. Clique em EnvioEcom para cotar e criar um envio novo.");
       return;
@@ -10557,7 +10586,7 @@ function OrdersPanel({
         const syncRes = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
           method: "POST",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify(knownShipmentId ? { shipment_id: knownShipmentId } : {}),
+          body: JSON.stringify(knownShipmentId ? { shipment_id: knownShipmentId, ...(packageId ? { packageId } : {}) } : (packageId ? { packageId } : {})),
         });
         if (syncRes.ok) {
           const syncData = await syncRes.json() as {
@@ -10593,6 +10622,7 @@ function OrdersPanel({
           ...((order as { envioecomAccountId?: string | null }).envioecomAccountId
             ? { accountId: (order as { envioecomAccountId?: string | null }).envioecomAccountId }
             : {}),
+          ...(packageId ? { packageId } : {}),
         }),
       });
       const data = await res.json() as {
@@ -10610,6 +10640,7 @@ function OrdersPanel({
         inventoryAlreadyReserved?: boolean;
         inventoryWarning?: string | null;
         inventoryPoolLabel?: string | null;
+        packages?: unknown[];
       };
 
       const applyLabelSuccess = (payload: typeof data) => {
@@ -10621,6 +10652,7 @@ function OrdersPanel({
           trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
           envioecomStatus: payload.envioecomStatus || (order as any).envioecomStatus || "Etiqueta emitida",
           ...(payload.inventoryReserved ? { inventoryReserved: true, inventoryPool: payload.inventoryPool } : {}),
+          ...(Array.isArray(payload.packages) ? { envioecomPackages: payload.packages } : {}),
         });
         if (payload.inventoryReserved) {
           setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: true }));
@@ -10641,6 +10673,7 @@ function OrdersPanel({
           openEnvioEcomLinkModal(order, {
             continueToLabel: true,
             prefill: shipmentIdOverride || "",
+            packageId,
           });
           toast.info(data.message || "Informe o ID/código do envio EnvioEcom.");
           return;
@@ -10675,18 +10708,19 @@ function OrdersPanel({
     }
   };
 
-  const syncEnvioEcomStatus = async (order: AdminOrder) => {
+  const syncEnvioEcomStatus = async (order: AdminOrder, packageId?: string | null) => {
     const knownId = String((order as any).envioecomShipmentId || "").trim();
     const knownBarcode = String((order as any).envioecomBarcode || (order as any).trackingCode || "").trim();
-    if (!knownId && !knownBarcode) {
-      openEnvioEcomLinkModal(order);
+    if (!knownId && !knownBarcode && !packageId) {
+      openEnvioEcomLinkModal(order, { packageId });
       toast.info("Cole o ID ou código do envio criado no painel EnvioEcom.");
       return;
     }
 
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
-      const body: Record<string, string> = knownId ? { shipment_id: knownId } : { barcode: knownBarcode };
+      const body: Record<string, string> = knownId ? { shipment_id: knownId } : knownBarcode ? { barcode: knownBarcode } : {};
+      if (packageId) body.packageId = packageId;
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -10700,12 +10734,13 @@ function OrdersPanel({
           deliveryMode?: string | null;
         };
         resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
+        packages?: unknown[];
         message?: string;
         error?: string;
       };
       if (!res.ok) {
         if (data.error === "NO_SHIPMENT" || data.error === "SHIPMENT_NOT_FOUND") {
-          openEnvioEcomLinkModal(order, { prefill: knownId || knownBarcode });
+          openEnvioEcomLinkModal(order, { prefill: knownId || knownBarcode, packageId });
           toast.info(data.message || "Informe o ID/código do envio EnvioEcom.");
           return;
         }
@@ -10719,8 +10754,8 @@ function OrdersPanel({
         envioecomShipmentId: data.resolved?.shipmentId || knownId || (order as any).envioecomShipmentId,
         envioecomDeliveryMode: data.tracking?.deliveryMode,
         trackingCode: data.resolved?.barcode || data.tracking?.barcode || (order as any).trackingCode,
-        // Só liga enviado se já postado; nunca desliga marcado manual.
         ...(isEnvioEcomPostedStatus(syncedStatus) ? { enviado: true } : {}),
+        ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
       });
       if (isEnvioEcomPostedStatus(syncedStatus)) {
         onSetOrderEnviado(order.id, true);
@@ -10736,7 +10771,7 @@ function OrdersPanel({
     }
   };
 
-  const cancelEnvioEcomShipment = async (order: AdminOrder) => {
+  const cancelEnvioEcomShipment = async (order: AdminOrder, packageId?: string | null) => {
     const reasonRaw = window.prompt("Motivo do cancelamento (opcional):", "Cancelado pelo admin");
     if (reasonRaw === null) return;
     const reason = reasonRaw.trim() || undefined;
@@ -10749,7 +10784,10 @@ function OrdersPanel({
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/cancel`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(reason ? { reason } : {}),
+        body: JSON.stringify({
+          ...(reason ? { reason } : {}),
+          ...(packageId ? { packageId } : {}),
+        }),
       });
       const data = await res.json() as {
         ok?: boolean;
@@ -10758,6 +10796,7 @@ function OrdersPanel({
         unlinked?: boolean;
         message?: string;
         tracking?: { status?: string | null };
+        packages?: unknown[];
       };
       if (!res.ok) {
         toast.error(data.message || "Falha ao cancelar envio.");
@@ -10772,6 +10811,7 @@ function OrdersPanel({
         trackingLabelUrl: null,
         trackingCode: null,
         envioecomDeliveryMode: null,
+        ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
       });
       toast.success(
         data.auto_cancelled
@@ -10782,6 +10822,32 @@ function OrdersPanel({
       toast.error("Erro ao cancelar EnvioEcom.");
     } finally {
       setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const saveSplitShipments = async (
+    order: AdminOrder,
+    packages: Array<{ inventoryPool: SplitPoolKind; items: Array<{ productId: string; productName: string; quantity: number }> }>,
+  ) => {
+    setSplitShipmentSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${order.id}/shipments`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ packages }),
+      });
+      const data = await res.json() as { ok?: boolean; message?: string; packages?: unknown[] };
+      if (!res.ok) {
+        toast.error(data.message || "Não foi possível dividir o envio.");
+        return;
+      }
+      patchOrderLocal(order.id, { envioecomPackages: data.packages || [] });
+      setSplitShipmentModal(null);
+      toast.success("Envio dividido. Gere uma etiqueta EnvioEcom por estoque.");
+    } catch {
+      toast.error("Erro ao salvar divisão de envio.");
+    } finally {
+      setSplitShipmentSaving(false);
     }
   };
 
@@ -12069,7 +12135,15 @@ function OrdersPanel({
           const hasReshipmentRecord = Boolean(order?.reshipment?.id);
           const reshipmentIsSent = String(order?.reshipment?.status || "") === "reenvio_enviado";
           const envioecomStatus = String((order as any).envioecomStatus || "").trim();
-          const envioecomLabelReady = isEnvioEcomLabelReadyStatus(envioecomStatus);
+          const envioecomPackages = Array.isArray((order as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages)
+            ? (order as { envioecomPackages: SplitShipmentPackage[] }).envioecomPackages
+            : [];
+          const isSplitShipment = envioecomPackages.length >= 2;
+          const canSplitShipment = orderProducts.length >= 2
+            || orderProducts.reduce((sum, product) => sum + (Number(product.quantity) || 0), 0) >= 2;
+          const envioecomLabelReady = isSplitShipment
+            ? envioecomPackages.every((pkg) => isEnvioEcomLabelReadyStatus(pkg.envioecomStatus) || Boolean(String(pkg.envioecomLabelUrl || "").trim()) || isEnvioEcomPostedStatus(pkg.envioecomStatus))
+            : isEnvioEcomLabelReadyStatus(envioecomStatus);
           const envioecomShippedLike = isEnvioEcomShippedLikeStatus(envioecomStatus);
           // Badge Enviado segue a flag (manual ou postagem EE). Etiqueta pronta sozinha não desfaz.
           // Reenvio enviado conta como enviado (não usa o botão normal).
@@ -12094,6 +12168,7 @@ function OrdersPanel({
               envioecomLabelUrl: (order as any).envioecomLabelUrl,
               trackingLabelUrl: (order as any).trackingLabelUrl,
               reshipmentStatus: String(order?.reshipment?.status || ""),
+              envioecomPackages,
             }) && (() => {
               const q = shippingQueueMap[order.id];
               const deadlineDate = new Date(q.postingDeadlineAt);
@@ -12418,6 +12493,19 @@ function OrdersPanel({
                     {trackingUploading[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                     {trackingUploading[order.id] ? "Lendo Etiqueta..." : "Etiqueta/Rastreio"}
                   </Button>
+                  {canSplitShipment && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-indigo-800 border-indigo-200 hover:bg-indigo-50"
+                      disabled={!!envioecomBusy[order.id] || splitShipmentSaving}
+                      onClick={() => setSplitShipmentModal(order)}
+                      title="Gerar uma etiqueta EnvioEcom por estoque (Minas, Motoboy, Foz)"
+                    >
+                      Dividir envio
+                    </Button>
+                  )}
+                  {!isSplitShipment && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -12429,6 +12517,8 @@ function OrdersPanel({
                     {envioecomBusy[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
                     EnvioEcom
                   </Button>
+                  )}
+                  {!isSplitShipment && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -12495,6 +12585,51 @@ function OrdersPanel({
                       {(order as any).envioecomBarcode ? ` · ${(order as any).envioecomBarcode}` : ""}
                     </span>
                   )}
+                  )}
+                  {isSplitShipment && envioecomPackages.map((pkg) => (
+                    <div key={pkg.id || pkg.inventoryPool} className="w-full flex flex-wrap items-center gap-1.5 rounded-xl border border-teal-100 bg-teal-50/40 px-2 py-1.5">
+                      <span className="text-[11px] font-bold text-teal-900">
+                        {pkg.inventoryPoolLabel || pkg.inventoryPool}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                        {(pkg.items || []).map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}
+                      </span>
+                      <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomQuote(order, pkg.id); }}>
+                        EnvioEcom
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-teal-800 border-teal-300" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomLink(order, { packageId: pkg.id }); }}>
+                        Vincular
+                      </Button>
+                      {(pkg.envioecomBarcode || pkg.envioecomShipmentId) && (
+                        <>
+                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void generateEnvioEcomLabel(order, pkg.id); }}>
+                            Etiqueta
+                          </Button>
+                          {pkg.envioecomLabelUrl && (
+                            <Button size="sm" variant="outline" className="h-7 text-emerald-700" onClick={() => window.open(String(pkg.envioecomLabelUrl), "_blank", "noopener,noreferrer")}>
+                              PDF
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void syncEnvioEcomStatus({
+                            ...order,
+                            envioecomShipmentId: pkg.envioecomShipmentId,
+                            envioecomBarcode: pkg.envioecomBarcode,
+                            envioecomAccountId: pkg.envioecomAccountId,
+                          } as AdminOrder, pkg.id); }}>
+                            Sync
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-red-700" disabled={!!envioecomBusy[order.id]} onClick={() => { void cancelEnvioEcomShipment(order, pkg.id); }}>
+                            Cancelar
+                          </Button>
+                        </>
+                      )}
+                      {pkg.envioecomStatus && (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>
+                          {pkg.envioecomStatus}{pkg.envioecomBarcode ? ` · ${pkg.envioecomBarcode}` : ""}
+                        </span>
+                      )}
+                    </div>
+                  ))}
                   {(order.proofUrls && order.proofUrls.length > 0) && (
                     <div className="flex items-center gap-1 flex-wrap">
                       {order.proofUrls.map((url, i) => (
@@ -12533,7 +12668,7 @@ function OrdersPanel({
                     : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
-                {!showEnviadoUi && !hasReshipmentRecord && (
+                {!showEnviadoUi && !hasReshipmentRecord && !isSplitShipment && (
                   <div className="inline-flex flex-wrap items-center gap-1 min-h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 py-0.5 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
                       {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
@@ -13066,6 +13201,21 @@ function OrdersPanel({
           </motion.div>
         )}
 
+        {splitShipmentModal && (
+          <AdminSplitShipmentModal
+            orderRef={String(getOrderReference(splitShipmentModal))}
+            clientName={String(splitShipmentModal.clientName || "")}
+            products={getOrderProducts(splitShipmentModal.products)}
+            packages={Array.isArray((splitShipmentModal as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages)
+              ? (splitShipmentModal as { envioecomPackages: SplitShipmentPackage[] }).envioecomPackages
+              : []}
+            saving={splitShipmentSaving}
+            onClose={() => setSplitShipmentModal(null)}
+            onSave={(packages) => { void saveSplitShipments(splitShipmentModal, packages); }}
+            onClear={() => { void saveSplitShipments(splitShipmentModal, []); }}
+          />
+        )}
+
         {envioecomAccountPicker && (
           <div className="fixed inset-0 z-[125] bg-black/45 flex items-center justify-center p-4">
             <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
@@ -13094,11 +13244,12 @@ function OrdersPanel({
                       const picked = envioecomAccountPicker;
                       setEnvioecomAccountPicker(null);
                       if (picked.purpose === "quote") {
-                        void quoteEnvioEcom(picked.order, undefined, account.id);
+                        void quoteEnvioEcom(picked.order, undefined, account.id, picked.packageId);
                       } else {
                         openEnvioEcomLinkModal(picked.order, {
                           continueToLabel: picked.continueToLabel,
                           accountId: account.id,
+                          packageId: picked.packageId,
                         });
                       }
                     }}
@@ -13167,7 +13318,7 @@ function OrdersPanel({
                     size="sm"
                     variant="outline"
                     disabled={!!envioecomBusy[envioecomQuoteModal.order.id]}
-                    onClick={() => { void quoteEnvioEcom(envioecomQuoteModal.order, undefined, envioecomQuoteModal.accountId); }}
+                    onClick={() => { void quoteEnvioEcom(envioecomQuoteModal.order, undefined, envioecomQuoteModal.accountId, envioecomQuoteModal.packageId); }}
                   >
                     {envioecomBusy[envioecomQuoteModal.order.id] ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />

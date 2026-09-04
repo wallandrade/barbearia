@@ -155,6 +155,7 @@ export async function applyOrderInventoryDelta(params: {
   clientName: string | null;
   kind: "reserve" | "release" | "ship" | "unship";
   reasonOverride?: string;
+  referenceId?: string;
 }): Promise<void> {
   const isExit = params.kind === "reserve" || params.kind === "ship";
   const poolLabel = inventoryPoolLabel(params.pool);
@@ -171,7 +172,7 @@ export async function applyOrderInventoryDelta(params: {
       productId: item.productId,
       quantity: qty,
       reason,
-      referenceId: params.orderId,
+      referenceId: params.referenceId || params.orderId,
       clientName: params.clientName,
     };
     if (params.pool === "motoboy") {
