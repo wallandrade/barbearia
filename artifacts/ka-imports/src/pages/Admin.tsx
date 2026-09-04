@@ -12519,6 +12519,7 @@ function OrdersPanel({
                   </Button>
                   )}
                   {!isSplitShipment && (
+                  <>
                   <Button
                     size="sm"
                     variant="outline"
@@ -12585,6 +12586,7 @@ function OrdersPanel({
                       {(order as any).envioecomBarcode ? ` · ${(order as any).envioecomBarcode}` : ""}
                     </span>
                   )}
+                  </>
                   )}
                   {isSplitShipment && envioecomPackages.map((pkg) => (
                     <div key={pkg.id || pkg.inventoryPool} className="w-full flex flex-wrap items-center gap-1.5 rounded-xl border border-teal-100 bg-teal-50/40 px-2 py-1.5">
