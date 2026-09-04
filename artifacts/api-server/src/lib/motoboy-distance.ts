@@ -93,6 +93,7 @@ export function isCentroSe(input: {
   return false;
 }
 
+/** Linha reta. Cotação Motoboy usa trajeto de rua (`motoboy-route.ts`); isto só é fallback. */
 export function haversineKm(
   lat1: number,
   lng1: number,

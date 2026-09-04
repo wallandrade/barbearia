@@ -18655,7 +18655,7 @@ function FretePanel({
         <ul className="list-disc list-inside space-y-0.5">
           <li><strong>Km e bairro não misturam.</strong> Km ligado = checkout ignora bairros cadastrados. Km desligado = volta o preço por bairro.</li>
           <li>Quando o cliente informa o CEP, o sistema consulta a ViaCEP para rua/bairro/cidade.</li>
-          <li>Com <strong>km ligado</strong>: cobra pela distância a partir da Sé (centro R$ 50; demais faixas até 200 km). Acima disso o Motoboy some — consultar pessoalmente, sem faixa de CEP.</li>
+          <li>Com <strong>km ligado</strong>: cobra pelo <strong>trajeto de rua</strong> (carro/moto) a partir da Sé — não linha reta. Centro R$ 50; demais faixas até 200 km. Acima disso o Motoboy some — consultar pessoalmente, sem faixa de CEP.</li>
           <li>Com <strong>km desligado</strong>: se o bairro estiver cadastrado e ativo, aparece Motoboy com o valor do cadastro (match ignora acentos e sufixos entre parênteses).</li>
           <li>Se o modo da vez não cotar (CEP sem coordenadas no km, ou bairro não cadastrado), usa a <strong>faixa de CEP</strong> abaixo.</li>
           <li>Prefira <strong>faixas de CEP por região</strong> (seed `seed-motoboy-cep-ranges-regioes.sql`) em vez de dezenas de microbairros. A faixa <strong>mais estreita</strong> ganha da “São Paulo — Geral”.</li>

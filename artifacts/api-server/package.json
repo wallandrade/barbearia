@@ -10,7 +10,7 @@
     "start-only": "cross-env TZ=America/Sao_Paulo node dist/index.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:free-shipping": "node --test --import tsx ./src/lib/free-shipping.test.ts",
-    "test:motoboy-distance": "node --test --import tsx ./src/lib/motoboy-distance.test.ts ./src/lib/motoboy-geocode.test.ts"
+    "test:motoboy-distance": "node --test --import tsx ./src/lib/motoboy-distance.test.ts ./src/lib/motoboy-geocode.test.ts ./src/lib/motoboy-route.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.916.0",

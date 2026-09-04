@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-09-03
+> **Última atualização:** 2026-09-04
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -25,6 +25,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-04 | Motoboy por km cobra **trajeto de rua** (OSRM; Google se houver chave). Haversine só se a rota falhar | Checkout Sé→Atibaia ~65–68 km (não 49 km linha reta) | Faixas de preço, centro, CEP fallback iguais |
 | 2026-09-03 | Aba Estoque: botão **Zerar saldo** dá saída de todos os itens com qty > 0 da aba (Foz/Motoboy/Minas), pelo id da linha | Esvazia órfãos/hash de uma vez | Entrada e baixa de pedido iguais |
 | 2026-09-03 | Minha conta: aviso (toast, badge, banner) quando a observação visível ao cliente ainda não foi lida (`localStorage` por pedido+texto) | Cliente percebe mensagem nova da loja | Sem push PWA do cliente; interruptor admin igual |
 | 2026-09-03 | Observação do pedido: interruptor **Cliente vê na conta** (`observation_visible_to_customer`, default interno). Conta só recebe o texto se ligado; `REENVIO DO PEDIDO` nunca vai ao cliente | Admin escolhe o que o cliente lê | Texto interno, PDF/WhatsApp admin iguais |
@@ -190,9 +191,9 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 - **Produtos elegíveis Motoboy:** setting público `motoboy_eligible_product_ids` (JSON de IDs) em Admin → Fretes. Vazio = todos os produtos. Com lista: Motoboy só aparece se **todos** os itens do carrinho estiverem na lista; senão só frete padrão. API rejeita Motoboy com `MOTOBOY_NOT_ELIGIBLE` se o carrinho não for elegível (`lib/motoboy-eligible-products.ts`).
 - Fila de envio (`shipping_queue`): aloca slots para pedidos pagos com frete padrão — `lib/shipping-queue-allocator.ts`.
 - Motoboy: **km XOR bairro** (`motoboy_distance_enabled`) + faixas de CEP (`motoboy_cep_ranges`) + slots — `GET /api/motoboy-coverage/lookup`.
-  - **Km ligado** (default): ignora `motoboy_neighborhoods`. Cota pela distância a partir do CEP de partida (default Sé `01001000`). Sé/centro/República em SP ou CEP `010xxxxx` = preço de centro (default R$ 50); demais km pelas faixas (10→70, 15→80, 30→100, 50→120, 80→150, 120→200, 200→300). Acima de 200 km **não oferece Motoboy** e **não** usa faixa CEP. CEP sem coordenadas → faixa CEP.
+  - **Km ligado** (default): ignora `motoboy_neighborhoods`. Cota pelo **trajeto de rua** (OSRM driving; Google Distance Matrix se houver chave) a partir do CEP de partida (default Sé `01001000`). Haversine só se a API de rota falhar. Sé/centro/República em SP ou CEP `010xxxxx` = preço de centro (default R$ 50); demais km pelas faixas (10→70, 15→80, 30→100, 50→120, 80→150, 120→200, 200→300). Acima de 200 km **não oferece Motoboy** e **não** usa faixa CEP. CEP sem coordenadas → faixa CEP.
   - **Km desligado**: bairro ativo (nome normalizado) → senão faixa CEP. Cadastro de bairros permanece no Admin, só não cotiza com km ligado.
-  - Slots: id `dist` usa intervalo 2h. Km: BrasilAPI CEP v2 + Haversine.
+  - Slots: id `dist` usa intervalo 2h. Km: BrasilAPI CEP v2 (coords) + OSRM/Google (rua); Haversine só fallback.
 - Admin cópia **🏍️ Motoboy**: todos os pedidos `shippingType=motoboy` carregados, **incluindo PIX pendente**, desde que não cancelados/enviados/etiqueta EE. Texto: pagamento confirmado/pendente, **`🕐 Entrega: dd/mm/aaaa às HH:MM`** (de `motoboy_bookings`; senão “horário não informado”), endereço **sem telefone**, itens com valor, **Produtos** + **Frete Motoboy** (`shippingCost`) + **Total (produtos + Motoboy)**. Lista copiada ordenada pelo slot. Fila **48h/Outros** continua só pagos. Checkout **PIX/cartão/WhatsApp** grava o slot após criar o pedido.
 - Admin cópia **Lista de Compra**: agrega itens dos pedidos a enviar; estoque **abate** a quantidade a comprar, mas **não** entra no texto copiado. Linhas no formato `2x Nome` (sem prefixo `-`). Inclui “Comprar agora”, reenvios só se houver (“abater no pagamento”) e custo estimado.
 - Checkout Motoboy: `GET /api/motoboy-coverage/lookup`. **Km ligado** (default): ignora bairro cadastrado, cota km (`id=dist`). **Km desligado**: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span). Id de agendamento: `dist` **ou** bairro real **ou** `range_<cep_range_id>`; slots resolvem `intervalHours` (km = 2h). Horários candidatos: **10:00–20:00**. Se a data for **hoje** (America/Sao_Paulo), remove slots com início ≤ agora; `book` rejeita `SLOT_IN_PAST`. Calendário em YYYY-MM-DD **local**; após 18h o mínimo é amanhã; domingo pula para segunda.

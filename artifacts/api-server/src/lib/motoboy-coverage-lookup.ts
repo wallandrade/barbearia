@@ -1,7 +1,6 @@
 import { db, motoboyCepRangesTable, motoboyNeighborhoodsTable, siteSettingsTable } from "@workspace/db";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import {
-  haversineKm,
   MOTOBOY_DISTANCE_SETTING_KEYS,
   MOTOBOY_DISTANCE_SLOT_ID,
   normalizeCep,
@@ -15,6 +14,7 @@ import {
   type MotoboyDistanceConfig,
 } from "./motoboy-distance";
 import { geocodeCepBrasilApi, geocodeOriginCep } from "./motoboy-geocode";
+import { resolveMotoboyDistanceKm } from "./motoboy-route";
 
 export type MotoboyCoverageMatch = {
   source: "neighborhood" | "distance" | "cep_range";
@@ -134,7 +134,7 @@ export async function lookupMotoboyCoverage(input: {
     let km: number | null = null;
     if (destCoords) {
       const originCoords = await geocodeOriginCep(settings.originCep);
-      km = haversineKm(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng);
+      km = await resolveMotoboyDistanceKm(originCoords, destCoords);
     }
 
     const quote = quoteMotoboyDistance({

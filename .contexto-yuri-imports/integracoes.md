@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-02
+> **Última atualização:** 2026-09-04
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-04 | Motoboy por km: OSRM (default) / Google Distance Matrix (`lib/motoboy-route.ts`) | Checkout cobra trajeto de rua; Haversine só fallback | BrasilAPI CEP v2 para lat/lng; ViaCEP endereço; EnvioEcom igual |
 | 2026-09-02 | BrasilAPI CEP v2 (coordenadas) para Motoboy por km (`lib/motoboy-geocode.ts`) | Distância Haversine no servidor; cache em memória | ViaCEP no checkout para endereço; EnvioEcom igual |
 | 2026-09-01 | POST `/api/integrations/inventory/exit` (mesmo token do snapshot) baixa Motoboy/Minas | Espelho pode descontar estoque Yury | Foz Guaçu (`loja`) continua só no Admin |
 | 2026-08-31 | Cancelar EE desvincula o pedido (ID/barcode/PDF); create gera `orderId` novo; etiqueta recusa cancelamento | Dá para emitir etiqueta nova sem DUPLICATE_ORDER no envio antigo | Cotação/webhook do envio ativo iguais |
@@ -139,7 +140,7 @@ Yury = **fonte da verdade**. Snapshot é leitura; **baixa** via POST de integra�
 
 - Geo IP: `ip-api.com` — `lib/ip-geo.ts` (fire-and-forget em pedidos).
 - Distância rastreio cliente: BrasilAPI CEP + Nominatim — `lib/geo-distance.ts`.
-- Motoboy por km: BrasilAPI CEP v2 (`lib/motoboy-geocode.ts`) + Haversine; origem sem coords usa Praça da Sé.
+- Motoboy por km: BrasilAPI CEP v2 (`lib/motoboy-geocode.ts`) + **OSRM** (default) / Google Distance Matrix (`lib/motoboy-route.ts`); origem sem coords usa Praça da Sé. Haversine só se a rota falhar.
 - OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados) — fallback paralelo ao EnvioEcom.
 - **Chat informativo (compostos):** fluxo da loja e da aba Admin **Biblioteca** = `GET /api/chat/guide/:slug/:topic` (ficha fatiada, sem OpenAI). `POST /api/chat/ask` + `OPENAI_API_KEY` existem no backend mas o painel **não** usa. Status: `GET /api/chat/status` (produtos + tópicos). Não substitui médico; não confirma PIX/pedido.
 - **Extrato OFX (Banco Inter):** `lib/ofx-bank-statement.ts` + `lib/bank-statement-reconcile.ts`; rotas `POST .../analyze|apply|clear`, `GET .../bank-deposits`; UI abas **Extrato** + **Depósitos** (Desfazer por linha). Só créditos novos (FITID não usado); só pedidos manuais Inter; valor exato + janela + nome; **CPF/CNPJ** no NAME/MEMO vs `clientDocument` → score 100%.

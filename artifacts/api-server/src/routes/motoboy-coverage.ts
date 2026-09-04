@@ -5,7 +5,7 @@ const router: IRouter = Router();
 
 /**
  * GET /api/motoboy-coverage/lookup?cep=&bairro=&cidade=
- * Km ligado: ignora bairros e cota por distância (consult > limite não cai na faixa CEP).
+ * Km ligado: ignora bairros e cota por trajeto de rua (consult > limite não cai na faixa CEP).
  * Km desligado: bairro cadastrado → faixa CEP.
  */
 router.get("/motoboy-coverage/lookup", async (req, res) => {

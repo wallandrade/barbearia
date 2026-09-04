@@ -97,12 +97,12 @@ export function MotoboyDistanceCard({ settings, loading, onSave }: Props) {
       </div>
       <p className="text-xs text-muted-foreground mb-4">
         Liga o Motoboy por km e o cadastro de bairros sai do checkout (os bairros ficam salvos, só não cotizam).
-        Acima do limite o Motoboy some — consultar pessoalmente, sem cair na faixa de CEP.
+        O km é o trajeto de rua (carro/moto), não linha reta. Acima do limite o Motoboy some — consultar pessoalmente, sem cair na faixa de CEP.
       </p>
 
       <div className={`rounded-xl border px-3 py-2 text-xs mb-4 ${enabled ? "border-green-200 bg-green-50 text-green-800" : "border-border bg-muted/40 text-muted-foreground"}`}>
         {enabled
-          ? "Ativo: checkout cobra por km (bairro cadastrado ignorado). Faixa de CEP só se o CEP não tiver coordenadas."
+          ? "Ativo: checkout cobra pelo trajeto de rua (bairro cadastrado ignorado). Faixa de CEP só se o CEP não tiver coordenadas."
           : "Desligado: checkout volta a usar bairro cadastrado e faixa de CEP."}
       </div>
 
