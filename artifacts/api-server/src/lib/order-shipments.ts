@@ -27,11 +27,13 @@ import {
 export {
   isPackageExcludedFromShippingCopyList,
   isSplitOrderExcludedFromShippingCopyList,
+  isSplitOrderPartiallyShipped,
   isSplitShipmentList,
   nextPackageEnvioEcomExternalOrderNumber,
   packageHasEnvioEcomBinding,
   packageInventoryReferenceId,
   parseShipmentItems,
+  pendingCopyItemsFromSplitPackages,
   readPackageId,
   validateShipmentAllocation,
 } from "./order-shipments-logic";

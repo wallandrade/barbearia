@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   isPackageExcludedFromShippingCopyList,
   isSplitOrderExcludedFromShippingCopyList,
+  isSplitOrderPartiallyShipped,
   nextPackageEnvioEcomExternalOrderNumber,
   parseShipmentItems,
+  pendingCopyItemsFromSplitPackages,
   validateShipmentAllocation,
 } from "./order-shipments-logic";
 
@@ -139,6 +141,28 @@ test("pacote desvinculado volta à cópia 48h; o outro com etiqueta continua for
   assert.equal(isPackageExcludedFromShippingCopyList(motoboyUnlinked), false);
   assert.equal(isPackageExcludedFromShippingCopyList(minas), true);
   assert.equal(isSplitOrderExcludedFromShippingCopyList([minas, motoboyUnlinked]), false);
+});
+
+test("envio parcial: cópia lista só o pacote sem etiqueta", () => {
+  const minas = {
+    enviado: false,
+    envioecomStatus: null,
+    envioecomLabelUrl: null,
+    items: [{ productId: "prod-a", productName: "Landerlan", quantity: 1 }],
+  };
+  const motoboy = {
+    enviado: false,
+    envioecomStatus: "DC-e emitida",
+    envioecomLabelUrl: null,
+    items: [{ productId: "prod-b", productName: "Tirzepatida", quantity: 4 }],
+  };
+  assert.equal(isSplitOrderPartiallyShipped([minas, motoboy]), true);
+  const pending = pendingCopyItemsFromSplitPackages([minas, motoboy]);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0]?.productName, "Landerlan");
+  assert.equal(pending[0]?.quantity, 1);
+  assert.equal(isSplitOrderPartiallyShipped([minas, { ...motoboy, envioecomStatus: null }]), false);
+  assert.equal(pendingCopyItemsFromSplitPackages([minas, { ...motoboy, envioecomStatus: null }]).length, 0);
 });
 
 test("parseShipmentItems agrupa o mesmo produto", () => {

@@ -70,6 +70,34 @@ export function isSplitOrderExcludedFromShippingCopyList(
   return packages.every(isPackageExcludedFromShippingCopyList);
 }
 
+/** Split: uns pacotes já têm etiqueta/postagem e outros ainda não. */
+export function isSplitOrderPartiallyShipped(
+  packages: Array<{
+    enviado?: boolean | null;
+    envioecomStatus?: string | null;
+    envioecomLabelUrl?: string | null;
+  }>,
+): boolean {
+  if (!isSplitShipmentList(packages)) return false;
+  const done = packages.filter(isPackageExcludedFromShippingCopyList).length;
+  return done > 0 && done < packages.length;
+}
+
+/** Itens dos pacotes que ainda entram na cópia 48h (envio parcial). */
+export function pendingCopyItemsFromSplitPackages(
+  packages: Array<{
+    enviado?: boolean | null;
+    envioecomStatus?: string | null;
+    envioecomLabelUrl?: string | null;
+    items?: unknown;
+  }>,
+): OrderShipmentItem[] {
+  if (!isSplitOrderPartiallyShipped(packages)) return [];
+  return packages
+    .filter((pkg) => !isPackageExcludedFromShippingCopyList(pkg))
+    .flatMap((pkg) => parseShipmentItems(pkg.items));
+}
+
 export function nextPackageEnvioEcomExternalOrderNumber(
   order: { id: string; orderNumber?: number | null },
   pkg: {

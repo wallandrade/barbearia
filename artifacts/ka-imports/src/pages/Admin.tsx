@@ -238,8 +238,10 @@ function isReshipmentChildOrder(order: {
   return obs.startsWith("REENVIO DO PEDIDO");
 }
 export function orderToText(order: any): string {
-  const products = getOrderProducts(order?.products);
+  const products = productsForShippingCopy(order);
   const prioridadeLine = order?.isPrioridade ? "PRIORIDADE URGENTE" : "";
+  const packages = Array.isArray(order?.envioecomPackages) ? order.envioecomPackages : [];
+  const remainingLabel = isSplitOrderPartiallyShipped(packages) ? "Resumo pedido (restante):" : "Resumo pedido:";
   const productsText = products.length
     ? products
         .map((p) => {
@@ -278,7 +280,7 @@ export function orderToText(order: any): string {
       `Estado: ${order?.addressState || "-"}`,
       `Cep: ${order?.addressCep || "-"}`,
       "",
-      "Resumo pedido:",
+      remainingLabel,
       productsText,
       order?.observation ? "" : "",
       order?.observation ? `Observacao: ${order.observation}` : "",
@@ -299,7 +301,7 @@ export function orderToText(order: any): string {
     `Estado: ${order?.addressState || "-"}`,
     `Cep: ${order?.addressCep || "-"}`,
     "",
-    "Resumo pedido:",
+    remainingLabel,
     productsText,
     order?.observation ? "" : "",
     order?.observation ? `Observacao: ${order.observation}` : "",
@@ -501,7 +503,9 @@ export function chargeToText(charge: any): string {
 }
 
 function supplierOrderBlock(order: any, sequence: number): string {
-  const products = getOrderProducts(order?.products);
+  const products = productsForShippingCopy(order);
+  const packages = Array.isArray(order?.envioecomPackages) ? order.envioecomPackages : [];
+  const remainingLabel = isSplitOrderPartiallyShipped(packages) ? "Resumo pedido (restante):" : "Resumo pedido:";
   const isCancelledOrder = isCancelledOrderStatus(order?.status);
   const prioridadeLine = order?.isPrioridade ? "🚨 PRIORIDADE URGENTE" : "";
   const atrasoDias = Math.max(0, daysSince(order?.createdAt));
@@ -542,7 +546,7 @@ function supplierOrderBlock(order: any, sequence: number): string {
     `Estado: ${order?.addressState || "-"}`,
     `Cep: ${order?.addressCep || "-"}`,
     "",
-    "Resumo pedido:",
+    remainingLabel,
     resumoPedido,
     "_______________________________",
   ].join("\n");
@@ -4125,7 +4129,7 @@ export default function Admin() {
     const totals = new Map<string, { label: string; productId: string | null; qtyNormal: number; qtyReshipment: number }>();
     for (const order of ordersParaEnviar) {
       const isReshipment = isActiveReshipmentOrder(order);
-      for (const p of getOrderProducts(order.products)) {
+      for (const p of productsForShippingCopy(order)) {
         const name = (p.name || "Produto").trim();
         const productId = String((p as { id?: string })?.id || "").trim() || null;
         const qty = Number(p.quantity) || 0;
@@ -4661,7 +4665,13 @@ export default function Admin() {
                     ].join("\n");
 
                     const orderBlocks = list.map((order) => {
-                      const products = getOrderProducts(order?.products);
+                      const products = productsForShippingCopy(order);
+                      const packages = Array.isArray((order as { envioecomPackages?: unknown[] }).envioecomPackages)
+                        ? (order as { envioecomPackages: unknown[] }).envioecomPackages
+                        : [];
+                      const remainingLabel = isSplitOrderPartiallyShipped(packages as Array<{ enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null }>)
+                        ? "Resumo pedido (restante):"
+                        : "Resumo pedido:";
                       const ref = getOrderReference(order);
                       const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
                       const isReshipment = Boolean(order?.reshipment?.id)
@@ -4684,7 +4694,7 @@ export default function Admin() {
                         `Estado: ${order?.addressState || "-"}`,
                         `CEP: ${order?.addressCep || "-"}`,
                         "",
-                        "Resumo pedido:",
+                        remainingLabel,
                         resumo,
                         "_______________________________",
                       ].filter((line, i, arr) => !(line === "" && i < 5 && arr[i - 1] === "")).join("\n");
@@ -4733,7 +4743,7 @@ export default function Admin() {
                                 return aKey.localeCompare(bKey);
                               })
                               .map((order) => {
-                              const products = getOrderProducts(order?.products);
+                              const products = productsForShippingCopy(order);
                               const ref = getOrderReference(order);
                               const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
                               const productsSubtotal = products.reduce(
@@ -9986,6 +9996,57 @@ function isExcludedFromShippingCopyList(order: {
   return false;
 }
 
+function isSplitPackageDoneForCopy(pkg: {
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+}): boolean {
+  if (pkg.enviado) return true;
+  if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;
+  if (isEnvioEcomPostedStatus(pkg.envioecomStatus)) return true;
+  return Boolean(String(pkg.envioecomLabelUrl || "").trim());
+}
+
+function isSplitOrderPartiallyShipped(packages: Array<{
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+}>): boolean {
+  if (!Array.isArray(packages) || packages.length < 2) return false;
+  const done = packages.filter(isSplitPackageDoneForCopy).length;
+  return done > 0 && done < packages.length;
+}
+
+/** Pedido dividido com parte já etiquetada: na cópia de envio entram só os itens que ainda faltam. */
+function productsForShippingCopy(order: any): OrderProductLite[] {
+  const all = getOrderProducts(order?.products);
+  const packages = Array.isArray(order?.envioecomPackages) ? order.envioecomPackages as SplitShipmentPackage[] : [];
+  if (!isSplitOrderPartiallyShipped(packages)) return all;
+
+  const pending = packages.filter((pkg) => !isSplitPackageDoneForCopy(pkg));
+  const rows: OrderProductLite[] = [];
+  for (const pkg of pending) {
+    for (const item of pkg.items || []) {
+      const productId = String(item.productId || "").trim();
+      const name = String(item.productName || "Produto").trim() || "Produto";
+      const qty = Number(item.quantity) || 0;
+      const fromOrder = all.find((product) =>
+        (productId && String(product.id || "").trim() === productId)
+        || String(product.name || "").trim().toLowerCase() === name.toLowerCase(),
+      );
+      rows.push({
+        id: productId || fromOrder?.id || "",
+        name: name || fromOrder?.name || "Produto",
+        quantity: qty,
+        price: Number(fromOrder?.price) || 0,
+        costPrice: fromOrder?.costPrice,
+        image: fromOrder?.image,
+      });
+    }
+  }
+  return rows.length > 0 ? rows : all;
+}
+
 function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   if (!s) return false;
@@ -12192,11 +12253,14 @@ function OrdersPanel({
           // Badge Enviado segue a flag (manual ou postagem EE). Etiqueta pronta sozinha não desfaz.
           // Reenvio enviado conta como enviado (não usa o botão normal).
           const showEnviadoUi = !!enviados[order.id] || reshipmentIsSent;
+          const isPartialShipment = !showEnviadoUi && isSplitOrderPartiallyShipped(envioecomPackages);
           const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
             ? "ring-2 ring-emerald-500"
-            : isPrioridade
-              ? "ring-2 ring-red-400"
-              : "";
+            : isPartialShipment
+              ? "ring-2 ring-amber-400"
+              : isPrioridade
+                ? "ring-2 ring-red-400"
+                : "";
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
@@ -12244,6 +12308,14 @@ function OrdersPanel({
                         )}
                         <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">#{getOrderReference(order)}</span>
                         {/* Badge de status de envio / EnvioEcom */}
+                        {isPartialShipment && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 text-xs font-semibold border border-orange-200"
+                            title="Parte do pedido já tem etiqueta; a cópia lista só o que ainda falta"
+                          >
+                            Enviado parcialmente
+                          </span>
+                        )}
                         {envioecomStatus ? (
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${freightStatusBadgeClass(envioecomStatus)}`}
@@ -12254,7 +12326,7 @@ function OrdersPanel({
                           </span>
                         ) : showEnviadoUi ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Enviado</span>
-                        ) : (
+                        ) : isPartialShipment ? null : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Pendente para envio</span>
                         )}
                         {/* Badge Enviado junto do status EE quando já marcado */}
