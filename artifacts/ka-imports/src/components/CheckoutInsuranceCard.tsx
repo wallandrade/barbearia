@@ -251,7 +251,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           <p className="text-xs mt-0.5">
             {cashbackEnabled
               ? "Ligado — o checkout explica o crédito. Completo devolve (cobrado − % da loja) quando entregar."
-              : "Desligado — o checkout diz que não vira saldo. Loja fica com o seguro inteiro."}
+              : "Desligado — o checkout só diz o que cobre e por que o 100% custa mais. Sem texto de saldo ou estorno."}
           </p>
         </button>
       </div>
@@ -515,7 +515,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
                 <p className="text-xs text-muted-foreground">
                   {cashbackEnabled
                     ? "Texto no checkout (100%): se chegar certo, o cliente ganha saldo para a próxima compra."
-                    : "Texto no checkout (100%): se chegar certo, o valor da garantia fica com a loja — não vira saldo."}
+                    : "Texto no checkout (100%): só cobertura + por que custa mais. Sem bloco de saldo/estorno."}
                 </p>
               </>
             );

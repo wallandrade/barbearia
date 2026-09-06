@@ -119,44 +119,30 @@ export function CheckoutInsuranceOffer({
               <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">
                 {fullBody}
               </p>
-              {plan === "full" && (
+              {!cashbackEnabled && (
+                <p className="text-sm text-foreground mt-1.5">
+                  Custa mais porque cobre também apreensão da Receita, não só se sumir ou roubarem.
+                </p>
+              )}
+              {plan === "full" && cashbackEnabled && (
                 <div className="mt-2 space-y-2">
-                  {cashbackEnabled ? (
-                    <>
-                      <p className="text-sm text-foreground">
-                        Se chegar certo: você ganha <strong>{formatCurrency(cashbackAmount)}</strong> para gastar de novo na loja.
-                        Se der ruim: a gente manda outra vez (você não paga o frete) ou devolve os <strong>{formatCurrency(subtotal)}</strong> do produto.
+                  <p className="text-sm text-foreground">
+                    Se chegar certo: você ganha <strong>{formatCurrency(cashbackAmount)}</strong> para gastar de novo na loja.
+                    Se der ruim: a gente manda outra vez (você não paga o frete) ou devolve os <strong>{formatCurrency(subtotal)}</strong> do produto.
+                  </p>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 flex items-center gap-1.5">
+                      <PackageCheck className="w-3.5 h-3.5" /> Chegou certo
+                    </p>
+                    <p className="text-sm text-emerald-900 mt-1">
+                      Você fica com {formatCurrency(cashbackAmount)} para a próxima compra.
+                    </p>
+                    {!isLoggedIn && (
+                      <p className="text-xs text-emerald-800 mt-1.5 font-medium">
+                        Entre na conta para esse valor cair. Sem login, não acumula.
                       </p>
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-2.5">
-                        <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 flex items-center gap-1.5">
-                          <PackageCheck className="w-3.5 h-3.5" /> Chegou certo
-                        </p>
-                        <p className="text-sm text-emerald-900 mt-1">
-                          Você fica com {formatCurrency(cashbackAmount)} para a próxima compra.
-                        </p>
-                        {!isLoggedIn && (
-                          <p className="text-xs text-emerald-800 mt-1.5 font-medium">
-                            Entre na conta para esse valor cair. Sem login, não acumula.
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm text-foreground">
-                        Se chegar certo: o valor da garantia fica com a loja — <strong>não vira saldo</strong>.
-                        Se der ruim: a gente manda outra vez (você não paga o frete) ou devolve os <strong>{formatCurrency(subtotal)}</strong> do produto.
-                      </p>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-2.5">
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
-                          <PackageCheck className="w-3.5 h-3.5" /> Chegou certo
-                        </p>
-                        <p className="text-sm text-slate-800 mt-1">
-                          Os {formatCurrency(fullAmount)} da garantia não voltam. Você já recebeu o produto.
-                        </p>
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </div>
                   <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-2.5">
                     <p className="text-xs font-bold uppercase tracking-wide text-amber-800 flex items-center gap-1.5">
                       <RotateCcw className="w-3.5 h-3.5" /> Não chegou, apreenderam ou veio quebrado
