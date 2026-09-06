@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-04
+> **Última atualização:** 2026-09-05
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-05 | `POST .../envioecom/orders/:id/unlink` solta vínculo local (split: `packageId`); webhook ignora pedido/pacote sem ID | Troca etiqueta no Yury sem cancelar na EE | Cancel/create/labels/sync iguais |
 | 2026-09-04 | EnvioEcom por pacote: `GET/PUT /api/admin/orders/:id/shipments`; create/label/sync/cancel/webhook aceitam `packageId`; `orderId` EE `{n}-{id8}-{pool}` | 2 origens no mesmo pedido = 2 envios; webhook acha o pacote certo | Pedido 1:1, cotação 2×12×17, item genérico iguais |
 | 2026-09-04 | Motoboy por km: OSRM (default) / Google Distance Matrix (`lib/motoboy-route.ts`) | Checkout cobra trajeto de rua; Haversine só fallback | BrasilAPI CEP v2 para lat/lng; ViaCEP endereço; EnvioEcom igual |
 | 2026-09-02 | BrasilAPI CEP v2 (coordenadas) para Motoboy por km (`lib/motoboy-geocode.ts`) | Distância Haversine no servidor; cache em memória | ViaCEP no checkout para endereço; EnvioEcom igual |
@@ -79,17 +80,17 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`) = conta **São Paulo (servidor)** (`id=env`)
 - Contas extras: `site_settings.envioecom_accounts` (JSON); CRUD `GET/POST/PUT/DELETE /api/admin/envioecom/accounts` (listar: qualquer admin; gravar/apagar: primary). Token/senha **não** voltam no GET (só hint)
 - Admin Configurações: painel **APIs EnvioEcom** no **topo** (depois de Gastos por data) para adicionar nome + token ou e-mail/senha + CEP origem
-- Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id` (no split, a conta fica no pacote). Sync/etiqueta/cancel/soft-sync tentam a conta do pedido/pacote e, se não achar, as demais
-- **Split:** `GET/PUT /api/admin/orders/:id/shipments` (qty × pool). Create/labels/sync/cancel exigem `packageId` se houver 2+ pacotes (`NEED_PACKAGE_ID`). `orderId` EE do pacote: `{n}-{id8}-{pool}` (sufixo após cancelar). Webhook acha o pacote por barcode / ID / `external_order_number` — **não** ignora o 2º envio. Listagens admin/`/me/orders` devolvem `envioecomPackages`. Tracking-board admin ainda é 1 card por pedido (rollup)
+- Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id` (no split, a conta fica no pacote). Sync/etiqueta/cancel/soft-sync tentam a conta do pedido/pacote e, se não achar, as demais. **Desvincular** é só local (não chama a API EnvioEcom).
+- **Split:** `GET/PUT /api/admin/orders/:id/shipments` (qty × pool). Create/labels/sync/cancel/unlink exigem `packageId` se houver 2+ pacotes (`NEED_PACKAGE_ID`). `orderId` EE do pacote: `{n}-{id8}-{pool}` (sufixo após cancelar **ou** desvincular). Webhook acha o pacote por barcode / ID / `external_order_number` — **não** ignora o 2º envio; pacote já desvinculado (sem ID/barcode) **não** reatacha pelo orderId antigo. Listagens admin/`/me/orders` devolvem `envioecomPackages`. Tracking-board admin ainda é 1 card por pedido (rollup)
 - Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`
 - Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults
 - Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"/**Aguardando cancelamento**; etiqueta/pronto **não** marcam nem desmarcam `enviado` (manual prevalece; EE só liga em trânsito/entregue / Coleta Recebida). No split o rollup **não** copia PDF para `orders` até todos os pacotes terem etiqueta.
-- **Cancelar EE:** `POST .../cancel` pede cancel na API **e** zera `envioecom_shipment_id` / barcode / label URL / `external_order_number` (no split, só daquele pacote). Create seguinte: `nextEnvioEcomExternalOrderNumber` / `nextPackageEnvioEcomExternalOrderNumber` (sufixo). Resolve por CPF **ignora** envio cancelado se não for o ID atual. Webhook no 1:1 ignora envio diferente do gravado; no split casa o pacote pelo barcode/ID/`orderId`.
+- **Cancelar EE:** `POST .../cancel` pede cancel na API **e** zera `envioecom_shipment_id` / barcode / label URL (no split, só daquele pacote). **Desvincular:** `POST .../unlink` só zera no Yury (status incluso; `external_order_number` fica para o próximo create rotacionar). Create seguinte: `nextEnvioEcomExternalOrderNumber` / `nextPackageEnvioEcomExternalOrderNumber` (sufixo). Resolve por CPF **ignora** envio cancelado se não for o ID atual. Webhook no 1:1 ignora se o pedido não tem ID/barcode local; no split casa o pacote pelo barcode/ID/`orderId` e ignora pacote já desvinculado.
 - **Invariante cópia 48h (não regressar):** sai se URL da etiqueta **ou** `isLabelReadyStatus` (**inclui Aguardando coleta / ser coletado / postagem**) **ou** postado **ou** `enviado`. Fica na lista: só Envio criado, Vincular sem PDF, etiqueta 202. `isInTransitStatus` **exclui** aguardando coleta (não marcar Enviado). Detalhe: `regras-negocio.md` → Invariante. Teste: `envioecom-status.test.ts`.
 - Origem no create: **obrigatória** — `cep_origem` no body, senão CEP da conta escolhida / `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` (nº pedido) / `shipment_id` — **não** por CPF
-- Admin: quote/create/labels/sync/cancel + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)
+- Admin: quote/create/labels/sync/cancel/unlink + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
 - Create: **`items` sempre 1 linha** das settings (`envioecom_shipment_item_name` default `Mercadoria`, `envioecom_shipment_item_qty` default 1, `envioecom_shipment_item_value` default R$5). Nunca nome/qty/preço do catálogo. Editável em Admin → Rastreios (`GET/PUT .../shipment-item-name` devolve/grava `name`, `quantity`, `declaredValue`). Cotação **não** usa esses settings (pacote 2×12×17, 0,3 kg, R$5). Envios já criados não mudam.
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)

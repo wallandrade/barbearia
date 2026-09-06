@@ -366,7 +366,10 @@ async function persistEnvioEcomAccountId(orderId: string, accountId: string | nu
 }
 
 /** Solta o envio no Yury para cotar/criar etiqueta nova. O cancelamento na EE pode continuar em fila. */
-async function unlinkEnvioEcomBinding(order: typeof ordersTable.$inferSelect) {
+async function unlinkEnvioEcomBinding(
+  order: typeof ordersTable.$inferSelect,
+  opts?: { clearStatus?: boolean },
+) {
   const barcode = String(order.envioecomBarcode || "").trim();
   const tracking = String(order.trackingCode || "").trim();
   const eeLabel = String((order as { envioecomLabelUrl?: string | null }).envioecomLabelUrl || "").trim();
@@ -380,9 +383,15 @@ async function unlinkEnvioEcomBinding(order: typeof ordersTable.$inferSelect) {
       envioecomLabelUrl: null,
       envioecomFreightCost: null,
       envioecomDeliveryMode: null,
-      envioecomExternalOrderNumber: null,
       trackingLabelUrl: trackingLabel && eeLabel && trackingLabel !== eeLabel ? order.trackingLabelUrl : null,
       ...(tracking && barcode && tracking !== barcode ? {} : { trackingCode: null }),
+      ...(opts?.clearStatus
+        ? {
+            envioecomStatus: null,
+            envioecomStatusUpdatedAt: null,
+            envioecomStatusHistory: [],
+          }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(ordersTable.id, order.id));
@@ -1511,6 +1520,75 @@ router.post("/admin/envioecom/orders/:id/cancel", requireAdminAuth, async (req, 
 });
 
 // --------------------------------------------------------------------------
+// POST /api/admin/envioecom/orders/:id/unlink
+// Solta ID/barcode/PDF no Yury. NÃO cancela na EnvioEcom.
+// Split: body { packageId } — só aquele pacote.
+// --------------------------------------------------------------------------
+router.post("/admin/envioecom/orders/:id/unlink", requireAdminAuth, async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+    const loaded = await loadOrderForAdmin(req, orderId);
+    if ("error" in loaded) {
+      res.status(loaded.error === "NOT_FOUND" ? 404 : loaded.error === "UNAUTHORIZED" ? 401 : 403).json({
+        error: loaded.error,
+        message: "Pedido não encontrado ou sem permissão.",
+      });
+      return;
+    }
+
+    const { order } = loaded;
+    const { pkg: targetPackage } = await requirePackageForSplit(order, req.body);
+    const hasBinding = targetPackage
+      ? packageHasEnvioEcomBinding(targetPackage)
+        || Boolean(String(targetPackage.envioecomLabelUrl || "").trim())
+        || Boolean(String(targetPackage.envioecomStatus || "").trim())
+      : Boolean(
+          String(order.envioecomShipmentId || "").trim()
+          || String(order.envioecomBarcode || "").trim()
+          || String((order as { envioecomLabelUrl?: string | null }).envioecomLabelUrl || "").trim()
+          || String(order.envioecomStatus || "").trim(),
+        );
+    if (!hasBinding) {
+      res.status(400).json({ error: "NO_SHIPMENT", message: "Não há etiqueta EnvioEcom vinculada para soltar." });
+      return;
+    }
+
+    if (targetPackage) {
+      await unlinkPackageEnvioEcomBinding(targetPackage, { clearStatus: true });
+      await rollupOrderFromPackages(order.id);
+    } else {
+      await unlinkEnvioEcomBinding(order, { clearStatus: true });
+    }
+
+    const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
+    const packages = await listOrderShipments(order.id);
+    const poolHint = targetPackage
+      ? String(targetPackage.inventoryPool || "")
+      : null;
+    recordAdminActivity(
+      req,
+      order.id,
+      "envioecom",
+      targetPackage ? `Desvinculou envio EnvioEcom (${poolHint || "pacote"})` : "Desvinculou envio EnvioEcom",
+      "Sem cancelar na EnvioEcom",
+    );
+    res.json({
+      ok: true,
+      unlinked: true,
+      cancelledOnEnvioEcom: false,
+      packageId: targetPackage?.id || null,
+      message: targetPackage
+        ? "Etiqueta solta neste pacote. A EnvioEcom não foi cancelada. Os outros envios deste pedido continuam iguais."
+        : "Etiqueta solta neste pedido. A EnvioEcom não foi cancelada.",
+      tracking: publicTrackingPayload(refreshed[0]!, packages),
+      packages: packages.map(mapOrderShipmentPublic),
+    });
+  } catch (err) {
+    mapApiError(err, res);
+  }
+});
+
+// --------------------------------------------------------------------------
 // GET/PUT /api/admin/envioecom/shipment-item-name — nome/qty/valor só no create (não na cotação)
 // --------------------------------------------------------------------------
 router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req, res) => {
@@ -2098,7 +2176,7 @@ router.post("/webhook/envioecom", async (req, res) => {
         });
         return;
       }
-    } else if (isEnvioEcomCancelStatus(status) || !incomingShipmentId) {
+    } else {
       console.log("[EnvioEcom webhook] ignore unlinked order", { orderId: order.id, status });
       return;
     }

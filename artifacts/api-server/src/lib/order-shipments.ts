@@ -170,7 +170,8 @@ export async function findOrderShipmentByEnvioEcomRef(params: {
       .from(orderShipmentsTable)
       .where(eq(orderShipmentsTable.envioecomExternalOrderNumber, externalOrderNumber))
       .limit(1);
-    if (byExternal[0]) return byExternal[0];
+    // Pacote já desvinculado: não reatachar webhook pelo orderId antigo.
+    if (byExternal[0] && packageHasEnvioEcomBinding(byExternal[0])) return byExternal[0];
   }
   return null;
 }
@@ -322,7 +323,10 @@ export async function updateOrderShipment(
     .where(eq(orderShipmentsTable.id, packageId));
 }
 
-export async function unlinkPackageEnvioEcomBinding(pkg: OrderShipment): Promise<void> {
+export async function unlinkPackageEnvioEcomBinding(
+  pkg: OrderShipment,
+  opts?: { clearStatus?: boolean },
+): Promise<void> {
   await updateOrderShipment(pkg.id, {
     envioecomShipmentId: null,
     envioecomBarcode: null,
@@ -330,7 +334,14 @@ export async function unlinkPackageEnvioEcomBinding(pkg: OrderShipment): Promise
     envioecomLabelUrl: null,
     envioecomFreightCost: null,
     envioecomDeliveryMode: null,
-    envioecomExternalOrderNumber: null,
+    // Mantém externalOrderNumber: o próximo create rotaciona o orderId (evita DUPLICATE_ORDER).
+    ...(opts?.clearStatus
+      ? {
+          envioecomStatus: null,
+          envioecomStatusUpdatedAt: null,
+          envioecomStatusHistory: [],
+        }
+      : {}),
   });
 }
 

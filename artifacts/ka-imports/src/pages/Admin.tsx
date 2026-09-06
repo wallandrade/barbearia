@@ -565,7 +565,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Unlink, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -10825,6 +10825,50 @@ function OrdersPanel({
     }
   };
 
+  const unlinkEnvioEcomShipment = async (order: AdminOrder, packageId?: string | null) => {
+    const splitHint = packageId
+      ? "Soltar a etiqueta só deste pacote no Yury? A EnvioEcom NÃO é cancelada. Os outros pacotes deste pedido continuam iguais."
+      : "Soltar a etiqueta deste pedido no Yury? A EnvioEcom NÃO é cancelada.";
+    if (!window.confirm(splitHint)) return;
+
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/unlink`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(packageId ? { packageId } : {}),
+        }),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        message?: string;
+        tracking?: { status?: string | null };
+        packages?: unknown[];
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao desvincular etiqueta.");
+        return;
+      }
+      patchOrderLocal(order.id, {
+        envioecomStatus: data.tracking?.status || null,
+        envioecomBarcode: null,
+        envioecomShipmentId: null,
+        envioecomTrackingKey: null,
+        envioecomLabelUrl: null,
+        trackingLabelUrl: null,
+        trackingCode: null,
+        envioecomDeliveryMode: null,
+        ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
+      });
+      toast.success(data.message || "Etiqueta solta. Vincule ou cote de novo neste pacote.");
+    } catch {
+      toast.error("Erro ao desvincular EnvioEcom.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
   const saveSplitShipments = async (
     order: AdminOrder,
     packages: Array<{ inventoryPool: SplitPoolKind; items: Array<{ productId: string; productName: string; quantity: number }> }>,
@@ -12569,6 +12613,17 @@ function OrdersPanel({
                       <Button
                         size="sm"
                         variant="outline"
+                        className="gap-1.5 text-amber-800 border-amber-200 hover:bg-amber-50"
+                        disabled={!!envioecomBusy[order.id]}
+                        onClick={() => { void unlinkEnvioEcomShipment(order); }}
+                        title="Solta a etiqueta neste pedido. Não cancela na EnvioEcom."
+                      >
+                        <Unlink className="w-3.5 h-3.5" />
+                        Desvincular
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50"
                         disabled={!!envioecomBusy[order.id]}
                         onClick={() => { void cancelEnvioEcomShipment(order); }}
@@ -12624,6 +12679,19 @@ function OrdersPanel({
                             Cancelar
                           </Button>
                         </>
+                      )}
+                      {(pkg.envioecomBarcode || pkg.envioecomShipmentId || pkg.envioecomLabelUrl || pkg.envioecomStatus) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-amber-800 border-amber-200"
+                          disabled={!!envioecomBusy[order.id] || !pkg.id}
+                          onClick={() => { void unlinkEnvioEcomShipment(order, pkg.id); }}
+                          title="Solta a etiqueta só deste pacote. Não cancela na EnvioEcom."
+                        >
+                          <Unlink className="w-3 h-3" />
+                          Desvincular
+                        </Button>
                       )}
                       {pkg.envioecomStatus && (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>

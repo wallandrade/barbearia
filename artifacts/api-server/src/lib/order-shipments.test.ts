@@ -116,6 +116,31 @@ test("orderId EnvioEcom do pacote leva o pool e rotaciona após cancelar", () =>
   assert.notEqual(afterCancel, "2031-abcdefgh-motoboy");
 });
 
+test("desvincular sem cancelar rotaciona o orderId EnvioEcom na próxima criação", () => {
+  const order = { id: "abcdefghijklmnop", orderNumber: 2031 };
+  const next = nextPackageEnvioEcomExternalOrderNumber(
+    order,
+    {
+      inventoryPool: "motoboy",
+      envioecomExternalOrderNumber: "2031-abcdefgh-motoboy",
+      envioecomShipmentId: null,
+      envioecomBarcode: null,
+      envioecomStatus: null,
+    },
+    1_700_000_000_000,
+  );
+  assert.equal(next.startsWith("2031-abcdefgh-motoboy-"), true);
+  assert.notEqual(next, "2031-abcdefgh-motoboy");
+});
+
+test("pacote desvinculado volta à cópia 48h; o outro com etiqueta continua fora", () => {
+  const minas = { enviado: false, envioecomStatus: "DC-e emitida", envioecomLabelUrl: "https://x/a.pdf" };
+  const motoboyUnlinked = { enviado: false, envioecomStatus: null, envioecomLabelUrl: null };
+  assert.equal(isPackageExcludedFromShippingCopyList(motoboyUnlinked), false);
+  assert.equal(isPackageExcludedFromShippingCopyList(minas), true);
+  assert.equal(isSplitOrderExcludedFromShippingCopyList([minas, motoboyUnlinked]), false);
+});
+
 test("parseShipmentItems agrupa o mesmo produto", () => {
   const items = parseShipmentItems([
     { productId: "prod-a", productName: "A", quantity: 1 },
