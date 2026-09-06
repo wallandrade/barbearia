@@ -27,6 +27,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-06 | Checkout mostra o **%** ao lado do preço de cada garantia (cobrado ÷ subtotal) | Cliente vê 15% / 25% no exemplo de R$ 900 | Cobertura, interruptor de saldo e % do Admin iguais |
 | 2026-09-06 | Checkout com saldo **desligado**: 100% só cobre + “custa mais porque cobre Receita”; sem caixas de saldo/estorno | Texto mais curto no checkout | Snapshot cashback=0 e interruptor iguais |
 | 2026-09-06 | Admin Seguro: interruptor **Devolver saldo se chegar certo** (`checkout_insurance_cashback_enabled`, default ligado). Desligado: snapshot `cashback=0` | Completo deixa de creditar carteira nas compras novas | Plano, %, 1 reenvio e reduzido iguais; pedido antigo com saldo gravado ainda recebe |
 | 2026-09-05 | Split **parcial**: badge **Enviado parcialmente**; cópia 48h/Resumo/lista de compra lista **só os itens dos pacotes sem etiqueta**. Pedido continua na lista até todos os pacotes saírem | #1040 com Motoboy DC-e e Minas sem etiqueta: cópia só o de Minas | Copiar Completo e pós-pagamento seguem o pedido inteiro; **Cancelar EE** / Desvincular iguais |

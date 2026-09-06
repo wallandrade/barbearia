@@ -5,6 +5,8 @@ import {
   CHECKOUT_INSURANCE_REDUCED_LABEL,
   DEFAULT_CHECKOUT_INSURANCE,
   computeInsuranceSnapshot,
+  effectiveChargedPercent,
+  formatInsurancePercent,
   type InsurancePlan,
 } from "@/lib/checkout-insurance";
 
@@ -62,6 +64,13 @@ export function CheckoutInsuranceOffer({
     onChange(plan === next ? "none" : next);
   };
 
+  const priceWithPercent = (amount: number) => {
+    const money = formatCurrency(amount);
+    const pct = effectiveChargedPercent(subtotal, amount);
+    if (pct <= 0) return money;
+    return `${money} (${formatInsurancePercent(pct)}%)`;
+  };
+
   return (
     <div className="pt-4 border-t border-border space-y-3">
       <p className="text-sm font-semibold text-foreground">Garantia de envio</p>
@@ -79,7 +88,7 @@ export function CheckoutInsuranceOffer({
             <div className={`w-5 h-5 mt-0.5 rounded-full border-2 shrink-0 ${plan === "reduced" ? "border-primary bg-primary" : "border-muted-foreground"}`} />
             <div className="min-w-0 flex-1">
               <p className="font-bold text-foreground">
-                {reducedTitle} — {formatCurrency(reducedAmount)}
+                {reducedTitle} — {priceWithPercent(reducedAmount)}
               </p>
               <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">
                 {reducedBody}
@@ -114,7 +123,7 @@ export function CheckoutInsuranceOffer({
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-bold text-foreground">
-                {fullTitle} — {formatCurrency(fullAmount)}
+                {fullTitle} — {priceWithPercent(fullAmount)}
               </p>
               <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">
                 {fullBody}
