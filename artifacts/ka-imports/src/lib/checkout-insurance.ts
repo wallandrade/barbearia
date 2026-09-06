@@ -2,6 +2,7 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   enabled: "checkout_insurance_enabled",
   percent: "checkout_insurance_percent",
   keepPercent: "checkout_insurance_keep_percent",
+  cashbackEnabled: "checkout_insurance_cashback_enabled",
   label: "checkout_insurance_label",
   description: "checkout_insurance_description",
   productPercent: "checkout_insurance_product_percent",
@@ -19,6 +20,7 @@ export const DEFAULT_CHECKOUT_INSURANCE = {
   enabled: true,
   percent: 10,
   keepPercent: 10,
+  cashbackEnabled: true,
   reducedPercent: 10,
   label: "Quero garantia 100%",
   description: "Vale se o correio perder, a Receita apreender ou chegar quebrado.",
@@ -62,10 +64,14 @@ export function computeInsuranceSnapshot(input: {
   subtotal: number;
   insuranceAmount: number;
   keepPercent: number;
+  cashbackEnabled?: boolean;
 }): InsuranceSnapshot {
   if (!input.includeInsurance) return { keepAmount: 0, cashbackAmount: 0 };
   const insurance = Math.max(0, roundInsuranceMoney(input.insuranceAmount));
   if (insurance <= 0) return { keepAmount: 0, cashbackAmount: 0 };
+  if (input.cashbackEnabled === false) {
+    return { keepAmount: insurance, cashbackAmount: 0 };
+  }
   const keepPct = Math.min(100, Math.max(0, Number(input.keepPercent) || 0));
   const keepRaw = roundInsuranceMoney(Math.max(0, Number(input.subtotal) || 0) * (keepPct / 100));
   const keepAmount = Math.min(insurance, keepRaw);

@@ -35,6 +35,7 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
   const enabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.enabled]);
   const fullEnabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.fullEnabled], true);
   const reducedEnabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.reducedEnabled], true);
+  const cashbackEnabled = parseInsuranceEnabled(settings[CHECKOUT_INSURANCE_SETTING_KEYS.cashbackEnabled], true);
   const savedPercent = parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.percent]);
   const savedReducedPercent = parseInsurancePercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent]);
   const savedKeepPercent = parseInsuranceKeepPercent(settings[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]);
@@ -240,6 +241,19 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
           <p className="font-semibold">Seguro reduzido</p>
           <p className="text-xs mt-0.5">{reducedEnabled ? "Aparece no checkout (só extravio/roubo)" : "Escondido no checkout"}</p>
         </button>
+        <button
+          type="button"
+          disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.cashbackEnabled]}
+          onClick={() => onSave(CHECKOUT_INSURANCE_SETTING_KEYS.cashbackEnabled, cashbackEnabled ? "0" : "1")}
+          className={`sm:col-span-2 rounded-xl border px-3 py-2 text-left text-sm ${cashbackEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-border bg-muted/30 text-muted-foreground"}`}
+        >
+          <p className="font-semibold">Devolver saldo se chegar certo</p>
+          <p className="text-xs mt-0.5">
+            {cashbackEnabled
+              ? "Ligado — o checkout explica o crédito. Completo devolve (cobrado − % da loja) quando entregar."
+              : "Desligado — o checkout diz que não vira saldo. Loja fica com o seguro inteiro."}
+          </p>
+        </button>
       </div>
 
       <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 ${enabled ? "" : "opacity-60"}`}>
@@ -352,9 +366,12 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
               setDirty((d) => ({ ...d, keepPercent: true }));
               setKeepPercent(e.target.value);
             }}
-            disabled={!enabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]}
+            disabled={!enabled || !cashbackEnabled || !!loading[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]}
             className="w-full h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
           />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {cashbackEnabled ? "O resto do seguro vira saldo do cliente." : "Inativo enquanto a devolução de saldo estiver desligada."}
+          </p>
         </div>
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">% especial dos produtos</label>
@@ -483,13 +500,24 @@ export function CheckoutInsuranceCard({ settings, loading, products, onSave }: P
               subtotal: example,
               insuranceAmount: charged,
               keepPercent: previewKeepPercent,
+              cashbackEnabled,
             });
-            const backPct = cashbackPercent(previewPercent, previewKeepPercent);
+            const backPct = cashbackEnabled ? cashbackPercent(previewPercent, previewKeepPercent) : 0;
             const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
             return (
-              <p className="text-sm text-foreground pt-1">
-                Exemplo produto {brl(example)} → cobra {brl(charged)} · loja fica {brl(snap.keepAmount)} ({formatInsurancePercent(previewKeepPercent)}%) · saldo {brl(snap.cashbackAmount)} ({formatInsurancePercent(backPct)}%)
-              </p>
+              <>
+                <p className="text-sm text-foreground pt-1">
+                  Exemplo produto {brl(example)} → cobra {brl(charged)} · loja fica {brl(snap.keepAmount)}
+                  {cashbackEnabled ? ` (${formatInsurancePercent(previewKeepPercent)}%)` : " (seguro inteiro)"}
+                  {" "}· saldo {brl(snap.cashbackAmount)}
+                  {cashbackEnabled ? ` (${formatInsurancePercent(backPct)}%)` : " (devolução desligada)"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {cashbackEnabled
+                    ? "Texto no checkout (100%): se chegar certo, o cliente ganha saldo para a próxima compra."
+                    : "Texto no checkout (100%): se chegar certo, o valor da garantia fica com a loja — não vira saldo."}
+                </p>
+              </>
             );
           })()}
         </div>

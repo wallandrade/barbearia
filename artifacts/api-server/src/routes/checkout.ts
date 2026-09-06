@@ -400,6 +400,7 @@ router.post("/checkout/pix", async (req, res) => {
       subtotal: computedSubtotal,
       insuranceAmount: computedInsuranceAmount,
       keepPercent: insuranceConfig.keepPercent,
+      cashbackEnabled: insuranceConfig.cashbackEnabled,
     });
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 

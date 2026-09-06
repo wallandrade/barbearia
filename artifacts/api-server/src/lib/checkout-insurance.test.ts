@@ -194,3 +194,38 @@ test("snapshot do reduzido nao gera saldo", () => {
   assert.equal(snap.keepAmount, 85);
   assert.equal(snap.cashbackAmount, 0);
 });
+
+test("cashback desligado loja fica com o seguro inteiro", () => {
+  const snap = computeInsuranceSnapshot({
+    includeInsurance: true,
+    subtotal: 733,
+    insuranceAmount: 146.6,
+    keepPercent: 10,
+    cashbackEnabled: false,
+  });
+  assert.equal(snap.keepAmount, 146.6);
+  assert.equal(snap.cashbackAmount, 0);
+});
+
+test("completo com cashback ligado por padrao devolve a diferenca", () => {
+  const snap = computeInsuranceSnapshotForPlan({
+    plan: "full",
+    subtotal: 733,
+    insuranceAmount: 146.6,
+    keepPercent: 10,
+  });
+  assert.equal(snap.keepAmount, 73.3);
+  assert.equal(snap.cashbackAmount, 73.3);
+});
+
+test("completo com cashback desligado nao gera saldo", () => {
+  const snap = computeInsuranceSnapshotForPlan({
+    plan: "full",
+    subtotal: 733,
+    insuranceAmount: 146.6,
+    keepPercent: 10,
+    cashbackEnabled: false,
+  });
+  assert.equal(snap.keepAmount, 146.6);
+  assert.equal(snap.cashbackAmount, 0);
+});

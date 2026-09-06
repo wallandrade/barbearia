@@ -159,6 +159,7 @@ export async function snapshotInsuranceOnCreate(input: {
   subtotal: number;
   insuranceAmount: number;
   keepPercent: number;
+  cashbackEnabled?: boolean;
 }) {
   return computeInsuranceSnapshot(input);
 }

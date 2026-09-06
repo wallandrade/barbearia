@@ -2,6 +2,7 @@ export const CHECKOUT_INSURANCE_SETTING_KEYS = {
   enabled: "checkout_insurance_enabled",
   percent: "checkout_insurance_percent",
   keepPercent: "checkout_insurance_keep_percent",
+  cashbackEnabled: "checkout_insurance_cashback_enabled",
   label: "checkout_insurance_label",
   description: "checkout_insurance_description",
   productPercent: "checkout_insurance_product_percent",
@@ -25,6 +26,7 @@ export type CheckoutInsuranceConfig = {
   enabled: boolean;
   percent: number;
   keepPercent: number;
+  cashbackEnabled: boolean;
   productPercent: number | null;
   productIds: string[];
   fullEnabled: boolean;
@@ -51,16 +53,20 @@ export function effectiveChargedPercent(subtotal: number, insuranceAmount: numbe
   return roundMoney((Math.max(0, Number(insuranceAmount) || 0) / base) * 100);
 }
 
-/** Loja fica keep% do subtotal (teto = seguro cobrado); o resto do seguro vira saldo. */
+/** Loja fica keep% do subtotal (teto = seguro cobrado); o resto do seguro vira saldo. Sem cashback, a loja fica com o seguro inteiro. */
 export function computeInsuranceSnapshot(input: {
   includeInsurance: boolean;
   subtotal: number;
   insuranceAmount: number;
   keepPercent: number;
+  cashbackEnabled?: boolean;
 }): InsuranceSnapshot {
   if (!input.includeInsurance) return { keepAmount: 0, cashbackAmount: 0 };
   const insurance = Math.max(0, roundMoney(input.insuranceAmount));
   if (insurance <= 0) return { keepAmount: 0, cashbackAmount: 0 };
+  if (input.cashbackEnabled === false) {
+    return { keepAmount: insurance, cashbackAmount: 0 };
+  }
   const keepPct = Math.min(100, Math.max(0, Number(input.keepPercent) || 0));
   const keepRaw = roundMoney(Math.max(0, Number(input.subtotal) || 0) * (keepPct / 100));
   const keepAmount = Math.min(insurance, keepRaw);
@@ -171,6 +177,7 @@ export function computeInsuranceSnapshotForPlan(input: {
   subtotal: number;
   insuranceAmount: number;
   keepPercent: number;
+  cashbackEnabled?: boolean;
 }): InsuranceSnapshot {
   if (input.plan === "full") {
     return computeInsuranceSnapshot({
@@ -178,6 +185,7 @@ export function computeInsuranceSnapshotForPlan(input: {
       subtotal: input.subtotal,
       insuranceAmount: input.insuranceAmount,
       keepPercent: input.keepPercent,
+      cashbackEnabled: input.cashbackEnabled,
     });
   }
   if (input.plan === "reduced") {

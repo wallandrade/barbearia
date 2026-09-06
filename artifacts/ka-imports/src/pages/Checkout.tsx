@@ -204,6 +204,7 @@ export default function Checkout() {
   const [insurancePercent, setInsurancePercent] = useState(10);
   const [insuranceReducedPercent, setInsuranceReducedPercent] = useState(10);
   const [insuranceKeepPercent, setInsuranceKeepPercent] = useState(10);
+  const [insuranceCashbackEnabled, setInsuranceCashbackEnabled] = useState(true);
   const [insuranceProductPercent, setInsuranceProductPercent] = useState<number | null>(null);
   const [insuranceProductIds, setInsuranceProductIds] = useState<string[]>([]);
   const [insuranceFullLabel, setInsuranceFullLabel] = useState("");
@@ -602,6 +603,7 @@ export default function Checkout() {
           setInsurancePercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.percent]));
           setInsuranceReducedPercent(parseInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.reducedPercent] ?? "10"));
           setInsuranceKeepPercent(parseInsuranceKeepPercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.keepPercent]));
+          setInsuranceCashbackEnabled(parseInsuranceEnabled(data[CHECKOUT_INSURANCE_SETTING_KEYS.cashbackEnabled], true));
           setInsuranceProductPercent(parseOptionalInsurancePercent(data[CHECKOUT_INSURANCE_SETTING_KEYS.productPercent]));
           setInsuranceProductIds(parseInsuranceProductIds(data[CHECKOUT_INSURANCE_SETTING_KEYS.productIds]));
           setInsuranceFullLabel(parseInsuranceLabel(data[CHECKOUT_INSURANCE_SETTING_KEYS.fullLabel]));
@@ -2480,6 +2482,7 @@ export default function Checkout() {
                 fullAmount={insuranceFullPreview}
                 reducedAmount={insuranceReducedPreview}
                 keepPercent={insuranceKeepPercent}
+                cashbackEnabled={insuranceCashbackEnabled}
                 isLoggedIn={Boolean(getCustomerToken())}
                 fullLabel={insuranceFullLabel}
                 fullDescription={insuranceFullDescription}

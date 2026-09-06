@@ -110,7 +110,7 @@ export function AdminInsuranceClaimActions({ order, onDone }: Props) {
             Já reenviou 1 vez. A garantia acabou: não manda a terceira e não devolve o produto.
           </p>
         )}
-        {!isChild && isFull && !order.insuranceCashbackGranted && status === "none" && (
+        {!isChild && isFull && Number(order.insuranceCashbackAmount) > 0 && !order.insuranceCashbackGranted && status === "none" && (
           <button type="button" disabled={!!busy} className="h-8 px-2 rounded-lg border text-xs" onClick={() => void run("grant_cashback")}>
             {busy === "grant_cashback" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Creditar cashback"}
           </button>

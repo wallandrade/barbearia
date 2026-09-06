@@ -1192,6 +1192,7 @@ router.post("/orders", async (req, res) => {
       subtotal: computedSubtotal,
       insuranceAmount: computedInsuranceAmount,
       keepPercent: insuranceConfig.keepPercent,
+      cashbackEnabled: insuranceConfig.cashbackEnabled,
     });
     const computedBaseTotal = computedSubtotal + computedShippingCost + computedInsuranceAmount;
 
@@ -2013,11 +2014,13 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       items: resolvedProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
+    const existingCashback = Number(current[0].insuranceCashbackAmount || 0);
     const insuranceSnapshot = computeInsuranceSnapshotForPlan({
       plan: computedInsurance.insurancePlan,
       subtotal: computedSubtotal,
       insuranceAmount: computedInsuranceAmount,
       keepPercent: insuranceConfig.keepPercent,
+      cashbackEnabled: insuranceConfig.cashbackEnabled || existingCashback > 0,
     });
     const total = Math.max(0, computedSubtotal + computedShippingCost + computedInsuranceAmount - computedDiscountAmount);
 
