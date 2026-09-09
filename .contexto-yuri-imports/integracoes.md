@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-09 | `POST /api/integrations/inventory/exit` recusa (403 `EXIT_DISABLED`). Espelho só lê o snapshot | Outro sistema não desconta Motoboy/Minas | GET snapshot, token e webhook `inventory.changed` iguais |
 | 2026-09-09 | Etiqueta/webhook/sync EnvioEcom **não** baixam estoque. Conta SP/MG só sugere o pool no pedido/pacote | Saldo só cai no Dar baixa agora | Cotação/create/cópia 48h/`enviado` no trânsito iguais |
 | 2026-09-08 | Baixa EE pela conta: `inventoryPoolForEnvioEcomAccount` — `env`/São Paulo → Motoboy; conta extra/Minas → Minas | Etiqueta/coleta/sync não usam mais Foz por padrão | Cotação/create/webhook de vínculo iguais |
 | 2026-09-05 | Split parcial: cópia 48h/Resumo lista só itens dos pacotes sem etiqueta; badge **Enviado parcialmente** | Pedido misto (Minas+Motoboy) não recopia o que já tem DC-e | Unlink/cancel/create/labels iguais |
@@ -115,11 +116,11 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 
 ## Estoque Motoboy + Minas → espelho
 
-Yury = **fonte da verdade**. Snapshot é leitura; **baixa** via POST de integração (mesmo token). **Não** há entrada de compra por essa API.
+Yury = **fonte da verdade**. Snapshot é **só leitura**. **Não** há baixa nem entrada de compra por essa API.
 
 - **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName` do catálogo se o id existir **ou** nome único/legado de pedido se o produto foi recadastrado, `quantity`).
-- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token. Body: `{ pool: "motoboy"|"minas", productId, quantity }` ou `{ pool, items: [{ productId, quantity }] }` ou `{ pool, orderId }` (pedido Yury: id interno ou nº). Opcional `reason`, `referenceId` (retry não baixa de novo). Sem saldo → 400 `INSUFFICIENT_STOCK`. Se `orderId` e o pedido já tem `inventory_reserved`, devolve `alreadyDebited` sem descontar outra vez. **Não** aceita pool `loja` (Foz Guaçu).
-- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (admin, baixa de pedido **e** POST de integração), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
+- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token, mas **recusa** com 403 `EXIT_DISABLED`. Saldo Motoboy/Minas só cai no Admin (**Dar baixa agora**).
+- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas **do Admin**, fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
 - **Headers webhook:** iguais à cobertura (`X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp`).
 - Lib: `lib/inventory-sync.ts`; rota: `routes/inventory-sync.ts`.
 
