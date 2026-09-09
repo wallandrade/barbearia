@@ -14,6 +14,7 @@ import {
   parseInsuranceProductIds,
   parseOptionalInsurancePercentSetting,
   resolveCheckoutInsurance,
+  adminCanAuthorizeSupportReshipment,
 } from "./checkout-insurance";
 
 test("percentual vazio usa 10%", () => {
@@ -228,4 +229,17 @@ test("completo com cashback desligado nao gera saldo", () => {
   });
   assert.equal(snap.keepAmount, 146.6);
   assert.equal(snap.cashbackAmount, 0);
+});
+
+test("sem seguro nao autoriza reenvio de nenhum tipo", () => {
+  assert.equal(adminCanAuthorizeSupportReshipment("none", "extravio"), false);
+  assert.equal(adminCanAuthorizeSupportReshipment("none", "missing_items"), false);
+  assert.equal(adminCanAuthorizeSupportReshipment("none", "other"), false);
+});
+
+test("com seguro autoriza reenvio de faltando e bloqueia apreensao no reduzido", () => {
+  assert.equal(adminCanAuthorizeSupportReshipment("full", "missing_items"), true);
+  assert.equal(adminCanAuthorizeSupportReshipment("reduced", "extravio"), true);
+  assert.equal(adminCanAuthorizeSupportReshipment("reduced", "apreensao"), false);
+  assert.equal(adminCanAuthorizeSupportReshipment("reduced", "other"), true);
 });

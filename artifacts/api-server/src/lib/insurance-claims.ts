@@ -6,6 +6,7 @@ import { computeInsuranceSnapshot } from "./checkout-insurance";
 import {
   assertInsuranceExtravioReshipAllowed,
   assertInsuranceProductRefundAllowed,
+  assertSupportReshipmentAllowed,
   insuranceCashbackEligibility,
   parseInsuranceClaimStatus,
   parseInsuranceReshipCount,
@@ -16,6 +17,7 @@ export type { InsuranceClaimStatus } from "./insurance-claims-policy";
 export {
   assertInsuranceExtravioReshipAllowed,
   assertInsuranceProductRefundAllowed,
+  assertSupportReshipmentAllowed,
   insuranceCashbackEligibility,
   InsuranceClaimError,
 };

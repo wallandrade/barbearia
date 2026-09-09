@@ -5,8 +5,8 @@ import { db, ordersTable, supportTicketsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { createReshipmentChildOrder } from "../lib/reshipments";
-import { chooseInsuranceReship, InsuranceClaimError, markFirstLost } from "../lib/insurance-claims";
-import { insuranceCoversProblem, parseInsurancePlan } from "../lib/checkout-insurance";
+import { assertSupportReshipmentAllowed, chooseInsuranceReship, InsuranceClaimError, markFirstLost } from "../lib/insurance-claims";
+import { adminCanAuthorizeSupportReshipment, insuranceCoversProblem, NO_INSURANCE_RESHIP_MESSAGE, parseInsurancePlan } from "../lib/checkout-insurance";
 
 const router: IRouter = Router();
 
@@ -372,6 +372,19 @@ router.post("/support/tickets", async (req, res) => {
       }
     }
 
+    const orderPlan = parseInsurancePlan(order.insurancePlan, Boolean(order.includeInsurance));
+    if (problemType === "extravio" || problemType === "apreensao") {
+      if (!insuranceCoversProblem(orderPlan, problemType)) {
+        res.status(400).json({
+          error: "NO_INSURANCE",
+          message: orderPlan === "none"
+            ? NO_INSURANCE_RESHIP_MESSAGE
+            : "Este problema nao tem reenvio pela garantia.",
+        });
+        return;
+      }
+    }
+
     if (problemType === "extravio") {
       if (!description) description = "Sumiu no correio ou roubaram.";
     }
@@ -408,7 +421,6 @@ router.post("/support/tickets", async (req, res) => {
       updatedAt: new Date(),
     });
 
-    const orderPlan = parseInsurancePlan(order.insurancePlan, Boolean(order.includeInsurance));
     if (insuranceCoversProblem(orderPlan, problemType)) {
       try {
         await markFirstLost(order.id);
@@ -605,6 +617,16 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
     const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
     const addressOverride = parsedAddress && canApplyAddress ? parsedAddress : null;
 
+    try {
+      assertSupportReshipmentAllowed(order, ticket.problemType);
+    } catch (err) {
+      if (err instanceof InsuranceClaimError) {
+        res.status(400).json({ error: err.code, message: err.message });
+        return;
+      }
+      throw err;
+    }
+
     let child;
     try {
       if (ticket.problemType === "extravio" || ticket.problemType === "apreensao") {
@@ -723,7 +745,13 @@ router.patch("/admin/support-tickets/:id/status", requireAdminAuth, async (req, 
         .limit(1);
 
       const order = orderRows[0];
-      if (order && parsedAddress) {
+      const canAutoReship = order
+        ? adminCanAuthorizeSupportReshipment(
+            parseInsurancePlan(order.insurancePlan, Boolean(order.includeInsurance)),
+            ticket.problemType,
+          )
+        : false;
+      if (order && parsedAddress && canAutoReship) {
         try {
           const child = await createReshipmentChildOrder({
             parentOrderId: order.id,

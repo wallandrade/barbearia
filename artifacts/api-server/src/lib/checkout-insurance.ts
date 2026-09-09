@@ -172,6 +172,20 @@ export function insuranceCoversProblem(plan: InsurancePlan, problemType: string 
   return false;
 }
 
+export const NO_INSURANCE_RESHIP_MESSAGE =
+  "Seu pedido nao foi comprado com seguro. Nao tem opcao de reenvio.";
+
+/** Pedido sem seguro nunca entra em reenvio. Extravio/apreensão ainda exigem cobertura do plano. */
+export function adminCanAuthorizeSupportReshipment(
+  plan: InsurancePlan,
+  problemType?: string | null,
+): boolean {
+  if (plan === "none") return false;
+  const type = String(problemType || "").trim().toLowerCase();
+  if (type === "extravio" || type === "apreensao") return insuranceCoversProblem(plan, type);
+  return true;
+}
+
 export function computeInsuranceSnapshotForPlan(input: {
   plan: InsurancePlan;
   subtotal: number;

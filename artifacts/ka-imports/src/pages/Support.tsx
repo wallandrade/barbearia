@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, ImagePlus, Loader2, Search, ShieldAlert, ShoppingBag } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
-import { insuranceCoversProblem, parseInsurancePlan } from "@/lib/checkout-insurance";
+import { insuranceCoversProblem, NO_INSURANCE_RESHIP_MESSAGE, parseInsurancePlan } from "@/lib/checkout-insurance";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -115,6 +115,14 @@ export default function Support() {
     () => orders.find((order) => order.id === selectedOrderId) ?? null,
     [orders, selectedOrderId],
   );
+
+  const selectedPlan = useMemo(
+    () => parseInsurancePlan(selectedOrder?.insurancePlan, selectedOrder?.includeInsurance),
+    [selectedOrder],
+  );
+  const orderHasInsurance = selectedPlan !== "none";
+  const canSelectExtravio = insuranceCoversProblem(selectedPlan, "extravio");
+  const canSelectApreensao = insuranceCoversProblem(selectedPlan, "apreensao");
 
   useEffect(() => {
     setProblemType("");
@@ -258,6 +266,10 @@ export default function Support() {
     }
     if (problemType === "missing_items" && selectedMissingProducts.length === 0) {
       toast.error("Marque ao menos um produto que faltou.");
+      return;
+    }
+    if ((problemType === "extravio" || problemType === "apreensao") && !insuranceCoversProblem(selectedPlan, problemType)) {
+      toast.error(orderHasInsurance ? "Este problema não tem reenvio pela garantia." : NO_INSURANCE_RESHIP_MESSAGE);
       return;
     }
     if (problemType === "other" && description.trim().length < 10) {
@@ -440,6 +452,12 @@ export default function Support() {
                 {selectedOrder && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">3. Qual o problema?</p>
+                    {!orderHasInsurance && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
+                        <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                        <p>{NO_INSURANCE_RESHIP_MESSAGE}</p>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -455,34 +473,50 @@ export default function Support() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setProblemType("extravio")}
+                        disabled={!canSelectExtravio}
+                        onClick={() => {
+                          if (!canSelectExtravio) return;
+                          setProblemType("extravio");
+                        }}
                         className={`rounded-xl border px-4 py-4 text-left transition ${
-                          problemType === "extravio"
-                            ? "border-amber-500 bg-amber-50"
-                            : "border-slate-200 bg-white hover:border-slate-300"
+                          !canSelectExtravio
+                            ? "border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed"
+                            : problemType === "extravio"
+                              ? "border-amber-500 bg-amber-50"
+                              : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                       >
                         <p className="text-sm font-semibold text-slate-900">Sumiu no correio ou roubaram</p>
                         <p className="text-xs text-slate-500 mt-1">
-                          {insuranceCoversProblem(parseInsurancePlan(selectedOrder?.insurancePlan, selectedOrder?.includeInsurance), "extravio")
+                          {canSelectExtravio
                             ? "Com garantia: a gente manda de novo 1 vez"
-                            : "Sem cobertura: não mandamos de novo"}
+                            : orderHasInsurance
+                              ? "Sem cobertura: não mandamos de novo"
+                              : "Sem seguro: não tem opção de reenvio"}
                         </p>
                       </button>
                       <button
                         type="button"
-                        onClick={() => setProblemType("apreensao")}
+                        disabled={!canSelectApreensao}
+                        onClick={() => {
+                          if (!canSelectApreensao) return;
+                          setProblemType("apreensao");
+                        }}
                         className={`rounded-xl border px-4 py-4 text-left transition ${
-                          problemType === "apreensao"
-                            ? "border-amber-500 bg-amber-50"
-                            : "border-slate-200 bg-white hover:border-slate-300"
+                          !canSelectApreensao
+                            ? "border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed"
+                            : problemType === "apreensao"
+                              ? "border-amber-500 bg-amber-50"
+                              : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                       >
                         <p className="text-sm font-semibold text-slate-900">Apreenderam ou veio quebrado</p>
                         <p className="text-xs text-slate-500 mt-1">
-                          {insuranceCoversProblem(parseInsurancePlan(selectedOrder?.insurancePlan, selectedOrder?.includeInsurance), "apreensao")
+                          {canSelectApreensao
                             ? "Seguro completo: manda de novo 1 vez ou devolve o produto"
-                            : "Reduzido/sem garantia: não cobre Receita nem quebra"}
+                            : orderHasInsurance
+                              ? "Reduzido: não cobre Receita nem quebra"
+                              : "Sem seguro: não tem opção de reenvio"}
                         </p>
                       </button>
                       <button

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assertInsuranceExtravioReshipAllowed,
   assertInsuranceProductRefundAllowed,
+  assertSupportReshipmentAllowed,
   insuranceCashbackEligibility,
   InsuranceClaimError,
 } from "./insurance-claims-policy";
@@ -162,4 +163,22 @@ test("reduzido reenvia extravio", () => {
     insuranceClaimStatus: "first_lost",
     insuranceReshipCount: 0,
   }, "extravio"));
+});
+
+test("suporte sem seguro nao reenvia faltando nem outro problema", () => {
+  assert.throws(
+    () => assertSupportReshipmentAllowed({ includeInsurance: false }, "missing_items"),
+    (err: unknown) => err instanceof InsuranceClaimError && err.code === "NO_INSURANCE",
+  );
+  assert.throws(
+    () => assertSupportReshipmentAllowed({ includeInsurance: false }, "other"),
+    (err: unknown) => err instanceof InsuranceClaimError && err.code === "NO_INSURANCE",
+  );
+});
+
+test("suporte com seguro reenvia pedido faltando", () => {
+  assert.doesNotThrow(() => assertSupportReshipmentAllowed({
+    includeInsurance: true,
+    insurancePlan: "full",
+  }, "missing_items"));
 });

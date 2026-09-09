@@ -81,6 +81,27 @@ export function assertInsuranceExtravioReshipAllowed(order: {
   }
 }
 
+/** Qualquer reenvio pelo suporte: precisa ter comprado seguro. Extravio/apreensão usam a cobertura do plano. */
+export function assertSupportReshipmentAllowed(order: {
+  includeInsurance?: boolean | null;
+  insurancePlan?: string | null;
+  insuranceClaimStatus?: string | null;
+  insuranceReshipCount?: number | null;
+  parentOrderId?: string | null;
+}, problemType: string | null | undefined = null): void {
+  const type = String(problemType || "").trim().toLowerCase();
+  if (type === "extravio" || type === "apreensao") {
+    assertInsuranceExtravioReshipAllowed(order, type);
+    return;
+  }
+  if (resolveOrderInsurancePlan(order) === "none") {
+    throw new InsuranceClaimError(
+      "NO_INSURANCE",
+      "Pedido sem seguro: nao tem opcao de reenvio.",
+    );
+  }
+}
+
 /** Estorno do produto so no plano completo, na 1a perda, antes de reenviar. */
 export function assertInsuranceProductRefundAllowed(order: {
   includeInsurance?: boolean | null;

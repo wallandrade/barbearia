@@ -591,7 +591,7 @@ import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchases
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
-import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insuranceCoversProblem, insurancePlanCustomerLabel } from "@/lib/checkout-insurance";
+import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment } from "@/lib/checkout-insurance";
 
 
 
@@ -8396,6 +8396,15 @@ function SupportTicketsPanel({
   const [reenviarSubmitting, setReenviarSubmitting] = useState(false);
 
   const openReenviarModal = (ticket: SupportTicketRecord) => {
+    const plan = parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance);
+    if (!adminCanAuthorizeSupportReshipment(plan, ticket.problemType)) {
+      toast.error(
+        plan === "none"
+          ? "Pedido sem seguro: não tem opção de reenvio."
+          : "Sem cobertura: não manda de novo.",
+      );
+      return;
+    }
     const orderProducts = ticket.orderProducts || [];
     const missing = ticket.missingProducts || [];
     const seedSource = missing.length > 0
@@ -8472,7 +8481,10 @@ function SupportTicketsPanel({
         </div>
       ) : (
         <div className="space-y-3">
-          {tickets.map((ticket) => (
+          {tickets.map((ticket) => {
+            const ticketPlan = parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance);
+            const canReenviar = adminCanAuthorizeSupportReshipment(ticketPlan, ticket.problemType);
+            return (
             <div key={ticket.id} className="rounded-2xl border bg-card p-4 sm:p-5 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
@@ -8506,6 +8518,9 @@ function SupportTicketsPanel({
                   {ticket.problemType === "other" && (
                     <p className="text-xs font-semibold text-slate-600 mt-1">Tipo: Outro problema</p>
                   )}
+                  {ticketPlan === "none" && (
+                    <p className="text-xs font-semibold text-red-700 mt-1">Pedido sem seguro · sem opção de reenvio</p>
+                  )}
                   {(ticket.missingProducts || []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {(ticket.missingProducts || []).map((p) => (
@@ -8524,8 +8539,14 @@ function SupportTicketsPanel({
                         size="sm"
                         variant="outline"
                         className="border-red-200 text-red-700 hover:bg-red-50"
-                        disabled={(ticket.problemType === "extravio" || ticket.problemType === "apreensao") && !insuranceCoversProblem(parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance), ticket.problemType)}
-                        title={(ticket.problemType === "extravio" || ticket.problemType === "apreensao") && !insuranceCoversProblem(parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance), ticket.problemType) ? "Sem cobertura: não manda de novo" : undefined}
+                        disabled={!canReenviar}
+                        title={
+                          !canReenviar
+                            ? (ticketPlan === "none"
+                              ? "Pedido sem seguro: não tem opção de reenvio"
+                              : "Sem cobertura: não manda de novo")
+                            : undefined
+                        }
                         onClick={() => openReenviarModal(ticket)}
                       >
                         Reenviar
@@ -8572,7 +8593,8 @@ function SupportTicketsPanel({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
