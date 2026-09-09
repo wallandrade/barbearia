@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ENVIOECOM_ENV_ACCOUNT_ID,
+  inventoryPoolForEnvioEcomAccount,
   isAwaitingPickupStatus,
   isEnvioEcomCancelStatus,
   isInTransitStatus,
@@ -60,4 +62,13 @@ test("create depois de cancelar usa orderId novo", () => {
     envioecomStatus: "Pronto para envio",
   });
   assert.equal(stable, "2031-abcdefgh");
+});
+
+test("conta EnvioEcom SP baixa Motoboy e MG baixa Minas", () => {
+  assert.equal(inventoryPoolForEnvioEcomAccount(ENVIOECOM_ENV_ACCOUNT_ID, "São Paulo (servidor)"), "motoboy");
+  assert.equal(inventoryPoolForEnvioEcomAccount("env", null), "motoboy");
+  assert.equal(inventoryPoolForEnvioEcomAccount("abc", "Minas"), "minas");
+  assert.equal(inventoryPoolForEnvioEcomAccount("abc", "EnvioEcom MG"), "minas");
+  assert.equal(inventoryPoolForEnvioEcomAccount("extra-uuid", "API 2"), "minas");
+  assert.equal(inventoryPoolForEnvioEcomAccount(null, null), null);
 });

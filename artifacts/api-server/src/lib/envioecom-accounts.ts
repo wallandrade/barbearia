@@ -5,9 +5,11 @@ import {
   ENVIOECOM_ENV_ACCOUNT_ID,
   EnvioEcomApiError,
   getEnvioEcomEnvAuth,
+  inventoryPoolForEnvioEcomAccount,
   isEnvioEcomAuthConfigured,
   runWithEnvioEcomAuth,
   type EnvioEcomAuth,
+  type EnvioEcomInventoryPool,
 } from "./envioecom";
 
 export const ENVIOECOM_ACCOUNTS_SETTING_KEY = "envioecom_accounts";
@@ -323,4 +325,16 @@ export async function deleteEnvioEcomAccount(id: string): Promise<void> {
     throw new EnvioEcomApiError(404, "NOT_FOUND", "Conta EnvioEcom não encontrada.");
   }
   await saveStoredEnvioEcomAccounts(next);
+}
+
+/** SP (conta env / São Paulo) → Motoboy. Conta extra / Minas → Minas. Sem id → null. */
+export async function resolveEnvioEcomInventoryPool(
+  accountId?: string | null,
+): Promise<EnvioEcomInventoryPool | null> {
+  const id = String(accountId || "").trim();
+  if (!id) return inventoryPoolForEnvioEcomAccount(null, null);
+  if (id === ENVIOECOM_ENV_ACCOUNT_ID) return "motoboy";
+  const stored = await loadStoredEnvioEcomAccounts();
+  const match = stored.find((account) => account.id === id);
+  return inventoryPoolForEnvioEcomAccount(id, match?.name);
 }

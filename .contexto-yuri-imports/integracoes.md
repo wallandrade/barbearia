@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-05
+> **Última atualização:** 2026-09-08
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-08 | Baixa EE pela conta: `inventoryPoolForEnvioEcomAccount` — `env`/São Paulo → Motoboy; conta extra/Minas → Minas | Etiqueta/coleta/sync não usam mais Foz por padrão | Cotação/create/webhook de vínculo iguais |
 | 2026-09-05 | Split parcial: cópia 48h/Resumo lista só itens dos pacotes sem etiqueta; badge **Enviado parcialmente** | Pedido misto (Minas+Motoboy) não recopia o que já tem DC-e | Unlink/cancel/create/labels iguais |
 | 2026-09-05 | `POST .../envioecom/orders/:id/unlink` solta vínculo local (split: `packageId`); webhook ignora pedido/pacote sem ID | Troca etiqueta no Yury sem cancelar na EE | Cancel/create/labels/sync iguais |
 | 2026-09-04 | EnvioEcom por pacote: `GET/PUT /api/admin/orders/:id/shipments`; create/label/sync/cancel/webhook aceitam `packageId`; `orderId` EE `{n}-{id8}-{pool}` | 2 origens no mesmo pedido = 2 envios; webhook acha o pacote certo | Pedido 1:1, cotação 2×12×17, item genérico iguais |
@@ -86,7 +87,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`
 - Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults
-- Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"/**Aguardando cancelamento**; etiqueta/pronto **não** marcam nem desmarcam `enviado` (manual prevalece; EE só liga em trânsito/entregue / Coleta Recebida). No split o rollup **não** copia PDF para `orders` até todos os pacotes terem etiqueta.
+- Create: guarda `shipping_id` + barcode; etiqueta PDF via `ids` (preferencial) ou `barcodes` — rejeitada se status "Aguardando pagamento"/"Cancelado"/**Aguardando cancelamento**; etiqueta/pronto **não** marcam nem desmarcam `enviado` (manual prevalece; EE só liga em trânsito/entregue / Coleta Recebida). **Baixa automática:** conta SP (`id=env` / São Paulo) → estoque **Motoboy**; conta extra / nome Minas|MG → **Minas** (`inventoryPoolForEnvioEcomAccount`). Sem conta, mantém o pool do card. No split o rollup **não** copia PDF para `orders` até todos os pacotes terem etiqueta.
 - **Cancelar EE:** `POST .../cancel` pede cancel na API **e** zera `envioecom_shipment_id` / barcode / label URL (no split, só daquele pacote). **Desvincular:** `POST .../unlink` só zera no Yury (status incluso; `external_order_number` fica para o próximo create rotacionar). Create seguinte: `nextEnvioEcomExternalOrderNumber` / `nextPackageEnvioEcomExternalOrderNumber` (sufixo). Resolve por CPF **ignora** envio cancelado se não for o ID atual. Webhook no 1:1 ignora se o pedido não tem ID/barcode local; no split casa o pacote pelo barcode/ID/`orderId` e ignora pacote já desvinculado.
 - **Invariante cópia 48h (não regressar):** sai se URL da etiqueta **ou** `isLabelReadyStatus` (**inclui Aguardando coleta / ser coletado / postagem**) **ou** postado **ou** `enviado`. Fica na lista: só Envio criado, Vincular sem PDF, etiqueta 202. No split, fica enquanto **algum** pacote ainda não saiu; o texto copiado então lista **só** os itens pendentes (`pendingCopyItemsFromSplitPackages`). `isInTransitStatus` **exclui** aguardando coleta (não marcar Enviado). Detalhe: `regras-negocio.md` → Invariante. Teste: `envioecom-status.test.ts` + `order-shipments.test.ts`.
 - Origem no create: **obrigatória** — `cep_origem` no body, senão CEP da conta escolhida / `ENVIOECOM_ORIGIN_CEP`, senão `origin_zipcode` da cotação da conta

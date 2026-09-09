@@ -24,6 +24,7 @@ import {
   applyOrderInventoryDelta,
   inventoryPoolLabel,
   isDeferredDebitPool,
+  isInventoryPoolChangeAllowed,
   parseInventoryPool,
   pickOrderInventoryDebit,
   resolveOrderInventoryItems,
@@ -41,6 +42,7 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { lookupIpGeo } from "../lib/ip-geo";
+import { resolveEnvioEcomInventoryPool } from "../lib/envioecom-accounts";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
@@ -2645,7 +2647,8 @@ router.put("/admin/orders/:id/shipments", requireAdminAuth, async (req, res) => 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/inventory-pool  (protected)
 // Loja: reserva (baixa imediata). Motoboy/Minas: só grava preferência — baixa ao Enviado/postagem,
-// salvo reserveNow=true (botão "Dar baixa agora" no card).
+// salvo reserveNow=true (botão "Dar baixa agora" no card). Enviado ainda permite baixa atrasada
+// se inventory_reserved ainda for falso; troca de pool após baixa exige Pendente.
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, res) => {
   try {
@@ -2674,7 +2677,16 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       return;
     }
 
-    if (order.enviado) {
+    const currentPool = parseInventoryPool((order as any).inventoryPool);
+    const currentlyReserved = !!(order as any).inventoryReserved;
+    // Enviado ainda permite escolher pool e dar baixa se ainda não baixou.
+    // Com baixa já feita, troca de pool exige Marcar como Pendente.
+    if (!isInventoryPoolChangeAllowed({
+      enviado: !!order.enviado,
+      currentlyReserved,
+      currentPool,
+      nextPool,
+    })) {
       res.status(400).json({
         error: "ORDER_ALREADY_SHIPPED",
         message: "Pedido já marcado como enviado. Desmarque o envio antes de trocar o estoque.",
@@ -2690,9 +2702,6 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       });
       return;
     }
-
-    const currentPool = parseInventoryPool((order as any).inventoryPool);
-    const currentlyReserved = !!(order as any).inventoryReserved;
     // Motoboy/Minas: não reserva na escolha — só baixa quando sair (Enviado / postado),
     // a menos que o admin clique "Dar baixa agora" (reserveNow).
     const softSelect = isDeferredDebitPool(nextPool) && !reserveNow;
@@ -2872,8 +2881,10 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       if (enviado && !wasSplitEnviado) {
         for (const pkg of splitPackages) {
           if (pkg.inventoryReserved) continue;
+          const forcePool = await resolveEnvioEcomInventoryPool(pkg.envioecomAccountId);
           const debit = await ensurePackageInventoryDebited(order, pkg, {
             reason: `Saída por enviado manual pacote ${pkg.id} pedido ${order.id}`,
+            forcePool: forcePool || undefined,
           });
           if (!debit.ok) {
             res.status(400).json({
@@ -2919,9 +2930,12 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
     const shippingIsMotoboy = String(order.shippingType || "").toLowerCase().trim() === "motoboy";
     const savedPool = parseInventoryPool(order.inventoryPool);
     const alreadyReserved = !!order.inventoryReserved && !!savedPool;
-    const defaultPool: InventoryPoolKind = savedPool || (shippingIsMotoboy ? "motoboy" : "loja");
+    const eePool = await resolveEnvioEcomInventoryPool(
+      (order as { envioecomAccountId?: string | null }).envioecomAccountId,
+    );
+    const defaultPool: InventoryPoolKind = eePool || savedPool || (shippingIsMotoboy ? "motoboy" : "loja");
 
-    let inventoryPool: InventoryPoolKind = requestedPool || defaultPool;
+    let inventoryPool: InventoryPoolKind = eePool || requestedPool || defaultPool;
 
     // Estorno: se já reservado, mantém o pool salvo; senão detecta pela saída.
     if (wasEnviado && !enviado) {

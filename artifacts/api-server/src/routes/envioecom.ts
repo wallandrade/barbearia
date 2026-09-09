@@ -64,6 +64,7 @@ import {
   hasAnyEnvioEcomAccount,
   listConfiguredEnvioEcomAuths,
   listEnvioEcomAccountsPublic,
+  resolveEnvioEcomInventoryPool,
   updateEnvioEcomAccount,
   withEnvioEcomAccount,
   withEnvioEcomAccountFallback,
@@ -499,12 +500,16 @@ async function applyShipmentStatusToOrder(params: {
       patch.enviado = true;
       if (!pkg.enviado) patch.enviadoAt = pkg.enviadoAt ?? new Date();
       if (!pkg.inventoryReserved) {
+        const forcePool = await resolveEnvioEcomInventoryPool(
+          params.accountId || pkg.envioecomAccountId,
+        );
         const debit = await ensurePackageInventoryDebited(order, pkg, {
           reason: `Saída por status EnvioEcom (${params.status}) pacote ${pkg.id}`,
+          forcePool: forcePool || undefined,
         });
+        patch.inventoryPool = debit.pool;
         if (debit.reserved) {
           patch.inventoryReserved = true;
-          patch.inventoryPool = debit.pool;
         }
       }
     }
@@ -567,12 +572,16 @@ async function applyShipmentStatusToOrder(params: {
       patch.enviadoAt = existingAt ?? new Date();
     }
     if (!(order as { inventoryReserved?: boolean | null }).inventoryReserved) {
+      const forcePool = await resolveEnvioEcomInventoryPool(
+        params.accountId || (order as { envioecomAccountId?: string | null }).envioecomAccountId,
+      );
       const debit = await ensureOrderInventoryDebited(order, {
         reason: `Saída por status EnvioEcom (${params.status}) pedido ${order.id}`,
+        forcePool: forcePool || undefined,
       });
+      patch.inventoryPool = debit.pool;
       if (debit.reserved) {
         patch.inventoryReserved = true;
-        patch.inventoryPool = debit.pool;
       }
     }
   }
@@ -914,6 +923,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     });
 
     if (targetPackage) {
+      const eePool = await resolveEnvioEcomInventoryPool(accountId);
       await updateOrderShipment(targetPackage.id, {
         envioecomShipmentId: shipmentId,
         envioecomBarcode: barcode,
@@ -926,9 +936,11 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
         envioecomExternalOrderNumber: externalOrderNumber,
         envioecomAccountId: accountId,
         envioecomLabelUrl: null,
+        ...(eePool && !targetPackage.inventoryReserved ? { inventoryPool: eePool } : {}),
       });
       await rollupOrderFromPackages(order.id);
     } else {
+      const eePool = await resolveEnvioEcomInventoryPool(accountId);
       await db
         .update(ordersTable)
         .set({
@@ -945,6 +957,9 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
           envioecomLabelUrl: null,
           trackingLabelUrl: null,
           ...(barcode ? { trackingCode: barcode } : {}),
+          ...(eePool && !(order as { inventoryReserved?: boolean | null }).inventoryReserved
+            ? { inventoryPool: eePool }
+            : {}),
           updatedAt: new Date(),
         })
         .where(eq(ordersTable.id, order.id));
@@ -1260,9 +1275,15 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         .where(eq(ordersTable.id, order.id));
     }
 
+    const inventoryForcePool = await resolveEnvioEcomInventoryPool(
+      labelsAccountId
+      || targetPackage?.envioecomAccountId
+      || (order as { envioecomAccountId?: string | null }).envioecomAccountId,
+    );
     const inventory = targetPackage
       ? await ensurePackageInventoryDebited(order, { ...targetPackage, envioecomStatus: nextStatus }, {
           reason: `Saída por etiqueta EnvioEcom pacote ${targetPackage.id} pedido ${order.id}`,
+          forcePool: inventoryForcePool || undefined,
         })
       : await ensureOrderInventoryDebited(
           {
@@ -1271,8 +1292,19 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
           },
           {
             reason: `Saída por etiqueta EnvioEcom pedido ${order.id}`,
+            forcePool: inventoryForcePool || undefined,
           },
         );
+    if (!inventory.alreadyReserved && !inventory.reserved) {
+      if (targetPackage) {
+        await updateOrderShipment(targetPackage.id, { inventoryPool: inventory.pool });
+      } else {
+        await db
+          .update(ordersTable)
+          .set({ inventoryPool: inventory.pool, updatedAt: new Date() } as Record<string, unknown>)
+          .where(eq(ordersTable.id, order.id));
+      }
+    }
     if (targetPackage) await rollupOrderFromPackages(order.id);
     const packages = await listOrderShipments(order.id);
 

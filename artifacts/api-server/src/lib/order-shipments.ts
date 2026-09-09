@@ -350,9 +350,9 @@ export async function unlinkPackageEnvioEcomBinding(
 export async function ensurePackageInventoryDebited(
   order: { id: string; clientName?: string | null },
   pkg: OrderShipment,
-  opts?: { reason?: string },
+  opts?: { reason?: string; forcePool?: InventoryPoolKind },
 ): Promise<{ ok: boolean; alreadyReserved: boolean; reserved: boolean; pool: InventoryPoolKind; details?: string }> {
-  const pool = parseInventoryPool(pkg.inventoryPool) || "loja";
+  const pool = opts?.forcePool || parseInventoryPool(pkg.inventoryPool) || "loja";
   if (pkg.inventoryReserved) {
     return { ok: true, alreadyReserved: true, reserved: true, pool };
   }

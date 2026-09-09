@@ -35,6 +35,21 @@ export function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
   return pool === "motoboy" || pool === "minas";
 }
 
+/**
+ * Pedido enviado ainda pode escolher pool e dar baixa se ainda não baixou.
+ * Com baixa já feita, trocar de pool exige Marcar como Pendente.
+ */
+export function isInventoryPoolChangeAllowed(params: {
+  enviado: boolean;
+  currentlyReserved: boolean;
+  currentPool: InventoryPoolKind | null;
+  nextPool: InventoryPoolKind;
+}): boolean {
+  if (!params.enviado) return true;
+  if (!params.currentlyReserved) return true;
+  return params.currentPool === params.nextPool;
+}
+
 export function parseOrderItemsForInventory(raw: unknown): Array<{ productId: string | null; productName: string; quantity: number }> {
   const parsed = Array.isArray(raw)
     ? raw
@@ -202,11 +217,11 @@ export async function ensureOrderInventoryDebited(
     inventoryPool?: string | null;
     inventoryReserved?: boolean | null;
   },
-  opts?: { reason?: string; defaultPool?: InventoryPoolKind },
+  opts?: { reason?: string; defaultPool?: InventoryPoolKind; forcePool?: InventoryPoolKind },
 ): Promise<EnsureOrderInventoryDebitedResult> {
   const defaultPool = opts?.defaultPool || "loja";
   const savedPool = parseInventoryPool(order.inventoryPool);
-  const pool = savedPool || defaultPool;
+  const pool = opts?.forcePool || savedPool || defaultPool;
 
   if (order.inventoryReserved) {
     return { ok: true, alreadyReserved: true, reserved: true, pool: savedPool || pool };

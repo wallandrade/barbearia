@@ -10,6 +10,26 @@ const DEFAULT_BASE = "https://envioecom.com.br/api/v1/whitelabel";
 /** Conta vinda das env vars do servidor (Railway). */
 export const ENVIOECOM_ENV_ACCOUNT_ID = "env";
 
+/** Pool de estoque ligado à conta EnvioEcom: SP → Motoboy, MG → Minas. Sem conta = null. */
+export type EnvioEcomInventoryPool = "motoboy" | "minas";
+
+export function inventoryPoolForEnvioEcomAccount(
+  accountId?: string | null,
+  accountName?: string | null,
+): EnvioEcomInventoryPool | null {
+  const id = String(accountId || "").trim();
+  const name = String(accountName || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (/\bminas\b|\bmg\b/.test(name)) return "minas";
+  if (/sao paulo|\bsp\b|servidor/.test(name)) return "motoboy";
+  if (id === ENVIOECOM_ENV_ACCOUNT_ID) return "motoboy";
+  if (id) return "minas";
+  return null;
+}
+
 export type EnvioEcomAuth = {
   accountId: string;
   token?: string;

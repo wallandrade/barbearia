@@ -9040,6 +9040,22 @@ function inventoryPoolLabel(pool: InventoryPoolKind): string {
   return "Foz Guaçu";
 }
 
+function inventoryPoolForEnvioEcomAccount(
+  accountId?: string | null,
+  accountName?: string | null,
+): InventoryPoolKind | null {
+  const id = String(accountId || "").trim();
+  const name = String(accountName || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (/\bminas\b|\bmg\b/.test(name)) return "minas";
+  if (/sao paulo|\bsp\b|servidor/.test(name)) return "motoboy";
+  if (id === "env") return "motoboy";
+  if (id) return "minas";
+  return null;
+}
+
 function isDeferredDebitPool(pool: InventoryPoolKind): boolean {
   return pool === "motoboy" || pool === "minas";
 }
@@ -11308,9 +11324,12 @@ function OrdersPanel({
     }
   };
   const resolveInventoryPoolForOrder = (orderId: string): InventoryPoolKind => {
+    const order = ordersLookup.find((o) => o.id === orderId);
+    const eeId = String((order as { envioecomAccountId?: string | null } | undefined)?.envioecomAccountId || "").trim();
+    const fromEe = inventoryPoolForEnvioEcomAccount(eeId, envioecomAccountNameById(eeId));
+    if (fromEe) return fromEe;
     const existing = enviadoInventoryPool[orderId];
     if (existing) return existing;
-    const order = ordersLookup.find((o) => o.id === orderId);
     const saved = parseInventoryPool((order as { inventoryPool?: string | null } | undefined)?.inventoryPool);
     if (saved) return saved;
     const isMotoboy = String((order as { shippingType?: string } | undefined)?.shippingType || "").toLowerCase().trim() === "motoboy";
@@ -11354,14 +11373,17 @@ function OrdersPanel({
       setEnviadoInventoryPool((prev) => ({ ...prev, [orderId]: pool }));
       setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: reserved }));
       onRefreshInventory();
+      const alreadyShipped = !!ordersLookup.find((o) => o.id === orderId)?.enviado;
       if (reserveNow && reserved) {
         toast.success(
-          `Baixa feita no estoque ${inventoryPoolLabel(pool)}. Coletado/Enviado não baixa de novo.`,
+          `Baixa feita no estoque ${inventoryPoolLabel(pool)}. Não duplica se Coletado/Enviado atualizar de novo.`,
         );
       } else {
         toast.success(
           isDeferredDebitPool(pool)
-            ? `Estoque ${inventoryPoolLabel(pool)} selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora).`
+            ? alreadyShipped
+              ? `Estoque ${inventoryPoolLabel(pool)} selecionado. Clique Dar baixa agora para descontar.`
+              : `Estoque ${inventoryPoolLabel(pool)} selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora).`
             : reserved
               ? "Estoque Foz Guaçu reservado para o pedido."
               : "Estoque Foz Guaçu selecionado.",
@@ -12193,6 +12215,10 @@ function OrdersPanel({
           const isExpanded = expandedOrder === order.id;
           // Estoque no card mesmo com enviado/EE (alerta visual). Lista "para enviar" continua só com !enviado.
           const selectedInventoryPool = resolveInventoryPoolForOrder(order.id);
+          const eeLockedPool = inventoryPoolForEnvioEcomAccount(
+            String((order as { envioecomAccountId?: string | null }).envioecomAccountId || ""),
+            envioecomAccountNameById((order as { envioecomAccountId?: string | null }).envioecomAccountId),
+          );
           const poolInventoryReady = balancesForInventoryPool(selectedInventoryPool).length > 0;
           const orderStockCheck = !poolInventoryReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
@@ -12810,16 +12836,21 @@ function OrdersPanel({
                     : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
-                {!showEnviadoUi && !hasReshipmentRecord && !isSplitShipment && (
+                {!hasReshipmentRecord && !isSplitShipment && (
                   <div className="inline-flex flex-wrap items-center gap-1 min-h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 py-0.5 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
                       {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
                     </span>
                     <button
                       type="button"
-                      disabled={!!inventoryPoolSaving[order.id]}
+                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id]) || (!!eeLockedPool && eeLockedPool !== "loja")}
+                      title={eeLockedPool && eeLockedPool !== "loja"
+                        ? (eeLockedPool === "motoboy" ? "EnvioEcom SP baixa sempre Motoboy" : "EnvioEcom MG baixa sempre Minas")
+                        : showEnviadoUi && inventoryReservedByOrder[order.id]
+                        ? "Estoque já baixado. Marque como Pendente para trocar o pool."
+                        : undefined}
                       onClick={() => { void saveInventoryPoolForOrder(order.id, "loja"); }}
-                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition ${
+                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition disabled:opacity-60 ${
                         selectedInventoryPool === "loja"
                           ? "bg-slate-800 text-white border-slate-800"
                           : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
@@ -12829,9 +12860,14 @@ function OrdersPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={!!inventoryPoolSaving[order.id]}
+                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id]) || (!!eeLockedPool && eeLockedPool !== "motoboy")}
+                      title={eeLockedPool && eeLockedPool !== "motoboy"
+                        ? (eeLockedPool === "minas" ? "EnvioEcom MG baixa sempre Minas" : "EnvioEcom SP baixa sempre Motoboy")
+                        : showEnviadoUi && inventoryReservedByOrder[order.id]
+                        ? "Estoque já baixado. Marque como Pendente para trocar o pool."
+                        : undefined}
                       onClick={() => { void saveInventoryPoolForOrder(order.id, "motoboy"); }}
-                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition ${
+                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition disabled:opacity-60 ${
                         selectedInventoryPool === "motoboy"
                           ? "bg-orange-600 text-white border-orange-600"
                           : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
@@ -12841,9 +12877,14 @@ function OrdersPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={!!inventoryPoolSaving[order.id]}
+                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id]) || (!!eeLockedPool && eeLockedPool !== "minas")}
+                      title={eeLockedPool && eeLockedPool !== "minas"
+                        ? (eeLockedPool === "motoboy" ? "EnvioEcom SP baixa sempre Motoboy" : "EnvioEcom MG baixa sempre Minas")
+                        : showEnviadoUi && inventoryReservedByOrder[order.id]
+                        ? "Estoque já baixado. Marque como Pendente para trocar o pool."
+                        : undefined}
                       onClick={() => { void saveInventoryPoolForOrder(order.id, "minas"); }}
-                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition ${
+                      className={`h-6 px-2 rounded-full border text-[11px] font-bold transition disabled:opacity-60 ${
                         selectedInventoryPool === "minas"
                           ? "bg-indigo-700 text-white border-indigo-700"
                           : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
@@ -12856,7 +12897,7 @@ function OrdersPanel({
                         type="button"
                         disabled={!!inventoryPoolSaving[order.id]}
                         onClick={() => { void debitInventoryNowForOrder(order.id); }}
-                        title={`Dar baixa agora no estoque ${inventoryPoolLabel(selectedInventoryPool)} (Coletado/Enviado não baixa de novo)`}
+                        title={`Dar baixa agora no estoque ${inventoryPoolLabel(selectedInventoryPool)}${showEnviadoUi ? " (mesmo já Enviado/Coletado)" : ""}`}
                         className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
                       >
                         Dar baixa agora
