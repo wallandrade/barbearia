@@ -5,10 +5,9 @@ import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-au
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
-import { ensureOrderInventoryDebited, inventoryPoolLabel } from "../lib/order-inventory-debit";
+import { inventoryPoolLabel, parseInventoryPool } from "../lib/order-inventory-debit";
 import { grantInsuranceCashbackIfEligible } from "../lib/insurance-claims";
 import {
-  ensurePackageInventoryDebited,
   getOrderShipment,
   listOrderShipments,
   findOrderShipmentByEnvioEcomRef,
@@ -499,19 +498,7 @@ async function applyShipmentStatusToOrder(params: {
     if (isInTransitStatus(params.status) || isDeliveredStatus(params.status)) {
       patch.enviado = true;
       if (!pkg.enviado) patch.enviadoAt = pkg.enviadoAt ?? new Date();
-      if (!pkg.inventoryReserved) {
-        const forcePool = await resolveEnvioEcomInventoryPool(
-          params.accountId || pkg.envioecomAccountId,
-        );
-        const debit = await ensurePackageInventoryDebited(order, pkg, {
-          reason: `Saída por status EnvioEcom (${params.status}) pacote ${pkg.id}`,
-          forcePool: forcePool || undefined,
-        });
-        patch.inventoryPool = debit.pool;
-        if (debit.reserved) {
-          patch.inventoryReserved = true;
-        }
-      }
+      // Coleta/trânsito marca Enviado. Baixa de estoque só no botão Dar baixa agora.
     }
 
     await updateOrderShipment(pkg.id, patch);
@@ -571,19 +558,7 @@ async function applyShipmentStatusToOrder(params: {
       const existingAt = (order as { enviadoAt?: Date | null }).enviadoAt;
       patch.enviadoAt = existingAt ?? new Date();
     }
-    if (!(order as { inventoryReserved?: boolean | null }).inventoryReserved) {
-      const forcePool = await resolveEnvioEcomInventoryPool(
-        params.accountId || (order as { envioecomAccountId?: string | null }).envioecomAccountId,
-      );
-      const debit = await ensureOrderInventoryDebited(order, {
-        reason: `Saída por status EnvioEcom (${params.status}) pedido ${order.id}`,
-        forcePool: forcePool || undefined,
-      });
-      patch.inventoryPool = debit.pool;
-      if (debit.reserved) {
-        patch.inventoryReserved = true;
-      }
-    }
+    // Coleta/trânsito marca Enviado. Baixa de estoque só no botão Dar baixa agora.
   }
   if (isDeliveredStatus(params.status) && order.status !== "cancelled") {
     patch.status = "completed";
@@ -1275,38 +1250,30 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         .where(eq(ordersTable.id, order.id));
     }
 
-    const inventoryForcePool = await resolveEnvioEcomInventoryPool(
+    const inventoryHintPool = await resolveEnvioEcomInventoryPool(
       labelsAccountId
       || targetPackage?.envioecomAccountId
       || (order as { envioecomAccountId?: string | null }).envioecomAccountId,
     );
-    const inventory = targetPackage
-      ? await ensurePackageInventoryDebited(order, { ...targetPackage, envioecomStatus: nextStatus }, {
-          reason: `Saída por etiqueta EnvioEcom pacote ${targetPackage.id} pedido ${order.id}`,
-          forcePool: inventoryForcePool || undefined,
-        })
-      : await ensureOrderInventoryDebited(
-          {
-            ...order,
-            envioecomStatus: nextStatus,
-          },
-          {
-            reason: `Saída por etiqueta EnvioEcom pedido ${order.id}`,
-            forcePool: inventoryForcePool || undefined,
-          },
-        );
-    if (!inventory.alreadyReserved && !inventory.reserved) {
-      if (targetPackage) {
-        await updateOrderShipment(targetPackage.id, { inventoryPool: inventory.pool });
-      } else {
+    // Só grava o pool sugerido pela conta EE. Não baixa estoque — isso é o botão Dar baixa agora.
+    if (inventoryHintPool) {
+      if (targetPackage && !targetPackage.inventoryReserved) {
+        await updateOrderShipment(targetPackage.id, { inventoryPool: inventoryHintPool });
+      } else if (!targetPackage && !(order as { inventoryReserved?: boolean | null }).inventoryReserved) {
         await db
           .update(ordersTable)
-          .set({ inventoryPool: inventory.pool, updatedAt: new Date() } as Record<string, unknown>)
+          .set({ inventoryPool: inventoryHintPool, updatedAt: new Date() } as Record<string, unknown>)
           .where(eq(ordersTable.id, order.id));
       }
     }
     if (targetPackage) await rollupOrderFromPackages(order.id);
     const packages = await listOrderShipments(order.id);
+    const reserved = targetPackage
+      ? !!packages.find((row) => row.id === targetPackage.id)?.inventoryReserved
+      : !!(order as { inventoryReserved?: boolean | null }).inventoryReserved;
+    const pool = inventoryHintPool
+      || (targetPackage ? parseInventoryPool(targetPackage.inventoryPool) : parseInventoryPool((order as { inventoryPool?: string | null }).inventoryPool))
+      || "loja";
 
     recordAdminActivity(req, order.id, "envioecom", "Gerou etiqueta EnvioEcom", barcode || shipmentId || null);
     res.json({
@@ -1318,11 +1285,11 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       pdfBase64: labelUrl ? undefined : label.buffer.toString("base64"),
       contentType: label.contentType,
       envioecomStatus: nextStatus,
-      inventoryReserved: inventory.reserved,
-      inventoryPool: inventory.pool,
-      inventoryAlreadyReserved: inventory.alreadyReserved,
-      inventoryWarning: inventory.ok ? null : inventory.details || "Estoque insuficiente para dar baixa na etiqueta.",
-      inventoryPoolLabel: inventoryPoolLabel(inventory.pool),
+      inventoryReserved: reserved,
+      inventoryPool: pool,
+      inventoryAlreadyReserved: reserved,
+      inventoryWarning: null,
+      inventoryPoolLabel: inventoryPoolLabel(pool),
       packages: packages.map(mapOrderShipmentPublic),
     });
   } catch (err) {

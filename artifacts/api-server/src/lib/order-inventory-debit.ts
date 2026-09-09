@@ -208,7 +208,7 @@ export type EnsureOrderInventoryDebitedResult = {
   details?: string;
 };
 
-/** Baixa o estoque do pedido uma vez (`inventory_reserved`). Não duplica. */
+/** Baixa o estoque do pedido uma vez (`inventory_reserved`). Só chamar no clique manual (Dar baixa agora). Não duplica. */
 export async function ensureOrderInventoryDebited(
   order: {
     id: string;

@@ -9497,10 +9497,10 @@ function InventoryPanel({
             </p>
             <p className="text-xs text-muted-foreground">
               {stockTab === "motoboy"
-                ? "Registre o que está na mão do motoboy. Pedidos Motoboy só baixam ao marcar enviado (não reservam na escolha). Pedidos com etiqueta EE aparecem como previsão (linha imaginária), sem baixar."
+                  ? "Registre o que está na mão do motoboy. Pedidos só baixam com Dar baixa agora no card. Pedidos com etiqueta EE aparecem como previsão (linha imaginária), sem baixar."
                 : stockTab === "minas"
-                  ? "Registre o que está no estoque Minas. Pedidos Minas só baixam ao marcar enviado (não reservam na escolha), ou use Dar baixa agora no card."
-                  : "Registre entrada ou saída de estoque. Entradas por compra ou devolução liberam reenvios automaticamente."}
+                  ? "Registre o que está no estoque Minas. Pedidos só baixam com Dar baixa agora no card."
+                  : "Registre entrada ou saída de estoque. Pedidos Foz também só baixam com Dar baixa agora. Entradas por compra ou devolução liberam reenvios automaticamente."}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -9795,7 +9795,7 @@ function InventoryPanel({
           <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-4 xl:col-span-2">
             <p className="text-sm font-semibold text-amber-950">Previsão — etiqueta gerada (linha imaginária)</p>
             <p className="text-xs text-amber-900/80 mt-1 mb-3">
-              Só alerta: se o pedido sair, o saldo Motoboy ficaria assim. Não reserva e não baixa estoque até marcar enviado / coletado.
+              Só alerta: se o pedido sair, o saldo Motoboy ficaria assim. Não reserva e não baixa estoque até Dar baixa agora.
             </p>
             <div className="space-y-2 max-h-[320px] overflow-auto pr-1">
               {motoboyLabelProjectionLines.map((line) => (
@@ -10793,20 +10793,12 @@ function OrdersPanel({
           envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
           trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
           envioecomStatus: payload.envioecomStatus || (order as any).envioecomStatus || "Etiqueta emitida",
-          ...(payload.inventoryReserved ? { inventoryReserved: true, inventoryPool: payload.inventoryPool } : {}),
+          ...(payload.inventoryPool ? { inventoryPool: payload.inventoryPool } : {}),
           ...(Array.isArray(payload.packages) ? { envioecomPackages: payload.packages } : {}),
         });
-        if (payload.inventoryReserved) {
-          setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: true }));
-        }
         if (payload.labelUrl) {
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");
-        }
-        if (payload.inventoryWarning) {
-          toast.error(`Etiqueta ok, mas estoque não baixou: ${payload.inventoryWarning}`);
-        } else if (payload.inventoryReserved && !payload.inventoryAlreadyReserved) {
-          toast.success(`Baixa de estoque feita (${payload.inventoryPoolLabel || "Foz Guaçu"}). Pedido saiu da lista de copiar.`);
         }
       };
 
@@ -11438,20 +11430,13 @@ function OrdersPanel({
       setEnviadoInventoryPool((prev) => ({ ...prev, [orderId]: pool }));
       setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: reserved }));
       onRefreshInventory();
-      const alreadyShipped = !!ordersLookup.find((o) => o.id === orderId)?.enviado;
       if (reserveNow && reserved) {
         toast.success(
-          `Baixa feita no estoque ${inventoryPoolLabel(pool)}. Não duplica se Coletado/Enviado atualizar de novo.`,
+          `Baixa feita no estoque ${inventoryPoolLabel(pool)}.`,
         );
       } else {
         toast.success(
-          isDeferredDebitPool(pool)
-            ? alreadyShipped
-              ? `Estoque ${inventoryPoolLabel(pool)} selecionado. Clique Dar baixa agora para descontar.`
-              : `Estoque ${inventoryPoolLabel(pool)} selecionado. A baixa só ocorre ao marcar enviado / postagem (ou Dar baixa agora).`
-            : reserved
-              ? "Estoque Foz Guaçu reservado para o pedido."
-              : "Estoque Foz Guaçu selecionado.",
+          `Estoque ${inventoryPoolLabel(pool)} selecionado. Clique Dar baixa agora para descontar.`,
         );
       }
     } catch (err) {
@@ -11465,6 +11450,44 @@ function OrdersPanel({
   const debitInventoryNowForOrder = async (orderId: string) => {
     const pool = resolveInventoryPoolForOrder(orderId);
     await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true });
+  };
+
+  const debitInventoryNowForPackage = async (orderId: string, packageId: string, poolLabel: string) => {
+    if (!orderId || !packageId) return;
+    const busyKey = `${orderId}:${packageId}`;
+    setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${orderId}/shipments/${packageId}/inventory`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ reserveNow: true }),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        inventoryReserved?: boolean;
+        alreadyReserved?: boolean;
+        packages?: SplitShipmentPackage[];
+      };
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao dar baixa neste pacote.");
+      }
+      if (Array.isArray(data.packages)) {
+        patchOrderLocal(orderId, { envioecomPackages: data.packages } as Partial<AdminOrder>);
+        const allReserved = data.packages.every((pkg) => !!pkg.inventoryReserved);
+        setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: allReserved }));
+      }
+      onRefreshInventory();
+      toast.success(
+        data.alreadyReserved
+          ? `Pacote ${poolLabel} já estava com baixa feita.`
+          : `Baixa feita no estoque ${poolLabel} deste pacote.`,
+      );
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Erro ao dar baixa neste pacote.";
+      toast.error(message);
+    } finally {
+      setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: false }));
+    }
   };
 
   const verifyOrderStock = (
@@ -11619,17 +11642,6 @@ function OrdersPanel({
 
     const inventoryPool = resolveInventoryPoolForOrder(orderId);
 
-    // Verify stock before marking as enviado
-    if (novoValor) {
-      // Only check stock when marking as enviado (not when unmarking)
-      const balancesForPool = balancesForInventoryPool(inventoryPool);
-      const stockCheck = verifyOrderStock(orderId, balancesForPool, inventoryPool);
-      if (!stockCheck.hasStock) {
-        toast.error(stockCheck.message);
-        return;
-      }
-    }
-
     setEnviando(prev => ({ ...prev, [orderId]: true }));
     try {
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/enviado`, {
@@ -11656,10 +11668,9 @@ function OrdersPanel({
       }
       onSetOrderEnviado(orderId, novoValor);
       setEnviados(prev => ({ ...prev, [orderId]: novoValor }));
-      onRefreshInventory();
       toast.success(
         novoValor
-          ? `Pedido marcado como enviado (baixa em ${inventoryPoolLabel(inventoryPool)})!`
+          ? "Pedido marcado como enviado!"
           : "Pedido marcado como pendente!",
       );
     } catch (err) {
@@ -12131,13 +12142,6 @@ function OrdersPanel({
 
     const targetOrderId = trackingSelectedOrderId || trackingReview.order.id;
     const targetOrder = ordersLookup.find((o) => o.id === targetOrderId) || trackingReview.order;
-    const inventoryPool = resolveInventoryPoolForOrder(targetOrderId);
-    const balancesForPool = balancesForInventoryPool(inventoryPool);
-    const stockCheck = verifyOrderStock(targetOrderId, balancesForPool, inventoryPool);
-    if (!stockCheck.hasStock) {
-      toast.error(stockCheck.message);
-      return;
-    }
     const currentTracking = String((targetOrder as any)?.trackingCode || "").toUpperCase().replace(/\s+/g, "").trim();
     const overwrite = !!currentTracking && currentTracking !== normalized;
 
@@ -12156,8 +12160,9 @@ function OrdersPanel({
         onSetOrderPatched(saveData.order);
       }
 
-      // Mark as shipped right after tracking confirmation so inventory can be decremented.
+      // Marca Enviado após confirmar o rastreio. Não baixa estoque — isso é o botão Dar baixa agora.
       if (!enviados[targetOrderId]) {
+        const inventoryPool = resolveInventoryPoolForOrder(targetOrderId);
         const envioRes = await fetch(`${BASE}/api/admin/orders/${targetOrderId}/enviado`, {
           method: "PATCH",
           headers: {
@@ -12280,10 +12285,6 @@ function OrdersPanel({
           const isExpanded = expandedOrder === order.id;
           // Estoque no card mesmo com enviado/EE (alerta visual). Lista "para enviar" continua só com !enviado.
           const selectedInventoryPool = resolveInventoryPoolForOrder(order.id);
-          const eeLockedPool = inventoryPoolForEnvioEcomAccount(
-            String((order as { envioecomAccountId?: string | null }).envioecomAccountId || ""),
-            envioecomAccountNameById((order as { envioecomAccountId?: string | null }).envioecomAccountId),
-          );
           const poolInventoryReady = balancesForInventoryPool(selectedInventoryPool).length > 0;
           const orderStockCheck = !poolInventoryReady
             ? { hasStock: true, message: "", missingItems: [] as string[] }
@@ -12814,6 +12815,28 @@ function OrdersPanel({
                       <span className="text-[11px] text-muted-foreground truncate max-w-[180px]">
                         {(pkg.items || []).map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}
                       </span>
+                      {!hasReshipmentRecord && pkg.id && !pkg.inventoryReserved && (
+                        <button
+                          type="button"
+                          disabled={!!inventoryPoolSaving[`${order.id}:${pkg.id}`]}
+                          onClick={() => {
+                            void debitInventoryNowForPackage(
+                              order.id,
+                              String(pkg.id),
+                              pkg.inventoryPoolLabel || inventoryPoolLabel(pkg.inventoryPool),
+                            );
+                          }}
+                          title={`Dar baixa agora no estoque ${pkg.inventoryPoolLabel || pkg.inventoryPool}`}
+                          className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          {inventoryPoolSaving[`${order.id}:${pkg.id}`] ? "..." : "Dar baixa agora"}
+                        </button>
+                      )}
+                      {!hasReshipmentRecord && pkg.inventoryReserved && (
+                        <span className="h-6 px-2 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold">
+                          Baixa OK
+                        </span>
+                      )}
                       <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomQuote(order, pkg.id); }}>
                         EnvioEcom
                       </Button>
@@ -12908,10 +12931,8 @@ function OrdersPanel({
                     </span>
                     <button
                       type="button"
-                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id]) || (!!eeLockedPool && eeLockedPool !== "loja")}
-                      title={eeLockedPool && eeLockedPool !== "loja"
-                        ? (eeLockedPool === "motoboy" ? "EnvioEcom SP baixa sempre Motoboy" : "EnvioEcom MG baixa sempre Minas")
-                        : showEnviadoUi && inventoryReservedByOrder[order.id]
+                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id])}
+                      title={showEnviadoUi && inventoryReservedByOrder[order.id]
                         ? "Estoque já baixado. Marque como Pendente para trocar o pool."
                         : undefined}
                       onClick={() => { void saveInventoryPoolForOrder(order.id, "loja"); }}
@@ -12925,10 +12946,8 @@ function OrdersPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id]) || (!!eeLockedPool && eeLockedPool !== "motoboy")}
-                      title={eeLockedPool && eeLockedPool !== "motoboy"
-                        ? (eeLockedPool === "minas" ? "EnvioEcom MG baixa sempre Minas" : "EnvioEcom SP baixa sempre Motoboy")
-                        : showEnviadoUi && inventoryReservedByOrder[order.id]
+                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id])}
+                      title={showEnviadoUi && inventoryReservedByOrder[order.id]
                         ? "Estoque já baixado. Marque como Pendente para trocar o pool."
                         : undefined}
                       onClick={() => { void saveInventoryPoolForOrder(order.id, "motoboy"); }}
@@ -12942,10 +12961,8 @@ function OrdersPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id]) || (!!eeLockedPool && eeLockedPool !== "minas")}
-                      title={eeLockedPool && eeLockedPool !== "minas"
-                        ? (eeLockedPool === "motoboy" ? "EnvioEcom SP baixa sempre Motoboy" : "EnvioEcom MG baixa sempre Minas")
-                        : showEnviadoUi && inventoryReservedByOrder[order.id]
+                      disabled={!!inventoryPoolSaving[order.id] || (showEnviadoUi && !!inventoryReservedByOrder[order.id])}
+                      title={showEnviadoUi && inventoryReservedByOrder[order.id]
                         ? "Estoque já baixado. Marque como Pendente para trocar o pool."
                         : undefined}
                       onClick={() => { void saveInventoryPoolForOrder(order.id, "minas"); }}

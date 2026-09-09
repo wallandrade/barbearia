@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, inventoryMovementsTable, inventoryMotoboyMovementsTable, inventoryMinasMovementsTable, motoboyBookingsTable, customerUsersTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, motoboyBookingsTable, customerUsersTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
 import { desc, and, gte, lte, eq, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -23,7 +23,6 @@ import { getReshipmentByOrderIds } from "../lib/reshipments";
 import {
   applyOrderInventoryDelta,
   inventoryPoolLabel,
-  isDeferredDebitPool,
   isInventoryPoolChangeAllowed,
   parseInventoryPool,
   pickOrderInventoryDebit,
@@ -34,9 +33,10 @@ import {
 import {
   attachShipmentsToMappedOrders,
   ensurePackageInventoryDebited,
+  getOrderShipment,
   listOrderShipments,
+  mapOrderShipmentPublic,
   OrderShipmentError,
-  releasePackageInventoryIfReserved,
   rollupOrderFromPackages,
   saveOrderShipmentAllocation,
   updateOrderShipment,
@@ -2646,9 +2646,9 @@ router.put("/admin/orders/:id/shipments", requireAdminAuth, async (req, res) => 
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/orders/:id/inventory-pool  (protected)
-// Loja: reserva (baixa imediata). Motoboy/Minas: só grava preferência — baixa ao Enviado/postagem,
-// salvo reserveNow=true (botão "Dar baixa agora" no card). Enviado ainda permite baixa atrasada
-// se inventory_reserved ainda for falso; troca de pool após baixa exige Pendente.
+// Loja/Motoboy/Minas: escolha só grava o pool. Baixa só com reserveNow=true
+// (botão "Dar baixa agora"). Enviado ainda permite baixa atrasada se
+// inventory_reserved ainda for falso; troca de pool após baixa exige Pendente.
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, res) => {
   try {
@@ -2698,15 +2698,14 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     if (splitForPool.length >= 2) {
       res.status(409).json({
         error: "SPLIT_SHIPMENT",
-        message: "Pedido com envio dividido. A baixa de estoque é por pacote (etiqueta EnvioEcom de cada origem).",
+        message: "Pedido com envio dividido. A baixa de estoque é por pacote (Dar baixa agora em cada origem).",
       });
       return;
     }
-    // Motoboy/Minas: não reserva na escolha — só baixa quando sair (Enviado / postado),
-    // a menos que o admin clique "Dar baixa agora" (reserveNow).
-    const softSelect = isDeferredDebitPool(nextPool) && !reserveNow;
+    // Qualquer pool: escolha só grava. Baixa só com "Dar baixa agora" (reserveNow).
+    const softSelect = !reserveNow;
 
-    if (!softSelect && currentlyReserved && currentPool === nextPool) {
+    if (currentlyReserved && currentPool === nextPool) {
       res.json({ ok: true, order: mapOrder(order), inventoryPool: nextPool, inventoryReserved: true });
       return;
     }
@@ -2715,39 +2714,37 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       return;
     }
 
-    let resolvedItems: ResolvedOrderInventoryItem[];
-    try {
-      resolvedItems = await resolveOrderInventoryItems(order.products);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao mapear produtos.";
-      res.status(400).json({ error: "INVENTORY_PRODUCT_MAPPING_ERROR", message });
-      return;
-    }
-
-    // Libera reserva dura anterior (ex.: Loja→Motoboy ou Motoboy reservado legado)
-    if (currentlyReserved && currentPool && resolvedItems.length > 0) {
-      const shouldRelease = softSelect || currentPool !== nextPool;
-      if (shouldRelease) {
-        const releasePick = await pickOrderInventoryDebit(currentPool, resolvedItems);
-        await applyOrderInventoryDelta({
-          pool: currentPool,
-          items: releasePick.ok ? releasePick.items : resolvedItems.map((item) => ({
-            productId: item.fallbackProductId || item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-          })),
-          orderId: id,
-          clientName: order.clientName || null,
-          kind: "release",
-        });
+    const needsStockMove = currentlyReserved || reserveNow;
+    let resolvedItems: ResolvedOrderInventoryItem[] = [];
+    if (needsStockMove) {
+      try {
+        resolvedItems = await resolveOrderInventoryItems(order.products);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erro ao mapear produtos.";
+        res.status(400).json({ error: "INVENTORY_PRODUCT_MAPPING_ERROR", message });
+        return;
       }
     }
 
-    if (resolvedItems.length > 0) {
+    if (currentlyReserved && currentPool && resolvedItems.length > 0 && currentPool !== nextPool) {
+      const releasePick = await pickOrderInventoryDebit(currentPool, resolvedItems);
+      await applyOrderInventoryDelta({
+        pool: currentPool,
+        items: releasePick.ok ? releasePick.items : resolvedItems.map((item) => ({
+          productId: item.fallbackProductId || item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+        })),
+        orderId: id,
+        clientName: order.clientName || null,
+        kind: "release",
+      });
+    }
+
+    if (reserveNow && resolvedItems.length > 0) {
       const nextPick = await pickOrderInventoryDebit(nextPool, resolvedItems);
       if (!nextPick.ok) {
-        // Re-reserva Loja se liberamos e a troca falhou
-        if (currentlyReserved && currentPool === "loja" && (softSelect || currentPool !== nextPool)) {
+        if (currentlyReserved && currentPool && currentPool !== nextPool) {
           try {
             const rollbackPick = await pickOrderInventoryDebit(currentPool, resolvedItems);
             await applyOrderInventoryDelta({
@@ -2767,27 +2764,20 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
         }
         res.status(400).json({
           error: "INSUFFICIENT_STOCK",
-          message: isDeferredDebitPool(nextPool)
-            ? (reserveNow
-              ? `Estoque ${inventoryPoolLabel(nextPool)} insuficiente para dar baixa: ${nextPick.details}.`
-              : `Estoque ${inventoryPoolLabel(nextPool)} insuficiente: ${nextPick.details}.`)
-            : `Estoque Foz Guaçu insuficiente para reservar: ${nextPick.details}.`,
+          message: `Estoque ${inventoryPoolLabel(nextPool)} insuficiente para dar baixa: ${nextPick.details}.`,
         });
         return;
       }
-
-      if (!softSelect) {
-        await applyOrderInventoryDelta({
-          pool: nextPool,
-          items: nextPick.items,
-          orderId: id,
-          clientName: order.clientName || null,
-          kind: "reserve",
-        });
-      }
+      await applyOrderInventoryDelta({
+        pool: nextPool,
+        items: nextPick.items,
+        orderId: id,
+        clientName: order.clientName || null,
+        kind: "reserve",
+      });
     }
 
-    const inventoryReserved = !softSelect;
+    const inventoryReserved = reserveNow;
     await db.update(ordersTable)
       .set({
         inventoryPool: nextPool,
@@ -2819,6 +2809,76 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
   } catch (err) {
     console.error("Update inventory pool error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar estoque do pedido." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/shipments/:shipmentId/inventory  (protected)
+// Baixa manual de um pacote do envio dividido (Dar baixa agora).
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/shipments/:shipmentId/inventory", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+    let shipmentId = req.params.shipmentId;
+    if (Array.isArray(shipmentId)) shipmentId = shipmentId[0];
+
+    const reserveNow = (req.body as { reserveNow?: boolean })?.reserveNow === true;
+    if (!reserveNow) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe reserveNow=true para dar baixa neste pacote." });
+      return;
+    }
+
+    const rows = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    const order = rows[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const pkg = await getOrderShipment(order.id, String(shipmentId || "").trim());
+    if (!pkg) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pacote não encontrado neste pedido." });
+      return;
+    }
+
+    const debit = await ensurePackageInventoryDebited(order, pkg, {
+      reason: `Saída manual pacote ${pkg.id} pedido ${order.id}`,
+    });
+    if (!debit.ok) {
+      res.status(400).json({
+        error: "INSUFFICIENT_STOCK",
+        message: debit.details || `Estoque ${inventoryPoolLabel(debit.pool)} insuficiente para dar baixa neste pacote.`,
+      });
+      return;
+    }
+
+    const packages = await rollupOrderFromPackages(order.id);
+    recordAdminActivity(
+      req,
+      order.id,
+      "inventory",
+      `Baixa de estoque: ${inventoryPoolLabel(debit.pool)} (pacote)`,
+      "Dar baixa agora",
+    );
+    res.json({
+      ok: true,
+      packageId: pkg.id,
+      inventoryPool: debit.pool,
+      inventoryReserved: debit.reserved,
+      alreadyReserved: debit.alreadyReserved,
+      packages: packages.map(mapOrderShipmentPublic),
+    });
+  } catch (err) {
+    console.error("Package inventory debit error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao dar baixa no pacote." });
   }
 });
 
@@ -2874,32 +2934,13 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           res.status(403).json({ error: "INVALID_ADMIN_PASSWORD", message: "Senha do admin inválida." });
           return;
         }
-        for (const pkg of splitPackages) {
-          await releasePackageInventoryIfReserved(order, pkg);
-        }
       }
       if (enviado && !wasSplitEnviado) {
-        for (const pkg of splitPackages) {
-          if (pkg.inventoryReserved) continue;
-          const forcePool = await resolveEnvioEcomInventoryPool(pkg.envioecomAccountId);
-          const debit = await ensurePackageInventoryDebited(order, pkg, {
-            reason: `Saída por enviado manual pacote ${pkg.id} pedido ${order.id}`,
-            forcePool: forcePool || undefined,
-          });
-          if (!debit.ok) {
-            res.status(400).json({
-              error: "INSUFFICIENT_STOCK",
-              message: debit.details || "Estoque insuficiente em um dos pacotes.",
-            });
-            return;
-          }
-        }
         const now = new Date();
         for (const pkg of splitPackages) {
           await updateOrderShipment(pkg.id, {
             enviado: true,
             enviadoAt: pkg.enviadoAt || now,
-            inventoryReserved: true,
           });
         }
       }
@@ -2908,11 +2949,10 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           await updateOrderShipment(pkg.id, { enviado: false, enviadoAt: null });
         }
       }
-      await rollupOrderFromPackages(id);
+      const rolled = await rollupOrderFromPackages(id);
       await db.update(ordersTable).set({
         enviado,
         enviadoAt: enviado ? ((order as { enviadoAt?: Date | null }).enviadoAt ?? new Date()) : null,
-        inventoryReserved: enviado,
         updatedAt: new Date(),
       } as Record<string, unknown>).where(buildAdminOrderWhere(id, adminScope));
       if (enviado) {
@@ -2920,9 +2960,10 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           .set({ isReleased: true })
           .where(eq(motoboyBookingsTable.orderId, id));
       }
+      const inventoryReserved = rolled.every((pkg) => pkg.inventoryReserved);
       broadcastNotification({ type: "order_enviado_updated", data: { id, enviado } });
       recordAdminActivity(req, id, "enviado", enviado ? "Marcou como enviado" : "Desmarcou enviado (pendente)");
-      res.json({ ok: true, id, enviado, split: true, inventoryReserved: enviado });
+      res.json({ ok: true, id, enviado, split: true, inventoryReserved });
       return;
     }
 
@@ -2934,49 +2975,9 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       (order as { envioecomAccountId?: string | null }).envioecomAccountId,
     );
     const defaultPool: InventoryPoolKind = eePool || savedPool || (shippingIsMotoboy ? "motoboy" : "loja");
-
-    let inventoryPool: InventoryPoolKind = eePool || requestedPool || defaultPool;
-
-    // Estorno: se já reservado, mantém o pool salvo; senão detecta pela saída.
-    if (wasEnviado && !enviado) {
-      if (alreadyReserved && savedPool) {
-        inventoryPool = savedPool;
-      } else if (!requestedPool) {
-        const [motoExit] = await db
-          .select({ id: inventoryMotoboyMovementsTable.id })
-          .from(inventoryMotoboyMovementsTable)
-          .where(and(
-            eq(inventoryMotoboyMovementsTable.referenceId, id),
-            eq(inventoryMotoboyMovementsTable.type, "exit"),
-          ))
-          .limit(1);
-        if (motoExit) {
-          inventoryPool = "motoboy";
-        } else {
-          const [minasExit] = await db
-            .select({ id: inventoryMinasMovementsTable.id })
-            .from(inventoryMinasMovementsTable)
-            .where(and(
-              eq(inventoryMinasMovementsTable.referenceId, id),
-              eq(inventoryMinasMovementsTable.type, "exit"),
-            ))
-            .limit(1);
-          if (minasExit) {
-            inventoryPool = "minas";
-          } else {
-            const [lojaExit] = await db
-              .select({ id: inventoryMovementsTable.id })
-              .from(inventoryMovementsTable)
-              .where(and(
-                eq(inventoryMovementsTable.referenceId, id),
-                eq(inventoryMovementsTable.type, "exit"),
-              ))
-              .limit(1);
-            if (lojaExit) inventoryPool = "loja";
-          }
-        }
-      }
-    }
+    const inventoryPool: InventoryPoolKind = alreadyReserved && savedPool
+      ? savedPool
+      : (requestedPool || savedPool || eePool || defaultPool);
 
     if (wasEnviado && !enviado) {
       const providedPassword = String(adminPassword || "").trim();
@@ -2995,58 +2996,6 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       });
     }
 
-    const shouldSkipReturnToStock = !enviado && wasEnviado
-      ? await db
-          .select({ id: reshipmentsTable.id })
-          .from(reshipmentsTable)
-          .where(and(
-            eq(reshipmentsTable.orderId, id),
-            inArray(reshipmentsTable.status, ["reenvio_aguardando_estoque", "reenvio_pronto_para_envio"]),
-          ))
-          .limit(1)
-          .then((r) => !!r[0])
-      : false;
-
-    // Já reservado: estoque já saiu na escolha Loja/Motoboy/Minas — não baixa/estorna de novo no Enviado.
-    const skipStockBecauseReserved = alreadyReserved;
-
-    if (enviado !== wasEnviado && !skipStockBecauseReserved) {
-      let resolvedItems: ResolvedOrderInventoryItem[] = [];
-      try {
-        resolvedItems = await resolveOrderInventoryItems(order.products);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Erro ao mapear produtos.";
-        res.status(400).json({ error: "INVENTORY_PRODUCT_MAPPING_ERROR", message });
-        return;
-      }
-
-      if (resolvedItems.length > 0) {
-        const debitPick = await pickOrderInventoryDebit(inventoryPool, resolvedItems);
-
-        if (enviado && !debitPick.ok) {
-          res.status(400).json({
-            error: "INSUFFICIENT_STOCK",
-            message: `Estoque ${inventoryPoolLabel(inventoryPool)} insuficiente para envio: ${debitPick.details}.`,
-          });
-          return;
-        }
-
-        if (!(shouldSkipReturnToStock && !enviado)) {
-          await applyOrderInventoryDelta({
-            pool: inventoryPool,
-            items: debitPick.ok ? debitPick.items : resolvedItems.map((item) => ({
-              productId: item.productId,
-              productName: item.productName,
-              quantity: item.quantity,
-            })),
-            orderId: id,
-            clientName: order.clientName || null,
-            kind: enviado ? "ship" : "unship",
-          });
-        }
-      }
-    }
-
     const existingEnviadoAt = (order as { enviadoAt?: Date | null }).enviadoAt ?? null;
     await db.update(ordersTable)
       .set({
@@ -3055,10 +3004,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           ? (wasEnviado ? existingEnviadoAt ?? new Date() : new Date())
           : null,
         inventoryPool,
-        // Mantém reserva se já havia; se baixou no envio sem reserva prévia, marca pool sem reserved
-        ...(enviado && !alreadyReserved ? { inventoryReserved: false } : {}),
-        ...(enviado && alreadyReserved ? { inventoryReserved: true } : {}),
-        ...(!enviado && alreadyReserved ? { inventoryReserved: true } : {}),
+        inventoryReserved: alreadyReserved,
         updatedAt: new Date(),
       } as any)
       .where(buildAdminOrderWhere(id, adminScope));

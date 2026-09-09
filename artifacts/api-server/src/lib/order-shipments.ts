@@ -347,6 +347,7 @@ export async function unlinkPackageEnvioEcomBinding(
   });
 }
 
+/** Baixa o estoque do pacote uma vez. Só chamar no clique manual (Dar baixa agora). */
 export async function ensurePackageInventoryDebited(
   order: { id: string; clientName?: string | null },
   pkg: OrderShipment,
