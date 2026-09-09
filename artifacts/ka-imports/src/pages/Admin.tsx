@@ -224,19 +224,6 @@ function getOrderProducts(raw: unknown): OrderProductLite[] {
   return [];
 }
 
-/** Pedido filho de reenvio (falta envio) — custo já foi no pedido original; não conta prejuízo. */
-function isReshipmentChildOrder(order: {
-  shippingType?: string | null;
-  parentOrderId?: string | null;
-  observation?: string | null;
-} | null | undefined): boolean {
-  if (!order) return false;
-  if (String(order.parentOrderId || "").trim()) return true;
-  if (String(order.shippingType || "").trim().toLowerCase() === "reenvio") return true;
-  // Filhos criados antes de parent_order_id / detecta pela observação padrão
-  const obs = String(order.observation || "").trim().toUpperCase();
-  return obs.startsWith("REENVIO DO PEDIDO");
-}
 export function orderToText(order: any): string {
   const products = productsForShippingCopy(order);
   const prioridadeLine = order?.isPrioridade ? "PRIORIDADE URGENTE" : "";
@@ -592,6 +579,12 @@ import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActi
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment } from "@/lib/checkout-insurance";
+import {
+  filterAdminOrdersByKind,
+  isAdminOrdersReshipmentRow,
+  isReshipmentChildOrder,
+  type AdminOrdersKind,
+} from "@/lib/admin-orders-kind";
 
 
 
@@ -1359,6 +1352,8 @@ export default function Admin() {
   const [financialSummaryLoading, setFinancialSummaryLoading] = React.useState(false);
   const [, setLocation] = useLocation();
   const [tab, setTab] = useState<TabType>("orders");
+  const [ordersKind, setOrdersKind] = useState<AdminOrdersKind>("normal");
+  const [pendingOrdersKindOrderId, setPendingOrdersKindOrderId] = useState<string | null>(null);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [charges, setCharges] = useState<CustomCharge[]>([]);
   const [sellerAllOrders, setSellerAllOrders] = useState<AdminOrder[]>([]);
@@ -1711,7 +1706,16 @@ export default function Admin() {
     }
     setTab("orders");
     setExpandedOrder(id);
+    setPendingOrdersKindOrderId(id);
   }, []);
+
+  useEffect(() => {
+    if (!pendingOrdersKindOrderId) return;
+    const found = orders.find((order) => order.id === pendingOrdersKindOrderId);
+    if (!found) return;
+    setOrdersKind(isAdminOrdersReshipmentRow(found) ? "reenvio" : "normal");
+    setPendingOrdersKindOrderId(null);
+  }, [pendingOrdersKindOrderId, orders]);
 
   const fetchFinancialSummary = React.useCallback(async () => {
     setFinancialSummaryLoading(true);
@@ -4020,7 +4024,7 @@ export default function Admin() {
     );
   }
 
-  const filteredOrders = (() => {
+  const searchedOrders = (() => {
     const q = search.toLowerCase().trim();
     if (!q) return orders;
 
@@ -4048,6 +4052,9 @@ export default function Admin() {
       return false;
     });
   })();
+  const normalOrders = filterAdminOrdersByKind(searchedOrders, "normal");
+  const reshipmentOrders = filterAdminOrdersByKind(searchedOrders, "reenvio");
+  const filteredOrders = ordersKind === "reenvio" ? reshipmentOrders : normalOrders;
   const filteredCharges = charges.filter((c) => {
     const q = search.toLowerCase();
     return !q || c.id.toLowerCase().includes(q) || c.clientName.toLowerCase().includes(q) ||
@@ -4909,6 +4916,39 @@ export default function Admin() {
           ))}
         </div>
 
+        {tab === "orders" && (
+          <div className="flex items-center gap-2 mb-4">
+            {([
+              { key: "normal" as const, label: "Pedido normal", count: normalOrders.length },
+              { key: "reenvio" as const, label: "Pedido reenvio", count: reshipmentOrders.length },
+            ]).map(({ key, label, count }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setOrdersKind(key)}
+                className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold border-2 transition-colors ${
+                  ordersKind === key
+                    ? key === "reenvio"
+                      ? "border-red-300 bg-red-50 text-red-800"
+                      : "border-primary bg-primary/5 text-primary"
+                    : "border-border bg-white text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  ordersKind === key
+                    ? key === "reenvio"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}>
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Filters (only for orders/charges) */}
         {(tab === "orders" || tab === "charges") && (
           <div className="flex flex-col lg:flex-row gap-3 mb-6">
@@ -4966,6 +5006,7 @@ export default function Admin() {
           <OrdersPanel
             allOrders={orders}
             orders={filteredOrders}
+            emptyMessage={ordersKind === "reenvio" ? "Nenhum reenvio neste período" : "Nenhum pedido encontrado"}
             trackingCandidates={orders.filter((order) => !order.enviado && !isCancelledOrderStatus(order.status))}
             productImageById={Object.fromEntries(
               (products as Array<{ id?: string; image?: string | null }>)
@@ -10226,8 +10267,10 @@ function OrdersPanel({
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
   onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups,   onSetReshipmentStatus, onRemoveOrder,
   shippingQueueMap, onRefreshInventory, onRefreshOrders,
+  emptyMessage,
 }: {
   allOrders: AdminOrder[];
+  emptyMessage?: string;
   productImageById: Record<string, string>;
   productCostById: Record<string, number>;
   productNameById: Record<string, string>;
@@ -12188,7 +12231,7 @@ function OrdersPanel({
   if (orders.length === 0) return (
     <div className="text-center py-16 bg-muted/30 rounded-2xl border border-dashed">
       <IconLucide name="Package" className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-      <p className="font-semibold text-lg">Nenhum pedido encontrado</p>
+      <p className="font-semibold text-lg">{emptyMessage || "Nenhum pedido encontrado"}</p>
     </div>
   );
 
