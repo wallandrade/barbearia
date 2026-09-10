@@ -12,6 +12,7 @@ export {
   parseStoredPassword,
   readPasswordFromBody,
   remainingUnlockMs,
+  inventoryExitPasswordApplies,
 } from "./inventory-exit-access-logic";
 
 export const INVENTORY_EXIT_PASSWORD_KEY = "inventory_exit_password";
@@ -129,4 +130,25 @@ export async function unlockInventoryExit(plain: string, nowMs = Date.now()): Pr
     unlockedUntil,
     remainingMs: INVENTORY_EXIT_UNLOCK_MS,
   };
+}
+
+/** Janela aberta ou senha correta (abre 10 min). Senha vazia com janela fechada → PASSWORD_REQUIRED. */
+export async function authorizeInventoryExit(plain?: string): Promise<
+  { ok: true } | {
+    ok: false;
+    error: "PASSWORD_REQUIRED" | "INVALID_PASSWORD" | "INVALID_INPUT";
+    message: string;
+  }
+> {
+  if (await isInventoryExitUnlocked()) return { ok: true };
+  const unlocked = await unlockInventoryExit(String(plain || ""));
+  if (unlocked.ok) return { ok: true };
+  if (unlocked.code === "INVALID_INPUT") {
+    return {
+      ok: false,
+      error: "PASSWORD_REQUIRED",
+      message: "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+    };
+  }
+  return { ok: false, error: unlocked.code, message: unlocked.message };
 }

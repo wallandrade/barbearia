@@ -31,6 +31,11 @@ import {
   type ResolvedOrderInventoryItem,
 } from "../lib/order-inventory-debit";
 import {
+  authorizeInventoryExit,
+  inventoryExitPasswordApplies,
+  readPasswordFromBody,
+} from "../lib/inventory-exit-access";
+import {
   attachShipmentsToMappedOrders,
   ensurePackageInventoryDebited,
   getOrderShipment,
@@ -2658,7 +2663,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
 
-    const body = req.body as { inventoryPool?: string; reserveNow?: boolean };
+    const body = req.body as { inventoryPool?: string; reserveNow?: boolean; password?: string; senha?: string };
     const nextPool = parseInventoryPool(body?.inventoryPool);
     if (!nextPool) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'inventoryPool' deve ser 'loja', 'motoboy' ou 'minas'." });
@@ -2722,6 +2727,19 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro ao mapear produtos.";
         res.status(400).json({ error: "INVENTORY_PRODUCT_MAPPING_ERROR", message });
+        return;
+      }
+    }
+
+    if (reserveNow && inventoryExitPasswordApplies(nextPool)) {
+      const access = await authorizeInventoryExit(readPasswordFromBody(body));
+      if (!access.ok) {
+        res.status(403).json({
+          error: access.error,
+          message: access.message,
+          passwordRequired: true,
+          remainingMs: 0,
+        });
         return;
       }
     }
@@ -2826,7 +2844,8 @@ router.patch("/admin/orders/:id/shipments/:shipmentId/inventory", requireAdminAu
     let shipmentId = req.params.shipmentId;
     if (Array.isArray(shipmentId)) shipmentId = shipmentId[0];
 
-    const reserveNow = (req.body as { reserveNow?: boolean })?.reserveNow === true;
+    const body = req.body as { reserveNow?: boolean; password?: string; senha?: string };
+    const reserveNow = body?.reserveNow === true;
     if (!reserveNow) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Informe reserveNow=true para dar baixa neste pacote." });
       return;
@@ -2847,6 +2866,20 @@ router.patch("/admin/orders/:id/shipments/:shipmentId/inventory", requireAdminAu
     if (!pkg) {
       res.status(404).json({ error: "NOT_FOUND", message: "Pacote não encontrado neste pedido." });
       return;
+    }
+
+    const pkgPool = parseInventoryPool(pkg.inventoryPool);
+    if (!pkg.inventoryReserved && inventoryExitPasswordApplies(pkgPool)) {
+      const access = await authorizeInventoryExit(readPasswordFromBody(body));
+      if (!access.ok) {
+        res.status(403).json({
+          error: access.error,
+          message: access.message,
+          passwordRequired: true,
+          remainingMs: 0,
+        });
+        return;
+      }
     }
 
     const debit = await ensurePackageInventoryDebited(order, pkg, {

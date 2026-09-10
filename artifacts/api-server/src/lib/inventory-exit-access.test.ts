@@ -5,6 +5,7 @@ import {
   parseStoredPassword,
   readPasswordFromBody,
   remainingUnlockMs,
+  inventoryExitPasswordApplies,
   INVENTORY_EXIT_UNLOCK_MS,
 } from "./inventory-exit-access-logic";
 
@@ -32,4 +33,11 @@ test("readPasswordFromBody aceita password ou senha", () => {
   assert.equal(readPasswordFromBody({ password: " abc " }), "abc");
   assert.equal(readPasswordFromBody({ senha: "xyz" }), "xyz");
   assert.equal(readPasswordFromBody({}), "");
+});
+
+test("inventoryExitPasswordApplies só Motoboy/Minas", () => {
+  assert.equal(inventoryExitPasswordApplies("motoboy"), true);
+  assert.equal(inventoryExitPasswordApplies("minas"), true);
+  assert.equal(inventoryExitPasswordApplies("loja"), false);
+  assert.equal(inventoryExitPasswordApplies(null), false);
 });

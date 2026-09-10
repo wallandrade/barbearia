@@ -28,13 +28,13 @@ import {
   registerMotoboyInventoryEntry,
 } from "../lib/reshipments";
 import {
+  authorizeInventoryExit,
   getInventoryExitAccessStatus,
-  isInventoryExitUnlocked,
   readPasswordFromBody,
   setInventoryExitPassword,
   unlockInventoryExit,
 } from "../lib/inventory-exit-access";
-import { requirePrimaryAdmin } from "./admin-auth";
+import { requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 
 const router: IRouter = Router();
 
@@ -120,22 +120,11 @@ async function debitSkuItems(params: {
 }
 
 async function requireInventoryExitUnlocked(req: Request, res: Response): Promise<boolean> {
-  if (await isInventoryExitUnlocked()) return true;
-  const password = readPasswordFromBody(req.body);
-  if (password) {
-    const unlocked = await unlockInventoryExit(password);
-    if (unlocked.ok) return true;
-    res.status(403).json({
-      error: unlocked.code,
-      message: unlocked.message,
-      passwordRequired: true,
-      remainingMs: 0,
-    });
-    return false;
-  }
+  const access = await authorizeInventoryExit(readPasswordFromBody(req.body));
+  if (access.ok) return true;
   res.status(403).json({
-    error: "PASSWORD_REQUIRED",
-    message: "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+    error: access.error,
+    message: access.message,
     passwordRequired: true,
     remainingMs: 0,
   });
@@ -211,7 +200,7 @@ router.post("/integrations/inventory/unlock", async (req, res) => {
  * GET /api/admin/integrations/inventory/exit-access
  * PUT /api/admin/integrations/inventory/exit-password
  */
-router.get("/admin/integrations/inventory/exit-access", requirePrimaryAdmin, async (_req, res) => {
+router.get("/admin/integrations/inventory/exit-access", requireAdminAuth, async (_req, res) => {
   try {
     const status = await getInventoryExitAccessStatus();
     res.json({
@@ -223,6 +212,30 @@ router.get("/admin/integrations/inventory/exit-access", requirePrimaryAdmin, asy
   } catch (err) {
     console.error("[INVENTORY_SYNC] admin exit-access error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao consultar senha de baixa." });
+  }
+});
+
+router.post("/admin/integrations/inventory/unlock", requireAdminAuth, async (req, res) => {
+  try {
+    const unlocked = await unlockInventoryExit(readPasswordFromBody(req.body));
+    if (!unlocked.ok) {
+      res.status(403).json({
+        error: unlocked.code === "INVALID_INPUT" ? "PASSWORD_REQUIRED" : unlocked.code,
+        message: unlocked.message,
+        passwordRequired: true,
+        remainingMs: 0,
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      unlocked: true,
+      unlockedUntil: unlocked.unlockedUntil,
+      remainingMs: unlocked.remainingMs,
+    });
+  } catch (err) {
+    console.error("[INVENTORY_SYNC] admin unlock error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao liberar a baixa." });
   }
 });
 

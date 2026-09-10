@@ -26,3 +26,7 @@ export function readPasswordFromBody(body: unknown): string {
   const rec = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   return String(rec.password || rec.senha || "").trim();
 }
+
+export function inventoryExitPasswordApplies(pool: string | null | undefined): boolean {
+  return pool === "motoboy" || pool === "minas";
+}

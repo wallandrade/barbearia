@@ -11377,6 +11377,8 @@ function OrdersPanel({
     try {
       await action(password);
       closeAdminPasswordModal();
+    } catch {
+      // toast já foi mostrado pela ação
     } finally {
       setAdminPasswordSubmitting(false);
     }
@@ -11400,7 +11402,7 @@ function OrdersPanel({
     return inventoryBalances;
   };
 
-  const saveInventoryPoolForOrder = async (orderId: string, pool: InventoryPoolKind, opts?: { reserveNow?: boolean }) => {
+  const saveInventoryPoolForOrder = async (orderId: string, pool: InventoryPoolKind, opts?: { reserveNow?: boolean; password?: string }) => {
     if (!orderId) return;
     const reserveNow = opts?.reserveNow === true;
     setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: true }));
@@ -11408,15 +11410,31 @@ function OrdersPanel({
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/inventory-pool`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ inventoryPool: pool, ...(reserveNow ? { reserveNow: true } : {}) }),
+        body: JSON.stringify({
+          inventoryPool: pool,
+          ...(reserveNow ? { reserveNow: true } : {}),
+          ...(opts?.password ? { password: opts.password } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({})) as {
         message?: string;
+        error?: string;
+        passwordRequired?: boolean;
         order?: AdminOrder;
         inventoryPool?: InventoryPoolKind;
         inventoryReserved?: boolean;
       };
       if (!res.ok) {
+        if (reserveNow && data?.passwordRequired && !opts?.password) {
+          openAdminPasswordModal(
+            "Senha de baixa",
+            "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+            async (password) => {
+              await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true, password });
+            },
+          );
+          return;
+        }
         throw new Error(data?.message || "Erro ao salvar estoque do pedido.");
       }
       const reserved = data.inventoryReserved === true;
@@ -11443,6 +11461,7 @@ function OrdersPanel({
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : "Erro ao salvar estoque do pedido.";
       toast.error(message);
+      if (opts?.password) throw err;
     } finally {
       setInventoryPoolSaving((prev) => ({ ...prev, [orderId]: false }));
     }
@@ -11453,7 +11472,7 @@ function OrdersPanel({
     await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true });
   };
 
-  const debitInventoryNowForPackage = async (orderId: string, packageId: string, poolLabel: string) => {
+  const debitInventoryNowForPackage = async (orderId: string, packageId: string, poolLabel: string, password?: string) => {
     if (!orderId || !packageId) return;
     const busyKey = `${orderId}:${packageId}`;
     setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: true }));
@@ -11461,15 +11480,27 @@ function OrdersPanel({
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/shipments/${packageId}/inventory`, {
         method: "PATCH",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ reserveNow: true }),
+        body: JSON.stringify({ reserveNow: true, ...(password ? { password } : {}) }),
       });
       const data = await res.json().catch(() => ({})) as {
         message?: string;
+        error?: string;
+        passwordRequired?: boolean;
         inventoryReserved?: boolean;
         alreadyReserved?: boolean;
         packages?: SplitShipmentPackage[];
       };
       if (!res.ok) {
+        if (data?.passwordRequired && !password) {
+          openAdminPasswordModal(
+            "Senha de baixa",
+            "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+            async (nextPassword) => {
+              await debitInventoryNowForPackage(orderId, packageId, poolLabel, nextPassword);
+            },
+          );
+          return;
+        }
         throw new Error(data?.message || "Erro ao dar baixa neste pacote.");
       }
       if (Array.isArray(data.packages)) {
@@ -11486,6 +11517,7 @@ function OrdersPanel({
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : "Erro ao dar baixa neste pacote.";
       toast.error(message);
+      if (password) throw err;
     } finally {
       setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: false }));
     }
@@ -13733,7 +13765,7 @@ function OrdersPanel({
               </div>
 
               <div className="px-5 py-4 space-y-3">
-                <label className="text-sm font-medium text-foreground block">Senha do admin</label>
+                <label className="text-sm font-medium text-foreground block">Senha</label>
                 <div className="relative">
                   <input
                     type={adminPasswordVisible ? "text" : "password"}
