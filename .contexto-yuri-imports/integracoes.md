@@ -1,14 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-09
+> **Última atualização:** 2026-09-10
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
-| Data | O quê | Impacto | O que NÃO mudou |
-|------|--------|---------|-----------------|
-| 2026-09-09 | `POST /api/integrations/inventory/exit` recusa (403 `EXIT_DISABLED`). Espelho só lê o snapshot | Outro sistema não desconta Motoboy/Minas | GET snapshot, token e webhook `inventory.changed` iguais |
+| 2026-09-10 | Baixa do espelho com senha + janela 10 min (`unlock` / `password` no exit). Snapshot sem senha | Outro sistema pede senha de novo depois de 10 min | Token do snapshot e webhook iguais |
 | 2026-09-09 | Etiqueta/webhook/sync EnvioEcom **não** baixam estoque. Conta SP/MG só sugere o pool no pedido/pacote | Saldo só cai no Dar baixa agora | Cotação/create/cópia 48h/`enviado` no trânsito iguais |
 | 2026-09-08 | Baixa EE pela conta: `inventoryPoolForEnvioEcomAccount` — `env`/São Paulo → Motoboy; conta extra/Minas → Minas | Etiqueta/coleta/sync não usam mais Foz por padrão | Cotação/create/webhook de vínculo iguais |
 | 2026-09-05 | Split parcial: cópia 48h/Resumo lista só itens dos pacotes sem etiqueta; badge **Enviado parcialmente** | Pedido misto (Minas+Motoboy) não recopia o que já tem DC-e | Unlink/cancel/create/labels iguais |
@@ -116,13 +114,15 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 
 ## Estoque Motoboy + Minas → espelho
 
-Yury = **fonte da verdade**. Snapshot é **só leitura**. **Não** há baixa nem entrada de compra por essa API.
+Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha** (janela 10 min). Sem entrada de compra por essa API.
 
 - **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName` do catálogo se o id existir **ou** nome único/legado de pedido se o produto foi recadastrado, `quantity`).
-- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token, mas **recusa** com 403 `EXIT_DISABLED`. Saldo Motoboy/Minas só cai no Admin (**Dar baixa agora**).
-- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas **do Admin**, fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
+- **Status da janela:** `GET /api/integrations/inventory/exit-status` — mesmo token. `{ unlocked, remainingMs, passwordRequired }`.
+- **Liberar:** `POST /api/integrations/inventory/unlock` `{ password }`. Certo → 10 minutos. Errado → 403 `INVALID_PASSWORD`.
+- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token + janela aberta. Body: `{ pool: "motoboy"|"minas", productId, quantity }` ou `{ pool, items[] }` ou `{ pool, orderId }`. Pode mandar `password` no mesmo POST para abrir a janela e baixar. Sem janela e sem senha → 403 `PASSWORD_REQUIRED`. Hash em `site_settings` (`inventory_exit_password`); janela em `inventory_exit_unlocked_until`. Primeira vez: hash a partir de `INVENTORY_EXIT_PASSWORD` (env) se ainda não houver registro. Admin Configurações troca (`PUT /api/admin/integrations/inventory/exit-password`). **Não** aceita pool `loja` (Foz Guaçu). Trocar a senha zera a janela.
+- **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (Admin **e** baixa do espelho na janela), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
 - **Headers webhook:** iguais à cobertura (`X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp`).
-- Lib: `lib/inventory-sync.ts`; rota: `routes/inventory-sync.ts`.
+- Lib: `lib/inventory-sync.ts`, `lib/inventory-exit-access.ts`; rota: `routes/inventory-sync.ts`.
 
 ## Storage
 

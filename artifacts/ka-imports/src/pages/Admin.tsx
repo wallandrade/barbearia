@@ -569,6 +569,7 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
+import AdminInventoryExitAccessPanel from "@/pages/AdminInventoryExitAccessPanel";
 import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
@@ -17513,6 +17514,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     <div className="space-y-8">
       {/* ── APIs EnvioEcom ──────────────────────────────────────────────── */}
       <AdminEnvioEcomAccountsPanel />
+      <AdminInventoryExitAccessPanel />
 
       {/* ── Identidade Visual ─────────────────────────────────────────────── */}
       <div>

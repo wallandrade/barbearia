@@ -1,14 +1,12 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-09-09
+> **Última atualização:** 2026-09-10
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
 ## Changelog
 
-| Data | O quê | Impacto | O que NÃO mudou |
-|------|--------|---------|-----------------|
-| 2026-09-09 | `POST /api/integrations/inventory/exit` recusa (403); snapshot continua com o mesmo token | Espelho não baixa estoque | GET snapshot e token iguais |
+| 2026-09-10 | Senha de baixa do espelho (hash em settings); `PUT` admin primário; unlock 10 min no token de sync | Outro sistema pede senha de novo depois da janela | GET snapshot e token iguais |
 | 2026-09-02 | Cadastro/login cliente: CPF opcional; pedidos guest ligam por e-mail **ou** CPF (`customer_users.document`) | Saldo da garantia 100% pode cair depois do cadastro | Sessão in-memory; senha PBKDF2 |
 | 2026-09-02 | Carteira: `GET /api/me/store-credit`; ajuste `requirePrimaryAdmin`; sinistro admin `requireAdminAuth`; sinistro cliente no próprio pedido | Aba Seguro só primário | Afiliado e login iguais |
 | 2026-08-29 | CRUD contas EnvioEcom extras: gravar/apagar `requirePrimaryAdmin`; listar `requireAdminAuth` | Vendedor escolhe API no card; só primário cadastra token | Login/sessão iguais |
@@ -55,7 +53,8 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 ## Sync estoque Motoboy + Minas (espelho externo)
 
 - Pull: `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` ou, se vazio, `MOTOBOY_SYNC_TOKEN`. Sem token → 503.
-- Baixa: `POST /api/integrations/inventory/exit` — **mesmo token**, mas **403 `EXIT_DISABLED`**. Só o Admin dá baixa.
+- Baixa: `POST /api/integrations/inventory/exit` — mesmo token **e** senha (janela 10 min). `POST .../unlock` ou `password` no body. Sem isso → 403 `PASSWORD_REQUIRED`.
+- Admin: `GET /api/admin/integrations/inventory/exit-access` e `PUT .../exit-password` = `requirePrimaryAdmin`. Hash, senha não volta no GET.
 - Push: `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret pode cair no da cobertura). Sem URL = no-op.
 - Não usa sessão admin.
 

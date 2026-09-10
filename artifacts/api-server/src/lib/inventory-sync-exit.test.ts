@@ -3,8 +3,8 @@ import test from "node:test";
 
 import { parseInventoryExitBody } from "./inventory-exit-parse";
 
-// Parser do body antigo permanece. A rota POST /integrations/inventory/exit
-// recusa baixa (403 EXIT_DISABLED): estoque só cai no Admin.
+// Parser do body. A rota POST /integrations/inventory/exit baixa se a senha
+// abriu a janela de 10 minutos (ou se password vem no body).
 
 test("baixa por productId + quantity", () => {
   const parsed = parseInventoryExitBody({ pool: "motoboy", productId: "abc", quantity: 2 });
