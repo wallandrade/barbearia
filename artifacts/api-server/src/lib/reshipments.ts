@@ -10,8 +10,9 @@ import {
   resolveProductName,
 } from "./inventory-catalog";
 import { fetchCatalogIndex, loadCatalogContext, enrichNameMapWithLegacyOrders } from "./inventory-resolve";
+import { inventoryBrtRange } from "./inventory-date-range";
 import { RESHIPMENT_SEND_DEBITS_INVENTORY } from "./reshipment-send-debit-logic";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import {
   db,
   pool,
@@ -1048,6 +1049,14 @@ async function loadEnrichedInventoryNameMap(
   );
 }
 
+export type InventoryOverviewDates = {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+};
+
+const MOVEMENT_OVERVIEW_DEFAULT = 120;
+const MOVEMENT_OVERVIEW_DATE_CAP = 500;
+
 function mapInventoryMovementOverview(
   rows: Array<{
     id: string;
@@ -1062,11 +1071,12 @@ function mapInventoryMovementOverview(
     createdAt?: Date | null;
   }>,
   nameMap: Map<string, string>,
+  opts?: { newestFirst?: boolean },
 ): InventoryMovementOverview[] {
-  return rows
-    .slice(-120)
-    .reverse()
-    .map((row) => {
+  const ordered = opts?.newestFirst
+    ? rows.slice(0, MOVEMENT_OVERVIEW_DATE_CAP)
+    : rows.slice(-MOVEMENT_OVERVIEW_DEFAULT).reverse();
+  return ordered.map((row) => {
       const productId = normalizeProductId(row.productId);
       return {
         id: row.id,
@@ -1084,18 +1094,30 @@ function mapInventoryMovementOverview(
     });
 }
 
-export async function getMotoboyInventoryOverview(): Promise<{
+export async function getMotoboyInventoryOverview(dates?: InventoryOverviewDates): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
 }> {
+  const range = inventoryBrtRange(dates?.dateFrom, dates?.dateTo);
+  const movementsQuery = range
+    ? db
+        .select()
+        .from(inventoryMotoboyMovementsTable)
+        .where(and(
+          gte(inventoryMotoboyMovementsTable.createdAt, range.start),
+          lte(inventoryMotoboyMovementsTable.createdAt, range.end),
+        ))
+        .orderBy(desc(inventoryMotoboyMovementsTable.createdAt))
+        .limit(MOVEMENT_OVERVIEW_DATE_CAP)
+    : db
+        .select()
+        .from(inventoryMotoboyMovementsTable)
+        .orderBy(asc(inventoryMotoboyMovementsTable.createdAt));
   const [balancesRows, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryMotoboyBalancesTable.productId, quantity: inventoryMotoboyBalancesTable.quantity })
       .from(inventoryMotoboyBalancesTable),
-    db
-      .select()
-      .from(inventoryMotoboyMovementsTable)
-      .orderBy(asc(inventoryMotoboyMovementsTable.createdAt)),
+    movementsQuery,
   ]);
   const nameMap = await loadEnrichedInventoryNameMap([
     ...balancesRows.map((row) => row.productId),
@@ -1104,7 +1126,7 @@ export async function getMotoboyInventoryOverview(): Promise<{
 
   return {
     balances: mapInventoryBalanceRows(balancesRows, nameMap),
-    movements: mapInventoryMovementOverview(movementsRows, nameMap),
+    movements: mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
   };
 }
 
@@ -1188,18 +1210,30 @@ export async function registerMinasInventoryEntry(params: {
   }
 }
 
-export async function getMinasInventoryOverview(): Promise<{
+export async function getMinasInventoryOverview(dates?: InventoryOverviewDates): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
 }> {
+  const range = inventoryBrtRange(dates?.dateFrom, dates?.dateTo);
+  const movementsQuery = range
+    ? db
+        .select()
+        .from(inventoryMinasMovementsTable)
+        .where(and(
+          gte(inventoryMinasMovementsTable.createdAt, range.start),
+          lte(inventoryMinasMovementsTable.createdAt, range.end),
+        ))
+        .orderBy(desc(inventoryMinasMovementsTable.createdAt))
+        .limit(MOVEMENT_OVERVIEW_DATE_CAP)
+    : db
+        .select()
+        .from(inventoryMinasMovementsTable)
+        .orderBy(asc(inventoryMinasMovementsTable.createdAt));
   const [balancesRows, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
       .from(inventoryMinasBalancesTable),
-    db
-      .select()
-      .from(inventoryMinasMovementsTable)
-      .orderBy(asc(inventoryMinasMovementsTable.createdAt)),
+    movementsQuery,
   ]);
   const nameMap = await loadEnrichedInventoryNameMap([
     ...balancesRows.map((row) => row.productId),
@@ -1208,7 +1242,7 @@ export async function getMinasInventoryOverview(): Promise<{
 
   return {
     balances: mapInventoryBalanceRows(balancesRows, nameMap),
-    movements: mapInventoryMovementOverview(movementsRows, nameMap),
+    movements: mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
   };
 }
 
@@ -1369,18 +1403,30 @@ export async function setManualReshipmentStatus(id: string, status: ReshipmentSt
   return true;
 }
 
-export async function getInventoryOverview(): Promise<{
+export async function getInventoryOverview(dates?: InventoryOverviewDates): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
 }> {
+  const range = inventoryBrtRange(dates?.dateFrom, dates?.dateTo);
+  const movementsQuery = range
+    ? db
+        .select()
+        .from(inventoryMovementsTable)
+        .where(and(
+          gte(inventoryMovementsTable.createdAt, range.start),
+          lte(inventoryMovementsTable.createdAt, range.end),
+        ))
+        .orderBy(desc(inventoryMovementsTable.createdAt))
+        .limit(MOVEMENT_OVERVIEW_DATE_CAP)
+    : db
+        .select()
+        .from(inventoryMovementsTable)
+        .orderBy(asc(inventoryMovementsTable.createdAt));
   const [balancesRows, movementsRows] = await Promise.all([
     db
       .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
       .from(inventoryBalancesTable),
-    db
-      .select()
-      .from(inventoryMovementsTable)
-      .orderBy(asc(inventoryMovementsTable.createdAt)),
+    movementsQuery,
   ]);
   const nameMap = await loadEnrichedInventoryNameMap([
     ...balancesRows.map((row) => row.productId),
@@ -1389,7 +1435,7 @@ export async function getInventoryOverview(): Promise<{
 
   return {
     balances: mapInventoryBalanceRows(balancesRows, nameMap),
-    movements: mapInventoryMovementOverview(movementsRows, nameMap),
+    movements: mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
   };
 }
 

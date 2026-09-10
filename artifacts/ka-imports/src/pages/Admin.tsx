@@ -1386,6 +1386,9 @@ export default function Admin() {
   const [motoboyInventoryMovements, setMotoboyInventoryMovements] = useState<InventoryMovementRecord[]>([]);
   const [minasInventoryBalances, setMinasInventoryBalances] = useState<InventoryBalanceRecord[]>([]);
   const [minasInventoryMovements, setMinasInventoryMovements] = useState<InventoryMovementRecord[]>([]);
+  const inventoryMvDatesRef = useRef({ from: todayStr(), to: todayStr() });
+  const [inventoryMvDateFrom, setInventoryMvDateFrom] = useState(inventoryMvDatesRef.current.from);
+  const [inventoryMvDateTo, setInventoryMvDateTo] = useState(inventoryMvDatesRef.current.to);
   const [marketingExpenseForm, setMarketingExpenseForm] = useState({
     expenseStartDate: todayStr(),
     expenseEndDate: todayStr(),
@@ -2369,10 +2372,15 @@ export default function Admin() {
   const fetchInventoryOverview = useCallback(async () => {
     setInventoryLoading(true);
     try {
+      const { from, to } = inventoryMvDatesRef.current;
+      const qs = new URLSearchParams();
+      if (from) qs.set("dateFrom", from);
+      if (to) qs.set("dateTo", to);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const [lojaRes, motoRes, minasRes] = await Promise.all([
-        fetch(`${BASE}/api/admin/inventory/overview`, { headers: authHeaders() }),
-        fetch(`${BASE}/api/admin/inventory/motoboy/overview`, { headers: authHeaders() }),
-        fetch(`${BASE}/api/admin/inventory/minas/overview`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/admin/inventory/overview${suffix}`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/admin/inventory/motoboy/overview${suffix}`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/admin/inventory/minas/overview${suffix}`, { headers: authHeaders() }),
       ]);
       if (lojaRes.status === 401 || motoRes.status === 401 || minasRes.status === 401) { handleUnauthorized(); return; }
       if (lojaRes.ok) {
@@ -5733,6 +5741,14 @@ export default function Admin() {
             motoboyMovements={motoboyInventoryMovements}
             minasBalances={minasInventoryBalances}
             minasMovements={minasInventoryMovements}
+            movementDateFrom={inventoryMvDateFrom}
+            movementDateTo={inventoryMvDateTo}
+            onMovementDatesChange={(from, to) => {
+              inventoryMvDatesRef.current = { from, to };
+              setInventoryMvDateFrom(from);
+              setInventoryMvDateTo(to);
+              void fetchInventoryOverview();
+            }}
             pendingReshipments={pendingReshipments}
             labelProjectionOrders={orders}
             entryForm={inventoryEntryForm}
@@ -9159,6 +9175,9 @@ function InventoryPanel({
   motoboyMovements,
   minasBalances,
   minasMovements,
+  movementDateFrom,
+  movementDateTo,
+  onMovementDatesChange,
   pendingReshipments,
   labelProjectionOrders,
   entryForm,
@@ -9183,6 +9202,9 @@ function InventoryPanel({
   motoboyMovements: InventoryMovementRecord[];
   minasBalances: InventoryBalanceRecord[];
   minasMovements: InventoryMovementRecord[];
+  movementDateFrom: string;
+  movementDateTo: string;
+  onMovementDatesChange: (from: string, to: string) => void;
   pendingReshipments: ReshipmentRecord[];
   labelProjectionOrders: Array<{
     id: string;
@@ -9971,13 +9993,47 @@ function InventoryPanel({
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4">
-        <p className="text-sm font-semibold mb-3">
-          {isDeferredStockTab ? `Movimentações estoque ${stockTabLabel}` : "Movimentações de estoque"}
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <p className="text-sm font-semibold">
+            {isDeferredStockTab ? `Movimentações estoque ${stockTabLabel}` : "Movimentações de estoque"}
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block">
+              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wide mb-1">De</span>
+              <input
+                type="date"
+                value={movementDateFrom}
+                onChange={(e) => onMovementDatesChange(e.target.value, movementDateTo)}
+                className="h-8 px-2 rounded-lg border border-border bg-white text-xs outline-none focus:border-primary"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wide mb-1">Até</span>
+              <input
+                type="date"
+                value={movementDateTo}
+                onChange={(e) => onMovementDatesChange(movementDateFrom, e.target.value)}
+                className="h-8 px-2 rounded-lg border border-border bg-white text-xs outline-none focus:border-primary"
+              />
+            </label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => {
+                const today = todayStr();
+                onMovementDatesChange(today, today);
+              }}
+            >
+              Hoje
+            </Button>
+          </div>
+        </div>
         {loading ? (
           <p className="text-sm text-muted-foreground">Carregando movimentações...</p>
         ) : activeMovements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Sem movimentações registradas.</p>
+          <p className="text-sm text-muted-foreground">Sem movimentações neste período.</p>
         ) : (
           <div className="space-y-2 max-h-80 overflow-auto pr-1">
             {activeMovements.map((mv) => {

@@ -32,6 +32,7 @@ import {
 } from "../lib/reshipments";
 import { broadcastNotification } from "./notifications";
 import { repairCompletedPurchaseExpenses } from "../lib/supplier-purchases";
+import { readInventoryOverviewDates } from "../lib/inventory-date-range";
 
 const router: IRouter = Router();
 
@@ -86,11 +87,12 @@ async function isOrderInScope(orderId: string, scope: { hasGlobalAccess: boolean
   return !!rows[0];
 }
 
-router.get("/admin/inventory/overview", requirePrimaryAdmin, async (_req, res) => {
+router.get("/admin/inventory/overview", requirePrimaryAdmin, async (req, res) => {
   try {
     await repairCompletedPurchaseExpenses();
+    const overviewDates = readInventoryOverviewDates(req.query as Record<string, unknown>);
     const [inventory, manualReturnItems] = await Promise.all([
-      getInventoryOverview(),
+      getInventoryOverview(overviewDates),
       db
         .select()
         .from(manualReturnItemsTable)
@@ -306,10 +308,12 @@ router.post("/admin/inventory/entries", requirePrimaryAdmin, async (req, res) =>
   }
 });
 
-router.get("/admin/inventory/motoboy/overview", requirePrimaryAdmin, async (_req, res) => {
+router.get("/admin/inventory/motoboy/overview", requirePrimaryAdmin, async (req, res) => {
   try {
     await repairCompletedPurchaseExpenses();
-    const inventory = await getMotoboyInventoryOverview();
+    const inventory = await getMotoboyInventoryOverview(
+      readInventoryOverviewDates(req.query as Record<string, unknown>),
+    );
     res.json({
       balances: inventory.balances,
       movements: inventory.movements,
@@ -371,10 +375,12 @@ router.post("/admin/inventory/motoboy/entries", requirePrimaryAdmin, async (req,
   }
 });
 
-router.get("/admin/inventory/minas/overview", requirePrimaryAdmin, async (_req, res) => {
+router.get("/admin/inventory/minas/overview", requirePrimaryAdmin, async (req, res) => {
   try {
     await repairCompletedPurchaseExpenses();
-    const inventory = await getMinasInventoryOverview();
+    const inventory = await getMinasInventoryOverview(
+      readInventoryOverviewDates(req.query as Record<string, unknown>),
+    );
     res.json({
       balances: inventory.balances,
       movements: inventory.movements,
