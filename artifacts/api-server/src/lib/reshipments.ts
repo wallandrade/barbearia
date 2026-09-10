@@ -10,6 +10,7 @@ import {
   resolveProductName,
 } from "./inventory-catalog";
 import { fetchCatalogIndex, loadCatalogContext, enrichNameMapWithLegacyOrders } from "./inventory-resolve";
+import { RESHIPMENT_SEND_DEBITS_INVENTORY } from "./reshipment-send-debit-logic";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -240,6 +241,25 @@ export async function ensureReshipmentReservation(params: {
 
   // Keep this flow as stock validation only for "pronto para envio".
   return { ok: true, missingProducts: [] };
+}
+
+export { RESHIPMENT_SEND_DEBITS_INVENTORY };
+
+export async function maybeDebitInventoryOnReshipmentSend(params: {
+  id: string;
+  source: ReshipmentSource;
+  alreadySent: boolean;
+}): Promise<{
+  ok: boolean;
+  notFound?: boolean;
+  invalidProducts?: boolean;
+  missingProducts: string[];
+  debitedProducts: Array<{ productId: string; productName: string; quantity: number }>;
+}> {
+  if (params.alreadySent || !RESHIPMENT_SEND_DEBITS_INVENTORY) {
+    return { ok: true, missingProducts: [], debitedProducts: [] };
+  }
+  return ensureReshipmentSendDebit({ id: params.id, source: params.source });
 }
 
 export async function ensureReshipmentSendDebit(params: {

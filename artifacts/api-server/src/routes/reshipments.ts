@@ -18,7 +18,7 @@ import {
   createManualReshipment,
   ensureReshipmentReservation,
   ensureReshipmentSendReversal,
-  ensureReshipmentSendDebit,
+  maybeDebitInventoryOnReshipmentSend,
   getInventoryOverview,
   getMotoboyInventoryOverview,
   getMinasInventoryOverview,
@@ -615,9 +615,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
           alreadySent = true;
         }
         const reservation = status === "reenvio_enviado"
-          ? (alreadySent
-              ? { ok: true, missingProducts: [], debitedProducts: [] }
-              : await ensureReshipmentSendDebit({ id, source: "support" }))
+          ? await maybeDebitInventoryOnReshipmentSend({ id, source: "support", alreadySent })
           : await ensureReshipmentReservation({ id, source: "support" });
         if (!reservation.ok) {
           if (reservation.notFound) {
@@ -699,9 +697,7 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
           alreadySent = true;
         }
         const reservation = status === "reenvio_enviado"
-          ? (alreadySent
-              ? { ok: true, missingProducts: [], debitedProducts: [] }
-              : await ensureReshipmentSendDebit({ id, source: "manual" }) )
+          ? await maybeDebitInventoryOnReshipmentSend({ id, source: "manual", alreadySent })
           : await ensureReshipmentReservation({ id, source: "manual" });
         if (!reservation.ok) {
           if (reservation.notFound) {

@@ -12791,7 +12791,7 @@ function OrdersPanel({
                       <span className="text-[11px] text-muted-foreground truncate max-w-[180px]">
                         {(pkg.items || []).map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}
                       </span>
-                      {!hasReshipmentRecord && pkg.id && !pkg.inventoryReserved && (
+                      {pkg.id && !pkg.inventoryReserved && (
                         <>
                           {inventoryPoolNeedsExitPassword(pkg.inventoryPool) && (
                             <input
@@ -12821,7 +12821,7 @@ function OrdersPanel({
                           </button>
                         </>
                       )}
-                      {!hasReshipmentRecord && pkg.inventoryReserved && (
+                      {pkg.inventoryReserved && (
                         <span className="h-6 px-2 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold">
                           Baixa OK
                         </span>
@@ -12913,7 +12913,7 @@ function OrdersPanel({
                     : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
-                {!hasReshipmentRecord && !isSplitShipment && (
+                {!isSplitShipment && (
                   <div className="inline-flex flex-wrap items-center gap-1 min-h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 py-0.5 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
                       {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
