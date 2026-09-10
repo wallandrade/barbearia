@@ -149,7 +149,7 @@ router.get("/integrations/inventory/snapshot", async (req, res) => {
 
 /**
  * GET /api/integrations/inventory/exit-status
- * O espelho pergunta se a janela de 10 min está aberta.
+ * O espelho pergunta se a janela de 30 min está aberta.
  */
 router.get("/integrations/inventory/exit-status", async (req, res) => {
   try {
@@ -169,7 +169,7 @@ router.get("/integrations/inventory/exit-status", async (req, res) => {
 
 /**
  * POST /api/integrations/inventory/unlock
- * Senha correta libera baixa por 10 minutos.
+ * Senha correta libera baixa por 30 minutos.
  */
 router.post("/integrations/inventory/unlock", async (req, res) => {
   try {
@@ -255,7 +255,7 @@ router.put("/admin/integrations/inventory/exit-password", requirePrimaryAdmin, a
 
 /**
  * POST /api/integrations/inventory/exit
- * Baixa Motoboy/Minas. Mesmo token do snapshot. Exige senha se a janela de 10 min estiver fechada.
+ * Baixa Motoboy/Minas. Mesmo token do snapshot. Exige senha se a janela de 30 min estiver fechada.
  * Body: { pool, productId, quantity } ou { pool, items[] } ou { pool, orderId }. Opcional password.
  */
 router.post("/integrations/inventory/exit", async (req, res) => {

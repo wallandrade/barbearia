@@ -132,7 +132,7 @@ export async function unlockInventoryExit(plain: string, nowMs = Date.now()): Pr
   };
 }
 
-/** Janela aberta ou senha correta (abre 10 min). Senha vazia com janela fechada → PASSWORD_REQUIRED. */
+/** Janela aberta ou senha correta (abre 30 min). Senha vazia com janela fechada → PASSWORD_REQUIRED. */
 export async function authorizeInventoryExit(plain?: string): Promise<
   { ok: true } | {
     ok: false;
@@ -147,7 +147,7 @@ export async function authorizeInventoryExit(plain?: string): Promise<
     return {
       ok: false,
       error: "PASSWORD_REQUIRED",
-      message: "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+      message: "Informe a senha para liberar a baixa. Depois fica 30 minutos e trava de novo.",
     };
   }
   return { ok: false, error: unlocked.code, message: unlocked.message };

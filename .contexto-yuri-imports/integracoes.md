@@ -6,6 +6,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-10 | Janela da senha de baixa Motoboy/Minas: **30 min** | Espelho e Dar baixa agora no Admin | Token do snapshot e webhook iguais |
 | 2026-09-10 | Senha de baixa no Admin (modal Dar baixa agora Motoboy/Minas) + `POST /admin/integrations/inventory/unlock`. Espelho igual | Dá para digitar a senha no Yury | Token do snapshot e webhook iguais |
 | 2026-09-09 | Etiqueta/webhook/sync EnvioEcom **não** baixam estoque. Conta SP/MG só sugere o pool no pedido/pacote | Saldo só cai no Dar baixa agora | Cotação/create/cópia 48h/`enviado` no trânsito iguais |
 | 2026-09-08 | Baixa EE pela conta: `inventoryPoolForEnvioEcomAccount` — `env`/São Paulo → Motoboy; conta extra/Minas → Minas | Etiqueta/coleta/sync não usam mais Foz por padrão | Cotação/create/webhook de vínculo iguais |
@@ -114,12 +115,12 @@ Yury = **fonte da verdade** de bairros + faixas CEP (`motoboy_neighborhoods`, `m
 
 ## Estoque Motoboy + Minas → espelho
 
-Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha** (janela 10 min). Sem entrada de compra por essa API.
+Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha** (janela 30 min). Sem entrada de compra por essa API.
 
 - **Pull:** `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` (se vazio, usa `MOTOBOY_SYNC_TOKEN`). Sem token → 503. Resposta: `{ syncedAt, source, motoboy[], minas[] }` (`productId`, `productName` do catálogo se o id existir **ou** nome único/legado de pedido se o produto foi recadastrado, `quantity`).
 - **Status da janela:** `GET /api/integrations/inventory/exit-status` — mesmo token. `{ unlocked, remainingMs, passwordRequired }`.
-- **Liberar:** `POST /api/integrations/inventory/unlock` `{ password }`. Certo → 10 minutos. Errado → 403 `INVALID_PASSWORD`.
-- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token + janela aberta. Body: `{ pool: "motoboy"|"minas", productId, quantity }` ou `{ pool, items[] }` ou `{ pool, orderId }`. Pode mandar `password` no mesmo POST para abrir a janela e baixar. Sem janela e sem senha → 403 `PASSWORD_REQUIRED`. Hash em `site_settings` (`inventory_exit_password`); janela em `inventory_exit_unlocked_until`. Primeira vez: hash a partir de `INVENTORY_EXIT_PASSWORD` (env) se ainda não houver registro. Admin Configurações: **Liberar 10 min** (`POST /api/admin/integrations/inventory/unlock`) e troca (`PUT .../exit-password`). **Dar baixa agora** Motoboy/Minas no card usa a mesma senha. **Não** aceita pool `loja` (Foz Guaçu). Trocar a senha zera a janela.
+- **Liberar:** `POST /api/integrations/inventory/unlock` `{ password }`. Certo → 30 minutos. Errado → 403 `INVALID_PASSWORD`.
+- **Baixa:** `POST /api/integrations/inventory/exit` — mesmo token + janela aberta. Body: `{ pool: "motoboy"|"minas", productId, quantity }` ou `{ pool, items[] }` ou `{ pool, orderId }`. Pode mandar `password` no mesmo POST para abrir a janela e baixar. Sem janela e sem senha → 403 `PASSWORD_REQUIRED`. Hash em `site_settings` (`inventory_exit_password`); janela em `inventory_exit_unlocked_until`. Primeira vez: hash a partir de `INVENTORY_EXIT_PASSWORD` (env) se ainda não houver registro. Admin Configurações: **Liberar 30 min** (`POST /api/admin/integrations/inventory/unlock`) e troca (`PUT .../exit-password`). **Dar baixa agora** Motoboy/Minas no card usa a mesma senha. **Não** aceita pool `loja` (Foz Guaçu). Trocar a senha zera a janela.
 - **Push (opcional):** env `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `inventory.changed` em entrada/saída Motoboy ou Minas (Admin **e** baixa do espelho na janela), fire-and-forget (3 tentativas). Payload inclui `pool`, `productId`, `quantityDelta` e `balances.motoboy` + `balances.minas` do mesmo produto.
 - **Headers webhook:** iguais à cobertura (`X-Yury-Signature: sha256=<hmac_body>`, `X-Yury-Event-Id`, `X-Yury-Timestamp`).
 - Lib: `lib/inventory-sync.ts`, `lib/inventory-exit-access.ts`; rota: `routes/inventory-sync.ts`.

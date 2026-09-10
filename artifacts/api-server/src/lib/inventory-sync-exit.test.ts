@@ -4,7 +4,7 @@ import test from "node:test";
 import { parseInventoryExitBody } from "./inventory-exit-parse";
 
 // Parser do body. A rota POST /integrations/inventory/exit baixa se a senha
-// abriu a janela de 10 minutos (ou se password vem no body).
+// abriu a janela de 30 minutos (ou se password vem no body).
 
 test("baixa por productId + quantity", () => {
   const parsed = parseInventoryExitBody({ pool: "motoboy", productId: "abc", quantity: 2 });

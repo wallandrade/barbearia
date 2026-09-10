@@ -9981,10 +9981,25 @@ function InventoryPanel({
         ) : (
           <div className="space-y-2 max-h-80 overflow-auto pr-1">
             {activeMovements.map((mv) => {
-              const movementName = resolveInventoryDisplay(products, mv.productId, mv.productName).name;
+              const movementDisplay = resolveInventoryDisplay(products, mv.productId, mv.productName);
+              const movementName = movementDisplay.name;
+              const movementImage = movementDisplay.image;
               return (
               <div key={mv.id} className="flex items-start justify-between rounded-lg border border-border px-3 py-2 gap-2">
-                <div className="min-w-0">
+                <div className="flex items-start gap-2 min-w-0">
+                  {movementImage ? (
+                    <img
+                      src={movementImage}
+                      alt={movementName}
+                      className="h-10 w-10 rounded-md object-cover shrink-0 border border-border"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="h-10 w-10 rounded-md bg-muted shrink-0 border border-border flex items-center justify-center">
+                      <IconLucide name="Package" className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
                   <p className="text-sm font-medium">{movementName}</p>
                   <p className="text-xs text-muted-foreground">Motivo: {mv.reason || "Movimentação"} · {formatDateBR(mv.createdAt)}</p>
                   {(mv.clientName || mv.clientPhone || mv.trackingCode) && (
@@ -10006,8 +10021,9 @@ function InventoryPanel({
                       )}
                     </div>
                   )}
+                  </div>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${mv.quantity >= 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"}`}>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${mv.quantity >= 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"}`}>
                   {mv.quantity >= 0 ? "+" : ""}{mv.quantity}
                 </span>
               </div>
@@ -11455,7 +11471,7 @@ function OrdersPanel({
         if (reserveNow && !opts?.password && isInventoryExitPasswordError(data)) {
           openAdminPasswordModal(
             "Senha de baixa",
-            "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+            "Informe a senha para liberar a baixa. Depois fica 30 minutos e trava de novo.",
             async (password) => {
               await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true, password });
             },
@@ -11497,16 +11513,6 @@ function OrdersPanel({
   const debitInventoryNowForOrder = async (orderId: string, password?: string) => {
     const pool = resolveInventoryPoolForOrder(orderId);
     const typed = String(password || inventoryExitPasswordDraft[orderId] || "").trim();
-    if (inventoryPoolNeedsExitPassword(pool) && !typed) {
-      openAdminPasswordModal(
-        "Senha de baixa",
-        "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
-        async (nextPassword) => {
-          await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true, password: nextPassword });
-        },
-      );
-      return;
-    }
     await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true, ...(typed ? { password: typed } : {}) });
   };
 
@@ -11519,16 +11525,6 @@ function OrdersPanel({
   ) => {
     if (!orderId || !packageId) return;
     const typed = String(password || inventoryExitPasswordDraft[`${orderId}:${packageId}`] || "").trim();
-    if (!password && inventoryPoolNeedsExitPassword(pool) && !typed) {
-      openAdminPasswordModal(
-        "Senha de baixa",
-        "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
-        async (nextPassword) => {
-          await debitInventoryNowForPackage(orderId, packageId, poolLabel, nextPassword, pool);
-        },
-      );
-      return;
-    }
     const busyKey = `${orderId}:${packageId}`;
     setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: true }));
     try {
@@ -11549,7 +11545,7 @@ function OrdersPanel({
         if (!password && isInventoryExitPasswordError(data)) {
           openAdminPasswordModal(
             "Senha de baixa",
-            "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+            "Informe a senha para liberar a baixa. Depois fica 30 minutos e trava de novo.",
             async (nextPassword) => {
               await debitInventoryNowForPackage(orderId, packageId, poolLabel, nextPassword);
             },

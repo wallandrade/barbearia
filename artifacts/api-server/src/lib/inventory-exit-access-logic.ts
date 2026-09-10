@@ -1,4 +1,5 @@
-export const INVENTORY_EXIT_UNLOCK_MS = 10 * 60 * 1000;
+export const INVENTORY_EXIT_UNLOCK_MINUTES = 30;
+export const INVENTORY_EXIT_UNLOCK_MS = INVENTORY_EXIT_UNLOCK_MINUTES * 60 * 1000;
 
 export type StoredInventoryExitPassword = { salt: string; hash: string };
 

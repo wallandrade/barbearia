@@ -7,9 +7,12 @@ import {
   remainingUnlockMs,
   inventoryExitPasswordApplies,
   INVENTORY_EXIT_UNLOCK_MS,
+  INVENTORY_EXIT_UNLOCK_MINUTES,
 } from "./inventory-exit-access-logic";
 
-test("janela de 10 minutos zera depois do prazo", () => {
+test("janela de baixa é 30 minutos e zera depois do prazo", () => {
+  assert.equal(INVENTORY_EXIT_UNLOCK_MINUTES, 30);
+  assert.equal(INVENTORY_EXIT_UNLOCK_MS, 30 * 60 * 1000);
   const now = Date.parse("2026-09-10T12:00:00.000Z");
   const until = new Date(now + INVENTORY_EXIT_UNLOCK_MS).toISOString();
   assert.equal(remainingUnlockMs(until, now), INVENTORY_EXIT_UNLOCK_MS);

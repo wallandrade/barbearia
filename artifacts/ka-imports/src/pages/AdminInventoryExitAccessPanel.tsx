@@ -123,7 +123,7 @@ export default function AdminInventoryExitAccessPanel() {
         remainingMs: Number(data.remainingMs || 0),
         unlockedUntil: data.unlockedUntil || null,
       });
-      toast.success("Baixa liberada por 10 minutos.");
+      toast.success("Baixa liberada por 30 minutos.");
     } catch {
       toast.error("Erro ao liberar a baixa.");
     } finally {
@@ -170,7 +170,7 @@ export default function AdminInventoryExitAccessPanel() {
           Senha de baixa (Motoboy / Minas)
         </h2>
         <p className="text-muted-foreground text-sm">
-          Dar baixa agora no card e o outro sistema pedem esta senha. Liberado fica 10 minutos e trava de novo.
+          Dar baixa agora no card e o outro sistema pedem esta senha. Liberado fica 30 minutos e trava de novo.
         </p>
       </div>
       {loading ? (
@@ -197,7 +197,7 @@ export default function AdminInventoryExitAccessPanel() {
             onEnter={() => { void unlockNow(); }}
           />
           <Button size="sm" onClick={() => { void unlockNow(); }} disabled={unlocking}>
-            {unlocking ? <Loader2 className="w-4 h-4 animate-spin" /> : "Liberar 10 min"}
+            {unlocking ? <Loader2 className="w-4 h-4 animate-spin" /> : "Liberar 30 min"}
           </Button>
         </div>
       </div>
