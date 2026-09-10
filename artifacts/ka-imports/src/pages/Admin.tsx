@@ -17,6 +17,19 @@ function formatTimeBR(date: string | Date | undefined | null): string {
   });
 }
 
+function inventoryPoolNeedsExitPassword(pool: string | null | undefined): boolean {
+  const value = String(pool || "").toLowerCase().trim();
+  return value === "motoboy" || value === "minas";
+}
+
+function isInventoryExitPasswordError(data: { error?: string; passwordRequired?: boolean; message?: string } | null | undefined): boolean {
+  if (!data) return false;
+  if (data.passwordRequired) return true;
+  const error = String(data.error || "");
+  if (error === "PASSWORD_REQUIRED") return true;
+  return /liberar a baixa/i.test(String(data.message || ""));
+}
+
 function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | null): string {
   const date = String(slotDate || "").trim();
   const time = String(slotTime || "").trim();
@@ -555,6 +568,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Unlink, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
@@ -10341,6 +10355,7 @@ function OrdersPanel({
   const [enviadoInventoryPool, setEnviadoInventoryPool] = useState<Record<string, InventoryPoolKind>>({});
   const [inventoryReservedByOrder, setInventoryReservedByOrder] = useState<Record<string, boolean>>({});
   const [inventoryPoolSaving, setInventoryPoolSaving] = useState<Record<string, boolean>>({});
+  const [inventoryExitPasswordDraft, setInventoryExitPasswordDraft] = useState<Record<string, string>>({});
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [trackingUploading, setTrackingUploading] = useState<Record<string, boolean>>({});
   const [envioecomBusy, setEnvioecomBusy] = useState<Record<string, boolean>>({});
@@ -11425,7 +11440,7 @@ function OrdersPanel({
         inventoryReserved?: boolean;
       };
       if (!res.ok) {
-        if (reserveNow && data?.passwordRequired && !opts?.password) {
+        if (reserveNow && !opts?.password && isInventoryExitPasswordError(data)) {
           openAdminPasswordModal(
             "Senha de baixa",
             "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
@@ -11467,20 +11482,48 @@ function OrdersPanel({
     }
   };
 
-  const debitInventoryNowForOrder = async (orderId: string) => {
+  const debitInventoryNowForOrder = async (orderId: string, password?: string) => {
     const pool = resolveInventoryPoolForOrder(orderId);
-    await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true });
+    const typed = String(password || inventoryExitPasswordDraft[orderId] || "").trim();
+    if (inventoryPoolNeedsExitPassword(pool) && !typed) {
+      openAdminPasswordModal(
+        "Senha de baixa",
+        "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+        async (nextPassword) => {
+          await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true, password: nextPassword });
+        },
+      );
+      return;
+    }
+    await saveInventoryPoolForOrder(orderId, pool, { reserveNow: true, ...(typed ? { password: typed } : {}) });
   };
 
-  const debitInventoryNowForPackage = async (orderId: string, packageId: string, poolLabel: string, password?: string) => {
+  const debitInventoryNowForPackage = async (
+    orderId: string,
+    packageId: string,
+    poolLabel: string,
+    password?: string,
+    pool?: string,
+  ) => {
     if (!orderId || !packageId) return;
+    const typed = String(password || inventoryExitPasswordDraft[`${orderId}:${packageId}`] || "").trim();
+    if (!password && inventoryPoolNeedsExitPassword(pool) && !typed) {
+      openAdminPasswordModal(
+        "Senha de baixa",
+        "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
+        async (nextPassword) => {
+          await debitInventoryNowForPackage(orderId, packageId, poolLabel, nextPassword, pool);
+        },
+      );
+      return;
+    }
     const busyKey = `${orderId}:${packageId}`;
     setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: true }));
     try {
       const res = await fetch(`${BASE}/api/admin/orders/${orderId}/shipments/${packageId}/inventory`, {
         method: "PATCH",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ reserveNow: true, ...(password ? { password } : {}) }),
+        body: JSON.stringify({ reserveNow: true, ...(typed || password ? { password: typed || password } : {}) }),
       });
       const data = await res.json().catch(() => ({})) as {
         message?: string;
@@ -11491,7 +11534,7 @@ function OrdersPanel({
         packages?: SplitShipmentPackage[];
       };
       if (!res.ok) {
-        if (data?.passwordRequired && !password) {
+        if (!password && isInventoryExitPasswordError(data)) {
           openAdminPasswordModal(
             "Senha de baixa",
             "Informe a senha para liberar a baixa. Depois fica 10 minutos e trava de novo.",
@@ -12849,6 +12892,16 @@ function OrdersPanel({
                         {(pkg.items || []).map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}
                       </span>
                       {!hasReshipmentRecord && pkg.id && !pkg.inventoryReserved && (
+                        <>
+                          {inventoryPoolNeedsExitPassword(pkg.inventoryPool) && (
+                            <input
+                              type="password"
+                              value={inventoryExitPasswordDraft[`${order.id}:${pkg.id}`] || ""}
+                              onChange={(e) => setInventoryExitPasswordDraft((prev) => ({ ...prev, [`${order.id}:${pkg.id}`]: e.target.value }))}
+                              placeholder="Senha de baixa"
+                              className="h-6 w-32 px-2 rounded-full border border-amber-300 bg-white text-[11px] outline-none focus:border-emerald-600"
+                            />
+                          )}
                         <button
                           type="button"
                           disabled={!!inventoryPoolSaving[`${order.id}:${pkg.id}`]}
@@ -12857,13 +12910,16 @@ function OrdersPanel({
                               order.id,
                               String(pkg.id),
                               pkg.inventoryPoolLabel || inventoryPoolLabel(pkg.inventoryPool),
+                              undefined,
+                              pkg.inventoryPool,
                             );
                           }}
                           title={`Dar baixa agora no estoque ${pkg.inventoryPoolLabel || pkg.inventoryPool}`}
                           className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
                         >
                           {inventoryPoolSaving[`${order.id}:${pkg.id}`] ? "..." : "Dar baixa agora"}
-                        </button>
+                          </button>
+                        </>
                       )}
                       {!hasReshipmentRecord && pkg.inventoryReserved && (
                         <span className="h-6 px-2 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold">
@@ -13008,15 +13064,26 @@ function OrdersPanel({
                       Minas
                     </button>
                     {!inventoryReservedByOrder[order.id] && (
-                      <button
-                        type="button"
-                        disabled={!!inventoryPoolSaving[order.id]}
-                        onClick={() => { void debitInventoryNowForOrder(order.id); }}
-                        title={`Dar baixa agora no estoque ${inventoryPoolLabel(selectedInventoryPool)}${showEnviadoUi ? " (mesmo já Enviado/Coletado)" : ""}`}
-                        className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
-                      >
-                        Dar baixa agora
-                      </button>
+                      <>
+                        {inventoryPoolNeedsExitPassword(selectedInventoryPool) ? (
+                          <input
+                            type="password"
+                            value={inventoryExitPasswordDraft[order.id] || ""}
+                            onChange={(e) => setInventoryExitPasswordDraft((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                            placeholder="Senha de baixa"
+                            className="h-6 w-32 px-2 rounded-full border border-amber-300 bg-white text-[11px] outline-none focus:border-emerald-600"
+                          />
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={!!inventoryPoolSaving[order.id]}
+                          onClick={() => { void debitInventoryNowForOrder(order.id); }}
+                          title={`Dar baixa agora no estoque ${inventoryPoolLabel(selectedInventoryPool)}${showEnviadoUi ? " (mesmo já Enviado/Coletado)" : ""}`}
+                          className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          Dar baixa agora
+                        </button>
+                      </>
                     )}
                     {inventoryReservedByOrder[order.id] && (
                       <span className="h-6 px-2 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold">
@@ -13743,12 +13810,11 @@ function OrdersPanel({
             </div>
           </div>
         )}
-
-        {adminPasswordModalOpen && (
-          <div className="fixed inset-0 z-[120] bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+      </AnimatePresence>
+      {adminPasswordModalOpen
+        ? createPortal(
+          <div className="fixed inset-0 z-[9999] bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4">
+            <div
               onClick={(event) => event.stopPropagation()}
               className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden"
             >
@@ -13765,7 +13831,7 @@ function OrdersPanel({
               </div>
 
               <div className="px-5 py-4 space-y-3">
-                <label className="text-sm font-medium text-foreground block">Senha</label>
+                <label className="text-sm font-medium text-foreground block">Senha de baixa</label>
                 <div className="relative">
                   <input
                     type={adminPasswordVisible ? "text" : "password"}
@@ -13778,7 +13844,7 @@ function OrdersPanel({
                       }
                     }}
                     autoFocus
-                    placeholder="Digite sua senha"
+                    placeholder="Digite a senha"
                     className="w-full h-11 rounded-xl border-2 border-border focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none px-3 pr-11"
                   />
                   <button
@@ -13790,7 +13856,6 @@ function OrdersPanel({
                     {adminPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground">Essa confirmação é exigida para evitar alterações críticas sem autorização.</p>
               </div>
 
               <div className="px-5 py-4 border-t border-border bg-slate-50/60 flex items-center justify-end gap-2">
@@ -13800,10 +13865,11 @@ function OrdersPanel({
                   Confirmar
                 </Button>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+            </div>
+          </div>,
+          document.body,
+        )
+        : null}
     </div>
   );
 }
