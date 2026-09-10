@@ -600,6 +600,7 @@ import {
   isReshipmentChildOrder,
   type AdminOrdersKind,
 } from "@/lib/admin-orders-kind";
+import { checkOrderItemsHaveStock } from "@/lib/order-stock-check";
 
 
 
@@ -11604,120 +11605,12 @@ function OrdersPanel({
       return { hasStock: true, message: "", missingItems: [] };
     }
 
-    const normalizeStockName = (value: string) => value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    const compactStockName = (value: string) => normalizeStockName(value).replace(/\s+/g, "");
-
-    const stockNameMatches = (left: string, right: string) => {
-      const normalizedLeft = normalizeStockName(left);
-      const normalizedRight = normalizeStockName(right);
-      if (!normalizedLeft || !normalizedRight) return false;
-      if (normalizedLeft === normalizedRight) return true;
-
-      const compactLeft = compactStockName(left);
-      const compactRight = compactStockName(right);
-      if (compactLeft && compactRight && (compactLeft.includes(compactRight) || compactRight.includes(compactLeft))) return true;
-
-      const leftTokens = new Set(normalizedLeft.split(" ").filter(Boolean));
-      const rightTokens = new Set(normalizedRight.split(" ").filter(Boolean));
-      if (leftTokens.size === 0 || rightTokens.size === 0) return false;
-
-      let overlap = 0;
-      for (const token of leftTokens) {
-        if (rightTokens.has(token)) overlap += 1;
-      }
-
-      const smallestSetSize = Math.min(leftTokens.size, rightTokens.size);
-      return overlap >= 2 && overlap >= Math.ceil(smallestSetSize * 0.6);
-    };
-
-    // Build stock maps from inventory balances
-    const stockById = new Map<string, number>();
-    for (const row of effectiveBalances) {
-      const key = String(row.productId || "").trim();
-      if (!key) continue;
-      const quantity = Number(row.quantity || 0);
-      const current = stockById.get(key);
-      stockById.set(key, typeof current === "number" ? current + quantity : quantity);
-    }
-    const stockByName = new Map<string, number>();
-    for (const row of effectiveBalances) {
-      const normalized = normalizeStockName(String(row.productName || ""));
-      if (!normalized) continue;
-      const quantity = Number(row.quantity || 0);
-      const current = stockByName.get(normalized);
-      stockByName.set(normalized, typeof current === "number" ? current + quantity : quantity);
-    }
-
-    // Group order items by product identity, preventing duplicate-line mismatch.
-    const products = getOrderProducts(order.products);
-    const totals = new Map<string, { label: string; qty: number; productId: string | null }>();
-    for (const product of products) {
-      const productQty = Number(product.quantity || 0);
-      if (productQty <= 0) continue;
-      const idFromLine = String((product as { id?: string }).id || "").trim();
-      const altIdFromLine = String((product as { productId?: string }).productId || "").trim();
-      const productId = idFromLine || altIdFromLine || null;
-      const label = String(product.name || "Produto").trim() || "Produto";
-      const key = productId ? `id:${productId}` : `name:${normalizeStockName(label)}`;
-      const prev = totals.get(key);
-      totals.set(key, {
-        label: prev?.label || label,
-        qty: (prev?.qty || 0) + productQty,
-        productId,
-      });
-    }
-
-    const missingItems: string[] = [];
-
-    for (const item of totals.values()) {
-      const normalizedLabel = normalizeStockName(item.label);
-      const fallbackCatalogName = item.productId ? normalizeStockName(String(productNameById[item.productId] || "")) : "";
-
-      // Consider every possible match source and keep the highest stock found.
-      // This avoids false negatives when an old product ID has zero but the same product name has stock.
-      const candidates: number[] = [];
-      if (item.productId) {
-        const byId = stockById.get(item.productId);
-        if (typeof byId === "number" && Number.isFinite(byId)) candidates.push(byId);
-      }
-      if (fallbackCatalogName) {
-        const byCatalogName = stockByName.get(fallbackCatalogName);
-        if (typeof byCatalogName === "number" && Number.isFinite(byCatalogName)) candidates.push(byCatalogName);
-      }
-      if (normalizedLabel) {
-        const byLineName = stockByName.get(normalizedLabel);
-        if (typeof byLineName === "number" && Number.isFinite(byLineName)) candidates.push(byLineName);
-      }
-      for (const [stockName, stockQty] of stockByName.entries()) {
-        if (stockNameMatches(normalizedLabel, stockName) || (fallbackCatalogName && stockNameMatches(fallbackCatalogName, stockName))) {
-          candidates.push(stockQty);
-        }
-      }
-      const availableQty = candidates.length > 0 ? Math.max(...candidates) : 0;
-
-      if (availableQty < item.qty) {
-        missingItems.push(
-          `${item.label}: faltam ${item.qty - availableQty} un. (tem ${availableQty}, precisa ${item.qty})`
-        );
-      }
-    }
-
-    if (missingItems.length > 0) {
-      return {
-        hasStock: false,
-        message: `Faltando ${stockLabel} dos produtos do cliente:\n${missingItems.join("\n")}`,
-        missingItems,
-      };
-    }
-
-    return { hasStock: true, message: "", missingItems: [] };
+    return checkOrderItemsHaveStock({
+      items: getOrderProducts(order.products),
+      balances: effectiveBalances,
+      catalogNames: productNameById,
+      poolLabel: stockLabel,
+    });
   };
 
   const executeToggleEnviado = async (orderId: string, adminPassword?: string) => {
