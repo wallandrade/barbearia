@@ -30,6 +30,7 @@ import {
   type InventoryPoolKind,
   type ResolvedOrderInventoryItem,
 } from "../lib/order-inventory-debit";
+import { inventoryOrderLabel } from "../lib/inventory-movement-reason";
 import {
   authorizeInventoryExit,
   inventoryExitPasswordApplies,
@@ -2754,6 +2755,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
           quantity: item.quantity,
         })),
         orderId: id,
+        orderNumber: order.orderNumber ?? null,
         clientName: order.clientName || null,
         kind: "release",
       });
@@ -2773,6 +2775,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
                 quantity: item.quantity,
               })),
               orderId: id,
+              orderNumber: order.orderNumber ?? null,
               clientName: order.clientName || null,
               kind: "reserve",
             });
@@ -2790,6 +2793,7 @@ router.patch("/admin/orders/:id/inventory-pool", requireAdminAuth, async (req, r
         pool: nextPool,
         items: nextPick.items,
         orderId: id,
+        orderNumber: order.orderNumber ?? null,
         clientName: order.clientName || null,
         kind: "reserve",
       });
@@ -2883,7 +2887,7 @@ router.patch("/admin/orders/:id/shipments/:shipmentId/inventory", requireAdminAu
     }
 
     const debit = await ensurePackageInventoryDebited(order, pkg, {
-      reason: `Saída manual pacote ${pkg.id} pedido ${order.id}`,
+      reason: `Saída ${inventoryPoolLabel(pkgPool || "loja")} pedido ${inventoryOrderLabel(order)}`,
     });
     if (!debit.ok) {
       res.status(400).json({

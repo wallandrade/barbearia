@@ -14,6 +14,7 @@ import {
   parseInventoryExitBody,
   type InventorySyncPool,
 } from "../lib/inventory-sync";
+import { inventoryOrderLabel } from "../lib/inventory-movement-reason";
 import {
   applyOrderInventoryDelta,
   parseInventoryPool,
@@ -272,7 +273,7 @@ router.post("/integrations/inventory/exit", async (req, res) => {
     const { pool, items, reason } = parsed.value;
     const orderId = parsed.value.orderId;
     const referenceId = parsed.value.referenceId || orderId;
-    const resolvedReason = reason || (orderId
+    let resolvedReason = reason || (orderId
       ? `Saida via API integracao pedido ${orderId}`
       : "Saida via API integracao");
 
@@ -303,6 +304,9 @@ router.post("/integrations/inventory/exit", async (req, res) => {
           message: "Pedido com envio dividido. Baixe por pool+itens, não por orderId inteiro.",
         });
         return;
+      }
+      if (!reason) {
+        resolvedReason = `Saida via API integracao pedido ${inventoryOrderLabel(order)}`;
       }
       const savedPool = parseInventoryPool((order as { inventoryPool?: string | null }).inventoryPool);
       if ((order as { inventoryReserved?: boolean | null }).inventoryReserved) {
@@ -338,6 +342,7 @@ router.post("/integrations/inventory/exit", async (req, res) => {
           pool,
           items: pick.items,
           orderId: order.id,
+          orderNumber: (order as { orderNumber?: number | null }).orderNumber ?? null,
           clientName: order.clientName || null,
           kind: "reserve",
           reasonOverride: resolvedReason,

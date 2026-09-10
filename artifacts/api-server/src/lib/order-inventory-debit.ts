@@ -2,6 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db, inventoryBalancesTable, ordersTable } from "@workspace/db";
 import { collectStockLookupIds, pickDebitProductId, remapInventoryItem } from "./inventory-catalog";
 import { fetchCatalogIndex } from "./inventory-resolve";
+import { inventoryOrderLabel } from "./inventory-movement-reason";
 import {
   getMinasStockMap,
   getMotoboyStockMap,
@@ -167,6 +168,7 @@ export async function applyOrderInventoryDelta(params: {
   pool: InventoryPoolKind;
   items: Array<{ productId: string; productName: string; quantity: number }>;
   orderId: string;
+  orderNumber?: number | null;
   clientName: string | null;
   kind: "reserve" | "release" | "ship" | "unship";
   reasonOverride?: string;
@@ -174,11 +176,12 @@ export async function applyOrderInventoryDelta(params: {
 }): Promise<void> {
   const isExit = params.kind === "reserve" || params.kind === "ship";
   const poolLabel = inventoryPoolLabel(params.pool);
+  const pedido = inventoryOrderLabel({ id: params.orderId, orderNumber: params.orderNumber });
   const reasonByKind: Record<typeof params.kind, string> = {
-    reserve: `Reserva ${poolLabel} pedido ${params.orderId}`,
-    release: `Liberação reserva ${poolLabel} pedido ${params.orderId}`,
-    ship: `Saída ${poolLabel} por envio do pedido ${params.orderId}`,
-    unship: `Estorno ${poolLabel} de saída do pedido ${params.orderId}`,
+    reserve: `Reserva ${poolLabel} pedido ${pedido}`,
+    release: `Liberação reserva ${poolLabel} pedido ${pedido}`,
+    ship: `Saída ${poolLabel} por envio do pedido ${pedido}`,
+    unship: `Estorno ${poolLabel} de saída do pedido ${pedido}`,
   };
   const reason = params.reasonOverride || reasonByKind[params.kind];
   for (const item of params.items) {
@@ -212,6 +215,7 @@ export type EnsureOrderInventoryDebitedResult = {
 export async function ensureOrderInventoryDebited(
   order: {
     id: string;
+    orderNumber?: number | null;
     products?: unknown;
     clientName?: string | null;
     inventoryPool?: string | null;
@@ -244,6 +248,7 @@ export async function ensureOrderInventoryDebited(
       pool,
       items: pick.items,
       orderId: order.id,
+      orderNumber: order.orderNumber ?? null,
       clientName: order.clientName || null,
       kind: "reserve",
       reasonOverride: opts?.reason,

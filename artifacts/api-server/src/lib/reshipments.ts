@@ -11,6 +11,10 @@ import {
 } from "./inventory-catalog";
 import { fetchCatalogIndex, loadCatalogContext, enrichNameMapWithLegacyOrders } from "./inventory-resolve";
 import { inventoryBrtRange } from "./inventory-date-range";
+import {
+  collectOrderIdsFromInventoryReason,
+  rewriteInventoryReasonWithOrderNumbers,
+} from "./inventory-movement-reason";
 import { RESHIPMENT_SEND_DEBITS_INVENTORY } from "./reshipment-send-debit-logic";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import {
@@ -1094,6 +1098,29 @@ function mapInventoryMovementOverview(
     });
 }
 
+async function attachHumanOrderReasons(
+  movements: InventoryMovementOverview[],
+): Promise<InventoryMovementOverview[]> {
+  const ids = [...new Set(movements.flatMap((row) => collectOrderIdsFromInventoryReason(row.reason)))];
+  const idToNumber = new Map<string, number>();
+  if (ids.length > 0) {
+    const rows = await db
+      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber })
+      .from(ordersTable)
+      .where(inArray(ordersTable.id, ids));
+    for (const row of rows) {
+      const n = Number(row.orderNumber);
+      if (!Number.isFinite(n) || n <= 0) continue;
+      idToNumber.set(row.id, n);
+      idToNumber.set(String(row.id).toLowerCase(), n);
+    }
+  }
+  return movements.map((row) => ({
+    ...row,
+    reason: rewriteInventoryReasonWithOrderNumbers(row.reason, idToNumber),
+  }));
+}
+
 export async function getMotoboyInventoryOverview(dates?: InventoryOverviewDates): Promise<{
   balances: Array<{ productId: string; productName: string; quantity: number }>;
   movements: InventoryMovementOverview[];
@@ -1126,7 +1153,9 @@ export async function getMotoboyInventoryOverview(dates?: InventoryOverviewDates
 
   return {
     balances: mapInventoryBalanceRows(balancesRows, nameMap),
-    movements: mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
+    movements: await attachHumanOrderReasons(
+      mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
+    ),
   };
 }
 
@@ -1242,7 +1271,9 @@ export async function getMinasInventoryOverview(dates?: InventoryOverviewDates):
 
   return {
     balances: mapInventoryBalanceRows(balancesRows, nameMap),
-    movements: mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
+    movements: await attachHumanOrderReasons(
+      mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
+    ),
   };
 }
 
@@ -1435,7 +1466,9 @@ export async function getInventoryOverview(dates?: InventoryOverviewDates): Prom
 
   return {
     balances: mapInventoryBalanceRows(balancesRows, nameMap),
-    movements: mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
+    movements: await attachHumanOrderReasons(
+      mapInventoryMovementOverview(movementsRows, nameMap, { newestFirst: !!range }),
+    ),
   };
 }
 

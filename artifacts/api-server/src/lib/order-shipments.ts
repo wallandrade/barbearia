@@ -14,6 +14,7 @@ import {
   resolveOrderInventoryItems,
   type InventoryPoolKind,
 } from "./order-inventory-debit";
+import { inventoryOrderLabel } from "./inventory-movement-reason";
 import {
   isPackageExcludedFromShippingCopyList,
   packageHasEnvioEcomBinding,
@@ -349,7 +350,7 @@ export async function unlinkPackageEnvioEcomBinding(
 
 /** Baixa o estoque do pacote uma vez. Só chamar no clique manual (Dar baixa agora). */
 export async function ensurePackageInventoryDebited(
-  order: { id: string; clientName?: string | null },
+  order: { id: string; orderNumber?: number | null; clientName?: string | null },
   pkg: OrderShipment,
   opts?: { reason?: string; forcePool?: InventoryPoolKind },
 ): Promise<{ ok: boolean; alreadyReserved: boolean; reserved: boolean; pool: InventoryPoolKind; details?: string }> {
@@ -380,9 +381,10 @@ export async function ensurePackageInventoryDebited(
       pool,
       items: pick.items,
       orderId: order.id,
+      orderNumber: order.orderNumber ?? null,
       clientName: order.clientName || null,
       kind: "reserve",
-      reasonOverride: opts?.reason || `Saída ${inventoryPoolLabel(pool)} pacote ${pkg.id} pedido ${order.id}`,
+      reasonOverride: opts?.reason || `Saída ${inventoryPoolLabel(pool)} pedido ${inventoryOrderLabel(order)}`,
       referenceId: packageInventoryReferenceId(pkg.id),
     });
   }
@@ -392,7 +394,7 @@ export async function ensurePackageInventoryDebited(
 }
 
 export async function releasePackageInventoryIfReserved(
-  order: { id: string; clientName?: string | null },
+  order: { id: string; orderNumber?: number | null; clientName?: string | null },
   pkg: OrderShipment,
 ): Promise<void> {
   if (!pkg.inventoryReserved) return;
@@ -416,6 +418,7 @@ export async function releasePackageInventoryIfReserved(
       quantity: item.quantity,
     })),
     orderId: order.id,
+    orderNumber: order.orderNumber ?? null,
     clientName: order.clientName || null,
     kind: "release",
     referenceId: packageInventoryReferenceId(pkg.id),
