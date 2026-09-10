@@ -81,14 +81,15 @@ export function assertInsuranceExtravioReshipAllowed(order: {
   }
 }
 
-/** Qualquer reenvio pelo suporte: precisa ter comprado seguro. Extravio/apreensão usam a cobertura do plano. */
+/** Qualquer reenvio pelo suporte: precisa ter comprado seguro. Extravio/apreensão usam a cobertura do plano. Admin pode forçar se `force` e o pedido é sem seguro. */
 export function assertSupportReshipmentAllowed(order: {
   includeInsurance?: boolean | null;
   insurancePlan?: string | null;
   insuranceClaimStatus?: string | null;
   insuranceReshipCount?: number | null;
   parentOrderId?: string | null;
-}, problemType: string | null | undefined = null): void {
+}, problemType: string | null | undefined = null, opts?: { force?: boolean }): void {
+  if (opts?.force && resolveOrderInsurancePlan(order) === "none") return;
   const type = String(problemType || "").trim().toLowerCase();
   if (type === "extravio" || type === "apreensao") {
     assertInsuranceExtravioReshipAllowed(order, type);

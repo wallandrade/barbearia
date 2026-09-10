@@ -176,6 +176,19 @@ test("suporte sem seguro nao reenvia faltando nem outro problema", () => {
   );
 });
 
+test("admin pode forcar reenvio sem seguro", () => {
+  assert.doesNotThrow(() => assertSupportReshipmentAllowed(
+    { includeInsurance: false },
+    "other",
+    { force: true },
+  ));
+  assert.doesNotThrow(() => assertSupportReshipmentAllowed(
+    { includeInsurance: false, insurancePlan: "none" },
+    "extravio",
+    { force: true },
+  ));
+});
+
 test("suporte com seguro reenvia pedido faltando", () => {
   assert.doesNotThrow(() => assertSupportReshipmentAllowed({
     includeInsurance: true,

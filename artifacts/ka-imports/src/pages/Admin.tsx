@@ -593,7 +593,7 @@ import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchases
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
-import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment } from "@/lib/checkout-insurance";
+import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
   filterAdminOrdersByKind,
   isAdminOrdersReshipmentRow,
@@ -5683,12 +5683,12 @@ export default function Admin() {
                 toast.error("Erro ao excluir chamado.");
               }
             }}
-            onReenviar={async (id, selectedProducts) => {
+            onReenviar={async (id, selectedProducts, opts) => {
               try {
                 const res = await fetch(`${BASE}/api/admin/support-tickets/${id}/reenviar`, {
                   method: "POST",
                   headers: authHeaders(),
-                  body: JSON.stringify({ products: selectedProducts }),
+                  body: JSON.stringify({ products: selectedProducts, ...(opts?.force ? { force: true } : {}) }),
                 });
                 const data = await res.json() as {
                   message?: string;
@@ -8444,7 +8444,7 @@ function SupportTicketsPanel({
   onRefresh: () => void;
   onSetStatus: (id: string, status: "open" | "resolved") => void;
   onDelete: (id: string) => void;
-  onReenviar: (id: string, products: Array<{ id: string; name: string; quantity: number; price: number }>) => void | Promise<void>;
+  onReenviar: (id: string, products: Array<{ id: string; name: string; quantity: number; price: number }>, opts?: { force?: boolean }) => void | Promise<void>;
 }) {
   const [reenviarTicket, setReenviarTicket] = useState<SupportTicketRecord | null>(null);
   const [reenviarItems, setReenviarItems] = useState<Array<{ id: string; name: string; quantity: number; price: number }>>([]);
@@ -8453,13 +8453,14 @@ function SupportTicketsPanel({
 
   const openReenviarModal = (ticket: SupportTicketRecord) => {
     const plan = parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance);
-    if (!adminCanAuthorizeSupportReshipment(plan, ticket.problemType)) {
-      toast.error(
-        plan === "none"
-          ? "Pedido sem seguro: não tem opção de reenvio."
-          : "Sem cobertura: não manda de novo.",
-      );
-      return;
+    const covered = adminCanAuthorizeSupportReshipment(plan, ticket.problemType);
+    const canForce = adminCanForceUninsuredSupportReshipment(plan);
+    if (!covered) {
+      if (!canForce) {
+        toast.error("Sem cobertura: não manda de novo.");
+        return;
+      }
+      if (!window.confirm(FORCE_UNINSURED_RESHIP_CONFIRM)) return;
     }
     const orderProducts = ticket.orderProducts || [];
     const missing = ticket.missingProducts || [];
@@ -8500,7 +8501,10 @@ function SupportTicketsPanel({
     }
     setReenviarSubmitting(true);
     try {
-      await onReenviar(reenviarTicket.id, products);
+      const force = adminCanForceUninsuredSupportReshipment(
+        parseInsurancePlan(reenviarTicket.insurancePlan, reenviarTicket.includeInsurance),
+      );
+      await onReenviar(reenviarTicket.id, products, force ? { force: true } : undefined);
       setReenviarTicket(null);
       setReenviarItems([]);
       setReenviarSearch("");
@@ -8540,6 +8544,8 @@ function SupportTicketsPanel({
           {tickets.map((ticket) => {
             const ticketPlan = parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance);
             const canReenviar = adminCanAuthorizeSupportReshipment(ticketPlan, ticket.problemType);
+            const canForceUninsured = adminCanForceUninsuredSupportReshipment(ticketPlan);
+            const reenviarEnabled = canReenviar || canForceUninsured;
             return (
             <div key={ticket.id} className="rounded-2xl border bg-card p-4 sm:p-5 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -8575,7 +8581,7 @@ function SupportTicketsPanel({
                     <p className="text-xs font-semibold text-slate-600 mt-1">Tipo: Outro problema</p>
                   )}
                   {ticketPlan === "none" && (
-                    <p className="text-xs font-semibold text-red-700 mt-1">Pedido sem seguro · sem opção de reenvio</p>
+                    <p className="text-xs font-semibold text-red-700 mt-1">Pedido sem seguro · reenvio só se o admin forçar</p>
                   )}
                   {(ticket.missingProducts || []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -8595,17 +8601,17 @@ function SupportTicketsPanel({
                         size="sm"
                         variant="outline"
                         className="border-red-200 text-red-700 hover:bg-red-50"
-                        disabled={!canReenviar}
+                        disabled={!reenviarEnabled}
                         title={
-                          !canReenviar
-                            ? (ticketPlan === "none"
-                              ? "Pedido sem seguro: não tem opção de reenvio"
-                              : "Sem cobertura: não manda de novo")
-                            : undefined
+                          !reenviarEnabled
+                            ? "Sem cobertura: não manda de novo"
+                            : canForceUninsured
+                              ? "Pedido sem seguro: pede confirmação antes de reenviar"
+                              : undefined
                         }
                         onClick={() => openReenviarModal(ticket)}
                       >
-                        Reenviar
+                        {canForceUninsured ? "Forçar reenvio" : "Reenviar"}
                       </Button>
                       <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onDelete(ticket.id)}>
                         Excluir
@@ -8668,6 +8674,11 @@ function SupportTicketsPanel({
                     ? "Itens pré-preenchidos com o que o cliente marcou como faltando. Ajuste se precisar."
                     : "Ajuste os itens. O original não muda; nasce um pedido novo com frete Reenvio."}
                 </p>
+                {adminCanForceUninsuredSupportReshipment(parseInsurancePlan(reenviarTicket.insurancePlan, reenviarTicket.includeInsurance)) && (
+                  <p className="text-xs font-semibold text-amber-800 mt-2">
+                    Pedido sem seguro. Você confirmou forçar o reenvio.
+                  </p>
+                )}
               </div>
               <Button size="icon" variant="ghost" onClick={closeReenviarModal} disabled={reenviarSubmitting}>
                 <X className="w-5 h-5" />

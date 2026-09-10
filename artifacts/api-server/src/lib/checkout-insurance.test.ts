@@ -15,6 +15,7 @@ import {
   parseOptionalInsurancePercentSetting,
   resolveCheckoutInsurance,
   adminCanAuthorizeSupportReshipment,
+  adminCanForceUninsuredSupportReshipment,
 } from "./checkout-insurance";
 
 test("percentual vazio usa 10%", () => {
@@ -242,4 +243,10 @@ test("com seguro autoriza reenvio de faltando e bloqueia apreensao no reduzido",
   assert.equal(adminCanAuthorizeSupportReshipment("reduced", "extravio"), true);
   assert.equal(adminCanAuthorizeSupportReshipment("reduced", "apreensao"), false);
   assert.equal(adminCanAuthorizeSupportReshipment("reduced", "other"), true);
+});
+
+test("admin pode forcar reenvio so quando o pedido e sem seguro", () => {
+  assert.equal(adminCanForceUninsuredSupportReshipment("none"), true);
+  assert.equal(adminCanForceUninsuredSupportReshipment("full"), false);
+  assert.equal(adminCanForceUninsuredSupportReshipment("reduced"), false);
 });

@@ -617,8 +617,9 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
     const canApplyAddress = parsedAddress ? await isLatestTicketForOrder(ticket.orderId, ticket.id) : false;
     const addressOverride = parsedAddress && canApplyAddress ? parsedAddress : null;
 
+    const force = req.body?.force === true;
     try {
-      assertSupportReshipmentAllowed(order, ticket.problemType);
+      assertSupportReshipmentAllowed(order, ticket.problemType, { force });
     } catch (err) {
       if (err instanceof InsuranceClaimError) {
         res.status(400).json({ error: err.code, message: err.message });
@@ -627,9 +628,11 @@ router.post("/admin/support-tickets/:id/reenviar", requireAdminAuth, async (req,
       throw err;
     }
 
+    const uninsuredForce = force && parseInsurancePlan(order.insurancePlan, Boolean(order.includeInsurance)) === "none";
+
     let child;
     try {
-      if (ticket.problemType === "extravio" || ticket.problemType === "apreensao") {
+      if (!uninsuredForce && (ticket.problemType === "extravio" || ticket.problemType === "apreensao")) {
         child = await chooseInsuranceReship({
           orderId: order.id,
           supportTicketId: ticket.id,
