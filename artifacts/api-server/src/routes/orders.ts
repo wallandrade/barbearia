@@ -1369,8 +1369,7 @@ router.get("/me/orders", requireCustomerAuth, async (req, res) => {
       .where(eq(ordersTable.userId, customerSession.userId))
       .orderBy(desc(ordersTable.createdAt));
 
-    const mapped = await enrichOrdersWithProductImages(orders.map((row) => mapOrderForCustomer(row)));
-    const withPackages = await attachShipmentsToMappedOrders(mapped);
+    const withPackages = await presentCustomerOrders(orders);
     res.json({ orders: withPackages });
   } catch (err) {
     console.error("Customer orders error:", err);
@@ -1406,8 +1405,7 @@ router.get("/me/orders/:id", requireCustomerAuth, async (req, res) => {
       return;
     }
 
-    const [order] = await enrichOrdersWithProductImages([mapOrderForCustomer(rows[0])]);
-    const [withPackages] = await attachShipmentsToMappedOrders([order]);
+    const [withPackages] = await presentCustomerOrders(rows);
     res.json({ order: withPackages });
   } catch (err) {
     console.error("Customer order detail error:", err);
@@ -1439,8 +1437,7 @@ router.get("/orders/guest/:id", async (req, res) => {
       return;
     }
 
-    const [order] = await enrichOrdersWithProductImages([mapOrderForCustomer(rows[0])]);
-    const [withPackages] = await attachShipmentsToMappedOrders([order]);
+    const [withPackages] = await presentCustomerOrders(rows);
     res.json({ order: withPackages });
   } catch (err) {
     console.error("Guest order access error:", err);
@@ -2519,6 +2516,37 @@ function mapOrderForCustomer(o: typeof ordersTable.$inferSelect) {
       observationVisibleToCustomer: mapped.observationVisibleToCustomer,
     }),
   };
+}
+
+async function attachParentOrderNumbers<T extends { parentOrderId?: string | null }>(
+  orders: T[],
+): Promise<Array<T & { parentOrderNumber: number | null }>> {
+  const ids = Array.from(
+    new Set(orders.map((order) => String(order.parentOrderId || "").trim()).filter(Boolean)),
+  );
+  const numberById = new Map<string, number | null>();
+  if (ids.length > 0) {
+    const rows = await db
+      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber })
+      .from(ordersTable)
+      .where(inArray(ordersTable.id, ids));
+    for (const row of rows) {
+      numberById.set(row.id, row.orderNumber ?? null);
+    }
+  }
+  return orders.map((order) => {
+    const parentId = String(order.parentOrderId || "").trim();
+    return {
+      ...order,
+      parentOrderNumber: parentId ? (numberById.get(parentId) ?? null) : null,
+    };
+  });
+}
+
+async function presentCustomerOrders(rows: Array<typeof ordersTable.$inferSelect>) {
+  const mapped = await enrichOrdersWithProductImages(rows.map((row) => mapOrderForCustomer(row)));
+  const withParents = await attachParentOrderNumbers(mapped);
+  return attachShipmentsToMappedOrders(withParents);
 }
 
 // ---------------------------------------------------------------------------

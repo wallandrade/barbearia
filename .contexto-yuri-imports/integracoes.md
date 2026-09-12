@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-10
+> **Última atualização:** 2026-09-12
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-12 | Cliente split: timeline EE **por pacote**; `GET /me/orders/:id/tracking` e o botão Atualizar disparam se só o pacote tiver barcode/histórico. `GET /me/orders` manda `parentOrderNumber` | Motoboy coletado aparece mesmo com Minas sem etiqueta; reenvio mostra o # do pai | Webhook/create/admin iguais |
 | 2026-09-10 | Janela da senha de baixa Motoboy/Minas: **30 min** | Espelho e Dar baixa agora no Admin | Token do snapshot e webhook iguais |
 | 2026-09-10 | Senha de baixa no Admin (modal Dar baixa agora Motoboy/Minas) + `POST /admin/integrations/inventory/unlock`. Espelho igual | Dá para digitar a senha no Yury | Token do snapshot e webhook iguais |
 | 2026-09-09 | Etiqueta/webhook/sync EnvioEcom **não** baixam estoque. Conta SP/MG só sugere o pool no pedido/pacote | Saldo só cai no Dar baixa agora | Cotação/create/cópia 48h/`enviado` no trânsito iguais |
@@ -84,7 +85,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Contas extras: `site_settings.envioecom_accounts` (JSON); CRUD `GET/POST/PUT/DELETE /api/admin/envioecom/accounts` (listar: qualquer admin; gravar/apagar: primary). Token/senha **não** voltam no GET (só hint)
 - Admin Configurações: painel **APIs EnvioEcom** no **topo** (depois de Gastos por data) para adicionar nome + token ou e-mail/senha + CEP origem
 - Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id` (no split, a conta fica no pacote). Sync/etiqueta/cancel/soft-sync tentam a conta do pedido/pacote e, se não achar, as demais. **Desvincular** é só local (não chama a API EnvioEcom).
-- **Split:** `GET/PUT /api/admin/orders/:id/shipments` (qty × pool). Create/labels/sync/cancel/unlink exigem `packageId` se houver 2+ pacotes (`NEED_PACKAGE_ID`). `orderId` EE do pacote: `{n}-{id8}-{pool}` (sufixo após cancelar **ou** desvincular). Webhook acha o pacote por barcode / ID / `external_order_number` — **não** ignora o 2º envio; pacote já desvinculado (sem ID/barcode) **não** reatacha pelo orderId antigo. Listagens admin/`/me/orders` devolvem `envioecomPackages`. Tracking-board admin ainda é 1 card por pedido (rollup)
+- **Split:** `GET/PUT /api/admin/orders/:id/shipments` (qty × pool). Create/labels/sync/cancel/unlink exigem `packageId` se houver 2+ pacotes (`NEED_PACKAGE_ID`). `orderId` EE do pacote: `{n}-{id8}-{pool}` (sufixo após cancelar **ou** desvincular). Webhook acha o pacote por barcode / ID / `external_order_number` — **não** ignora o 2º envio; pacote já desvinculado (sem ID/barcode) **não** reatacha pelo orderId antigo. Listagens admin/`/me/orders` devolvem `envioecomPackages` (itens + histórico). No card do cliente a timeline usa o histórico **do pacote**, não o rollup do pedido. Tracking-board admin ainda é 1 card por pedido (rollup)
 - Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`
 - Pacote padrão se produto sem medidas: **2×12×17 cm, 0,3 kg, valor declarado R$5** (igual simulador EnvioEcom); override via `ENVIOECOM_DEFAULT_WEIGHT/LENGTH/HEIGHT/WIDTH/DECLARED_VALUE`
 - Cotação/create: **1 pacote consolidado** + clamp (dim ≤100cm, peso ≤30kg, valor ≤R$3000) — não empilha altura×qtd dos defaults

@@ -1,88 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { clearCustomerToken, fetchCustomerProfile, getCustomerAuthHeaders } from "@/lib/customer-auth";
 import { formatCurrency, formatDateBR, getActiveWhatsApp } from "@/lib/utils";
 import { parseInsurancePlan } from "@/lib/checkout-insurance";
-import { Copy, DollarSign, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, AlertCircle, MessageCircle, Truck, X, Bell } from "lucide-react";
+import {
+  customerPackageLabel,
+  customerPackageSituation,
+  customerReshipmentLabel,
+  customerShippingHint,
+  findOrderProductImage,
+  getCustomerSituation,
+  getOrderTrackingHistory,
+  getPackageTrackingHistory,
+  getSituationBadgeClass,
+  hasTrackableShipment,
+  isDeliveredSituation,
+  isSplitCustomerOrder,
+  listCustomerPackages,
+  mergeTrackingIntoOrder,
+  packageShipmentItems,
+  shouldShowDistanceToCustomerCity,
+  shouldShowShipmentSection,
+  toCustomerFriendlyShippingLabel,
+  type CustomerOrder,
+  type CustomerOrderPackage,
+  type TrackingHistoryEvent,
+  type TrackingInfo,
+} from "@/lib/customer-order-view";
+import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-type TrackingHistoryEvent = {
-  status: string;
-  description?: string | null;
-  location?: string | null;
-  updated_at?: string | null;
-  timestamp?: number | null;
-  source?: string;
-};
-
-type CustomerOrder = {
-  id: string;
-  orderNumber?: number | null;
-  total: number;
-  status: string;
-  enviado?: boolean;
-  /** ISO — quando `enviado` virou true (manual ou EE). */
-  enviadoAt?: string | null;
-  updatedAt?: string | null;
-  paymentMethod: string;
-  createdAt: string;
-  clientName?: string;
-  clientPhone?: string;
-  products?: Array<{ id?: string; name: string; quantity: number; price: number; image?: string | null }>;
-  subtotal?: number;
-  shippingCost?: number;
-  insuranceAmount?: number;
-  includeInsurance?: boolean;
-  insurancePlan?: string | null;
-  insuranceClaimStatus?: string | null;
-  insuranceCashbackAmount?: number;
-  storeCreditUsed?: number | null;
-  parentOrderId?: string | null;
-  shippingType?: string;
-  trackingCode?: string | null;
-  envioecomBarcode?: string | null;
-  envioecomStatus?: string | null;
-  envioecomDeliveryMode?: string | null;
-  envioecomStatusHistory?: TrackingHistoryEvent[];
-  envioecomShipmentId?: string | null;
-  envioecomTrackingKey?: string | null;
-  envioecomPackages?: Array<{
-    id: string;
-    inventoryPoolLabel?: string;
-    enviado?: boolean;
-    envioecomBarcode?: string | null;
-    envioecomStatus?: string | null;
-    envioecomDeliveryMode?: string | null;
-    envioecomStatusHistory?: TrackingHistoryEvent[];
-  }>;
-  observation?: string | null;
-  distanceKmFromCustomerCity?: number | null;
-  distancePackageCity?: string | null;
-  distanceCustomerCity?: string | null;
-};
-
-type TrackingInfo = {
-  orderId: string;
-  orderNumber?: number | null;
-  enviado?: boolean;
-  trackingCode?: string | null;
-  barcode?: string | null;
-  deliveryMode?: string | null;
-  status?: string | null;
-  statusUpdatedAt?: string | null;
-  history?: TrackingHistoryEvent[];
-  labelUrl?: string | null;
-  hasShipment?: boolean;
-  packages?: CustomerOrder["envioecomPackages"];
-  /** Distância aproximada cidade do pacote → cidade do cliente (km). */
-  distanceKmFromCustomerCity?: number | null;
-  distancePackageCity?: string | null;
-  distanceCustomerCity?: string | null;
-};
 
 type AccountSection = "orders" | "affiliate" | "raffle";
 
@@ -123,260 +73,6 @@ function resolveStoreReferralLink(link: string, code: string): string {
   } catch {
     return fallback;
   }
-}
-
-const statusLabel: Record<string, string> = {
-  enviado: "Enviado",
-  pending: "Pendente",
-  awaiting_payment: "Aguardando pagamento",
-  paid: "Pago",
-  completed: "Concluído",
-  cancelled: "Cancelado",
-};
-
-function normalizeShippingStatus(raw: string | null | undefined): string {
-  return String(raw || "").trim();
-}
-
-function isPackingBeforePostStatus(status: string): boolean {
-  const s = status.toLowerCase();
-  return (
-    s.includes("pronto para envio") ||
-    s.includes("etiqueta emitida") ||
-    s.includes("etiqueta gerada") ||
-    s.includes("processando envio") ||
-    s.includes("aguardando expedição") ||
-    s.includes("aguardando expedicao") ||
-    s.includes("dc-e emitida") ||
-    s.includes("dce emitida") ||
-    s.includes("envio criado") ||
-    (/aguardando/.test(s) && /colet/.test(s)) ||
-    /aguardando\s+postagem/.test(s)
-  );
-}
-
-/** Texto amigável para o cliente (admin continua com o status EE original). */
-function toCustomerFriendlyShippingLabel(raw: string | null | undefined): string {
-  const status = normalizeShippingStatus(raw);
-  if (!status) return "";
-  const s = status.toLowerCase();
-  if (isPackingBeforePostStatus(status) || /aguardando postagem/.test(s)) {
-    return "Estamos embalando seu pedido";
-  }
-  if (/aguardando pagamento/.test(s)) {
-    return "Preparando envio";
-  }
-  if (/saiu para entrega|em rota/.test(s)) {
-    return "Saiu para entrega";
-  }
-  if (/entregue/.test(s)) {
-    return "Entregue";
-  }
-  return status;
-}
-
-function customerShippingHint(raw: string | null | undefined): string | null {
-  const status = normalizeShippingStatus(raw);
-  if (!status) return null;
-  if (isPackingBeforePostStatus(status) || /aguardando postagem/i.test(status)) {
-    return "Em breve ele será despachado. Aguarde a atualização do rastreio.";
-  }
-  return null;
-}
-
-function isShippingDelivered(status: string): boolean {
-  const s = status.toLowerCase();
-  return s.includes("entregue") || s.includes("objeto entregue");
-}
-
-function isShippingInTransit(status: string): boolean {
-  const s = status.toLowerCase();
-  if (/aguardando/.test(s) && /colet/.test(s)) return false;
-  if (/aguardando\s+postagem/.test(s)) return false;
-  return (
-    s.includes("trânsito") ||
-    s.includes("transito") ||
-    s.includes("postado") ||
-    s.includes("expedido") ||
-    s.includes("coletado") ||
-    /coleta\s+recebida/.test(s) ||
-    s.includes("recebido") ||
-    s.includes("recebida") ||
-    s.includes("saiu para entrega") ||
-    s.includes("em rota")
-  );
-}
-
-const MANUAL_DELIVERED_AFTER_MS = 15 * 24 * 60 * 60 * 1000;
-
-/** Pedido com vínculo EnvioEcom — “Entregue” só quando a API disser entregue. */
-function hasEnvioEcomLink(order: CustomerOrder): boolean {
-  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
-  if (packages.some((pkg) => pkg.envioecomBarcode || pkg.envioecomStatus)) return true;
-  return Boolean(
-    order.envioecomShipmentId ||
-      order.envioecomTrackingKey ||
-      order.envioecomBarcode ||
-      order.envioecomStatus ||
-      (Array.isArray(order.envioecomStatusHistory) && order.envioecomStatusHistory.length > 0),
-  );
-}
-
-function isEnvioEcomDelivered(order: CustomerOrder): boolean {
-  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
-  if (packages.length >= 2) {
-    return packages.every((pkg) => {
-      const current = normalizeShippingStatus(pkg.envioecomStatus);
-      if (current && isShippingDelivered(current)) return true;
-      const history = Array.isArray(pkg.envioecomStatusHistory) ? pkg.envioecomStatusHistory : [];
-      return history.some((ev) => isShippingDelivered(String(ev.status || "")));
-    });
-  }
-  const current = normalizeShippingStatus(order.envioecomStatus);
-  if (current && isShippingDelivered(current)) return true;
-  const history = Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
-  return history.some((ev) => isShippingDelivered(String(ev.status || "")));
-}
-
-/** Envio manual (sem EE): Entregue após 15 dias do marco de enviado. */
-function isManualDeliveredByAge(order: CustomerOrder): boolean {
-  if (!order.enviado) return false;
-  const raw = order.enviadoAt || order.updatedAt || order.createdAt;
-  if (!raw) return false;
-  const t = new Date(raw).getTime();
-  if (Number.isNaN(t)) return false;
-  return Date.now() - t >= MANUAL_DELIVERED_AFTER_MS;
-}
-
-/** Situação visível ao cliente: EE segue a API; manual usa 15 dias após enviado. */
-function getCustomerSituation(order: CustomerOrder): {
-  label: string;
-  kind: "paid" | "processing" | "shipping" | "delivered" | "cancelled" | "pending";
-  hint?: string | null;
-} {
-  if (order.status === "cancelled") {
-    return { label: "Cancelado", kind: "cancelled" };
-  }
-
-  if (hasEnvioEcomLink(order)) {
-    if (isEnvioEcomDelivered(order)) {
-      const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
-      return {
-        label: shippingStatus ? toCustomerFriendlyShippingLabel(shippingStatus) : "Entregue",
-        kind: "delivered",
-      };
-    }
-    const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
-    if (shippingStatus) {
-      if (/cancelad/i.test(shippingStatus)) {
-        return { label: shippingStatus, kind: "cancelled" };
-      }
-      if (/aguardando pagamento/i.test(shippingStatus) || isPackingBeforePostStatus(shippingStatus)) {
-        return {
-          label: toCustomerFriendlyShippingLabel(shippingStatus),
-          kind: "processing",
-          hint: customerShippingHint(shippingStatus),
-        };
-      }
-      return {
-        label: toCustomerFriendlyShippingLabel(shippingStatus),
-        kind: isShippingInTransit(shippingStatus) ? "shipping" : "processing",
-        hint: customerShippingHint(shippingStatus),
-      };
-    }
-    if (order.enviado) {
-      return { label: "Enviado", kind: "shipping" };
-    }
-  }
-
-  if (order.enviado) {
-    if (isManualDeliveredByAge(order)) {
-      return { label: "Entregue", kind: "delivered" };
-    }
-    return { label: "Enviado", kind: "shipping" };
-  }
-
-  if (order.status === "paid" || order.status === "completed") {
-    return { label: "Processando", kind: "processing" };
-  }
-  if (order.status === "awaiting_payment" || order.status === "pending") {
-    return { label: statusLabel[order.status] || order.status, kind: "pending" };
-  }
-  return { label: statusLabel[order.status] || order.status, kind: "processing" };
-}
-
-function getSituationBadgeClass(kind: ReturnType<typeof getCustomerSituation>["kind"]): string {
-  switch (kind) {
-    case "delivered":
-      return "bg-green-100 text-green-800 border border-green-300";
-    case "shipping":
-      return "bg-blue-100 text-blue-800 border border-blue-300";
-    case "cancelled":
-      return "bg-red-100 text-red-800 border border-red-300";
-    case "pending":
-      return "bg-yellow-100 text-yellow-800 border border-yellow-300";
-    case "paid":
-    case "processing":
-    default:
-      return "bg-amber-100 text-amber-900 border border-amber-300";
-  }
-}
-
-function hasTrackableShipment(order: CustomerOrder): boolean {
-  return Boolean(
-    order.envioecomShipmentId ||
-      order.envioecomTrackingKey ||
-      order.envioecomBarcode ||
-      order.envioecomStatus ||
-      order.trackingCode ||
-      order.enviado ||
-      order.status === "completed",
-  );
-}
-
-function mergeTrackingIntoOrder(order: CustomerOrder, tracking: TrackingInfo): CustomerOrder {
-  return {
-    ...order,
-    enviado: tracking.enviado ?? order.enviado,
-    trackingCode: tracking.trackingCode || tracking.barcode || order.trackingCode,
-    envioecomBarcode: tracking.barcode || order.envioecomBarcode,
-    envioecomStatus: tracking.status || order.envioecomStatus,
-    envioecomDeliveryMode: tracking.deliveryMode || order.envioecomDeliveryMode,
-    envioecomStatusHistory: Array.isArray(tracking.history)
-      ? tracking.history
-      : (order.envioecomStatusHistory || []),
-    ...(Array.isArray(tracking.packages) ? { envioecomPackages: tracking.packages } : {}),
-    distanceKmFromCustomerCity:
-      tracking.distanceKmFromCustomerCity !== undefined
-        ? tracking.distanceKmFromCustomerCity
-        : order.distanceKmFromCustomerCity,
-    distancePackageCity:
-      tracking.distancePackageCity !== undefined
-        ? tracking.distancePackageCity
-        : order.distancePackageCity,
-    distanceCustomerCity:
-      tracking.distanceCustomerCity !== undefined
-        ? tracking.distanceCustomerCity
-        : order.distanceCustomerCity,
-  };
-}
-
-function shouldShowDistanceToCustomerCity(
-  order: CustomerOrder,
-  situation: ReturnType<typeof getCustomerSituation>,
-): boolean {
-  if (order.distanceKmFromCustomerCity == null || !Number.isFinite(order.distanceKmFromCustomerCity)) {
-    return false;
-  }
-  if (situation.kind === "cancelled" || situation.kind === "pending" || situation.kind === "delivered") {
-    return false;
-  }
-  if (isPackingBeforePostStatus(order.envioecomStatus || "")) return false;
-  return situation.kind === "shipping" || situation.kind === "processing";
-}
-
-function getOrderTrackingHistory(order: CustomerOrder): TrackingHistoryEvent[] {
-  return Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
 }
 
 function formatTrackingWhen(event: TrackingHistoryEvent): string | null {
@@ -420,11 +116,123 @@ function isInternalTrackingDescription(description: string | null | undefined): 
   );
 }
 
-function isDeliveredSituation(order: CustomerOrder): boolean {
-  return getCustomerSituation(order).kind === "delivered";
+function TrackingTimeline({ events, eventKeyPrefix }: { events: TrackingHistoryEvent[]; eventKeyPrefix: string }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="pt-2 border-t border-blue-100/80">
+      <div className="rounded-xl border border-border/60 bg-white p-3">
+        <div className="mb-3">
+          <p className="text-sm font-bold text-slate-900">Status do envio</p>
+          <p className="text-xs text-muted-foreground">
+            Movimentações do pacote · mais recente em cima
+          </p>
+        </div>
+        <ol className="relative space-y-0 max-h-80 overflow-y-auto pr-0.5">
+          {[...events].reverse().map((event, idx, arr) => {
+            const when = formatTrackingWhen(event);
+            const statusRaw = String(event.status || "").trim();
+            const statusText =
+              toCustomerFriendlyShippingLabel(event.status) || statusRaw || "Atualização";
+            const desc = String(event.description || "").trim();
+            const loc = String(event.location || "").trim();
+            const showDescription =
+              !!desc &&
+              desc.toLowerCase() !== statusRaw.toLowerCase() &&
+              desc.toLowerCase() !== statusText.toLowerCase() &&
+              !isInternalTrackingDescription(desc);
+            const showLocation =
+              !!loc &&
+              loc.toLowerCase() !== statusRaw.toLowerCase() &&
+              loc.toLowerCase() !== statusText.toLowerCase();
+            const detail = [showLocation ? loc : "", showDescription ? desc : ""]
+              .filter(Boolean)
+              .join(" · ");
+            const isFirst = idx === 0;
+            const isDone =
+              /entregue|dc-e emitida|dce emitida/i.test(statusRaw) ||
+              /entregue/i.test(statusText);
+            return (
+              <li
+                key={`${eventKeyPrefix}-${event.status}-${event.updated_at || event.timestamp || idx}`}
+                className="relative flex gap-3 pb-5 last:pb-0"
+              >
+                {idx < arr.length - 1 && (
+                  <span
+                    className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200"
+                    aria-hidden
+                  />
+                )}
+                <span
+                  className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                    isDone
+                      ? "bg-emerald-500 border-emerald-500 text-white"
+                      : isFirst
+                        ? "bg-sky-500 border-sky-500 text-white"
+                        : "bg-white border-sky-300 text-sky-600"
+                  }`}
+                >
+                  {isDone ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <Package className="w-3 h-3" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p
+                    className={`text-sm font-semibold ${
+                      isDone ? "text-emerald-700" : "text-sky-700"
+                    }`}
+                  >
+                    {statusText}
+                  </p>
+                  {detail ? (
+                    <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">
+                      {detail}
+                    </p>
+                  ) : null}
+                  {when ? (
+                    <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {when}
+                    </p>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </div>
+  );
 }
 
-function getStatusIcon(status: string) {
+function PackageProductRows({ order, pkg }: { order: CustomerOrder; pkg: CustomerOrderPackage }) {
+  const items = packageShipmentItems(pkg);
+  if (items.length === 0) return null;
+  return (
+    <ul className="space-y-1.5 mt-2">
+      {items.map((item, idx) => {
+        const image = findOrderProductImage(order, item);
+        return (
+          <li key={`${pkg.id}-item-${idx}`} className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-md border border-blue-100 bg-white overflow-hidden flex items-center justify-center shrink-0">
+              {image ? (
+                <img src={image} alt={item.name} className="w-full h-full object-cover" loading="lazy" />
+              ) : (
+                <Package className="w-3.5 h-3.5 text-muted-foreground" />
+              )}
+            </div>
+            <p className="text-xs text-blue-950 min-w-0 truncate">
+              {item.quantity}x {item.name}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function getStatusIcon(status: string): ReactNode {
   switch (status) {
     case "enviado":
       return <Truck className="w-5 h-5" />;
@@ -866,6 +674,10 @@ export default function CustomerOrders() {
                         const trackingCode = order.envioecomBarcode || order.trackingCode || null;
                         const canTrack = hasTrackableShipment(order);
                         const hasUnreadStoreObs = isStoreObservationUnread(order.id, order.observation);
+                        const reshipmentLabel = customerReshipmentLabel(order);
+                        const splitOrder = isSplitCustomerOrder(order);
+                        const packages = listCustomerPackages(order);
+                        const showShipmentSection = shouldShowShipmentSection(order);
 
                         return (
                         <div id={`customer-order-${order.id}`} key={order.id} className={`border rounded-2xl p-5 bg-white hover:shadow-md transition-shadow ${hasUnreadStoreObs ? "border-sky-300 ring-2 ring-sky-100" : "border-border"}`}>
@@ -891,6 +703,11 @@ export default function CustomerOrders() {
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Pedido</p>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-lg font-bold text-foreground">#{orderRef}</p>
+                                  {reshipmentLabel ? (
+                                    <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-800 border border-violet-200">
+                                      {reshipmentLabel}
+                                    </span>
+                                  ) : null}
                                   {hasUnreadStoreObs ? (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">
                                       <Bell className="w-3 h-3" />
@@ -984,6 +801,9 @@ export default function CustomerOrders() {
                               <p className="text-sm font-semibold text-foreground mt-1 leading-snug">
                                 {situation.label}
                               </p>
+                              {situation.hint ? (
+                                <p className="text-xs text-muted-foreground mt-1 leading-snug">{situation.hint}</p>
+                              ) : null}
                               {shouldShowDistanceToCustomerCity(order, situation) && (
                                 <p className="text-xs text-muted-foreground mt-1 leading-snug">
                                   Está a cerca de {order.distanceKmFromCustomerCity} km da sua cidade
@@ -992,7 +812,7 @@ export default function CustomerOrders() {
                             </div>
                           </div>
 
-                          {(trackingCode || order.envioecomDeliveryMode || order.envioecomStatus || getOrderTrackingHistory(order).length > 0) && (
+                          {showShipmentSection && (
                             <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 space-y-2">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-[11px] uppercase tracking-wide text-blue-700/80 font-semibold">Envio / Rastreio</p>
@@ -1003,133 +823,79 @@ export default function CustomerOrders() {
                                   </span>
                                 )}
                               </div>
-                              {Array.isArray(order.envioecomPackages) && order.envioecomPackages.length >= 2 && (
+                              {splitOrder ? (
                                 <div className="space-y-2">
-                                  {order.envioecomPackages.map((pkg) => (
-                                    <div key={pkg.id} className="rounded-lg border border-blue-100 bg-white/70 px-2 py-1.5">
-                                      <p className="text-[11px] font-semibold text-blue-900">
-                                        {pkg.inventoryPoolLabel || "Pacote"}
-                                        {pkg.envioecomStatus ? ` · ${toCustomerFriendlyShippingLabel(pkg.envioecomStatus) || pkg.envioecomStatus}` : ""}
-                                      </p>
-                                      {pkg.envioecomBarcode && (
-                                        <p className="text-xs font-mono text-blue-950 break-all">Código: {pkg.envioecomBarcode}</p>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {order.envioecomStatus && (() => {
-                                const friendly = toCustomerFriendlyShippingLabel(order.envioecomStatus);
-                                const hint = customerShippingHint(order.envioecomStatus);
-                                return (
-                                  <div>
-                                    <p className="text-sm font-semibold text-blue-950">{friendly}</p>
-                                    {hint && (
-                                      <p className="text-xs text-blue-900/80 mt-0.5">{hint}</p>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                              {order.envioecomDeliveryMode && (
-                                <p className="text-xs text-blue-900/80">{order.envioecomDeliveryMode}</p>
-                              )}
-                              {trackingCode && (
-                                <p className="text-xs font-mono text-blue-950 break-all">Código: {trackingCode}</p>
-                              )}
-                              {getOrderTrackingHistory(order).length > 0 ? (
-                                <div className="pt-2 border-t border-blue-100/80">
-                                  <div className="rounded-xl border border-border/60 bg-white p-3">
-                                    <div className="mb-3">
-                                      <p className="text-sm font-bold text-slate-900">Status do envio</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Movimentações do pacote · mais recente em cima
-                                      </p>
-                                    </div>
-                                    <ol className="relative space-y-0 max-h-80 overflow-y-auto pr-0.5">
-                                      {[...getOrderTrackingHistory(order)].reverse().map((event, idx, arr) => {
-                                        const when = formatTrackingWhen(event);
-                                        const statusRaw = String(event.status || "").trim();
-                                        const statusLabel =
-                                          toCustomerFriendlyShippingLabel(event.status) || statusRaw || "Atualização";
-                                        const desc = String(event.description || "").trim();
-                                        const loc = String(event.location || "").trim();
-                                        const showDescription =
-                                          !!desc &&
-                                          desc.toLowerCase() !== statusRaw.toLowerCase() &&
-                                          desc.toLowerCase() !== statusLabel.toLowerCase() &&
-                                          !isInternalTrackingDescription(desc);
-                                        const showLocation =
-                                          !!loc &&
-                                          loc.toLowerCase() !== statusRaw.toLowerCase() &&
-                                          loc.toLowerCase() !== statusLabel.toLowerCase();
-                                        const detail = [
-                                          showLocation ? loc : "",
-                                          showDescription ? desc : "",
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" · ");
-                                        const isFirst = idx === 0;
-                                        const isDone =
-                                          /entregue|dc-e emitida|dce emitida/i.test(statusRaw) ||
-                                          /entregue/i.test(statusLabel);
-                                        return (
-                                          <li
-                                            key={`${order.id}-${event.status}-${event.updated_at || event.timestamp || idx}`}
-                                            className="relative flex gap-3 pb-5 last:pb-0"
-                                          >
-                                            {idx < arr.length - 1 && (
-                                              <span
-                                                className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200"
-                                                aria-hidden
-                                              />
-                                            )}
-                                            <span
-                                              className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
-                                                isDone
-                                                  ? "bg-emerald-500 border-emerald-500 text-white"
-                                                  : isFirst
-                                                    ? "bg-sky-500 border-sky-500 text-white"
-                                                    : "bg-white border-sky-300 text-sky-600"
-                                              }`}
-                                            >
-                                              {isDone ? (
-                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                              ) : (
-                                                <Package className="w-3 h-3" />
-                                              )}
-                                            </span>
-                                            <div className="min-w-0 flex-1 pt-0.5">
-                                              <p
-                                                className={`text-sm font-semibold ${
-                                                  isDone ? "text-emerald-700" : "text-sky-700"
-                                                }`}
-                                              >
-                                                {statusLabel}
-                                              </p>
-                                              {detail ? (
-                                                <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">
-                                                  {detail}
-                                                </p>
-                                              ) : null}
-                                              {when ? (
-                                                <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
-                                                  <Clock className="w-3 h-3" />
-                                                  {when}
-                                                </p>
-                                              ) : null}
-                                            </div>
-                                          </li>
-                                        );
-                                      })}
-                                    </ol>
-                                  </div>
+                                  {packages.map((pkg, pkgIdx) => {
+                                    const pkgSituation = customerPackageSituation(pkg);
+                                    const history = getPackageTrackingHistory(pkg);
+                                    return (
+                                      <div key={pkg.id} className="rounded-lg border border-blue-100 bg-white/80 px-2.5 py-2">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <p className="text-[11px] font-semibold text-blue-900">
+                                            {customerPackageLabel(pkg, pkgIdx)}
+                                          </p>
+                                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                            pkgSituation.pending
+                                              ? "bg-amber-100 text-amber-900"
+                                              : "bg-blue-100 text-blue-800"
+                                          }`}>
+                                            {pkgSituation.label}
+                                          </span>
+                                        </div>
+                                        {pkgSituation.hint ? (
+                                          <p className="text-xs text-blue-900/80 mt-1">{pkgSituation.hint}</p>
+                                        ) : null}
+                                        <PackageProductRows order={order} pkg={pkg} />
+                                        {pkg.envioecomBarcode ? (
+                                          <p className="text-xs font-mono text-blue-950 break-all mt-1.5">Código: {pkg.envioecomBarcode}</p>
+                                        ) : null}
+                                        {pkg.envioecomDeliveryMode ? (
+                                          <p className="text-xs text-blue-900/80 mt-1">{pkg.envioecomDeliveryMode}</p>
+                                        ) : null}
+                                        {history.length > 0 ? (
+                                          <TrackingTimeline events={history} eventKeyPrefix={`${order.id}-${pkg.id}`} />
+                                        ) : canTrack && !pkgSituation.pending ? (
+                                          <p className="text-xs text-blue-900/70 mt-2">
+                                            O histórico de eventos aparece assim que houver atualização do frete.
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               ) : (
-                                canTrack && (
-                                  <p className="text-xs text-blue-900/70">
-                                    O histórico de eventos aparece assim que houver atualização do frete.
-                                  </p>
-                                )
+                                <>
+                                  {order.envioecomStatus && (() => {
+                                    const friendly = toCustomerFriendlyShippingLabel(order.envioecomStatus);
+                                    const hint = customerShippingHint(order.envioecomStatus);
+                                    return (
+                                      <div>
+                                        <p className="text-sm font-semibold text-blue-950">{friendly}</p>
+                                        {hint && (
+                                          <p className="text-xs text-blue-900/80 mt-0.5">{hint}</p>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                  {order.envioecomDeliveryMode && (
+                                    <p className="text-xs text-blue-900/80">{order.envioecomDeliveryMode}</p>
+                                  )}
+                                  {trackingCode && (
+                                    <p className="text-xs font-mono text-blue-950 break-all">Código: {trackingCode}</p>
+                                  )}
+                                  {getOrderTrackingHistory(order).length > 0 ? (
+                                    <TrackingTimeline
+                                      events={getOrderTrackingHistory(order)}
+                                      eventKeyPrefix={order.id}
+                                    />
+                                  ) : (
+                                    canTrack && (
+                                      <p className="text-xs text-blue-900/70">
+                                        O histórico de eventos aparece assim que houver atualização do frete.
+                                      </p>
+                                    )
+                                  )}
+                                </>
                               )}
                             </div>
                           )}
@@ -1192,7 +958,65 @@ export default function CustomerOrders() {
                           {expandedOrderId === order.id && (
                             <div className="mt-4 pt-4 border-t border-border/50 space-y-4">
                               {/* Products */}
-                              {order.products && order.products.length > 0 && (
+                              {splitOrder && packages.some((pkg) => packageShipmentItems(pkg).length > 0) ? (
+                                <div>
+                                  <p className="text-sm font-semibold text-foreground mb-3">Produtos por envio</p>
+                                  <div className="space-y-3">
+                                    {packages.map((pkg, pkgIdx) => {
+                                      const pkgSituation = customerPackageSituation(pkg);
+                                      const items = packageShipmentItems(pkg);
+                                      return (
+                                        <div key={`${pkg.id}-details`} className="rounded-lg border border-border/40 p-3 space-y-2">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                              {customerPackageLabel(pkg, pkgIdx)}
+                                            </p>
+                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                              pkgSituation.pending
+                                                ? "bg-amber-100 text-amber-900"
+                                                : "bg-blue-100 text-blue-800"
+                                            }`}>
+                                              {pkgSituation.label}
+                                            </span>
+                                          </div>
+                                          {items.map((item, idx) => {
+                                            const image = findOrderProductImage(order, item);
+                                            const catalog = (order.products || []).find((product) =>
+                                              (item.productId && String(product.id || "") === item.productId)
+                                              || String(product.name || "").trim().toLowerCase() === item.name.toLowerCase(),
+                                            );
+                                            const unitPrice = catalog ? Number(catalog.price || 0) : 0;
+                                            return (
+                                              <div
+                                                key={`${pkg.id}-d-${idx}`}
+                                                className="flex items-center justify-between gap-3 p-2 rounded-lg bg-muted/30"
+                                              >
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                  <div className="w-12 h-12 rounded-lg border border-border bg-muted/40 overflow-hidden flex items-center justify-center shrink-0">
+                                                    {image ? (
+                                                      <img src={image} alt={item.name} className="w-full h-full object-cover" loading="lazy" />
+                                                    ) : (
+                                                      <Package className="w-4 h-4 text-muted-foreground" />
+                                                    )}
+                                                  </div>
+                                                  <p className="font-medium text-foreground text-sm truncate">
+                                                    {item.quantity}x {item.name}
+                                                  </p>
+                                                </div>
+                                                {unitPrice > 0 ? (
+                                                  <p className="font-semibold text-foreground ml-3 shrink-0">
+                                                    {formatCurrency(unitPrice * item.quantity)}
+                                                  </p>
+                                                ) : null}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : order.products && order.products.length > 0 ? (
                                 <div>
                                   <p className="text-sm font-semibold text-foreground mb-3">Produtos do Pedido</p>
                                   <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -1225,7 +1049,7 @@ export default function CustomerOrders() {
                                     ))}
                                   </div>
                                 </div>
-                              )}
+                              ) : null}
 
                               {String(order.observation || "").trim() ? (
                                 <div className={`rounded-lg px-3 py-2.5 ${hasUnreadStoreObs ? "border-2 border-sky-400 bg-sky-50" : "border border-sky-100 bg-sky-50/70"}`}>
@@ -1254,7 +1078,11 @@ export default function CustomerOrders() {
                                   {order.shippingCost && (
                                     <div className="flex justify-between text-sm">
                                       <span className="text-muted-foreground">
-                                        Frete ({order.shippingType === "express" ? "Expresso" : "Normal"}):
+                                        Frete ({String(order.shippingType || "").toLowerCase() === "reenvio"
+                                          ? "Reenvio"
+                                          : order.shippingType === "express"
+                                            ? "Expresso"
+                                            : "Normal"}):
                                       </span>
                                       <span className="font-medium">{formatCurrency(order.shippingCost)}</span>
                                     </div>
