@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-08-30
+> **Última atualização:** 2026-09-11
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-11 | Admin: busca de pedidos/clientes fora do estado do pai; poll visitantes 5 s em `AdminLiveVisitorStats`; `startTransition` no refresh silencioso (~20 s) | Digitação tem prioridade sobre re-render pesado | Filtro local igual; SSE e GET de período iguais |
 | 2026-08-30 | `POST /api/admin/products/export-backup` exporta só `ids` (admin primário, máx. 500) | Backup parcial sem baixar o catálogo todo | GET sem ids = catálogo inteiro; restore igual |
 | 2026-08-30 | Restore de produtos ignora `deleteMissing`; API não apaga linhas de `products` nesse POST | Backup curto não apaga o catálogo | CRUD/DELETE individual iguais |
 | 2026-08-27 | Chat `/api/chat/ask` sempre ligado (ficha local); OpenAI só se houver chave | Bolha no login sem env OpenAI | Writes de pedido/PIX/KYC iguais |
@@ -51,6 +52,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 - Pool MySQL `connectionLimit: 10` — `lib/db/src/index.ts`.
 - FE: React Query stale/gc, lazy routes, manual chunks Vite.
+- Admin pedidos: texto da busca **não** fica no `Admin.tsx` pai (`AdminOrdersChargesSearchShell` + debounce 300 ms). Poll de visitantes ao vivo (5 s) em `AdminLiveVisitorStats`. Refresh silencioso de pedidos/cobranças usa `startTransition`.
 - SSE com heartbeat; geo IP assíncrono.
 - Docs de análise de performance na raiz são **históricos** — validar no código antes de seguir recomendações antigas.
 

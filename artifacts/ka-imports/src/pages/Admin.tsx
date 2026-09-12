@@ -567,10 +567,10 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 }
 
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Unlink, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Unlink, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2 } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -595,12 +595,14 @@ import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
-  filterAdminOrdersByKind,
   isAdminOrdersReshipmentRow,
   isReshipmentChildOrder,
   type AdminOrdersKind,
 } from "@/lib/admin-orders-kind";
 import { checkOrderItemsHaveStock } from "@/lib/order-stock-check";
+import { AdminDebouncedSearchInput } from "@/components/AdminDebouncedSearchInput";
+import { AdminLiveVisitorStats } from "@/components/AdminLiveVisitorStats";
+import { AdminOrdersChargesSearchShell } from "@/components/AdminOrdersChargesSearchShell";
 
 
 
@@ -1286,6 +1288,8 @@ interface InventoryMovementRecord {
   quantity: number;
   reason: string | null;
   createdAt: string;
+  canUndo?: boolean;
+  isUndo?: boolean;
 }
 
 interface SocialProofSettings {
@@ -1453,8 +1457,6 @@ export default function Admin() {
   const [recurringCustomersLoading, setRecurringCustomersLoading] = useState(false);
   const [customerImpersonatingId, setCustomerImpersonatingId] = useState<string | null>(null);
   const [customerPasswordResettingId, setCustomerPasswordResettingId] = useState<string | null>(null);
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [recurringCustomerSearch, setRecurringCustomerSearch] = useState("");
   const [exportingCustomersCSV, setExportingCustomersCSV] = useState(false);
   const [syncingCustomersBrevo, setSyncingCustomersBrevo] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -1476,7 +1478,7 @@ export default function Admin() {
   const [authChecked, setAuthChecked] = useState(false);
   const [isPrimary, setIsPrimary] = useState(getIsPrimary);
   const [currentUsername, setCurrentUsername] = useState(getAdminUsername);
-  const [search, setSearch] = useState("");
+  const [seedSearch, setSeedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [methodFilter, setMethodFilter] = useState("all");
   const [sellerFilter, setSellerFilter] = useState("all");
@@ -1687,8 +1689,6 @@ export default function Admin() {
   const sseUnauthorizedRef = useRef(false);
   const sseCookieMismatchNotifiedRef = useRef(false);
   const swRef  = useRef<ServiceWorkerRegistration | null>(null);
-  // Live Visitors Tracking
-  const [liveStats, setLiveStats] = useState({ catalog: 0, checkout: 0 });
 
   // -------------------- FIM DOS useState --------------------
 
@@ -1711,7 +1711,7 @@ export default function Admin() {
   const goToOrder = useCallback((orderId: string, orderCreatedAt?: string | null) => {
     const id = String(orderId || "").trim();
     if (!id) return;
-    setSearch(id);
+    setSeedSearch(id);
     setStatusFilter("all");
     setMethodFilter("all");
     const today = todayStr();
@@ -1920,23 +1920,6 @@ export default function Admin() {
     }
   }, [fetchExpenses, fetchFinancialSummary, handleUnauthorized]);
 
-  useEffect(() => {
-    if (!authChecked || !getToken()) return;
-    const fetchLive = () => {
-      fetch(`${BASE}/api/admin/tracking/live`, { headers: authHeaders() })
-        .then((r) => r.json())
-        .then((data) => {
-          if (typeof data.catalog === "number" && typeof data.checkout === "number") {
-            setLiveStats(data);
-          }
-        })
-        .catch(() => {});
-    };
-    fetchLive();
-    const intv = setInterval(fetchLive, 5000);
-    return () => clearInterval(intv);
-  }, [authChecked]);
-
   const unreadCount = notifications.filter((n) => !n.read).length;
   const webhookUrl  = `${window.location.origin}${BASE}/api/webhook/pix`;
 
@@ -1990,8 +1973,13 @@ export default function Admin() {
       });
       if (res.status === 401) { handleUnauthorized(); return; }
       const data = await res.json() as { orders: AdminOrder[] };
-      setOrders(data.orders || []);
-      setOrdersReady(true);
+      const nextOrders = data.orders || [];
+      const applyOrders = () => {
+        setOrders(nextOrders);
+        setOrdersReady(true);
+      };
+      if (_silent) startTransition(applyOrders);
+      else applyOrders();
       // Load shipping queue allocations for paid orders
       const paidIds = (data.orders || []).filter((o) => o.status === "paid" || o.status === "completed").map((o) => o.id);
       if (paidIds.length > 0) {
@@ -2005,7 +1993,8 @@ export default function Admin() {
             }
           } catch { /* ignore */ }
         }));
-        setShippingQueueMap(queueMap);
+        if (_silent) startTransition(() => setShippingQueueMap(queueMap));
+        else setShippingQueueMap(queueMap);
       }
     } catch { /* silent — don't show toast for background refreshes */ }
   }, [dateFrom, dateTo, statusFilter, methodFilter, sellerFilter, groupFilter, handleUnauthorized]);
@@ -2018,8 +2007,12 @@ export default function Admin() {
       const res = await fetch(`${BASE}/api/admin/custom-charges?${params}`, { headers: authHeaders() });
       if (res.status === 401) { handleUnauthorized(); return; }
       const data = await res.json() as { charges: CustomCharge[] };
-      setCharges(data.charges || []);
-      setChargesReady(true);
+      const applyCharges = () => {
+        setCharges(data.charges || []);
+        setChargesReady(true);
+      };
+      if (_silent) startTransition(applyCharges);
+      else applyCharges();
     } catch { /* silent */ }
   }, [dateFrom, dateTo, statusFilter, sellerFilter, handleUnauthorized]);
 
@@ -4048,43 +4041,6 @@ export default function Admin() {
     );
   }
 
-  const searchedOrders = (() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return orders;
-
-    // Digits-only query: exact orderNumber first. If found, return only that/those.
-    // Avoids "255" matching phones like 99255-xxxx or partial order numbers.
-    const digitsOnly = /^\d+$/.test(q);
-    if (digitsOnly) {
-      const asNumber = Number(q);
-      const exactOrderMatches = orders.filter(
-        (o) => o.orderNumber != null && Number(o.orderNumber) === asNumber,
-      );
-      if (exactOrderMatches.length > 0) return exactOrderMatches;
-    }
-
-    return orders.filter((o) => {
-      if (o.id.toLowerCase().includes(q)) return true;
-      if (String(o.orderNumber ?? "").toLowerCase().includes(q)) return true;
-      if (o.clientName.toLowerCase().includes(q)) return true;
-      if (o.clientPhone.includes(q)) return true;
-      if (o.clientEmail.toLowerCase().includes(q)) return true;
-      const qDigits = q.replace(/\D/g, "");
-      if (qDigits && String(o.addressCep ?? "").replace(/\D/g, "").includes(qDigits)) return true;
-      const products = getOrderProducts(o.products);
-      if (products.some((p) => String(p?.name ?? "").toLowerCase().includes(q))) return true;
-      return false;
-    });
-  })();
-  const normalOrders = filterAdminOrdersByKind(searchedOrders, "normal");
-  const reshipmentOrders = filterAdminOrdersByKind(searchedOrders, "reenvio");
-  const filteredOrders = ordersKind === "reenvio" ? reshipmentOrders : normalOrders;
-  const filteredCharges = charges.filter((c) => {
-    const q = search.toLowerCase();
-    return !q || c.id.toLowerCase().includes(q) || c.clientName.toLowerCase().includes(q) ||
-      c.clientPhone.includes(q) || c.clientEmail.toLowerCase().includes(q);
-  });
-
   const paidOrders      = orders.filter((o) => o.status === "paid" || o.status === "completed");
   const revenue         = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const chargeRevenue   = charges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount), 0);
@@ -4388,29 +4344,7 @@ export default function Admin() {
             <p className="text-muted-foreground text-sm mt-0.5">Gerencie pedidos, vendas e configurações</p>
           </div>
           <div className="flex gap-2 flex-wrap self-start sm:self-auto items-center">
-            {/* Live Stats */}
-            <div className="hidden sm:flex gap-3 mr-2 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg text-sm font-semibold text-orange-800">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                👁️ {liveStats.catalog} visitantes ao vivo catálogo
-              </span>
-              <span className="w-px h-5 bg-orange-200 mx-1"></span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                🛒 {liveStats.checkout} visitantes ao vivo checkout
-              </span>
-            </div>
-            
-            <div className="flex sm:hidden w-full gap-2 mb-2 bg-orange-50 border border-orange-200 p-2 rounded-lg text-xs font-semibold text-orange-800 justify-between items-center">
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                👁️ {liveStats.catalog} no catálogo
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                🛒 {liveStats.checkout} no checkout
-              </span>
-            </div>
+            <AdminLiveVisitorStats enabled={authChecked} baseUrl={BASE} authHeaders={authHeaders} />
             {/* Notification bell */}
             <div className="relative">
               <Button variant="outline" size="sm" onClick={() => { setShowNotif((v) => !v); setNotifications((n) => n.map((x) => ({ ...x, read: true }))); }} className="gap-2 relative h-9">
@@ -4940,88 +4874,53 @@ export default function Admin() {
           ))}
         </div>
 
-        {tab === "orders" && (
-          <div className="flex items-center gap-2 mb-4">
-            {([
-              { key: "normal" as const, label: "Pedido normal", count: normalOrders.length },
-              { key: "reenvio" as const, label: "Pedido reenvio", count: reshipmentOrders.length },
-            ]).map(({ key, label, count }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setOrdersKind(key)}
-                className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold border-2 transition-colors ${
-                  ordersKind === key
-                    ? key === "reenvio"
-                      ? "border-red-300 bg-red-50 text-red-800"
-                      : "border-primary bg-primary/5 text-primary"
-                    : "border-border bg-white text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {label}
-                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                  ordersKind === key
-                    ? key === "reenvio"
-                      ? "bg-red-100 text-red-800"
-                      : "bg-primary/10 text-primary"
-                    : "bg-muted text-muted-foreground"
-                }`}>
-                  {count}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Filters (only for orders/charges) */}
-        {(tab === "orders" || tab === "charges") && (
-          <div className="flex flex-col lg:flex-row gap-3 mb-6">
-            <div className="relative flex-1 min-w-0 overflow-hidden">
-              <span className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-10 items-center justify-center text-muted-foreground">
-                <Search className="h-4 w-4" aria-hidden />
-              </span>
-              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nome, e-mail, celular, CEP, nº pedido ou produto..."
-                className="w-full min-w-0 h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm" />
-            </div>
-            <div className="flex gap-2 flex-wrap shrink-0">
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
-              <input type="date" value={dateTo}   onChange={(e) => setDateTo(e.target.value)}   className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
-                <option value="all">Todos os status</option>
-                <option value="paid">Pago</option>
-                <option value="completed">Concluído</option>
-                <option value="awaiting_payment">Aguardando</option>
-                <option value="pending">Pendente</option>
-                <option value="cancelled">Cancelado</option>
-              </select>
-              {tab === "orders" && (
-                <>
-                  <select value={methodFilter} onChange={(e) => setMethodFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
-                    <option value="all">Todos os métodos</option>
-                    <option value="pix">PIX</option>
-                    <option value="card_simulation">Cartão</option>
-                  </select>
-                  <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
-                    <option value="all">Todos os vendedores</option>
-                    {allSellers.map((s) => (
-                      <option key={s!} value={s!}>{s}</option>
-                    ))}
-                  </select>
-                  <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
-                    <option value="all">Todos os grupos</option>
-                    {availableWhatsappGroups.map((group) => (
-                      <option key={group} value={group}>{whatsappGroupLabel(group)}</option>
-                    ))}
-                  </select>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Content */}
-        {(tab === "orders" && !ordersReady) || (tab === "charges" && !chargesReady) ? (
+        {(tab === "orders" || tab === "charges") ? (
+          <AdminOrdersChargesSearchShell
+            seedSearch={seedSearch}
+            onSeedConsumed={() => setSeedSearch("")}
+            orders={orders}
+            charges={charges}
+            tab={tab === "charges" ? "charges" : "orders"}
+            ordersKind={ordersKind}
+            setOrdersKind={setOrdersKind}
+            filterControls={(
+              <div className="flex gap-2 flex-wrap shrink-0">
+                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
+                <input type="date" value={dateTo}   onChange={(e) => setDateTo(e.target.value)}   className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
+                  <option value="all">Todos os status</option>
+                  <option value="paid">Pago</option>
+                  <option value="completed">Concluído</option>
+                  <option value="awaiting_payment">Aguardando</option>
+                  <option value="pending">Pendente</option>
+                  <option value="cancelled">Cancelado</option>
+                </select>
+                {tab === "orders" && (
+                  <>
+                    <select value={methodFilter} onChange={(e) => setMethodFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
+                      <option value="all">Todos os métodos</option>
+                      <option value="pix">PIX</option>
+                      <option value="card_simulation">Cartão</option>
+                    </select>
+                    <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
+                      <option value="all">Todos os vendedores</option>
+                      {allSellers.map((s) => (
+                        <option key={s!} value={s!}>{s}</option>
+                      ))}
+                    </select>
+                    <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer">
+                      <option value="all">Todos os grupos</option>
+                      {availableWhatsappGroups.map((group) => (
+                        <option key={group} value={group}>{whatsappGroupLabel(group)}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
+            )}
+          >
+            {({ filteredOrders, filteredCharges }) => (
+        (tab === "orders" && !ordersReady) || (tab === "charges" && !chargesReady) ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
             <p className="text-muted-foreground">Carregando...</p>
@@ -5142,25 +5041,7 @@ export default function Admin() {
             onRefreshInventory={fetchInventoryOverview}
             onRefreshOrders={fetchOrders}
           />
-        ) : tab === "rastreios" ? (
-          <AdminEnvioEcomTrackingPanel
-            authHeaders={authHeaders}
-            onUnauthorized={handleUnauthorized}
-            onGoToOrder={goToOrder}
-          />
-        ) : tab === "extrato" ? (
-          <AdminBankStatementPanel
-            authHeaders={authHeaders}
-            onUnauthorized={handleUnauthorized}
-            onGoToOrder={goToOrder}
-          />
-        ) : tab === "depositos" ? (
-          <AdminBankDepositsPanel
-            authHeaders={authHeaders}
-            onUnauthorized={handleUnauthorized}
-            onGoToOrder={goToOrder}
-          />
-        ) : tab === "charges" ? (
+        ) : (
           <ChargesPanel
             charges={filteredCharges}
             openWhatsApp={openChargeWhatsApp}
@@ -5203,6 +5084,27 @@ export default function Admin() {
               } catch { toast.error("Erro de conexão."); }
               finally { setCreateChargeSubmitting(false); }
             }}
+          />
+        )
+            )}
+          </AdminOrdersChargesSearchShell>
+        ) : tab === "rastreios" ? (
+          <AdminEnvioEcomTrackingPanel
+            authHeaders={authHeaders}
+            onUnauthorized={handleUnauthorized}
+            onGoToOrder={goToOrder}
+          />
+        ) : tab === "extrato" ? (
+          <AdminBankStatementPanel
+            authHeaders={authHeaders}
+            onUnauthorized={handleUnauthorized}
+            onGoToOrder={goToOrder}
+          />
+        ) : tab === "depositos" ? (
+          <AdminBankDepositsPanel
+            authHeaders={authHeaders}
+            onUnauthorized={handleUnauthorized}
+            onGoToOrder={goToOrder}
           />
         ) : tab === "commissions" ? (
           <div className="space-y-4">
@@ -5588,8 +5490,6 @@ export default function Admin() {
           <CustomersPanel
             customers={customerUsers}
             loading={customersLoading}
-            search={customerSearch}
-            setSearch={setCustomerSearch}
             onRefresh={fetchCustomers}
             onImpersonate={impersonateCustomerAccount}
             impersonatingId={customerImpersonatingId}
@@ -5610,8 +5510,6 @@ export default function Admin() {
           <RecurringCustomersPanel
             customers={recurringCustomers}
             loading={recurringCustomersLoading}
-            search={recurringCustomerSearch}
-            setSearch={setRecurringCustomerSearch}
             onRefresh={fetchRecurringCustomers}
           />
         ) : tab === "biblioteca" ? (
@@ -5896,6 +5794,23 @@ export default function Admin() {
               }
             }}
             onCreateManualReshipment={createManualReshipment}
+            onUndoMovement={async (pool, movementId) => {
+              const res = await fetch(`${BASE}/api/admin/inventory/${pool}/movements/${encodeURIComponent(movementId)}/undo`, {
+                method: "POST",
+                headers: authHeaders(),
+              });
+              const data = await res.json().catch(() => ({})) as {
+                message?: string;
+                releasedOrderReservation?: boolean;
+              };
+              if (!res.ok) {
+                toast.error(data?.message || "Erro ao desfazer movimentação.");
+                throw new Error(data?.message || "undo failed");
+              }
+              fetchInventoryOverview();
+              if (data.releasedOrderReservation) fetchOrders(true);
+              toast.success("Movimentação desfeita.");
+            }}
             onResolvePendingReshipment={async (item, registerStockEntry) => {
               const manualReturnId = String(item.id || "").trim();
               const firstProduct = item.products?.[0];
@@ -9192,6 +9107,7 @@ function InventoryPanel({
   onCreateMinasEntry,
   onZeroBalances,
   onCreateManualReshipment,
+  onUndoMovement,
   onResolvePendingReshipment,
 }: {
   loading: boolean;
@@ -9275,18 +9191,26 @@ function InventoryPanel({
   onCreateMinasEntry: () => void;
   onZeroBalances: (pool: InventoryPoolKind) => Promise<void>;
   onCreateManualReshipment: () => void;
+  onUndoMovement: (pool: InventoryPoolKind, movementId: string) => Promise<void>;
   onResolvePendingReshipment: (item: ReshipmentRecord, registerStockEntry: boolean) => Promise<void>;
 }) {
   const [stockTab, setStockTab] = useState<StockTabKind>("loja");
   const [manualProductQuery, setManualProductQuery] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
   const [reshipmentActionLoading, setReshipmentActionLoading] = useState<Record<string, boolean>>({});
+  const [undoTarget, setUndoTarget] = useState<InventoryMovementRecord | null>(null);
+  const [undoSubmitting, setUndoSubmitting] = useState(false);
   const [manualReturnDraft, setManualReturnDraft] = useState({
     clientName: "",
     returningOrder: "",
     productName: "",
     quantity: "1",
   });
+
+  useEffect(() => {
+    setUndoTarget(null);
+    setUndoSubmitting(false);
+  }, [stockTab]);
 
   useEffect(() => {
     if (!manualForm.productId) {
@@ -10079,15 +10003,91 @@ function InventoryPanel({
                   )}
                   </div>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${mv.quantity >= 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"}`}>
-                  {mv.quantity >= 0 ? "+" : ""}{mv.quantity}
-                </span>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${mv.quantity >= 0 ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"}`}>
+                    {mv.quantity >= 0 ? "+" : ""}{mv.quantity}
+                  </span>
+                  {mv.isUndo ? null : mv.canUndo === false ? (
+                    <span className="text-[10px] text-muted-foreground">Desfeita</span>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px] gap-1"
+                      onClick={() => setUndoTarget(mv)}
+                    >
+                      <Undo2 className="w-3 h-3" />
+                      Desfazer
+                    </Button>
+                  )}
+                </div>
               </div>
               );
             })}
           </div>
         )}
       </div>
+      {undoTarget && (
+        <div className="fixed inset-0 z-[120] bg-black/45 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-foreground">Desfazer movimentação</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Confirme para estornar esta linha do estoque {stockTabLabel}.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="p-1.5 rounded-lg hover:bg-muted"
+                disabled={undoSubmitting}
+                onClick={() => setUndoTarget(null)}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              <p className="text-sm font-semibold">{resolveInventoryDisplay(products, undoTarget.productId, undoTarget.productName).name}</p>
+              <p className="text-xs text-muted-foreground">
+                Motivo: {undoTarget.reason || "Movimentação"} · {formatDateBR(undoTarget.createdAt)}
+              </p>
+              <p className={`text-sm font-semibold ${undoTarget.quantity >= 0 ? "text-green-700" : "text-red-700"}`}>
+                Quantidade: {undoTarget.quantity >= 0 ? "+" : ""}{undoTarget.quantity}
+              </p>
+              {undoTarget.quantity < 0 && /reserva|saída|saida/i.test(String(undoTarget.reason || "")) ? (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Isso devolve o saldo. Se for a última baixa deste pedido, o card volta a mostrar Dar baixa agora.
+                </p>
+              ) : null}
+            </div>
+            <div className="px-5 py-4 border-t border-border bg-slate-50/60 flex items-center justify-end gap-2">
+              <Button type="button" variant="outline" disabled={undoSubmitting} onClick={() => setUndoTarget(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="gap-1.5"
+                disabled={undoSubmitting}
+                onClick={async () => {
+                  setUndoSubmitting(true);
+                  try {
+                    await onUndoMovement(poolTab, undoTarget.id);
+                    setUndoTarget(null);
+                  } catch {
+                    // toast já foi no pai
+                  } finally {
+                    setUndoSubmitting(false);
+                  }
+                }}
+              >
+                {undoSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                Confirmar desfazer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       </>
       )}
     </div>
@@ -14675,14 +14675,12 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 // CustomersPanel
 // ---------------------------------------------------------------------------
 function CustomersPanel({
-  customers, loading, search, setSearch, onRefresh, onImpersonate, impersonatingId, canImpersonate,
+  customers, loading, onRefresh, onImpersonate, impersonatingId, canImpersonate,
   onResetPassword, passwordResettingId, canResetPassword,
   onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo, exportModalOpen, setExportModalOpen, exportColumns, setExportColumns,
 }: {
   customers: CustomerUserRecord[];
   loading: boolean;
-  search: string;
-  setSearch: (v: string) => void;
   onRefresh: () => void;
   onImpersonate: (customer: CustomerUserRecord) => void;
   impersonatingId: string | null;
@@ -14704,16 +14702,23 @@ function CustomersPanel({
   const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
   const [passwordVisible, setPasswordVisible] = useState(true);
   const [passwordCopied, setPasswordCopied] = useState(false);
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [searchEpoch, setSearchEpoch] = useState(0);
 
-  const filtered = customers.filter((c) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
+  const clearSearch = () => {
+    setAppliedSearch("");
+    setSearchEpoch((n) => n + 1);
+  };
+
+  const filtered = useMemo(() => {
+    if (!appliedSearch.trim()) return customers;
+    const q = appliedSearch.toLowerCase();
+    return customers.filter((c) => (
       c.name.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q) ||
       (c.affiliateCode || "").toLowerCase().includes(q)
-    );
-  });
+    ));
+  }, [customers, appliedSearch]);
 
   const openPasswordModal = (customer: CustomerUserRecord) => {
     setPasswordModalCustomer(customer);
@@ -14763,16 +14768,13 @@ function CustomersPanel({
           <p className="text-sm text-muted-foreground">{customers.length} cliente{customers.length !== 1 ? "s" : ""} no total</p>
         </div>
         <div className="flex gap-2">
-          <div className="relative">
-            <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome, e-mail ou cód. afiliado..."
-              className="h-10 pl-9 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm w-72"
-            />
-          </div>
+          <AdminDebouncedSearchInput
+            key={searchEpoch}
+            onAppliedChange={setAppliedSearch}
+            placeholder="Buscar por nome, e-mail ou cód. afiliado..."
+            wrapperClassName="relative w-72 shrink-0"
+            inputClassName="h-10 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm w-full"
+          />
           <button
             onClick={onRefresh}
             className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5"
@@ -14805,9 +14807,9 @@ function CustomersPanel({
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center border border-dashed border-border rounded-2xl">
           <UserPlus className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-          <p className="font-semibold text-foreground">{search ? "Nenhum cliente encontrado." : "Nenhum cliente cadastrado ainda."}</p>
-          {search && (
-            <button onClick={() => setSearch("")} className="mt-2 text-sm text-primary hover:underline">Limpar busca</button>
+          <p className="font-semibold text-foreground">{appliedSearch ? "Nenhum cliente encontrado." : "Nenhum cliente cadastrado ainda."}</p>
+          {appliedSearch && (
+            <button onClick={clearSearch} className="mt-2 text-sm text-primary hover:underline">Limpar busca</button>
           )}
         </div>
       ) : (
@@ -15166,30 +15168,33 @@ function CustomersPanel({
 function RecurringCustomersPanel({
   customers,
   loading,
-  search,
-  setSearch,
   onRefresh,
 }: {
   customers: RecurringCustomerRecord[];
   loading: boolean;
-  search: string;
-  setSearch: (v: string) => void;
   onRefresh: () => void;
 }) {
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [messageTemplate, setMessageTemplate] = useState(
     "Olá, {{nome}}! Tudo bem? Vi aqui que você já comprou conosco antes e queria falar com você.",
   );
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [searchEpoch, setSearchEpoch] = useState(0);
 
-  const filtered = customers.filter((customer) => {
-    if (!search.trim()) return true;
-    const query = search.toLowerCase();
-    return (
+  const clearSearch = () => {
+    setAppliedSearch("");
+    setSearchEpoch((n) => n + 1);
+  };
+
+  const filtered = useMemo(() => {
+    if (!appliedSearch.trim()) return customers;
+    const query = appliedSearch.toLowerCase();
+    return customers.filter((customer) => (
       customer.name.toLowerCase().includes(query) ||
       customer.email.toLowerCase().includes(query) ||
       String(customer.phone || "").toLowerCase().includes(query)
-    );
-  });
+    ));
+  }, [customers, appliedSearch]);
 
   const totalSpent = filtered.reduce((sum, customer) => sum + Number(customer.totalSpent || 0), 0);
   const totalOrders = filtered.reduce((sum, customer) => sum + Number(customer.orderCount || 0), 0);
@@ -15223,16 +15228,13 @@ function RecurringCustomersPanel({
           <p className="text-sm text-muted-foreground">Clientes com mais de um pedido, ordenados do que está há mais tempo sem comprar para o mais recente.</p>
         </div>
         <div className="flex gap-2">
-          <div className="relative">
-            <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome, e-mail ou telefone..."
-              className="h-10 pl-9 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm w-72"
-            />
-          </div>
+          <AdminDebouncedSearchInput
+            key={searchEpoch}
+            onAppliedChange={setAppliedSearch}
+            placeholder="Buscar por nome, e-mail ou telefone..."
+            wrapperClassName="relative w-72 shrink-0"
+            inputClassName="h-10 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm w-full"
+          />
           <button
             onClick={onRefresh}
             className="h-10 px-3 rounded-xl border-2 border-border bg-white hover:bg-muted text-sm flex items-center gap-1.5"
@@ -15279,9 +15281,9 @@ function RecurringCustomersPanel({
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center border border-dashed border-border rounded-2xl bg-white">
           <Users className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-          <p className="font-semibold text-foreground">{search ? "Nenhum cliente encontrado." : "Nenhum cliente recorrente encontrado."}</p>
-          {search && (
-            <button onClick={() => setSearch("")} className="mt-2 text-sm text-primary hover:underline">Limpar busca</button>
+          <p className="font-semibold text-foreground">{appliedSearch ? "Nenhum cliente encontrado." : "Nenhum cliente recorrente encontrado."}</p>
+          {appliedSearch && (
+            <button onClick={clearSearch} className="mt-2 text-sm text-primary hover:underline">Limpar busca</button>
           )}
         </div>
       ) : (

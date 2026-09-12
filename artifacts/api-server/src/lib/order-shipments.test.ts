@@ -9,6 +9,8 @@ import {
   parseShipmentItems,
   pendingCopyItemsFromSplitPackages,
   validateShipmentAllocation,
+  packageInventoryReferenceId,
+  parsePackageInventoryReferenceId,
 } from "./order-shipments-logic";
 
 const products = [
@@ -172,4 +174,10 @@ test("parseShipmentItems agrupa o mesmo produto", () => {
   ]);
   assert.equal(items.length, 1);
   assert.equal(items[0]?.quantity, 2);
+});
+
+test("reference de pacote na baixa de estoque", () => {
+  assert.equal(packageInventoryReferenceId("abc123"), "pkg:abc123");
+  assert.equal(parsePackageInventoryReferenceId("pkg:abc123"), "abc123");
+  assert.equal(parsePackageInventoryReferenceId("undo:abc123"), null);
 });

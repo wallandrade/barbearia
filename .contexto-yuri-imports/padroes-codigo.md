@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-09-10
+> **Última atualização:** 2026-09-11
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-11 | Anti-padrão: texto da busca de pedidos/clientes **não** vive no `Admin` pai | Digitar não redesenha o admin inteiro (cards, estoque, poll 5 s) | Filtro local igual; sem GET a cada tecla |
 | 2026-09-10 | Anti-padrão: selo Estoque OK do card Admin não pode casar por nome “parecido” | Evita verde com SKU 0 e primo com saldo | Lista de compra / previsão de toast iguais |
 | 2026-08-31 | Anti-padrão: changelog “Aguardando coleta não conta” **não** vale para a cópia 48h | Trava regressão da lista de envio | Testes/status EE iguais |
 | 2026-08-13 | Anti-padrão: busca só dígitos no admin não deve misturar nº pedido com telefone via `includes` | Documenta prioridade de `orderNumber` exato | Restante dos padrões iguais |
@@ -27,6 +28,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - Dados remotos: **TanStack Query** (client gerado em `lib/api-client-react` quando aplicável).
 - UI: Tailwind 4 + componentes estilo Radix/shadcn em `src/components`.
 - Páginas em `src/pages`; store em `src/store`; hooks/lib em `src/hooks`, `src/lib`.
+- Busca Admin pedidos/cobranças: estado no filho (`AdminOrdersChargesSearchShell` + `AdminDebouncedSearchInput`); pai só manda `seedSearch` (`goToOrder`). Visitantes ao vivo: `AdminLiveVisitorStats` (poll 5 s fora do pai). Clientes/recorrentes: busca interna do painel.
 - Lazy routes / chunks manuais no Vite quando já existirem — preservar o padrão local.
 - Nome do package e tags SW (`ka-imports-admin`) são legado; UI fala **Yury**.
 
@@ -60,6 +62,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - Commit automático sem pedido explícito do humano.
 - Inventar stack (Next/Nest/Prisma) sem evidência neste repo.
 - Na busca de pedidos do admin, tratar query só-dígitos com `includes` em telefone/nº parcial **antes** de igualdade em `orderNumber` — priorizar número exato do pedido.
+- Texto da busca de pedidos/cobranças/clientes **no estado do `Admin` pai** — cada tecla redesenha cards, estoque e o poll de visitantes. Usar shell + debounce 300 ms + `startTransition`; pai só `seedSearch`.
 - Cópia 48h: **não** escrever que “Aguardando coleta não conta” — conta como etiqueta pronta (`isLabelReadyStatus`). Não meter aguardando coleta em `isInTransitStatus`. Ver invariante em `regras-negocio.md`.
 - Selo **Estoque OK** no card Admin: **não** casar saldo por overlap de tokens / “nome inclui”. Usar `checkOrderItemsHaveStock` (ID + recadastro nome único), igual à baixa.
 

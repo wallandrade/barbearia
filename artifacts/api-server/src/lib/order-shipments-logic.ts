@@ -34,6 +34,13 @@ export function packageInventoryReferenceId(packageId: string): string {
   return `pkg:${packageId}`;
 }
 
+export function parsePackageInventoryReferenceId(ref: string | null | undefined): string | null {
+  const value = String(ref || "").trim();
+  if (!/^pkg:/i.test(value)) return null;
+  const id = value.replace(/^pkg:/i, "").trim();
+  return id || null;
+}
+
 export function isSplitShipmentList(packages: unknown): boolean {
   return Array.isArray(packages) && packages.length >= 2;
 }

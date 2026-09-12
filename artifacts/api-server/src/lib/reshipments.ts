@@ -1039,6 +1039,7 @@ type InventoryMovementOverview = {
   trackingCode: string | null;
   quantity: number;
   reason: string | null;
+  referenceId: string | null;
   createdAt: string;
 };
 
@@ -1072,6 +1073,7 @@ function mapInventoryMovementOverview(
     trackingCode?: string | null;
     quantity: number;
     reason?: string | null;
+    referenceId?: string | null;
     createdAt?: Date | null;
   }>,
   nameMap: Map<string, string>,
@@ -1093,6 +1095,7 @@ function mapInventoryMovementOverview(
         trackingCode: row.trackingCode || null,
         quantity: Number(row.quantity) || 0,
         reason: row.reason || null,
+        referenceId: row.referenceId || null,
         createdAt: row.createdAt?.toISOString() || new Date().toISOString(),
       };
     });

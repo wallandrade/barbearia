@@ -33,6 +33,12 @@ import {
 import { broadcastNotification } from "./notifications";
 import { repairCompletedPurchaseExpenses } from "../lib/supplier-purchases";
 import { readInventoryOverviewDates } from "../lib/inventory-date-range";
+import {
+  attachInventoryUndoFlags,
+  InventoryUndoError,
+  undoInventoryMovement,
+} from "../lib/inventory-movement-undo";
+import { parseInventoryPool } from "../lib/order-inventory-debit";
 
 const router: IRouter = Router();
 
@@ -119,7 +125,7 @@ router.get("/admin/inventory/overview", requirePrimaryAdmin, async (req, res) =>
 
     res.json({
       balances: inventory.balances,
-      movements: inventory.movements,
+      movements: await attachInventoryUndoFlags("loja", inventory.movements),
       pendingReshipments,
     });
   } catch (err) {
@@ -316,7 +322,7 @@ router.get("/admin/inventory/motoboy/overview", requirePrimaryAdmin, async (req,
     );
     res.json({
       balances: inventory.balances,
-      movements: inventory.movements,
+      movements: await attachInventoryUndoFlags("motoboy", inventory.movements),
     });
   } catch (err) {
     console.error("Motoboy inventory overview error:", err);
@@ -383,7 +389,7 @@ router.get("/admin/inventory/minas/overview", requirePrimaryAdmin, async (req, r
     );
     res.json({
       balances: inventory.balances,
-      movements: inventory.movements,
+      movements: await attachInventoryUndoFlags("minas", inventory.movements),
     });
   } catch (err) {
     console.error("Minas inventory overview error:", err);
@@ -439,6 +445,28 @@ router.post("/admin/inventory/minas/entries", requirePrimaryAdmin, async (req, r
   } catch (err) {
     console.error("Minas inventory entry error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao registrar movimento estoque Minas." });
+  }
+});
+
+router.post("/admin/inventory/:pool/movements/:id/undo", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const pool = parseInventoryPool(req.params.pool);
+    if (!pool) {
+      res.status(400).json({ error: "INVALID_POOL", message: "Pool de estoque inválido." });
+      return;
+    }
+    const result = await undoInventoryMovement({
+      pool,
+      movementId: String(req.params.id || ""),
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof InventoryUndoError) {
+      res.status(err.status).json({ error: err.code, message: err.message });
+      return;
+    }
+    console.error("Inventory movement undo error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao desfazer movimentação de estoque." });
   }
 });
 
