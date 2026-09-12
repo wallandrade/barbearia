@@ -11,6 +11,9 @@ import {
   validateShipmentAllocation,
   packageInventoryReferenceId,
   parsePackageInventoryReferenceId,
+  pickPreferredEnvioEcomOrderRow,
+  pickPreferredEnvioEcomShipmentRow,
+  orderAlreadyBoundToEnvioEcomRef,
 } from "./order-shipments-logic";
 
 const products = [
@@ -180,4 +183,44 @@ test("reference de pacote na baixa de estoque", () => {
   assert.equal(packageInventoryReferenceId("abc123"), "pkg:abc123");
   assert.equal(parsePackageInventoryReferenceId("pkg:abc123"), "abc123");
   assert.equal(parsePackageInventoryReferenceId("undo:abc123"), null);
+});
+
+test("mesmo barcode em pai e filho: lookup prefere o pedido de reenvio", () => {
+  const parent = { id: "pkg-pai", orderId: "order-853" };
+  const child = { id: "pkg-filho", orderId: "order-1091" };
+  const childIds = new Set(["order-1091"]);
+  const picked = pickPreferredEnvioEcomShipmentRow([parent, child], (orderId) => childIds.has(orderId));
+  assert.equal(picked?.id, "pkg-filho");
+  assert.equal(pickPreferredEnvioEcomShipmentRow([parent], (orderId) => childIds.has(orderId))?.id, "pkg-pai");
+  assert.equal(pickPreferredEnvioEcomOrderRow([]), null);
+  assert.equal(
+    pickPreferredEnvioEcomOrderRow([
+      { id: "853", parentOrderId: null },
+      { id: "1091", parentOrderId: "853" },
+    ])?.id,
+    "1091",
+  );
+});
+
+test("webhook não cola no pai só pelo número do pedido sem vínculo EE", () => {
+  const parent = {
+    envioecomBarcode: null,
+    envioecomShipmentId: null,
+    trackingCode: null,
+    envioecomExternalOrderNumber: null,
+  };
+  assert.equal(
+    orderAlreadyBoundToEnvioEcomRef(parent, {
+      barcode: "888030925010467",
+      externalOrderNumber: "853",
+    }),
+    false,
+  );
+  assert.equal(
+    orderAlreadyBoundToEnvioEcomRef(
+      { ...parent, envioecomBarcode: "888030925010467" },
+      { barcode: "888030925010467", externalOrderNumber: "853" },
+    ),
+    true,
+  );
 });

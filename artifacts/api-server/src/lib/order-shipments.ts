@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, or } from "drizzle-orm";
 import { db, ordersTable, orderShipmentsTable, type Order, type OrderShipment } from "@workspace/db";
 import {
   isDeliveredStatus,
@@ -20,6 +20,7 @@ import {
   packageHasEnvioEcomBinding,
   packageInventoryReferenceId,
   parseShipmentItems,
+  pickPreferredEnvioEcomShipmentRow,
   validateShipmentAllocation,
   type OrderShipmentAllocationInput,
   type OrderShipmentItem,
@@ -31,10 +32,13 @@ export {
   isSplitOrderPartiallyShipped,
   isSplitShipmentList,
   nextPackageEnvioEcomExternalOrderNumber,
+  orderAlreadyBoundToEnvioEcomRef,
   packageHasEnvioEcomBinding,
   packageInventoryReferenceId,
   parseShipmentItems,
   pendingCopyItemsFromSplitPackages,
+  pickPreferredEnvioEcomOrderRow,
+  pickPreferredEnvioEcomShipmentRow,
   readPackageId,
   validateShipmentAllocation,
 } from "./order-shipments-logic";
@@ -142,6 +146,32 @@ export async function getOrderShipment(orderId: string, packageId: string): Prom
   return row;
 }
 
+async function loadReshipmentChildOrderIds(orderIds: string[]): Promise<Set<string>> {
+  const ids = Array.from(new Set(orderIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (ids.length === 0) return new Set();
+  const rows = await db
+    .select({ id: ordersTable.id, parentOrderId: ordersTable.parentOrderId })
+    .from(ordersTable)
+    .where(inArray(ordersTable.id, ids));
+  return new Set(rows.filter((row) => String(row.parentOrderId || "").trim()).map((row) => row.id));
+}
+
+async function pickShipmentPreferringReshipmentChild(rows: OrderShipment[]): Promise<OrderShipment | null> {
+  const childIds = await loadReshipmentChildOrderIds(rows.map((row) => row.orderId));
+  return pickPreferredEnvioEcomShipmentRow(rows, (orderId) => childIds.has(orderId));
+}
+
+export async function orderHasReshipmentChild(orderId: string): Promise<boolean> {
+  const id = String(orderId || "").trim();
+  if (!id) return false;
+  const rows = await db
+    .select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(eq(ordersTable.parentOrderId, id))
+    .limit(1);
+  return Boolean(rows[0]);
+}
+
 export async function findOrderShipmentByEnvioEcomRef(params: {
   barcode?: string | null;
   shipmentId?: string | number | null;
@@ -155,28 +185,160 @@ export async function findOrderShipmentByEnvioEcomRef(params: {
     const byBarcode = await db
       .select()
       .from(orderShipmentsTable)
-      .where(eq(orderShipmentsTable.envioecomBarcode, barcode))
-      .limit(1);
-    if (byBarcode[0]) return byBarcode[0];
+      .where(eq(orderShipmentsTable.envioecomBarcode, barcode));
+    const picked = await pickShipmentPreferringReshipmentChild(byBarcode);
+    if (picked) return picked;
   }
   if (shipmentId) {
     const byId = await db
       .select()
       .from(orderShipmentsTable)
-      .where(eq(orderShipmentsTable.envioecomShipmentId, shipmentId))
-      .limit(1);
-    if (byId[0]) return byId[0];
+      .where(eq(orderShipmentsTable.envioecomShipmentId, shipmentId));
+    const picked = await pickShipmentPreferringReshipmentChild(byId);
+    if (picked) return picked;
   }
   if (externalOrderNumber) {
     const byExternal = await db
       .select()
       .from(orderShipmentsTable)
-      .where(eq(orderShipmentsTable.envioecomExternalOrderNumber, externalOrderNumber))
-      .limit(1);
-    // Pacote já desvinculado: não reatachar webhook pelo orderId antigo.
-    if (byExternal[0] && packageHasEnvioEcomBinding(byExternal[0])) return byExternal[0];
+      .where(eq(orderShipmentsTable.envioecomExternalOrderNumber, externalOrderNumber));
+    const bound = byExternal.filter((row) => packageHasEnvioEcomBinding(row));
+    const picked = await pickShipmentPreferringReshipmentChild(bound);
+    if (picked) return picked;
   }
   return null;
+}
+
+export async function findOrdersByEnvioEcomRef(params: {
+  barcode?: string | null;
+  shipmentId?: string | number | null;
+}): Promise<Array<typeof ordersTable.$inferSelect>> {
+  const barcode = String(params.barcode || "").trim();
+  const shipmentId = params.shipmentId != null ? String(params.shipmentId).trim() : "";
+  const conditions = [];
+  if (barcode) {
+    conditions.push(eq(ordersTable.envioecomBarcode, barcode), eq(ordersTable.trackingCode, barcode));
+  }
+  if (shipmentId) {
+    conditions.push(eq(ordersTable.envioecomShipmentId, shipmentId));
+  }
+  if (conditions.length === 0) return [];
+  return db.select().from(ordersTable).where(or(...conditions));
+}
+
+async function clearOrderLevelDuplicateEnvioEcomRef(
+  orderId: string,
+  refs: { barcode?: string; shipmentId?: string },
+): Promise<void> {
+  const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+  const order = rows[0];
+  if (!order) return;
+  const barcode = String(refs.barcode || "").trim();
+  const shipmentId = String(refs.shipmentId || "").trim();
+  const matchesBarcode =
+    Boolean(barcode) &&
+    (String(order.envioecomBarcode || "") === barcode || String(order.trackingCode || "") === barcode);
+  const matchesShipment = Boolean(shipmentId) && String(order.envioecomShipmentId || "") === shipmentId;
+  if (!matchesBarcode && !matchesShipment) return;
+  await db
+    .update(ordersTable)
+    .set({
+      envioecomShipmentId: null,
+      envioecomBarcode: null,
+      envioecomTrackingKey: null,
+      envioecomLabelUrl: null,
+      envioecomStatus: null,
+      envioecomStatusUpdatedAt: null,
+      envioecomStatusHistory: [],
+      trackingCode: null,
+      trackingLabelUrl: null,
+      updatedAt: new Date(),
+    } as Record<string, unknown>)
+    .where(eq(ordersTable.id, orderId));
+}
+
+/**
+ * Se o mesmo barcode/ID está no pai e no filho de reenvio, o vínculo fica no filho.
+ * Desvincula o pai (local, sem cancelar na EnvioEcom). Se o alvo for o pai, não aplica o status.
+ */
+export async function reclaimDuplicateEnvioEcomBinding(params: {
+  orderId: string;
+  barcode?: string | null;
+  shipmentId?: string | number | null;
+}): Promise<{ skipApply: boolean }> {
+  const orderId = String(params.orderId || "").trim();
+  const barcode = String(params.barcode || "").trim();
+  const shipmentId = params.shipmentId != null ? String(params.shipmentId).trim() : "";
+  if (!orderId || (!barcode && !shipmentId)) return { skipApply: false };
+
+  const currentRows = await db
+    .select({ id: ordersTable.id, parentOrderId: ordersTable.parentOrderId })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, orderId))
+    .limit(1);
+  const current = currentRows[0];
+  if (!current) return { skipApply: false };
+
+  const pkgConditions = [];
+  if (barcode) pkgConditions.push(eq(orderShipmentsTable.envioecomBarcode, barcode));
+  if (shipmentId) pkgConditions.push(eq(orderShipmentsTable.envioecomShipmentId, shipmentId));
+  const pkgMatches = pkgConditions.length
+    ? await db.select().from(orderShipmentsTable).where(or(...pkgConditions))
+    : [];
+  const orderMatches = await findOrdersByEnvioEcomRef({ barcode, shipmentId });
+
+  const relatedIds = Array.from(
+    new Set([orderId, ...pkgMatches.map((row) => row.orderId), ...orderMatches.map((row) => row.id)]),
+  );
+  const related = relatedIds.length
+    ? await db
+        .select({ id: ordersTable.id, parentOrderId: ordersTable.parentOrderId })
+        .from(ordersTable)
+        .where(inArray(ordersTable.id, relatedIds))
+    : [];
+
+  const unlinkOrderDuplicate = async (targetId: string) => {
+    const pkgs = pkgMatches.filter((pkg) => pkg.orderId === targetId);
+    for (const pkg of pkgs) {
+      await unlinkPackageEnvioEcomBinding(pkg, { clearStatus: true });
+    }
+    if (pkgs.length > 0) {
+      await rollupOrderFromPackages(targetId);
+    }
+    await clearOrderLevelDuplicateEnvioEcomRef(targetId, { barcode, shipmentId });
+  };
+
+  const currentParentId = String(current.parentOrderId || "").trim();
+  if (currentParentId) {
+    const parentHasRef =
+      pkgMatches.some((pkg) => pkg.orderId === currentParentId) ||
+      orderMatches.some((row) => row.id === currentParentId);
+    if (parentHasRef) {
+      await unlinkOrderDuplicate(currentParentId);
+    }
+    return { skipApply: false };
+  }
+
+  const childOwnsRef = related.some((row) => {
+    if (row.id === orderId) return false;
+    return String(row.parentOrderId || "").trim() === orderId;
+  });
+  let childHasRef = childOwnsRef;
+  if (!childHasRef) {
+    const children = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(eq(ordersTable.parentOrderId, orderId));
+    const childIds = new Set(children.map((row) => row.id));
+    childHasRef =
+      pkgMatches.some((pkg) => childIds.has(pkg.orderId)) || orderMatches.some((row) => childIds.has(row.id));
+  }
+  if (childHasRef) {
+    await unlinkOrderDuplicate(orderId);
+    return { skipApply: true };
+  }
+
+  return { skipApply: false };
 }
 
 function inheritOrderEnvioEcom(order: Order): Partial<OrderShipment> {

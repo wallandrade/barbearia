@@ -68,6 +68,8 @@ export type CustomerOrder = {
   envioecomShipmentId?: string | null;
   envioecomTrackingKey?: string | null;
   envioecomPackages?: CustomerOrderPackage[];
+  /** Pedido original com ao menos um filho de reenvio (`parent_order_id`). */
+  hasReshipmentChild?: boolean;
   observation?: string | null;
   distanceKmFromCustomerCity?: number | null;
   distancePackageCity?: string | null;
@@ -143,8 +145,10 @@ function mergeShipmentItems(packages: CustomerOrderPackage[]): CustomerShipmentI
  * Pacotes que o cliente deve ver. Split de estoque (Minas sem etiqueta) num pedido
  * já marcado Enviado some da conta: os itens entram no envio que tem rastreio.
  * Reenvio ainda aberto (sem `enviado` no pedido) continua mostrando o pacote parado.
+ * Original enviado com filho de reenvio: nenhum pacote EE (o rastreio fica no filho).
  */
 export function listCustomerFacingPackages(order: CustomerOrder): CustomerOrderPackage[] {
+  if (shouldHideParentReshipmentTracking(order)) return [];
   const packages = listCustomerPackages(order);
   if (packages.length < 2) return packages;
 
@@ -176,6 +180,9 @@ export function customerPrimaryTracking(order: CustomerOrder): {
   deliveryMode: string | null;
   history: TrackingHistoryEvent[];
 } {
+  if (shouldHideParentReshipmentTracking(order)) {
+    return { barcode: null, status: null, deliveryMode: null, history: [] };
+  }
   const facing = listCustomerFacingPackages(order);
   const primary = facing.find(packageHasEnvioEcomLink) || facing[0];
   const pkgHistory = primary ? getPackageTrackingHistory(primary) : [];
@@ -194,6 +201,16 @@ export function isCustomerReshipmentOrder(order: {
 }): boolean {
   if (String(order.parentOrderId || "").trim()) return true;
   return String(order.shippingType || "").trim().toLowerCase() === "reenvio";
+}
+
+/**
+ * Original já enviado (em geral à mão) que ganhou um pedido filho de reenvio:
+ * o rastreio EnvioEcom mora no filho. Não mostrar a timeline do reenvio no pai.
+ */
+export function shouldHideParentReshipmentTracking(order: CustomerOrder): boolean {
+  if (!order.enviado) return false;
+  if (isCustomerReshipmentOrder(order)) return false;
+  return Boolean(order.hasReshipmentChild);
 }
 
 export function customerReshipmentLabel(order: {
@@ -323,6 +340,7 @@ function packageHasEnvioEcomLink(pkg: CustomerOrderPackage): boolean {
 }
 
 export function hasEnvioEcomLink(order: CustomerOrder): boolean {
+  if (shouldHideParentReshipmentTracking(order)) return false;
   const packages = listCustomerPackages(order);
   if (packages.some(packageHasEnvioEcomLink)) return true;
   return Boolean(
@@ -453,6 +471,13 @@ export function getCustomerSituation(order: CustomerOrder): CustomerSituation {
     return { label: "Cancelado", kind: "cancelled" };
   }
 
+  if (shouldHideParentReshipmentTracking(order)) {
+    if (isManualDeliveredByAge(order)) {
+      return { label: "Entregue", kind: "delivered" };
+    }
+    return { label: "Enviado", kind: "shipping" };
+  }
+
   const split = getSplitCustomerSituation(order);
   if (split) return split;
 
@@ -521,6 +546,7 @@ export function getSituationBadgeClass(kind: CustomerSituation["kind"]): string 
 }
 
 export function hasTrackableShipment(order: CustomerOrder): boolean {
+  if (shouldHideParentReshipmentTracking(order)) return false;
   const packages = listCustomerPackages(order);
   if (packages.some(packageHasEnvioEcomLink)) return true;
   return Boolean(
@@ -597,6 +623,7 @@ export function getPackageTrackingHistory(pkg: CustomerOrderPackage): TrackingHi
 }
 
 export function shouldShowShipmentSection(order: CustomerOrder): boolean {
+  if (shouldHideParentReshipmentTracking(order)) return false;
   if (isSplitCustomerOrder(order)) return true;
   const primary = customerPrimaryTracking(order);
   return Boolean(

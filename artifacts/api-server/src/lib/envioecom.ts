@@ -685,6 +685,8 @@ export async function resolveLiveShipmentRefs(input: {
   cpf?: string | null;
   destinationCep?: string | null;
   recipientName?: string | null;
+  /** Pai com filho de reenvio: não achar o envio do filho por CPF/CEP/nome. */
+  allowCpfFallback?: boolean;
 }): Promise<{
   barcode: string | null;
   shipmentId: string | null;
@@ -732,6 +734,7 @@ export async function resolveLiveShipmentRefs(input: {
     (trackingKey ? await tryGet(trackingKey) : null);
 
   if (!found || isProvisionalEnvioEcomBarcode(found.barcode) || !found.shipmentId) {
+    const allowCpfFallback = input.allowCpfFallback !== false;
     const cpf = digitsOnly(input.cpf);
     const lists: Record<string, unknown>[] = [];
     const pushList = (payload: unknown, source: string) => {
@@ -740,7 +743,7 @@ export async function resolveLiveShipmentRefs(input: {
       lists.push(...rows);
     };
 
-    if (cpf.length >= 11) {
+    if (allowCpfFallback && cpf.length >= 11) {
       try {
         pushList(await listShipments({ cpf, limit: 50 }), "cpf");
       } catch (err) {
@@ -761,10 +764,12 @@ export async function resolveLiveShipmentRefs(input: {
         // ignore
       }
     }
-    try {
-      pushList(await listShipments({ page: 1, limit: 50 }), "recent");
-    } catch (err) {
-      console.warn("[EnvioEcom] list recent failed:", err);
+    if (allowCpfFallback) {
+      try {
+        pushList(await listShipments({ page: 1, limit: 50 }), "recent");
+      } catch (err) {
+        console.warn("[EnvioEcom] list recent failed:", err);
+      }
     }
 
     const destCep = digitsOnly(input.destinationCep);
@@ -788,8 +793,8 @@ export async function resolveLiveShipmentRefs(input: {
       ) {
         score += 80;
       }
-      if (destCep.length === 8 && picked.destinationCep === destCep) score += 40;
-      if (cpf.length >= 11 && picked.documentNumber === cpf) score += 50;
+      if (allowCpfFallback && destCep.length === 8 && picked.destinationCep === destCep) score += 40;
+      if (allowCpfFallback && cpf.length >= 11 && picked.documentNumber === cpf) score += 50;
       if (
         barcode &&
         (picked.barcode === barcode ||
@@ -799,7 +804,12 @@ export async function resolveLiveShipmentRefs(input: {
         score += 30;
       }
       if (trackingKey && picked.trackingKey === trackingKey) score += 30;
-      if (nameNeedle && picked.recipientName && picked.recipientName.toLowerCase().includes(nameNeedle.split(" ")[0]!)) {
+      if (
+        allowCpfFallback &&
+        nameNeedle &&
+        picked.recipientName &&
+        picked.recipientName.toLowerCase().includes(nameNeedle.split(" ")[0]!)
+      ) {
         score += 15;
       }
       // Prefer definitive barcode

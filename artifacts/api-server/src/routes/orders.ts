@@ -2543,10 +2543,32 @@ async function attachParentOrderNumbers<T extends { parentOrderId?: string | nul
   });
 }
 
+async function attachHasReshipmentChild<T extends { id: string }>(
+  orders: T[],
+): Promise<Array<T & { hasReshipmentChild: boolean }>> {
+  const ids = Array.from(new Set(orders.map((order) => String(order.id || "").trim()).filter(Boolean)));
+  const parents = new Set<string>();
+  if (ids.length > 0) {
+    const rows = await db
+      .select({ parentOrderId: ordersTable.parentOrderId })
+      .from(ordersTable)
+      .where(inArray(ordersTable.parentOrderId, ids));
+    for (const row of rows) {
+      const parentId = String(row.parentOrderId || "").trim();
+      if (parentId) parents.add(parentId);
+    }
+  }
+  return orders.map((order) => ({
+    ...order,
+    hasReshipmentChild: parents.has(order.id),
+  }));
+}
+
 async function presentCustomerOrders(rows: Array<typeof ordersTable.$inferSelect>) {
   const mapped = await enrichOrdersWithProductImages(rows.map((row) => mapOrderForCustomer(row)));
   const withParents = await attachParentOrderNumbers(mapped);
-  return attachShipmentsToMappedOrders(withParents);
+  const withChildren = await attachHasReshipmentChild(withParents);
+  return attachShipmentsToMappedOrders(withChildren);
 }
 
 // ---------------------------------------------------------------------------

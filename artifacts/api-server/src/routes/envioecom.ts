@@ -11,12 +11,17 @@ import {
   getOrderShipment,
   listOrderShipments,
   findOrderShipmentByEnvioEcomRef,
+  findOrdersByEnvioEcomRef,
   mapOrderShipmentPublic,
   matchPackageForShipmentRefs,
   nextPackageEnvioEcomExternalOrderNumber,
+  orderAlreadyBoundToEnvioEcomRef,
+  orderHasReshipmentChild,
   OrderShipmentError,
   packageHasEnvioEcomBinding,
+  pickPreferredEnvioEcomOrderRow,
   readPackageId,
+  reclaimDuplicateEnvioEcomBinding,
   rollupOrderFromPackages,
   unlinkPackageEnvioEcomBinding,
   updateOrderShipment,
@@ -417,6 +422,8 @@ async function resolveLiveForOrder(
     extra?.accountId ||
     String((order as { envioecomAccountId?: string | null }).envioecomAccountId || "") ||
     undefined;
+  const parentWithChild =
+    !String(order.parentOrderId || "").trim() && (await orderHasReshipmentChild(order.id));
   return withEnvioEcomAccountFallback(
     preferred,
     () =>
@@ -428,6 +435,7 @@ async function resolveLiveForOrder(
         cpf: order.clientDocument,
         destinationCep: order.addressCep,
         recipientName: order.clientName,
+        allowCpfFallback: !parentWithChild,
       }),
     (live) => Boolean(live.shipmentId || live.barcode),
   );
@@ -455,6 +463,13 @@ async function applyShipmentStatusToOrder(params: {
   const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, params.orderId)).limit(1);
   const order = rows[0];
   if (!order) return { updated: false };
+
+  const reclaim = await reclaimDuplicateEnvioEcomBinding({
+    orderId: params.orderId,
+    barcode: params.barcode,
+    shipmentId: params.shipmentId,
+  });
+  if (reclaim.skipApply) return { updated: false };
 
   const packages = await listOrderShipments(order.id);
   const pkg = matchPackageForShipmentRefs(packages, {
@@ -2073,50 +2088,42 @@ router.post("/webhook/envioecom", async (req, res) => {
     }
 
     if (!order && barcode) {
-      const byBarcode = await db
-        .select()
-        .from(ordersTable)
-        .where(or(eq(ordersTable.envioecomBarcode, barcode), eq(ordersTable.trackingCode, barcode)))
-        .limit(1);
-      order = byBarcode[0];
+      const byBarcode = await findOrdersByEnvioEcomRef({ barcode });
+      order = pickPreferredEnvioEcomOrderRow(byBarcode) ?? undefined;
     }
 
     if (!order && externalOrderNumber) {
-      const asNumber = Number(externalOrderNumber);
-      if (Number.isFinite(asNumber) && asNumber > 0) {
-        const byNumber = await db
-          .select()
-          .from(ordersTable)
-          .where(
-            or(
-              eq(ordersTable.envioecomExternalOrderNumber, externalOrderNumber),
-              eq(ordersTable.orderNumber, asNumber),
-            ),
-          )
-          .limit(1);
-        order = byNumber[0];
-      } else {
-        const byExternal = await db
-          .select()
-          .from(ordersTable)
-          .where(
-            or(
-              eq(ordersTable.envioecomExternalOrderNumber, externalOrderNumber),
-              eq(ordersTable.id, externalOrderNumber),
-            ),
-          )
-          .limit(1);
-        order = byExternal[0];
+      const byExternal = await db
+        .select()
+        .from(ordersTable)
+        .where(
+          or(
+            eq(ordersTable.envioecomExternalOrderNumber, externalOrderNumber),
+            eq(ordersTable.id, externalOrderNumber),
+          ),
+        );
+      order = pickPreferredEnvioEcomOrderRow(byExternal) ?? undefined;
+
+      if (!order) {
+        const asNumber = Number(externalOrderNumber);
+        const numericOnly =
+          Number.isFinite(asNumber) && asNumber > 0 && String(asNumber) === externalOrderNumber;
+        if (numericOnly) {
+          const byNumber = await db
+            .select()
+            .from(ordersTable)
+            .where(eq(ordersTable.orderNumber, asNumber));
+          const bound = byNumber.filter((row) =>
+            orderAlreadyBoundToEnvioEcomRef(row, { barcode, shipmentId, externalOrderNumber }),
+          );
+          order = pickPreferredEnvioEcomOrderRow(bound) ?? undefined;
+        }
       }
     }
 
     if (!order && shipmentId != null) {
-      const byShipment = await db
-        .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.envioecomShipmentId, String(shipmentId)))
-        .limit(1);
-      order = byShipment[0];
+      const byShipment = await findOrdersByEnvioEcomRef({ shipmentId });
+      order = pickPreferredEnvioEcomOrderRow(byShipment) ?? undefined;
     }
 
     if (!order) {

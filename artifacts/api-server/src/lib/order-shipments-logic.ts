@@ -222,6 +222,49 @@ export function validateShipmentAllocation(
   return { ok: true, packages: built };
 }
 
+/** Vários pacotes com o mesmo barcode/ID: o rastreio pertence ao filho de reenvio. */
+export function pickPreferredEnvioEcomShipmentRow<T extends { orderId: string }>(
+  rows: T[],
+  isReshipmentChild: (orderId: string) => boolean,
+): T | null {
+  if (rows.length === 0) return null;
+  const child = rows.find((row) => isReshipmentChild(row.orderId));
+  return child ?? rows[0] ?? null;
+}
+
+/** Vários pedidos com o mesmo barcode: preferir o filho (`parent_order_id`). */
+export function pickPreferredEnvioEcomOrderRow<T extends { parentOrderId?: string | null }>(
+  rows: T[],
+): T | null {
+  if (rows.length === 0) return null;
+  const child = rows.find((row) => String(row.parentOrderId || "").trim());
+  return child ?? rows[0] ?? null;
+}
+
+/**
+ * `external_order_number` numérico só casa o pedido se ele já tiver esse vínculo EE.
+ * Evita o webhook do reenvio gravar no pai só porque o número é 853.
+ */
+export function orderAlreadyBoundToEnvioEcomRef(
+  order: {
+    envioecomBarcode?: string | null;
+    envioecomShipmentId?: string | null;
+    trackingCode?: string | null;
+    envioecomExternalOrderNumber?: string | null;
+  },
+  refs: { barcode?: string | null; shipmentId?: string | number | null; externalOrderNumber?: string | null },
+): boolean {
+  const barcode = String(refs.barcode || "").trim();
+  const shipmentId = refs.shipmentId != null ? String(refs.shipmentId).trim() : "";
+  const external = String(refs.externalOrderNumber || "").trim();
+  if (barcode && (String(order.envioecomBarcode || "") === barcode || String(order.trackingCode || "") === barcode)) {
+    return true;
+  }
+  if (shipmentId && String(order.envioecomShipmentId || "") === shipmentId) return true;
+  if (external && String(order.envioecomExternalOrderNumber || "") === external) return true;
+  return false;
+}
+
 export function readPackageId(body: unknown): string | undefined {
   const raw = (body as { packageId?: unknown; package_id?: unknown } | null)?.packageId
     ?? (body as { package_id?: unknown } | null)?.package_id;

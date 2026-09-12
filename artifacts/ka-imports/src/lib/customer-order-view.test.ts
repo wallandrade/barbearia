@@ -14,6 +14,7 @@ import {
   listCustomerFacingPackages,
   mergeTrackingIntoOrder,
   packageShipmentItems,
+  shouldHideParentReshipmentTracking,
   shouldShowShipmentSection,
   type CustomerOrder,
 } from "./customer-order-view";
@@ -142,6 +143,73 @@ test("pedido já Enviado com split de estoque vira um envio só para o cliente",
   assert.equal(packageShipmentItems(facing[0]).length, 5);
   assert.equal(customerPrimaryTracking(row).barcode, "888030925010467");
   assert.equal(customerPrimaryTracking(row).history.length, 2);
+});
+
+test("pai enviado com filho de reenvio esconde o rastreio EnvioEcom do reenvio", () => {
+  const row = order({
+    id: "853",
+    enviado: true,
+    enviadoAt: "2026-09-10T18:00:00.000Z",
+    status: "paid",
+    hasReshipmentChild: true,
+    envioecomBarcode: "888030925010467",
+    envioecomStatus: "Expedido - RJ SJM",
+    envioecomPackages: [
+      {
+        id: "minas",
+        packageIndex: 1,
+        items: [{ productId: "g", productName: "Gluconex 15mg 4 Frasco", quantity: 1 }],
+      },
+      {
+        id: "moto",
+        packageIndex: 2,
+        envioecomBarcode: "888030925010467",
+        envioecomStatus: "Expedido - RJ SJM",
+        envioecomStatusHistory: [{ status: "Expedido - RJ SJM", updated_at: "2026-09-11T21:07:23.000Z" }],
+        items: [{ productId: "t", productName: "Tirzec 15mg Tirzepatida 4 Ampolas", quantity: 1 }],
+      },
+    ],
+  });
+
+  assert.equal(shouldHideParentReshipmentTracking(row), true);
+  assert.equal(isSplitCustomerOrder(row), false);
+  assert.equal(getCustomerSituation(row).label, "Enviado");
+  assert.equal(getCustomerSituation(row).kind, "shipping");
+  assert.equal(hasTrackableShipment(row), false);
+  assert.equal(shouldShowShipmentSection(row), false);
+  assert.equal(listCustomerFacingPackages(row).length, 0);
+  assert.equal(customerPrimaryTracking(row).barcode, null);
+  assert.equal(customerPrimaryTracking(row).history.length, 0);
+});
+
+test("reenvio aberto continua split parcial mesmo com o pai já enviado", () => {
+  const row = order({
+    id: "1091",
+    parentOrderId: "853",
+    parentOrderNumber: 853,
+    shippingType: "Reenvio",
+    enviado: false,
+    hasReshipmentChild: false,
+    envioecomPackages: [
+      {
+        id: "minas",
+        packageIndex: 1,
+        items: [{ productId: "a", productName: "Landerlan", quantity: 1 }],
+      },
+      {
+        id: "moto",
+        packageIndex: 2,
+        envioecomBarcode: "888030925010467",
+        envioecomStatus: "Coletado",
+        envioecomStatusHistory: [{ status: "Coletado" }],
+        items: [{ productId: "b", productName: "Tirzec", quantity: 1 }],
+      },
+    ],
+  });
+  assert.equal(shouldHideParentReshipmentTracking(row), false);
+  assert.equal(customerReshipmentLabel(row), "Reenvio do pedido #853");
+  assert.equal(getCustomerSituation(row).label, "Enviado parcialmente");
+  assert.equal(hasTrackableShipment(row), true);
 });
 
 test("split: todos entregues = Entregue", () => {
