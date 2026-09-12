@@ -113,8 +113,79 @@ export function listCustomerPackages(order: CustomerOrder): CustomerOrderPackage
   return Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
 }
 
+function packageIsCustomerTrackable(pkg: CustomerOrderPackage): boolean {
+  return Boolean(pkg.enviado) || packageHasEnvioEcomLink(pkg);
+}
+
+function mergeShipmentItems(packages: CustomerOrderPackage[]): CustomerShipmentItem[] {
+  const grouped = new Map<string, CustomerShipmentItem>();
+  for (const pkg of packages) {
+    for (const item of Array.isArray(pkg.items) ? pkg.items : []) {
+      const quantity = Number(item.quantity || 0);
+      if (!Number.isFinite(quantity) || quantity <= 0) continue;
+      const productId = String(item.productId || "").trim();
+      const productName = String(item.productName || item.name || "").trim();
+      if (!productId && !productName) continue;
+      const key = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
+      const prev = grouped.get(key);
+      grouped.set(key, {
+        productId: prev?.productId || productId || undefined,
+        productName: prev?.productName || productName || undefined,
+        name: prev?.name || item.name || productName || undefined,
+        quantity: (prev?.quantity || 0) + quantity,
+      });
+    }
+  }
+  return [...grouped.values()];
+}
+
+/**
+ * Pacotes que o cliente deve ver. Split de estoque (Minas sem etiqueta) num pedido
+ * já marcado Enviado some da conta: os itens entram no envio que tem rastreio.
+ * Reenvio ainda aberto (sem `enviado` no pedido) continua mostrando o pacote parado.
+ */
+export function listCustomerFacingPackages(order: CustomerOrder): CustomerOrderPackage[] {
+  const packages = listCustomerPackages(order);
+  if (packages.length < 2) return packages;
+
+  if (!order.enviado) return packages;
+
+  const tracked = packages.filter(packageIsCustomerTrackable);
+  if (tracked.length === 0) return packages;
+
+  const leftoverItems = mergeShipmentItems(packages.filter((pkg) => !packageIsCustomerTrackable(pkg)));
+  if (leftoverItems.length === 0 && tracked.length >= 2) return tracked;
+
+  const [first, ...rest] = tracked;
+  const firstItems = mergeShipmentItems([{ ...first, items: [...(first.items || []), ...leftoverItems] }]);
+  const mergedFirst: CustomerOrderPackage = {
+    ...first,
+    items: firstItems.length > 0 ? firstItems : first.items,
+  };
+  if (tracked.length === 1) return [mergedFirst];
+  return [mergedFirst, ...rest];
+}
+
 export function isSplitCustomerOrder(order: CustomerOrder): boolean {
-  return listCustomerPackages(order).length >= 2;
+  return listCustomerFacingPackages(order).length >= 2;
+}
+
+export function customerPrimaryTracking(order: CustomerOrder): {
+  barcode: string | null;
+  status: string | null;
+  deliveryMode: string | null;
+  history: TrackingHistoryEvent[];
+} {
+  const facing = listCustomerFacingPackages(order);
+  const primary = facing.find(packageHasEnvioEcomLink) || facing[0];
+  const pkgHistory = primary ? getPackageTrackingHistory(primary) : [];
+  const orderHistory = Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
+  return {
+    barcode: String(primary?.envioecomBarcode || order.envioecomBarcode || order.trackingCode || "").trim() || null,
+    status: normalizeShippingStatus(primary?.envioecomStatus || order.envioecomStatus),
+    deliveryMode: String(primary?.envioecomDeliveryMode || order.envioecomDeliveryMode || "").trim() || null,
+    history: pkgHistory.length > 0 ? pkgHistory : orderHistory,
+  };
 }
 
 export function isCustomerReshipmentOrder(order: {
@@ -309,9 +380,12 @@ export function customerPackageSituation(pkg: CustomerOrderPackage): {
 }
 
 export function isEnvioEcomDelivered(order: CustomerOrder): boolean {
-  const packages = listCustomerPackages(order);
-  if (packages.length >= 2) {
-    return packages.every(packageIsDelivered);
+  const facing = listCustomerFacingPackages(order);
+  if (facing.length >= 2) {
+    return facing.every(packageIsDelivered);
+  }
+  if (facing.length === 1 && packageHasEnvioEcomLink(facing[0])) {
+    return packageIsDelivered(facing[0]);
   }
   const current = normalizeShippingStatus(order.envioecomStatus);
   if (current && isShippingDelivered(current)) return true;
@@ -329,11 +403,20 @@ export function isManualDeliveredByAge(order: CustomerOrder): boolean {
 }
 
 function getSplitCustomerSituation(order: CustomerOrder): CustomerSituation | null {
-  const packages = listCustomerPackages(order);
+  const packages = listCustomerFacingPackages(order);
   if (packages.length < 2) return null;
 
   if (isEnvioEcomDelivered(order)) {
     return { label: "Entregue", kind: "delivered" };
+  }
+
+  if (order.enviado) {
+    const current = customerPrimaryTracking(order).status;
+    return {
+      label: current ? toCustomerFriendlyShippingLabel(current) : "Enviado",
+      kind: "shipping",
+      hint: customerShippingHint(current),
+    };
   }
 
   const shipped = packages.filter(isCustomerPackageOnTheWay);
@@ -373,15 +456,15 @@ export function getCustomerSituation(order: CustomerOrder): CustomerSituation {
   const split = getSplitCustomerSituation(order);
   if (split) return split;
 
+  const primary = customerPrimaryTracking(order);
   if (hasEnvioEcomLink(order)) {
     if (isEnvioEcomDelivered(order)) {
-      const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
       return {
-        label: shippingStatus ? toCustomerFriendlyShippingLabel(shippingStatus) : "Entregue",
+        label: primary.status ? toCustomerFriendlyShippingLabel(primary.status) : "Entregue",
         kind: "delivered",
       };
     }
-    const shippingStatus = normalizeShippingStatus(order.envioecomStatus);
+    const shippingStatus = primary.status;
     if (shippingStatus) {
       if (/cancelad/i.test(shippingStatus)) {
         return { label: shippingStatus, kind: "cancelled" };
@@ -506,7 +589,7 @@ export function shouldShowDistanceToCustomerCity(
 }
 
 export function getOrderTrackingHistory(order: CustomerOrder): TrackingHistoryEvent[] {
-  return Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
+  return customerPrimaryTracking(order).history;
 }
 
 export function getPackageTrackingHistory(pkg: CustomerOrderPackage): TrackingHistoryEvent[] {
@@ -515,12 +598,16 @@ export function getPackageTrackingHistory(pkg: CustomerOrderPackage): TrackingHi
 
 export function shouldShowShipmentSection(order: CustomerOrder): boolean {
   if (isSplitCustomerOrder(order)) return true;
+  const primary = customerPrimaryTracking(order);
   return Boolean(
-    order.envioecomBarcode ||
+    primary.barcode ||
+      primary.status ||
+      primary.deliveryMode ||
+      primary.history.length > 0 ||
+      order.envioecomBarcode ||
       order.trackingCode ||
       order.envioecomDeliveryMode ||
-      order.envioecomStatus ||
-      getOrderTrackingHistory(order).length > 0,
+      order.envioecomStatus,
   );
 }
 

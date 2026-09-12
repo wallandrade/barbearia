@@ -4,12 +4,16 @@ import test from "node:test";
 import {
   customerPackageLabel,
   customerPackageSituation,
+  customerPrimaryTracking,
   customerReshipmentLabel,
   getCustomerSituation,
   hasTrackableShipment,
   isCustomerPackageOnTheWay,
   isCustomerReshipmentOrder,
+  isSplitCustomerOrder,
+  listCustomerFacingPackages,
   mergeTrackingIntoOrder,
+  packageShipmentItems,
   shouldShowShipmentSection,
   type CustomerOrder,
 } from "./customer-order-view";
@@ -92,6 +96,52 @@ test("split: pedido-level vazio ainda mostra seção e permite sync pelo pacote"
   });
   assert.equal(shouldShowShipmentSection(row), true);
   assert.equal(hasTrackableShipment(row), true);
+});
+
+test("pedido já Enviado com split de estoque vira um envio só para o cliente", () => {
+  const row = order({
+    id: "853",
+    enviado: true,
+    status: "paid",
+    envioecomStatus: null,
+    envioecomBarcode: null,
+    envioecomPackages: [
+      {
+        id: "minas",
+        packageIndex: 1,
+        items: [
+          { productId: "g", productName: "Gluconex 15mg 4 Frasco", quantity: 1 },
+          { productId: "l", productName: "Landerlan Oxandrolona 5 mg 100 Comprimidos", quantity: 1 },
+        ],
+      },
+      {
+        id: "moto",
+        packageIndex: 2,
+        envioecomBarcode: "888030925010467",
+        envioecomStatus: "Expedido - RJ SJM",
+        envioecomDeliveryMode: "J&T Express envioEcom",
+        envioecomStatusHistory: [
+          { status: "Coletado", updated_at: "2026-09-10T17:25:39.000Z" },
+          { status: "Expedido - RJ SJM", updated_at: "2026-09-11T21:07:23.000Z" },
+        ],
+        items: [
+          { productId: "t", productName: "Tirzec 15mg Tirzepatida 4 Ampolas", quantity: 1 },
+          { productId: "p", productName: "Lipoless 15mg 4 frasco total 60mg", quantity: 1 },
+          { productId: "o", productName: "Lipoland 15mg 4 ampollas", quantity: 1 },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(isSplitCustomerOrder(row), false);
+  assert.notEqual(getCustomerSituation(row).label, "Enviado parcialmente");
+  assert.equal(getCustomerSituation(row).kind, "shipping");
+  assert.match(getCustomerSituation(row).label, /Expedido/i);
+  const facing = listCustomerFacingPackages(row);
+  assert.equal(facing.length, 1);
+  assert.equal(packageShipmentItems(facing[0]).length, 5);
+  assert.equal(customerPrimaryTracking(row).barcode, "888030925010467");
+  assert.equal(customerPrimaryTracking(row).history.length, 2);
 });
 
 test("split: todos entregues = Entregue", () => {

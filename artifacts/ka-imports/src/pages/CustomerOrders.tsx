@@ -11,13 +11,13 @@ import {
   customerShippingHint,
   findOrderProductImage,
   getCustomerSituation,
-  getOrderTrackingHistory,
   getPackageTrackingHistory,
   getSituationBadgeClass,
   hasTrackableShipment,
   isDeliveredSituation,
   isSplitCustomerOrder,
-  listCustomerPackages,
+  listCustomerFacingPackages,
+  customerPrimaryTracking,
   mergeTrackingIntoOrder,
   packageShipmentItems,
   shouldShowDistanceToCustomerCity,
@@ -671,12 +671,13 @@ export default function CustomerOrders() {
                         const orderRef = order.orderNumber != null ? String(order.orderNumber) : order.id;
                         const situation = getCustomerSituation(order);
                         const displayStatus = order.enviado ? "enviado" : order.status;
-                        const trackingCode = order.envioecomBarcode || order.trackingCode || null;
+                        const tracking = customerPrimaryTracking(order);
+                        const trackingCode = tracking.barcode;
                         const canTrack = hasTrackableShipment(order);
                         const hasUnreadStoreObs = isStoreObservationUnread(order.id, order.observation);
                         const reshipmentLabel = customerReshipmentLabel(order);
                         const splitOrder = isSplitCustomerOrder(order);
-                        const packages = listCustomerPackages(order);
+                        const packages = listCustomerFacingPackages(order);
                         const showShipmentSection = shouldShowShipmentSection(order);
 
                         return (
@@ -865,9 +866,9 @@ export default function CustomerOrders() {
                                 </div>
                               ) : (
                                 <>
-                                  {order.envioecomStatus && (() => {
-                                    const friendly = toCustomerFriendlyShippingLabel(order.envioecomStatus);
-                                    const hint = customerShippingHint(order.envioecomStatus);
+                                  {tracking.status && (() => {
+                                    const friendly = toCustomerFriendlyShippingLabel(tracking.status);
+                                    const hint = customerShippingHint(tracking.status);
                                     return (
                                       <div>
                                         <p className="text-sm font-semibold text-blue-950">{friendly}</p>
@@ -877,15 +878,15 @@ export default function CustomerOrders() {
                                       </div>
                                     );
                                   })()}
-                                  {order.envioecomDeliveryMode && (
-                                    <p className="text-xs text-blue-900/80">{order.envioecomDeliveryMode}</p>
+                                  {tracking.deliveryMode && (
+                                    <p className="text-xs text-blue-900/80">{tracking.deliveryMode}</p>
                                   )}
                                   {trackingCode && (
                                     <p className="text-xs font-mono text-blue-950 break-all">Código: {trackingCode}</p>
                                   )}
-                                  {getOrderTrackingHistory(order).length > 0 ? (
+                                  {tracking.history.length > 0 ? (
                                     <TrackingTimeline
-                                      events={getOrderTrackingHistory(order)}
+                                      events={tracking.history}
                                       eventKeyPrefix={order.id}
                                     />
                                   ) : (
