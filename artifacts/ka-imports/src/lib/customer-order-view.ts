@@ -109,7 +109,8 @@ const statusLabel: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
-const MANUAL_DELIVERED_AFTER_MS = 15 * 24 * 60 * 60 * 1000;
+/** Envio manual (sem EE entregue): “Enviado” na conta até este prazo; depois vira “Entregue”. */
+const MANUAL_DELIVERED_AFTER_MS = 25 * 24 * 60 * 60 * 1000;
 
 export function listCustomerPackages(order: CustomerOrder): CustomerOrderPackage[] {
   return Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];

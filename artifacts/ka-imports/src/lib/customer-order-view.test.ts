@@ -10,6 +10,7 @@ import {
   hasTrackableShipment,
   isCustomerPackageOnTheWay,
   isCustomerReshipmentOrder,
+  isManualDeliveredByAge,
   isSplitCustomerOrder,
   listCustomerFacingPackages,
   mergeTrackingIntoOrder,
@@ -210,6 +211,21 @@ test("reenvio aberto continua split parcial mesmo com o pai já enviado", () => 
   assert.equal(customerReshipmentLabel(row), "Reenvio do pedido #853");
   assert.equal(getCustomerSituation(row).label, "Enviado parcialmente");
   assert.equal(hasTrackableShipment(row), true);
+});
+
+test("envio manual: Entregue só após 25 dias (sem EnvioEcom)", () => {
+  const daysAgo = (days: number) =>
+    new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const at24 = order({ enviado: true, enviadoAt: daysAgo(24), status: "paid" });
+  assert.equal(isManualDeliveredByAge(at24), false);
+  assert.equal(getCustomerSituation(at24).label, "Enviado");
+  assert.equal(getCustomerSituation(at24).kind, "shipping");
+
+  const at25 = order({ enviado: true, enviadoAt: daysAgo(25), status: "paid" });
+  assert.equal(isManualDeliveredByAge(at25), true);
+  assert.equal(getCustomerSituation(at25).label, "Entregue");
+  assert.equal(getCustomerSituation(at25).kind, "delivered");
 });
 
 test("split: todos entregues = Entregue", () => {
