@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
-import { db, ordersTable, supportTicketsTable } from "@workspace/db";
+import { db, ordersTable, productsTable, supportTicketsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { createReshipmentChildOrder } from "../lib/reshipments";
@@ -71,17 +71,46 @@ function maskName(raw: string | null | undefined): string {
   return `${firstMasked} ${lastMasked}`;
 }
 
-function getOrderProducts(raw: unknown): Array<{ id?: string; name?: string; quantity?: number; price?: number }> {
-  if (Array.isArray(raw)) return raw as Array<{ id?: string; name?: string; quantity?: number; price?: number }>;
+function getOrderProducts(raw: unknown): Array<{ id?: string; name?: string; quantity?: number; price?: number; image?: string | null }> {
+  if (Array.isArray(raw)) return raw as Array<{ id?: string; name?: string; quantity?: number; price?: number; image?: string | null }>;
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as Array<{ id?: string; name?: string; quantity?: number; price?: number }>) : [];
+      return Array.isArray(parsed) ? (parsed as Array<{ id?: string; name?: string; quantity?: number; price?: number; image?: string | null }>) : [];
     } catch {
       return [];
     }
   }
   return [];
+}
+
+type SupportOrderProduct = { id: string; name: string; quantity: number; price: number; image: string | null };
+
+function enrichSupportProductsWithImages(
+  products: SupportOrderProduct[],
+  imageById: Map<string, string>,
+): SupportOrderProduct[] {
+  return products.map((product) => ({
+    ...product,
+    image: product.image || imageById.get(product.id) || null,
+  }));
+}
+
+async function loadCatalogImagesByProductIds(productIds: string[]): Promise<Map<string, string>> {
+  const uniqueIds = Array.from(new Set(productIds.filter(Boolean)));
+  const imageById = new Map<string, string>();
+  if (uniqueIds.length === 0) return imageById;
+
+  const rows = await db
+    .select({ id: productsTable.id, image: productsTable.image })
+    .from(productsTable)
+    .where(inArray(productsTable.id, uniqueIds));
+
+  for (const row of rows) {
+    const image = String(row.image || "").trim();
+    if (image) imageById.set(row.id, image);
+  }
+  return imageById;
 }
 
 function normalizeTicketOrderProducts(raw: unknown): Array<{ id: string; name: string; quantity: number; price: number }> {
@@ -262,7 +291,7 @@ router.post("/support/orders-by-cpf", async (req, res) => {
       .orderBy(desc(ordersTable.createdAt))
       .limit(10);
 
-    const orders = rows.map((row) => ({
+    const mapped = rows.map((row) => ({
       id: row.id,
       orderNumber: row.orderNumber ?? null,
       clientName: maskName(row.clientName),
@@ -274,11 +303,21 @@ router.post("/support/orders-by-cpf", async (req, res) => {
         name: String(p?.name ?? "Produto"),
         quantity: Number(p?.quantity) || 0,
         price: Number(p?.price) || 0,
+        image: String(p?.image ?? "").trim() || null,
       })).filter((p) => p.id && p.quantity > 0),
       includeInsurance: parseInsurancePlan(row.insurancePlan, Boolean(row.includeInsurance)) !== "none",
       insurancePlan: parseInsurancePlan(row.insurancePlan, Boolean(row.includeInsurance)),
       insuranceClaimStatus: row.insuranceClaimStatus || "none",
       parentOrderId: row.parentOrderId ?? null,
+    }));
+
+    const missingImageIds = mapped.flatMap((order) =>
+      order.products.filter((p) => !p.image).map((p) => p.id),
+    );
+    const imageById = await loadCatalogImagesByProductIds(missingImageIds);
+    const orders = mapped.map((order) => ({
+      ...order,
+      products: enrichSupportProductsWithImages(order.products, imageById),
     }));
 
     res.json({ orders });
