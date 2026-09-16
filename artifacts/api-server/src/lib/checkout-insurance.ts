@@ -165,6 +165,7 @@ export function insuranceHasCoverage(plan: InsurancePlan): boolean {
   return plan === "full" || plan === "reduced";
 }
 
+/** Extravio/apreensão usam a cota do seguro. `retorno_vendedor` e `missing_items` não. */
 export function insuranceCoversProblem(plan: InsurancePlan, problemType: string | null | undefined): boolean {
   const type = String(problemType || "").trim().toLowerCase();
   if (plan === "full") return type === "extravio" || type === "apreensao";

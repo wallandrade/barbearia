@@ -16,6 +16,7 @@ import {
   resolveCheckoutInsurance,
   adminCanAuthorizeSupportReshipment,
   adminCanForceUninsuredSupportReshipment,
+  insuranceCoversProblem,
 } from "./checkout-insurance";
 
 test("percentual vazio usa 10%", () => {
@@ -249,4 +250,14 @@ test("admin pode forcar reenvio so quando o pedido e sem seguro", () => {
   assert.equal(adminCanForceUninsuredSupportReshipment("none"), true);
   assert.equal(adminCanForceUninsuredSupportReshipment("full"), false);
   assert.equal(adminCanForceUninsuredSupportReshipment("reduced"), false);
+});
+
+test("retorno ao vendedor nao consome a cota do seguro", () => {
+  assert.equal(insuranceCoversProblem("full", "retorno_vendedor"), false);
+  assert.equal(insuranceCoversProblem("reduced", "retorno_vendedor"), false);
+  assert.equal(insuranceCoversProblem("none", "retorno_vendedor"), false);
+  assert.equal(insuranceCoversProblem("full", "extravio"), true);
+  assert.equal(insuranceCoversProblem("reduced", "apreensao"), false);
+  assert.equal(adminCanAuthorizeSupportReshipment("full", "retorno_vendedor"), true);
+  assert.equal(adminCanAuthorizeSupportReshipment("none", "retorno_vendedor"), false);
 });

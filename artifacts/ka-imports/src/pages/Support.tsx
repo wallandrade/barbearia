@@ -40,7 +40,9 @@ type AddressChangePayload = {
   state: string;
 };
 
-type ProblemType = "missing_items" | "other" | "extravio" | "apreensao" | "";
+type ProblemType = "missing_items" | "other" | "extravio" | "apreensao" | "retorno_vendedor" | "";
+
+const TRACKING_PROBLEM_TYPES: ProblemType[] = ["extravio", "apreensao", "retorno_vendedor"];
 
 type MissingSelection = {
   id: string;
@@ -359,7 +361,16 @@ export default function Support() {
     setTicketId(null);
   };
 
-  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || problemType === "extravio" || problemType === "apreensao" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
+  const showDetailsStep = Boolean(
+    selectedOrder
+    && problemType
+    && (
+      problemType === "other"
+      || TRACKING_PROBLEM_TYPES.includes(problemType)
+      || selectedMissingProducts.length > 0
+      || problemType === "missing_items"
+    ),
+  );
 
   return (
     <AppLayout>
@@ -521,6 +532,22 @@ export default function Support() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setProblemType("retorno_vendedor")}
+                        className={`rounded-xl border px-4 py-4 text-left transition ${
+                          problemType === "retorno_vendedor"
+                            ? "border-amber-500 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">Produto voltou para o vendedor</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {orderHasInsurance
+                            ? "Correio devolveu o pacote. Podemos reenviar"
+                            : "Correio devolveu o pacote"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setProblemType("other")}
                         className={`rounded-xl border px-4 py-4 text-left transition ${
                           problemType === "other"
@@ -603,10 +630,14 @@ export default function Support() {
                   </div>
                 )}
 
-                {showDetailsStep && problemType && (problemType === "other" || problemType === "extravio" || problemType === "apreensao" || selectedMissingProducts.length > 0) && (
+                {showDetailsStep && problemType && (problemType === "other" || TRACKING_PROBLEM_TYPES.includes(problemType) || selectedMissingProducts.length > 0) && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">
-                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" || problemType === "apreensao" ? "4. Rastreio e o que aconteceu" : "4. Descreva o problema"}
+                      {problemType === "missing_items"
+                        ? "4. Detalhes (opcional)"
+                        : TRACKING_PROBLEM_TYPES.includes(problemType)
+                          ? "4. Rastreio e o que aconteceu"
+                          : "4. Descreva o problema"}
                     </p>
                     <textarea
                       value={description}
@@ -614,7 +645,9 @@ export default function Support() {
                       placeholder={
                         problemType === "missing_items"
                           ? "Algo mais que queira informar? (opcional)"
-                          : "Explique o que aconteceu com sua entrega."
+                          : problemType === "retorno_vendedor"
+                            ? "Algo mais? (opcional) — ninguém em casa, recusou, endereço errado..."
+                            : "Explique o que aconteceu com sua entrega."
                       }
                       rows={5}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base sm:text-sm outline-none focus:border-amber-500"

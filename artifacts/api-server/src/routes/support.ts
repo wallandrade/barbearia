@@ -299,7 +299,7 @@ router.post("/support/tickets", async (req, res) => {
     const trackingCode = String(req.body?.trackingCode ?? "").trim();
     const imageData = req.body?.imageData == null ? null : String(req.body.imageData);
     const problemTypeRaw = String(req.body?.problemType ?? "").trim().toLowerCase();
-    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other" || problemTypeRaw === "extravio" || problemTypeRaw === "apreensao"
+    const problemType = problemTypeRaw === "missing_items" || problemTypeRaw === "other" || problemTypeRaw === "extravio" || problemTypeRaw === "apreensao" || problemTypeRaw === "retorno_vendedor"
       ? problemTypeRaw
       : "other";
     let addressChange: AddressChangePayload | null = null;
@@ -390,6 +390,9 @@ router.post("/support/tickets", async (req, res) => {
     }
     if (problemType === "apreensao") {
       if (!description) description = "Apreenderam ou veio quebrado.";
+    }
+    if (problemType === "retorno_vendedor") {
+      if (!description) description = "Produto voltou para o vendedor.";
     }
 
     if (description.length < 10) {
