@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, marketingExpensesTable, ordersTable, productsTable, sellersTable, siteSettingsTable } from "@workspace/db";
 import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { isNetRevenueMarketingExpense } from "../lib/financial-summary-expenses";
+import { aggregateTopSoldProducts } from "../lib/financial-summary-top-products";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
 const router: IRouter = Router();
@@ -341,6 +342,9 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
 
     const totalPaid = orders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
     const realNetRevenue = totalPaid - totalCost - totalCommission - totalGatewayFees - totalWithdrawFees - totalMarketingExpenses;
+    const topProducts = aggregateTopSoldProducts(
+      orders.filter((order) => !isReshipmentChildOrder(order)).map((order) => order.products),
+    );
 
     res.json({
       totalPaid,
@@ -364,6 +368,7 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
       },
       fees,
       ordersCount: orders.length,
+      topProducts,
     });
   } catch (err) {
     console.error("[FinancialSummary] Error:", err);

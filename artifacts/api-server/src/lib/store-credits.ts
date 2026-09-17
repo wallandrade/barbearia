@@ -177,6 +177,7 @@ export async function applyStoreCreditToOrder(input: {
   userId: string;
   orderId: string;
   requestedAmount: number;
+  accumulate?: boolean;
 }): Promise<number> {
   if (!input.userId || !input.orderId) return 0;
   if (!Number.isFinite(input.requestedAmount) || input.requestedAmount <= 0) return 0;
@@ -189,6 +190,8 @@ export async function applyStoreCreditToOrder(input: {
     type: "order_apply",
     orderId: input.orderId,
     note: `Uso no pedido ${input.orderId}`,
+    accumulate: input.accumulate === true,
   });
+  if (result.duplicate) return 0;
   return roundMoney(Math.abs(result.applied));
 }

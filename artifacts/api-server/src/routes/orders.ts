@@ -66,6 +66,15 @@ import {
   roundOrderMoney,
   shouldFillMissingPaidAmount,
 } from "../lib/order-edit-surplus-policy";
+import {
+  debitStoreCreditForOrder,
+  loadStoreCreditBalancesForOrders,
+  resolveStoreCreditUserId,
+} from "../lib/order-store-credit";
+import {
+  nextTotalsAfterStoreCreditApply,
+  remainingOrderPayable,
+} from "../lib/order-store-credit-policy";
 
 const router: IRouter = Router();
 
@@ -1523,6 +1532,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     const reshipmentByOrder = await getReshipmentByOrderIds(orders.map((o) => o.id));
     const priorityByOrder = await loadOrderPriorityMap(orders.map((o) => o.id));
     const motoboyBookingByOrder = await loadMotoboyBookingMap(orders.map((o) => o.id));
+    const walletByOrderId = await loadStoreCreditBalancesForOrders(orders);
 
     const enriched = orders.map((order) => {
       const manualPriority = priorityByOrder.get(order.id) ?? false;
@@ -1566,6 +1576,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
       const motoboyBooking = motoboyBookingByOrder.get(order.id) || null;
       return {
         ...mapOrder(order),
+        customerStoreCreditBalance: walletByOrderId.get(order.id) || 0,
         isPrioridade: manualPriority || automaticPriority,
         priorityManual: manualPriority,
         priorityAutomatic: automaticPriority,
@@ -1598,6 +1609,133 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
   } catch (err) {
     console.error("Admin orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/orders/:id/apply-store-credit  (protected)
+// ---------------------------------------------------------------------------
+router.post("/admin/orders/:id/apply-store-credit", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const current = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    if (!current[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const order = current[0];
+    const remaining = remainingOrderPayable({
+      status: order.status,
+      total: Number(order.total),
+      paidAmount: order.paidAmount != null ? Number(order.paidAmount) : null,
+    });
+    if (remaining <= 0) {
+      res.status(400).json({
+        error: "NOTHING_TO_APPLY",
+        message: "Este pedido já está pago, cancelado ou não tem valor pendente para abater.",
+      });
+      return;
+    }
+
+    const userId = await resolveStoreCreditUserId({
+      userId: order.userId,
+      clientEmail: order.clientEmail,
+      clientDocument: order.clientDocument,
+    });
+    if (!userId) {
+      res.status(400).json({
+        error: "NO_ACCOUNT",
+        message: "Cliente sem conta na loja — o saldo só existe depois do cadastro.",
+      });
+      return;
+    }
+
+    const { applied, balance } = await debitStoreCreditForOrder({
+      userId,
+      orderId: id,
+      requestedAmount: remaining,
+    });
+    if (applied <= 0) {
+      res.status(400).json({
+        error: "NO_BALANCE",
+        message: "Este cliente não tem saldo na carteira para abater.",
+      });
+      return;
+    }
+
+    const next = nextTotalsAfterStoreCreditApply({
+      remaining,
+      availableBalance: applied,
+      currentTotal: Number(order.total),
+      currentStoreCreditUsed: Number(order.storeCreditUsed || 0),
+      affiliateCreditUsed: Number(order.affiliateCreditUsed || 0),
+      currentPaymentMethod: order.paymentMethod,
+      currentStatus: order.status,
+    });
+
+    const wasAlreadyPaid = order.status === "paid" || order.status === "completed";
+    const updates: Record<string, unknown> = {
+      total: next.nextTotal.toFixed(2),
+      storeCreditUsed: next.nextStoreCreditUsed.toFixed(2),
+      paymentMethod: next.nextPaymentMethod,
+      status: next.nextStatus,
+      updatedAt: new Date(),
+    };
+    if (!order.userId) updates.userId = userId;
+
+    await db.update(ordersTable).set(updates).where(buildAdminOrderWhere(id, adminScope));
+
+    if (next.fullyCovered && !wasAlreadyPaid) {
+      await ensureOrderCommission(id);
+      if (isStandardShipping(String(order.shippingType || ""))) {
+        void allocateShippingSlot(id);
+      }
+      broadcastNotification({ type: "order_status_updated", data: { id, status: "paid" } });
+      void sendOutboundWebhook("order_paid", {
+        id,
+        status: "paid",
+        clientName: order.clientName,
+        total: next.nextStoreCreditUsed,
+        source: "admin_store_credit",
+        coveredByStoreCredit: true,
+      });
+    }
+
+    const remainingAfter = next.fullyCovered ? 0 : roundOrderMoney(next.nextTotal);
+    recordAdminActivity(
+      req,
+      id,
+      "store_credit",
+      "Abateu saldo da carteira",
+      next.fullyCovered
+        ? `R$ ${applied.toFixed(2)} · pedido pago`
+        : `R$ ${applied.toFixed(2)} · resta R$ ${remainingAfter.toFixed(2)}`,
+    );
+
+    const [updated] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+    const [mapped] = await attachShipmentsToMappedOrders([
+      {
+        ...mapOrder(updated || order),
+        customerStoreCreditBalance: balance,
+      },
+    ]);
+    res.json({
+      ok: true,
+      applied,
+      balance,
+      remainingToPay: remainingAfter,
+      fullyCovered: next.fullyCovered,
+      order: mapped,
+    });
+  } catch (err) {
+    console.error("Apply store credit error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao abater saldo do cliente." });
   }
 });
 

@@ -632,6 +632,32 @@ function isCancelledOrderStatus(value: unknown): boolean {
   return status === "cancelled" || status === "cancelado" || status === "canceled";
 }
 
+function orderCustomerStoreCreditBalance(order: { customerStoreCreditBalance?: number } | null | undefined): number {
+  const n = Number(order?.customerStoreCreditBalance || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function remainingOrderPayableForWallet(order: { status?: string; total?: number; paidAmount?: number | null } | null | undefined): number {
+  const status = normalizeOrderStatus(order?.status);
+  if (status === "paid" || status === "completed" || isCancelledOrderStatus(status)) return 0;
+  const total = Number(order?.total || 0);
+  const paid = Number(order?.paidAmount || 0);
+  const remaining = Math.round((Math.max(0, total - paid) + Number.EPSILON) * 100) / 100;
+  return remaining > 0.01 ? remaining : 0;
+}
+
+function sameWalletCustomer(
+  a: { clientEmail?: string | null; clientDocument?: string | null } | null | undefined,
+  b: { clientEmail?: string | null; clientDocument?: string | null } | null | undefined,
+): boolean {
+  const emailA = String(a?.clientEmail || "").trim().toLowerCase();
+  const emailB = String(b?.clientEmail || "").trim().toLowerCase();
+  if (emailA && emailA === emailB) return true;
+  const docA = String(a?.clientDocument || "").replace(/\D/g, "");
+  const docB = String(b?.clientDocument || "").replace(/\D/g, "");
+  return docA.length >= 11 && docA === docB;
+}
+
 async function copyText(text: string): Promise<"auto" | "manual"> {
   // First try async clipboard API (works in secure contexts and with permission).
   if (navigator.clipboard?.writeText) {
@@ -1368,6 +1394,7 @@ export default function Admin() {
       recurringRate: number;
       newRate: number;
     };
+    topProducts?: Array<{ name: string; quantity: number; revenue: number }>;
   }>(null);
   const [financialSummaryLoading, setFinancialSummaryLoading] = React.useState(false);
   const [, setLocation] = useLocation();
@@ -1506,6 +1533,7 @@ export default function Admin() {
   const [showNotif, setShowNotif] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
+  const [storeCreditApplying, setStoreCreditApplying] = useState<string | null>(null);
   const [proofModal, setProofModal] = useState<string | null>(null);
   const [proofFile, setProofFile] = useState<string | null>(null);
   const [proofUploading, setProofUploading] = useState(false);
@@ -3271,6 +3299,59 @@ export default function Admin() {
     finally { setStatusUpdating(null); }
   };
 
+  const applyCustomerStoreCredit = async (order: AdminOrder) => {
+    const remaining = remainingOrderPayableForWallet(order);
+    const balance = orderCustomerStoreCreditBalance(order);
+    const toApply = Math.min(remaining, balance);
+    if (toApply <= 0.01) return;
+    if (!window.confirm(`Abater ${formatCurrency(toApply)} do saldo do cliente neste pedido #${getOrderReference(order)}?`)) {
+      return;
+    }
+    setStoreCreditApplying(order.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${order.id}/apply-store-credit`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({} as {
+        message?: string;
+        applied?: number;
+        balance?: number;
+        remainingToPay?: number;
+        fullyCovered?: boolean;
+        order?: AdminOrder;
+      }));
+      if (!res.ok) {
+        toast.error(data?.message || "Erro ao abater saldo do cliente.");
+        return;
+      }
+      const nextBalance = Number(data.balance || 0);
+      const applied = Number(data.applied || 0);
+      setOrders((prev) => prev.map((o) => {
+        if (o.id === order.id) {
+          return {
+            ...o,
+            ...(data.order || {}),
+            customerStoreCreditBalance: nextBalance,
+          };
+        }
+        if (sameWalletCustomer(o, order)) {
+          return { ...o, customerStoreCreditBalance: nextBalance };
+        }
+        return o;
+      }));
+      if (data.fullyCovered) {
+        toast.success(`Pedido pago com saldo da carteira (${formatCurrency(applied)}).`);
+      } else {
+        toast.success(`Abatido ${formatCurrency(applied)}. Falta ${formatCurrency(Number(data.remainingToPay || 0))} no PIX.`);
+      }
+    } catch {
+      toast.error("Erro ao abater saldo do cliente.");
+    } finally {
+      setStoreCreditApplying(null);
+    }
+  };
+
   const submitCardPaid = async () => {
     if (!cardPaidModal) return;
     setCardPaidSubmitting(true);
@@ -4281,6 +4362,9 @@ export default function Admin() {
 
   const statsTopProductsMap = new Map<string, { name: string; quantity: number; revenue: number }>();
   for (const order of statsPaidOrders) {
+    if (isReshipmentChildOrder(order)) continue;
+    const orderYmd = ymdInSaoPaulo(order.createdAt);
+    if (!orderYmd || orderYmd < statsDateFrom || orderYmd > statsDateTo) continue;
     for (const product of getOrderProducts(order.products)) {
       const key = String(product.name || "").trim().toLowerCase();
       if (!key) continue;
@@ -4296,9 +4380,10 @@ export default function Admin() {
       }
     }
   }
-  const statsTopProducts = Array.from(statsTopProductsMap.values())
+  const statsTopProductsFromOrders = Array.from(statsTopProductsMap.values())
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
+  const statsTopProducts = financialSummary?.topProducts ?? statsTopProductsFromOrders;
 
   // All registered sellers for dropdowns — use sellers state (always loaded on mount)
   const allSellers = sellers.map((s) => s.slug);
@@ -12312,6 +12397,10 @@ function OrdersPanel({
         .map((order) => {
           const isPrioridade = resolveOrderPriority(order);
           const isCard     = order.paymentMethod === "card_simulation";
+          const walletBalance = orderCustomerStoreCreditBalance(order);
+          const walletPayable = remainingOrderPayableForWallet(order);
+          const storeCreditUsedOnOrder = Number(order.storeCreditUsed || 0);
+          const canApplyStoreCredit = walletBalance > 0.01 && walletPayable > 0.01;
           const normalizedOrderStatus = normalizeOrderStatus(order.status);
           const isPaidOrCompleted = normalizedOrderStatus === "paid" || normalizedOrderStatus === "completed";
           const isExpanded = expandedOrder === order.id;
@@ -12533,6 +12622,18 @@ function OrdersPanel({
                             <QrCode className="w-3 h-3" />PIX
                           </span>
                         )}
+                        {walletBalance > 0.01 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-xs font-semibold border border-amber-200">
+                            <Wallet className="w-3 h-3" />
+                            Cliente com saldo {formatCurrency(walletBalance)}
+                          </span>
+                        )}
+                        {storeCreditUsedOnOrder > 0.01 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
+                            <Wallet className="w-3 h-3" />
+                            Saldo abatido {formatCurrency(storeCreditUsedOnOrder)}
+                          </span>
+                        )}
                         {String((order as { shippingType?: string }).shippingType || "").toLowerCase() === "motoboy" && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 text-xs font-semibold border border-orange-200">
                             🏍️ Motoboy
@@ -12688,6 +12789,21 @@ function OrdersPanel({
                     onClick={() => isCard ? onOpenCardPaidModal(order.id) : updateOrderStatus(order.id, "paid")}>
                     <CheckCircle className="w-3.5 h-3.5" />{isCard ? "Marcar Pago" : "Marcar Pago"}
                   </Button>
+                  {canApplyStoreCredit && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-amber-800 border-amber-200 hover:bg-amber-50"
+                      disabled={storeCreditApplying === order.id}
+                      onClick={() => { void applyCustomerStoreCredit(order); }}
+                    >
+                      {storeCreditApplying === order.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Wallet className="w-3.5 h-3.5" />}
+                      Abater saldo do cliente
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
                     type="button"
                     disabled={statusUpdating === order.id || isCancelledOrderStatus(order.status)}

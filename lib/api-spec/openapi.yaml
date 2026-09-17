@@ -180,6 +180,45 @@ paths:
                 required:
                   - orders
 
+  /admin/orders/{id}/apply-store-credit:
+    post:
+      operationId: applyAdminOrderStoreCredit
+      tags: [admin]
+      summary: Abater saldo da carteira do cliente no pedido pendente
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Saldo abatido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  applied:
+                    type: number
+                  balance:
+                    type: number
+                  remainingToPay:
+                    type: number
+                  fullyCovered:
+                    type: boolean
+                  order:
+                    $ref: "#/components/schemas/AdminOrder"
+                required:
+                  - ok
+                  - applied
+                  - balance
+                  - remainingToPay
+                  - fullyCovered
+                  - order
+
 components:
   schemas:
     HealthStatus:
@@ -483,6 +522,9 @@ components:
         storeCreditUsed:
           type: number
           nullable: true
+        customerStoreCreditBalance:
+          type: number
+          description: Saldo atual da carteira do cliente (0 se sem conta ou sem saldo)
         storeCreditFromEdit:
           type: number
           description: Soma já creditada na carteira por redução na edição do pedido
