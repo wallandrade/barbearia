@@ -1532,7 +1532,12 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     const reshipmentByOrder = await getReshipmentByOrderIds(orders.map((o) => o.id));
     const priorityByOrder = await loadOrderPriorityMap(orders.map((o) => o.id));
     const motoboyBookingByOrder = await loadMotoboyBookingMap(orders.map((o) => o.id));
-    const walletByOrderId = await loadStoreCreditBalancesForOrders(orders);
+    let walletByOrderId = new Map<string, number>();
+    try {
+      walletByOrderId = await loadStoreCreditBalancesForOrders(orders);
+    } catch (walletErr) {
+      console.error("Admin orders store-credit balances:", walletErr);
+    }
 
     const enriched = orders.map((order) => {
       const manualPriority = priorityByOrder.get(order.id) ?? false;

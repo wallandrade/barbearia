@@ -4376,14 +4376,16 @@ export default function Admin() {
         current.quantity += qty;
         current.revenue += lineRevenue;
       } else {
-        statsTopProductsMap.set(key, { name: product.name, quantity: qty, revenue: lineRevenue });
+        statsTopProductsMap.set(key, { name: String(product.name || "").trim() || key, quantity: qty, revenue: lineRevenue });
       }
     }
   }
   const statsTopProductsFromOrders = Array.from(statsTopProductsMap.values())
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
-  const statsTopProducts = financialSummary?.topProducts ?? statsTopProductsFromOrders;
+  const statsTopProducts = Array.isArray(financialSummary?.topProducts)
+    ? financialSummary.topProducts
+    : statsTopProductsFromOrders;
 
   // All registered sellers for dropdowns — use sellers state (always loaded on mount)
   const allSellers = sellers.map((s) => s.slug);
@@ -5039,6 +5041,8 @@ export default function Admin() {
             gatewayFeeFixed={Number(settings["gateway_fee_fixed"] || 0)}
             gatewayFeeMin={Number(settings["gateway_fee_min"] || 0)}
             statusUpdating={statusUpdating}
+            storeCreditApplying={storeCreditApplying}
+            applyCustomerStoreCredit={applyCustomerStoreCredit}
             expandedOrder={expandedOrder}
             setExpandedOrder={setExpandedOrder}
             updateOrderStatus={updateOrderStatus}
@@ -10449,7 +10453,7 @@ function OrdersPanel({
   gatewayFeePercent,
   gatewayFeeFixed,
   gatewayFeeMin,
-  orders, statusUpdating, expandedOrder, setExpandedOrder,
+  orders, statusUpdating, storeCreditApplying, applyCustomerStoreCredit, expandedOrder, setExpandedOrder,
   updateOrderStatus, setProofModal, setProofViewer, openWhatsApp,
   onOpenCardPaidModal, updateOrderObservation, isPrimary, onEditOrder, onOpenKycModal,
   onSetOrderEnviado, onSetOrderPatched, availableWhatsappGroups,   onSetReshipmentStatus, onRemoveOrder,
@@ -10471,6 +10475,8 @@ function OrdersPanel({
   orders: AdminOrder[];
   trackingCandidates: AdminOrder[];
   statusUpdating: string | null;
+  storeCreditApplying: string | null;
+  applyCustomerStoreCredit: (order: AdminOrder) => Promise<void>;
   expandedOrder: string | null;
   setExpandedOrder: (id: string | null) => void;
   updateOrderStatus: (
