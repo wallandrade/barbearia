@@ -62,6 +62,13 @@ import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan, parseInsuran
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 import { creditOrderEditSurplus } from "../lib/order-edit-surplus";
 import {
+  extraQuantityForItem,
+  extraQuantityVsParent,
+  isReshipmentChildOrder,
+  parseReshipmentProducts,
+  qtyByProductId,
+} from "../lib/reshipment-profit";
+import {
   nextStatusAfterOrderEdit,
   roundOrderMoney,
   shouldFillMissingPaidAmount,
@@ -1610,7 +1617,8 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     });
 
     const withPackages = await attachShipmentsToMappedOrders(prioritized);
-    res.json({ orders: withPackages });
+    const withExtra = await attachReshipmentExtraQuantities(withPackages);
+    res.json({ orders: withExtra });
   } catch (err) {
     console.error("Admin orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
@@ -2135,6 +2143,22 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       editProductRows = new Map(rows.map((row) => [row.id, row]));
     }
 
+    const isChildReshipment = isReshipmentChildOrder(current[0]);
+    let parentQtyById: Map<string, number> | null = null;
+    if (isChildReshipment) {
+      const parentId = String(current[0].parentOrderId || "").trim();
+      if (parentId) {
+        const parentRows = await db
+          .select({ products: ordersTable.products })
+          .from(ordersTable)
+          .where(eq(ordersTable.id, parentId))
+          .limit(1);
+        if (parentRows[0]) {
+          parentQtyById = qtyByProductId(parseReshipmentProducts(parentRows[0].products));
+        }
+      }
+    }
+
     // Resolve final products with correct tier prices
     const resolvedProducts = newProducts.map((item) => {
       const productId = String(item?.id || "").trim();
@@ -2142,11 +2166,25 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       const catalogProduct = editProductRows.get(productId);
       // If product exists in catalog, recalculate price with tiers; otherwise keep sent price (manual/bump items)
       const price = catalogProduct ? resolveUnitPriceForQuantity(catalogProduct, quantity) : Number(item?.price) || 0;
-      return { id: productId, name: String(item?.name || "Produto"), quantity, price };
+      const costPriceRaw = catalogProduct != null ? Number(catalogProduct.costPrice) : Number.NaN;
+      const extraQuantity = isChildReshipment
+        ? extraQuantityVsParent({ id: productId, quantity }, parentQtyById)
+        : undefined;
+      return {
+        id: productId,
+        name: String(item?.name || "Produto"),
+        quantity,
+        price,
+        ...(isChildReshipment ? { extraQuantity } : {}),
+        ...(Number.isFinite(costPriceRaw) ? { costPrice: costPriceRaw } : {}),
+      };
     }).filter((item) => item.id && item.quantity > 0);
 
     const computedSubtotal = resolvedProducts.reduce((sum, product) => {
-      return sum + product.quantity * product.price;
+      const billedQty = isChildReshipment
+        ? Number(product.extraQuantity) || 0
+        : product.quantity;
+      return sum + billedQty * product.price;
     }, 0);
     const computedShippingCost = Math.max(0, Number(current[0].shippingCost) || 0);
     const computedDiscountAmount = discountAmount !== undefined
@@ -2544,14 +2582,14 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     proofUrls = [o.proofUrl, ...proofUrls];
   }
 
-  let products: Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null }> = [];
+  let products: Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; image?: string | null }> = [];
   if (Array.isArray(o.products)) {
-    products = o.products as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null }>;
+    products = o.products as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; image?: string | null }>;
   } else if (typeof o.products === "string") {
     try {
       const parsed = JSON.parse(o.products);
       if (Array.isArray(parsed)) {
-        products = parsed as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; image?: string | null }>;
+        products = parsed as Array<{ id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; image?: string | null }>;
       }
     } catch {
       products = [];
@@ -2659,6 +2697,62 @@ function mapOrderForCustomer(o: typeof ordersTable.$inferSelect) {
       observationVisibleToCustomer: mapped.observationVisibleToCustomer,
     }),
   };
+}
+
+async function attachReshipmentExtraQuantities<T extends {
+  id: string;
+  parentOrderId?: string | null;
+  shippingType?: string | null;
+  observation?: string | null;
+  products: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    price: number;
+    costPrice?: number;
+    extraQuantity?: number;
+    image?: string | null;
+  }>;
+}>(orders: T[]): Promise<T[]> {
+  const parentIds = Array.from(
+    new Set(
+      orders
+        .filter((order) => isReshipmentChildOrder(order))
+        .map((order) => String(order.parentOrderId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (parentIds.length === 0) return orders;
+
+  const parentQtyByOrderId = new Map<string, Map<string, number>>();
+  for (const order of orders) {
+    if (!parentIds.includes(order.id)) continue;
+    parentQtyByOrderId.set(order.id, qtyByProductId(order.products));
+  }
+
+  const missing = parentIds.filter((id) => !parentQtyByOrderId.has(id));
+  if (missing.length > 0) {
+    const rows = await db
+      .select({ id: ordersTable.id, products: ordersTable.products })
+      .from(ordersTable)
+      .where(inArray(ordersTable.id, missing));
+    for (const row of rows) {
+      parentQtyByOrderId.set(row.id, qtyByProductId(parseReshipmentProducts(row.products)));
+    }
+  }
+
+  return orders.map((order) => {
+    if (!isReshipmentChildOrder(order)) return order;
+    const parentId = String(order.parentOrderId || "").trim();
+    const parentQty = parentId ? (parentQtyByOrderId.get(parentId) ?? null) : null;
+    return {
+      ...order,
+      products: order.products.map((item) => ({
+        ...item,
+        extraQuantity: extraQuantityForItem(item, parentQty),
+      })),
+    };
+  });
 }
 
 async function attachParentOrderNumbers<T extends { parentOrderId?: string | null }>(

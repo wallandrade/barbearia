@@ -3,6 +3,14 @@ import { db, marketingExpensesTable, ordersTable, productsTable, sellersTable, s
 import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { isNetRevenueMarketingExpense } from "../lib/financial-summary-expenses";
 import { aggregateTopSoldProducts } from "../lib/financial-summary-top-products";
+import {
+  extraQuantityForItem,
+  gatewayFeeForAmount,
+  isReshipmentChildOrder,
+  parseReshipmentProducts,
+  qtyByProductId,
+  summarizeReshipmentExtra,
+} from "../lib/reshipment-profit";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 
 const router: IRouter = Router();
@@ -24,28 +32,7 @@ async function getGatewayFees() {
 }
 
 function parseOrderProducts(raw: unknown): Array<Record<string, unknown>> {
-  if (Array.isArray(raw)) return raw as Array<Record<string, unknown>>;
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed as Array<Record<string, unknown>> : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-/** Pedido filho de reenvio — custo/comissão/taxa já no original; não entra no líquido. */
-function isReshipmentChildOrder(order: {
-  parentOrderId?: string | null;
-  shippingType?: string | null;
-  observation?: string | null;
-}): boolean {
-  if (String(order.parentOrderId || "").trim()) return true;
-  if (String(order.shippingType || "").trim().toLowerCase() === "reenvio") return true;
-  const obs = String(order.observation || "").trim().toUpperCase();
-  return obs.startsWith("REENVIO DO PEDIDO");
+  return parseReshipmentProducts(raw) as Array<Record<string, unknown>>;
 }
 
 function toUTC(dateStr: string, hour: string, minute: string, second: string) {
@@ -132,6 +119,30 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     const totalInsurancePaid = Number(Number(insuranceAgg[0]?.total || 0).toFixed(2));
     const insurancePaidCount = Number(insuranceAgg[0]?.count || 0);
 
+    const parentQtyByOrderId = new Map<string, Map<string, number>>();
+    const parentIds = Array.from(
+      new Set(
+        orders
+          .filter((order) => isReshipmentChildOrder(order))
+          .map((order) => String(order.parentOrderId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    if (parentIds.length > 0) {
+      const parentRows = await db
+        .select({ id: ordersTable.id, products: ordersTable.products })
+        .from(ordersTable)
+        .where(inArray(ordersTable.id, parentIds));
+      for (const row of parentRows) {
+        parentQtyByOrderId.set(row.id, qtyByProductId(parseReshipmentProducts(row.products)));
+      }
+    }
+    const parentQtyFor = (order: { parentOrderId?: string | null }) => {
+      const parentId = String(order.parentOrderId || "").trim();
+      if (!parentId) return null;
+      return parentQtyByOrderId.get(parentId) ?? null;
+    };
+
     // Customer recurrence in selected period
     const periodCustomerKeys = new Set<string>();
     for (const order of orders) {
@@ -190,10 +201,11 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     let totalGatewayFees = 0;
     let whatsappEconomy = 0; // economia por nao cobrar taxa nos pedidos WhatsApp
     for (const order of orders) {
-      if (isReshipmentChildOrder(order)) continue;
-      const amount = parseFloat(order.total || "0");
-      let fee = (amount * (fees.feePercent / 100)) + fees.feeFixed;
-      if (fee < fees.feeMin) fee = fees.feeMin;
+      const amount = isReshipmentChildOrder(order)
+        ? summarizeReshipmentExtra(parseReshipmentProducts(order.products), parentQtyFor(order)).revenue
+        : parseFloat(order.total || "0");
+      const fee = gatewayFeeForAmount(amount, fees);
+      if (fee <= 0) continue;
       // Se for WhatsApp, acumula a economia; senao, acumula a taxa real
       if (order.paymentMethod === "whatsapp_pix") {
         whatsappEconomy += fee;
@@ -204,15 +216,16 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     // Cálculo do custo total dos produtos:
     // 1) usa costPrice salvo no item do pedido, quando existir
     // 2) fallback para costPrice atual da tabela de produtos
-    // Pedidos filhos de reenvio: custo já no original — não debitar de novo
+    // Filho de reenvio: só qty extra (produto adicionado / acima do pai)
     let totalCost = 0;
 
     const productIds = new Set<string>();
     for (const order of orders) {
-      if (isReshipmentChildOrder(order)) continue;
-      const products = parseOrderProducts(order.products);
+      const products = parseReshipmentProducts(order.products);
+      const parentQty = isReshipmentChildOrder(order) ? parentQtyFor(order) : undefined;
       for (const item of products) {
-        const id = String(item.id ?? item.productId ?? "").trim();
+        if (isReshipmentChildOrder(order) && extraQuantityForItem(item, parentQty) <= 0) continue;
+        const id = String(item.id || "").trim();
         if (id) productIds.add(id);
       }
     }
@@ -227,9 +240,16 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     }
 
     for (const order of orders) {
-      if (isReshipmentChildOrder(order)) continue;
-      const products = parseOrderProducts(order.products);
+      if (isReshipmentChildOrder(order)) {
+        totalCost += summarizeReshipmentExtra(
+          parseReshipmentProducts(order.products),
+          parentQtyFor(order),
+          productCostMap,
+        ).cost;
+        continue;
+      }
 
+      const products = parseOrderProducts(order.products);
       let orderTotal = 0;
       for (const item of products) {
         const qty = Number(item.quantity ?? item.qty ?? 0);
@@ -275,8 +295,9 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
 
     let totalCommission = 0;
     for (const order of orders) {
-      if (isReshipmentChildOrder(order)) continue;
-      const amount = parseFloat(order.total || "0");
+      const amount = isReshipmentChildOrder(order)
+        ? summarizeReshipmentExtra(parseReshipmentProducts(order.products), parentQtyFor(order)).revenue
+        : parseFloat(order.total || "0");
       let rate = 0;
 
       // Prioriza snapshot histórico (não altera pedidos que já têm taxa travada)
@@ -343,7 +364,17 @@ router.get("/admin/financial-summary", requireAdminAuth, async (req, res) => {
     const totalPaid = orders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
     const realNetRevenue = totalPaid - totalCost - totalCommission - totalGatewayFees - totalWithdrawFees - totalMarketingExpenses;
     const topProducts = aggregateTopSoldProducts(
-      orders.filter((order) => !isReshipmentChildOrder(order)).map((order) => order.products),
+      orders.flatMap((order) => {
+        if (!isReshipmentChildOrder(order)) return [order.products];
+        const parentQty = parentQtyFor(order);
+        const extraItems = parseReshipmentProducts(order.products)
+          .map((item) => ({
+            ...item,
+            quantity: extraQuantityForItem(item, parentQty),
+          }))
+          .filter((item) => Number(item.quantity) > 0);
+        return extraItems.length > 0 ? [extraItems] : [];
+      }),
     );
 
     res.json({

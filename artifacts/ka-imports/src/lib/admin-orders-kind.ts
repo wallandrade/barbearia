@@ -7,7 +7,7 @@ export type AdminOrdersKindRow = {
   reshipment?: { id?: string | null } | null;
 };
 
-/** Pedido filho de reenvio (falta envio) — custo já foi no pedido original; não conta prejuízo. */
+/** Pedido filho de reenvio — custo do item original já foi no pedido pai; qty extra conta lucro. */
 export function isReshipmentChildOrder(order: AdminOrdersKindRow | null | undefined): boolean {
   if (!order) return false;
   if (String(order.parentOrderId || "").trim()) return true;

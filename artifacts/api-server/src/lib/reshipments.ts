@@ -555,6 +555,7 @@ type PricedOrderProduct = {
   quantity: number;
   price: number;
   costPrice?: number;
+  extraQuantity?: number;
   image?: string | null;
 };
 
@@ -688,6 +689,7 @@ export async function createReshipmentChildOrder(params: {
       name: catalog.name || item.name,
       quantity: item.quantity,
       price: roundMoney(unitPrice),
+      extraQuantity: extraQty,
       ...(Number.isFinite(costPrice) ? { costPrice } : {}),
       ...(catalog.image ? { image: String(catalog.image) } : {}),
     });
