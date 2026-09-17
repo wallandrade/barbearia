@@ -14,6 +14,7 @@ type SupportOrderItem = {
   name: string;
   quantity: number;
   price?: number;
+  image?: string | null;
 };
 
 type SupportOrder = {
@@ -40,7 +41,9 @@ type AddressChangePayload = {
   state: string;
 };
 
-type ProblemType = "missing_items" | "other" | "extravio" | "apreensao" | "";
+type ProblemType = "missing_items" | "other" | "extravio" | "apreensao" | "retorno_vendedor" | "";
+
+const TRACKING_PROBLEM_TYPES: ProblemType[] = ["extravio", "apreensao", "retorno_vendedor"];
 
 type MissingSelection = {
   id: string;
@@ -48,6 +51,7 @@ type MissingSelection = {
   maxQuantity: number;
   quantity: number;
   selected: boolean;
+  image?: string | null;
 };
 
 function digitsOnly(value: string): string {
@@ -74,6 +78,10 @@ function formatCep(value: string): string {
   return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 }
 
+function productImageSrc(value: string | null | undefined): string {
+  return String(value || "").trim();
+}
+
 function buildMissingSelections(order: SupportOrder | null): MissingSelection[] {
   if (!order) return [];
   return (order.products || [])
@@ -84,6 +92,7 @@ function buildMissingSelections(order: SupportOrder | null): MissingSelection[] 
       maxQuantity: Math.max(1, Number(p.quantity) || 1),
       quantity: Math.max(1, Number(p.quantity) || 1),
       selected: false,
+      image: String(p.image || "").trim() || null,
     }));
 }
 
@@ -170,6 +179,7 @@ export default function Support() {
             name: String(p.name || "Produto"),
             quantity: Number(p.quantity) || 0,
             price: Number(p.price) || 0,
+            image: String(p.image || "").trim() || null,
           }))
           .filter((p) => p.id && p.quantity > 0),
       }));
@@ -359,7 +369,16 @@ export default function Support() {
     setTicketId(null);
   };
 
-  const showDetailsStep = Boolean(selectedOrder && problemType && (problemType === "other" || problemType === "extravio" || problemType === "apreensao" || selectedMissingProducts.length > 0 || problemType === "missing_items"));
+  const showDetailsStep = Boolean(
+    selectedOrder
+    && problemType
+    && (
+      problemType === "other"
+      || TRACKING_PROBLEM_TYPES.includes(problemType)
+      || selectedMissingProducts.length > 0
+      || problemType === "missing_items"
+    ),
+  );
 
   return (
     <AppLayout>
@@ -434,14 +453,41 @@ export default function Support() {
                                 {formatCurrency(order.total)}
                               </span>
                             </div>
-                            <div className="mt-2 text-xs text-slate-600 flex flex-wrap gap-2">
-                              {order.products.slice(0, 3).map((product, idx) => (
-                                <span key={`${order.id}-${idx}`} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5">
-                                  <ShoppingBag className="w-3 h-3" /> {product.quantity}x {product.name}
-                                </span>
-                              ))}
-                              {order.products.length > 3 && <span>+{order.products.length - 3} itens</span>}
+                            {order.products.length > 0 && (
+                            <div className="mt-2 flex items-center gap-2 overflow-x-auto">
+                              {order.products.slice(0, 4).map((product, idx) => {
+                                const image = productImageSrc(product.image);
+                                return (
+                                  <div
+                                    key={`${order.id}-${idx}`}
+                                    className="shrink-0 w-12 h-12 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center"
+                                    title={`${product.quantity}x ${product.name}`}
+                                  >
+                                    {image ? (
+                                      <img
+                                        src={image}
+                                        alt={product.name}
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <ShoppingBag className="w-4 h-4 text-slate-400" />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs text-slate-600 truncate">
+                                  {order.products[0].quantity}x {order.products[0].name}
+                                </p>
+                                {order.products.length > 1 && (
+                                  <p className="text-xs text-slate-500">
+                                    +{order.products.length - 1} item{order.products.length > 2 ? "s" : ""}
+                                  </p>
+                                )}
+                              </div>
                             </div>
+                            )}
                           </button>
                         );
                       })}
@@ -521,6 +567,22 @@ export default function Support() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setProblemType("retorno_vendedor")}
+                        className={`rounded-xl border px-4 py-4 text-left transition ${
+                          problemType === "retorno_vendedor"
+                            ? "border-amber-500 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">Produto voltou para o vendedor</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {orderHasInsurance
+                            ? "Correio devolveu o pacote. Podemos reenviar"
+                            : "Correio devolveu o pacote"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setProblemType("other")}
                         className={`rounded-xl border px-4 py-4 text-left transition ${
                           problemType === "other"
@@ -559,6 +621,18 @@ export default function Support() {
                                   }}
                                   className="rounded h-5 w-5"
                                 />
+                                <div className="w-12 h-12 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0">
+                                  {productImageSrc(item.image) ? (
+                                    <img
+                                      src={productImageSrc(item.image)}
+                                      alt={item.name}
+                                      className="w-full h-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <ShoppingBag className="w-4 h-4 text-slate-400" />
+                                  )}
+                                </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium text-slate-900 truncate">{item.name}</p>
                                   <p className="text-xs text-slate-500">No pedido: {item.maxQuantity}x</p>
@@ -603,10 +677,14 @@ export default function Support() {
                   </div>
                 )}
 
-                {showDetailsStep && problemType && (problemType === "other" || problemType === "extravio" || problemType === "apreensao" || selectedMissingProducts.length > 0) && (
+                {showDetailsStep && problemType && (problemType === "other" || TRACKING_PROBLEM_TYPES.includes(problemType) || selectedMissingProducts.length > 0) && (
                   <div className="rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
                     <p className="text-sm font-semibold text-slate-800">
-                      {problemType === "missing_items" ? "4. Detalhes (opcional)" : problemType === "extravio" || problemType === "apreensao" ? "4. Rastreio e o que aconteceu" : "4. Descreva o problema"}
+                      {problemType === "missing_items"
+                        ? "4. Detalhes (opcional)"
+                        : TRACKING_PROBLEM_TYPES.includes(problemType)
+                          ? "4. Rastreio e o que aconteceu"
+                          : "4. Descreva o problema"}
                     </p>
                     <textarea
                       value={description}
@@ -614,7 +692,9 @@ export default function Support() {
                       placeholder={
                         problemType === "missing_items"
                           ? "Algo mais que queira informar? (opcional)"
-                          : "Explique o que aconteceu com sua entrega."
+                          : problemType === "retorno_vendedor"
+                            ? "Algo mais? (opcional) — ninguém em casa, recusou, endereço errado..."
+                            : "Explique o que aconteceu com sua entrega."
                       }
                       rows={5}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base sm:text-sm outline-none focus:border-amber-500"

@@ -1274,7 +1274,7 @@ interface SupportTicketRecord {
   orderProducts?: Array<{ id: string; name: string; quantity: number; price: number }>;
   includeInsurance?: boolean;
   insurancePlan?: string | null;
-  problemType?: "missing_items" | "other" | "extravio" | "apreensao" | string | null;
+  problemType?: "missing_items" | "other" | "extravio" | "apreensao" | "retorno_vendedor" | string | null;
   missingProducts?: Array<{ id: string; name: string; quantity: number }>;
 }
 
@@ -8593,6 +8593,9 @@ function SupportTicketsPanel({
                     <p className="text-xs font-semibold text-amber-800 mt-1">
                       Tipo: Apreenderam ou veio quebrado{parseInsurancePlan(ticket.insurancePlan, ticket.includeInsurance) === "full" ? " · seguro completo" : " · sem cobertura de reenvio"}
                     </p>
+                  )}
+                  {ticket.problemType === "retorno_vendedor" && (
+                    <p className="text-xs font-semibold text-amber-800 mt-1">Tipo: Produto voltou para o vendedor</p>
                   )}
                   {ticket.problemType === "other" && (
                     <p className="text-xs font-semibold text-slate-600 mt-1">Tipo: Outro problema</p>

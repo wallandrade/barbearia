@@ -11,7 +11,7 @@ export const supportTicketsTable = mysqlTable("support_tickets", {
   description: text("description").notNull(),
   imageUrl: mediumtext("image_url"),
   addressChangeJson: mediumtext("address_change_json"),
-  /** missing_items | other */
+  /** missing_items | other | extravio | apreensao | retorno_vendedor */
   problemType: varchar("problem_type", { length: 32 }),
   /** JSON: [{ id, name, quantity }] itens que o cliente marcou como faltando */
   missingProductsJson: mediumtext("missing_products_json"),
