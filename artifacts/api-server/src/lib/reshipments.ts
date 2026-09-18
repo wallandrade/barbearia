@@ -1405,6 +1405,7 @@ export async function setReshipmentStatus(id: string, status: ReshipmentStatus):
       .set({
         enviado: sent,
         enviadoAt: sent ? new Date() : null,
+        ...(sent ? { aguardandoEstoque: false } : {}),
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, orderId));

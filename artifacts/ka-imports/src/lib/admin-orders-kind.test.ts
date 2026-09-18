@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  adminOrdersKindForRow,
   filterAdminOrdersByKind,
+  isAdminOrdersAwaitingStock,
   isAdminOrdersReshipmentRow,
   isReshipmentChildOrder,
 } from "./admin-orders-kind";
@@ -19,12 +21,22 @@ test("fila reshipments também conta como aba Reenvios", () => {
   assert.equal(isAdminOrdersReshipmentRow({ shippingType: "Sedex" }), false);
 });
 
-test("separa lista em pedidos e reenvios", () => {
+test("separa lista em pedidos, reenvios e aguardando estoque", () => {
   const rows = [
     { id: "n1", shippingType: "Sedex" },
     { id: "r1", parentOrderId: "n1" },
     { id: "r2", shippingType: "Reenvio" },
+    { id: "w1", shippingType: "Sedex", aguardandoEstoque: true },
+    { id: "w2", parentOrderId: "n1", aguardandoEstoque: true },
   ];
   assert.deepEqual(filterAdminOrdersByKind(rows, "normal").map((o) => o.id), ["n1"]);
   assert.deepEqual(filterAdminOrdersByKind(rows, "reenvio").map((o) => o.id), ["r1", "r2"]);
+  assert.deepEqual(filterAdminOrdersByKind(rows, "aguardando_estoque").map((o) => o.id), ["w1", "w2"]);
+});
+
+test("kind da linha: aguardando estoque vence reenvio", () => {
+  assert.equal(isAdminOrdersAwaitingStock({ aguardandoEstoque: true }), true);
+  assert.equal(adminOrdersKindForRow({ shippingType: "Sedex" }), "normal");
+  assert.equal(adminOrdersKindForRow({ parentOrderId: "abc" }), "reenvio");
+  assert.equal(adminOrdersKindForRow({ parentOrderId: "abc", aguardandoEstoque: true }), "aguardando_estoque");
 });

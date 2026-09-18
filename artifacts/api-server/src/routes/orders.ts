@@ -1806,6 +1806,7 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
     }
 
     const updates: Record<string, unknown> = { status, updatedAt: new Date() };
+    if (status === "cancelled") updates.aguardandoEstoque = false;
     if (cardInstallmentsActual !== undefined) updates.cardInstallmentsActual = Number(cardInstallmentsActual);
     if (cardInstallmentValue !== undefined) updates.cardInstallmentValue = String(cardInstallmentValue);
     if (cardTotalActual !== undefined) updates.cardTotalActual = String(cardTotalActual);
@@ -2655,6 +2656,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipIsProxy:              o.ipIsProxy ?? null,
     isPrioridade:           !!(o as any).isPrioridade,
     enviado:                !!o.enviado,
+    aguardandoEstoque:      !!(o as { aguardandoEstoque?: boolean }).aguardandoEstoque,
     enviadoAt:              (o as { enviadoAt?: Date | null }).enviadoAt?.toISOString?.()
       ?? (o as { enviadoAt?: string | null }).enviadoAt
       ?? null,
@@ -2689,7 +2691,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
 
 function mapOrderForCustomer(o: typeof ordersTable.$inferSelect) {
   const mapped = mapOrder(o);
-  const { observationVisibleToCustomer: _flag, ...rest } = mapped;
+  const { observationVisibleToCustomer: _flag, aguardandoEstoque: _park, ...rest } = mapped;
   return {
     ...rest,
     observation: customerVisibleObservation({
@@ -2874,6 +2876,74 @@ router.patch("/admin/orders/:id/prioridade", requireAdminAuth, async (req, res) 
   } catch (err) {
     console.error("Update order priority error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar prioridade do pedido." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/aguardando-estoque  (protected)
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/aguardando-estoque", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const { aguardandoEstoque } = req.body as { aguardandoEstoque: boolean };
+    if (typeof aguardandoEstoque !== "boolean") {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Campo 'aguardandoEstoque' obrigatório e deve ser boolean." });
+      return;
+    }
+
+    const existing = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    const order = existing[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const status = String(order.status || "").trim().toLowerCase();
+    if (aguardandoEstoque && (status === "cancelled" || status === "cancelado" || status === "canceled")) {
+      res.status(409).json({ error: "ORDER_CANCELLED", message: "Pedido cancelado não entra em aguardando estoque." });
+      return;
+    }
+    if (aguardandoEstoque && !!order.enviado) {
+      res.status(409).json({ error: "ORDER_ALREADY_SENT", message: "Pedido já enviado não entra em aguardando estoque." });
+      return;
+    }
+
+    await db.update(ordersTable).set({
+      aguardandoEstoque,
+      updatedAt: new Date(),
+    } as Record<string, unknown>).where(buildAdminOrderWhere(id, adminScope));
+
+    const updated = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+
+    broadcastNotification({ type: "order_aguardando_estoque_updated", data: { id, aguardandoEstoque } });
+    recordAdminActivity(
+      req,
+      id,
+      "aguardando_estoque",
+      aguardandoEstoque ? "Moveu para aguardando estoque" : "Liberou da fila aguardando estoque",
+    );
+    res.json({
+      ok: true,
+      id,
+      aguardandoEstoque,
+      order: updated[0] ? mapOrder(updated[0]) : null,
+    });
+  } catch (err) {
+    console.error("Update order aguardando estoque error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar fila de estoque do pedido." });
   }
 });
 
@@ -3277,6 +3347,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
       await db.update(ordersTable).set({
         enviado,
         enviadoAt: enviado ? ((order as { enviadoAt?: Date | null }).enviadoAt ?? new Date()) : null,
+        ...(enviado ? { aguardandoEstoque: false } : {}),
         updatedAt: new Date(),
       } as Record<string, unknown>).where(buildAdminOrderWhere(id, adminScope));
       if (enviado) {
@@ -3329,6 +3400,7 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           : null,
         inventoryPool,
         inventoryReserved: alreadyReserved,
+        ...(enviado ? { aguardandoEstoque: false } : {}),
         updatedAt: new Date(),
       } as any)
       .where(buildAdminOrderWhere(id, adminScope));

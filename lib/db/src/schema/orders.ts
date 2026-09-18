@@ -70,6 +70,8 @@ export const ordersTable = mysqlTable("orders", {
   enviado: boolean("enviado").notNull().default(false),
   /** Momento em que `enviado` passou a true (manual ou EE). Usado p/ “Entregue” após 25 dias no envio manual. */
   enviadoAt: timestamp("enviado_at"),
+  /** Admin estacionou o pedido na sub-aba Pedidos aguardando estoque (manual). */
+  aguardandoEstoque: boolean("aguardando_estoque").notNull().default(false),
   inventoryPool: varchar("inventory_pool", { length: 16 }),
   inventoryReserved: boolean("inventory_reserved").notNull().default(false),
   trackingCode: varchar("tracking_code", { length: 255 }),

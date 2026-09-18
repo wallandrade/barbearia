@@ -595,7 +595,7 @@ import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
-  isAdminOrdersReshipmentRow,
+  adminOrdersKindForRow,
   isReshipmentChildOrder,
   type AdminOrdersKind,
 } from "@/lib/admin-orders-kind";
@@ -1761,7 +1761,7 @@ export default function Admin() {
     if (!pendingOrdersKindOrderId) return;
     const found = orders.find((order) => order.id === pendingOrdersKindOrderId);
     if (!found) return;
-    setOrdersKind(isAdminOrdersReshipmentRow(found) ? "reenvio" : "normal");
+    setOrdersKind(adminOrdersKindForRow(found));
     setPendingOrdersKindOrderId(null);
   }, [pendingOrdersKindOrderId, orders]);
 
@@ -4135,6 +4135,7 @@ export default function Admin() {
 
   const copyListExcludeFields = (o: AdminOrder) => ({
     enviado: (o as { enviado?: boolean | null }).enviado,
+    aguardandoEstoque: (o as { aguardandoEstoque?: boolean | null }).aguardandoEstoque,
     envioecomStatus: (o as { envioecomStatus?: string | null }).envioecomStatus,
     envioecomLabelUrl: (o as { envioecomLabelUrl?: string | null }).envioecomLabelUrl,
     trackingLabelUrl: (o as { trackingLabelUrl?: string | null }).trackingLabelUrl,
@@ -5030,7 +5031,13 @@ export default function Admin() {
           <OrdersPanel
             allOrders={orders}
             orders={filteredOrders}
-            emptyMessage={ordersKind === "reenvio" ? "Nenhum reenvio neste período" : "Nenhum pedido encontrado"}
+            emptyMessage={
+              ordersKind === "reenvio"
+                ? "Nenhum reenvio neste período"
+                : ordersKind === "aguardando_estoque"
+                  ? "Nenhum pedido aguardando estoque neste período"
+                  : "Nenhum pedido encontrado"
+            }
             trackingCandidates={orders.filter((order) => !order.enviado && !isCancelledOrderStatus(order.status))}
             productImageById={Object.fromEntries(
               (products as Array<{ id?: string; image?: string | null }>)
@@ -5069,7 +5076,7 @@ export default function Admin() {
             onEditOrder={openEditOrder}
             onOpenKycModal={openKycModal}
             onSetOrderEnviado={(id, enviado) => {
-              setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, enviado } : o)));
+              setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, enviado, ...(enviado ? { aguardandoEstoque: false } : {}) } : o)));
             }}
             onSetOrderPatched={(order) => {
               setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
@@ -10251,6 +10258,7 @@ function isClosedReshipmentStatus(status?: string | null): boolean {
 
 function isExcludedFromShippingCopyList(order: {
   enviado?: boolean | null;
+  aguardandoEstoque?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
   trackingLabelUrl?: string | null;
@@ -10262,6 +10270,7 @@ function isExcludedFromShippingCopyList(order: {
   }>;
 }): boolean {
   if (order.enviado) return true;
+  if (order.aguardandoEstoque) return true;
   if (isClosedReshipmentStatus(order.reshipmentStatus)) return true;
   const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
   if (packages.length >= 2) {
@@ -10543,6 +10552,7 @@ function OrdersPanel({
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
   const [orderPriorities, setOrderPriorities] = useState<Record<string, boolean>>({});
   const [orderPriorityUpdating, setOrderPriorityUpdating] = useState<Record<string, boolean>>({});
+  const [aguardandoEstoqueUpdating, setAguardandoEstoqueUpdating] = useState<Record<string, boolean>>({});
   const [enviados, setEnviados] = useState<Record<string, boolean>>({});
   const [enviadoInventoryPool, setEnviadoInventoryPool] = useState<Record<string, InventoryPoolKind>>({});
   const [inventoryReservedByOrder, setInventoryReservedByOrder] = useState<Record<string, boolean>>({});
@@ -11477,6 +11487,42 @@ function OrdersPanel({
       toast.error(message);
     } finally {
       setOrderPriorityUpdating((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const toggleAguardandoEstoque = async (order: AdminOrder) => {
+    const id = String(order.id || "").trim();
+    if (!id) return;
+
+    const current = !!(order as { aguardandoEstoque?: boolean }).aguardandoEstoque;
+    const next = !current;
+
+    setAguardandoEstoqueUpdating((prev) => ({ ...prev, [id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${id}/aguardando-estoque`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ aguardandoEstoque: next }),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        message?: string;
+        order?: AdminOrder;
+        aguardandoEstoque?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao atualizar fila de estoque.");
+      }
+      if (data.order) {
+        onSetOrderPatched(data.order);
+      } else {
+        patchOrderLocal(id, { aguardandoEstoque: next });
+      }
+      toast.success(next ? "Pedido movido para Aguardando estoque." : "Pedido liberado para envio.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao atualizar fila de estoque.";
+      toast.error(message);
+    } finally {
+      setAguardandoEstoqueUpdating((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -12493,6 +12539,7 @@ function OrdersPanel({
           // Badge Enviado segue a flag (manual ou postagem EE). Etiqueta pronta sozinha não desfaz.
           // Reenvio enviado conta como enviado (não usa o botão normal).
           const showEnviadoUi = !!enviados[order.id] || reshipmentIsSent;
+          const isAguardandoEstoque = !!(order as { aguardandoEstoque?: boolean }).aguardandoEstoque;
           const isPartialShipment = !showEnviadoUi && isSplitOrderPartiallyShipped(envioecomPackages);
           const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
             ? "ring-2 ring-emerald-500"
@@ -12512,6 +12559,7 @@ function OrdersPanel({
             {/* Shipping queue block — some se já marcado enviado OU etiqueta EE pronta */}
             {shippingQueueMap[order.id] && !isExcludedFromShippingCopyList({
               enviado: enviados[order.id] || reshipmentIsSent,
+              aguardandoEstoque: !!(order as { aguardandoEstoque?: boolean }).aguardandoEstoque,
               envioecomStatus,
               envioecomLabelUrl: (order as any).envioecomLabelUrl,
               trackingLabelUrl: (order as any).trackingLabelUrl,
@@ -12544,6 +12592,12 @@ function OrdersPanel({
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600 text-white text-xs font-bold border border-red-700 animate-pulse">
                             <Star className="w-3 h-3 fill-yellow-300 text-yellow-300" />
                             PRIORIDADE URGENTE
+                          </span>
+                        )}
+                        {isAguardandoEstoque && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300">
+                            <Clock className="w-3 h-3" />
+                            Aguardando estoque
                           </span>
                         )}
                         <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">#{getOrderReference(order)}</span>
@@ -13112,6 +13166,29 @@ function OrdersPanel({
                     : <Star className={`w-4 h-4 ${isPrioridade ? "fill-yellow-300 text-yellow-300" : ""}`} />}
                   {orderPriorityUpdating[order.id] ? "Salvando..." : "Prioridade"}
                 </Button>
+                {!isCancelledCard && (isAguardandoEstoque || !showEnviadoUi) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className={`gap-1.5 ${isAguardandoEstoque
+                      ? "text-amber-900 border-amber-400 bg-amber-50 hover:bg-amber-100"
+                      : "text-amber-800 border-amber-200 hover:bg-amber-50"}`}
+                    title={isAguardandoEstoque
+                      ? "Voltar o pedido para Pedido normal ou Pedido reenvio"
+                      : "Mover para Pedidos aguardando estoque"}
+                    disabled={!!aguardandoEstoqueUpdating[order.id]}
+                    onClick={() => { void toggleAguardandoEstoque(order); }}
+                  >
+                    {aguardandoEstoqueUpdating[order.id]
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Clock className="w-4 h-4" />}
+                    {aguardandoEstoqueUpdating[order.id]
+                      ? "Salvando..."
+                      : isAguardandoEstoque
+                        ? "Liberar para envio"
+                        : "Aguardando estoque"}
+                  </Button>
+                )}
                 {!isSplitShipment && (
                   <div className="inline-flex flex-wrap items-center gap-1 min-h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 py-0.5 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">

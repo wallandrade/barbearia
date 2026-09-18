@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-09-04
+> **Última atualização:** 2026-09-17
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-17 | Coluna `orders.aguardando_estoque` (+ runtime) + `PATCH /api/admin/orders/:id/aguardando-estoque` | Sub-aba Admin Pedidos aguardando estoque | Demais colunas de `orders` iguais |
 | 2026-09-04 | Tabela `order_shipments` (+ runtime) — 1 pedido → N envios EnvioEcom | Pacote por pool (Minas/Motoboy/Foz) com barcode/PDF próprios | Colunas 1:1 em `orders` continuam para pedido sem split |
 | 2026-09-03 | Tabelas `suppliers` / `supplier_purchases` / `supplier_purchase_items` | Compra com fornecedor na aba Despesas | Estoques e lançamento avulso iguais |
 | 2026-09-03 | Coluna `orders.store_credit_from_edit` + ledger `order_edit_surplus` | Sobra de edição de pedido na carteira | `paidAmount` continua o PIX recebido |

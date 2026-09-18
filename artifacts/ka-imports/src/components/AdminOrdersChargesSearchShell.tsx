@@ -24,6 +24,7 @@ type AdminOrdersChargesSearchShellProps<TOrder extends AdminSearchOrder, TCharge
     filteredCharges: TCharge[];
     normalOrders: TOrder[];
     reshipmentOrders: TOrder[];
+    awaitingStockOrders: TOrder[];
   }) => ReactNode;
 };
 
@@ -56,7 +57,15 @@ export function AdminOrdersChargesSearchShell<TOrder extends AdminSearchOrder, T
     () => filterAdminOrdersByKind(searchedOrders, "reenvio"),
     [searchedOrders],
   );
-  const filteredOrders = ordersKind === "reenvio" ? reshipmentOrders : normalOrders;
+  const awaitingStockOrders = useMemo(
+    () => filterAdminOrdersByKind(searchedOrders, "aguardando_estoque"),
+    [searchedOrders],
+  );
+  const filteredOrders = ordersKind === "reenvio"
+    ? reshipmentOrders
+    : ordersKind === "aguardando_estoque"
+      ? awaitingStockOrders
+      : normalOrders;
   const filteredCharges = useMemo(
     () => filterAdminChargesBySearch(charges, appliedSearch),
     [charges, appliedSearch],
@@ -65,10 +74,11 @@ export function AdminOrdersChargesSearchShell<TOrder extends AdminSearchOrder, T
   return (
     <>
       {tab === "orders" && (
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
           {([
             { key: "normal" as const, label: "Pedido normal", count: normalOrders.length },
             { key: "reenvio" as const, label: "Pedido reenvio", count: reshipmentOrders.length },
+            { key: "aguardando_estoque" as const, label: "Pedidos aguardando estoque", count: awaitingStockOrders.length },
           ]).map(({ key, label, count }) => (
             <button
               key={key}
@@ -78,7 +88,9 @@ export function AdminOrdersChargesSearchShell<TOrder extends AdminSearchOrder, T
                 ordersKind === key
                   ? key === "reenvio"
                     ? "border-red-300 bg-red-50 text-red-800"
-                    : "border-primary bg-primary/5 text-primary"
+                    : key === "aguardando_estoque"
+                      ? "border-amber-400 bg-amber-50 text-amber-900"
+                      : "border-primary bg-primary/5 text-primary"
                   : "border-border bg-white text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -87,7 +99,9 @@ export function AdminOrdersChargesSearchShell<TOrder extends AdminSearchOrder, T
                 ordersKind === key
                   ? key === "reenvio"
                     ? "bg-red-100 text-red-800"
-                    : "bg-primary/10 text-primary"
+                    : key === "aguardando_estoque"
+                      ? "bg-amber-100 text-amber-900"
+                      : "bg-primary/10 text-primary"
                   : "bg-muted text-muted-foreground"
               }`}>
                 {count}
@@ -113,6 +127,7 @@ export function AdminOrdersChargesSearchShell<TOrder extends AdminSearchOrder, T
         filteredCharges,
         normalOrders,
         reshipmentOrders,
+        awaitingStockOrders,
       })}
     </>
   );

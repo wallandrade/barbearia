@@ -537,6 +537,9 @@ components:
         parentOrderId:
           type: string
           nullable: true
+        aguardandoEstoque:
+          type: boolean
+          description: Admin estacionou o pedido na sub-aba Pedidos aguardando estoque
         total:
           type: number
         status:

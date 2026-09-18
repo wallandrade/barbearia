@@ -144,6 +144,7 @@ export interface AdminOrder {
   observationVisibleToCustomer?: boolean;
   isPrioridade?: boolean;
   enviado?: boolean;
+  aguardandoEstoque?: boolean;
   trackingCode?: string | null;
   trackingLabelUrl?: string | null;
   trackingLabelText?: string | null;
