@@ -570,7 +570,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Unlink, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2 } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2 } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -613,6 +613,7 @@ import { AdminDebouncedSearchInput } from "@/components/AdminDebouncedSearchInpu
 import { AdminLiveVisitorStats } from "@/components/AdminLiveVisitorStats";
 import { AdminOrdersChargesSearchShell } from "@/components/AdminOrdersChargesSearchShell";
 import { AdminOrdersCopyBar } from "@/components/AdminOrdersCopyBar";
+import { EnvioEcomManageMenu, OrderCopyMenu } from "@/components/AdminOrderCardActionMenus";
 
 
 
@@ -1236,6 +1237,7 @@ interface CustomerUserRecord {
   orderCount: number; affiliateCode: string | null;
   phone?: string | null;
   hasAccount?: boolean;
+  storeCreditBalance?: number | null;
 }
 
 interface RecurringCustomerRecord {
@@ -5651,6 +5653,7 @@ export default function Admin() {
             onResetPassword={resetCustomerLoginPassword}
             passwordResettingId={customerPasswordResettingId}
             canResetPassword={isPrimary}
+            canAdjustStoreCredit={isPrimary}
             onExportCSV={handleExportCustomersCSV}
             onSyncBrevo={handleSyncCustomersBrevo}
             exportingCSV={exportingCustomersCSV}
@@ -12486,6 +12489,9 @@ function OrdersPanel({
             ? (order as { envioecomPackages: SplitShipmentPackage[] }).envioecomPackages
             : []).filter((pkg): pkg is SplitShipmentPackage => !!pkg && typeof pkg === "object");
           const isSplitShipment = envioecomPackages.length >= 2;
+          const hasLinkedEnvioEcom = Boolean((order as { envioecomBarcode?: string | null; envioecomShipmentId?: string | null }).envioecomBarcode
+            || (order as { envioecomBarcode?: string | null; envioecomShipmentId?: string | null }).envioecomShipmentId);
+          const hasProofs = Boolean((order.proofUrls && order.proofUrls.length > 0) || order.proofUrl);
           const canSplitShipment = orderProducts.length >= 2
             || orderProducts.reduce((sum, product) => sum + (Number(product.quantity) || 0), 0) >= 2;
           const envioecomLabelReady = isSplitShipment
@@ -12821,13 +12827,17 @@ function OrdersPanel({
                     Salvar grupo
                   </Button>
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex flex-col gap-2">
+                  {(!isCancelledCard || hasProofs) && (
+                  <div className="flex gap-2 flex-wrap items-center">
+                  {!isCancelledCard && !isPaidOrCompleted && (
                   <Button type="button" size="sm" variant="outline" className="gap-1.5 text-green-700 border-green-200 hover:bg-green-50"
-                    disabled={statusUpdating === order.id || normalizeOrderStatus(order.status) === "paid" || normalizeOrderStatus(order.status) === "completed"}
+                    disabled={statusUpdating === order.id}
                     onClick={() => isCard ? onOpenCardPaidModal(order.id) : updateOrderStatus(order.id, "paid")}>
-                    <CheckCircle className="w-3.5 h-3.5" />{isCard ? "Marcar Pago" : "Marcar Pago"}
+                    <CheckCircle className="w-3.5 h-3.5" />Marcar Pago
                   </Button>
-                  {canApplyStoreCredit && (
+                  )}
+                  {!isCancelledCard && canApplyStoreCredit && (
                     <Button
                       type="button"
                       size="sm"
@@ -12842,9 +12852,10 @@ function OrdersPanel({
                       Abater saldo do cliente
                     </Button>
                   )}
+                  {!isCancelledCard && (
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
                     type="button"
-                    disabled={statusUpdating === order.id || isCancelledOrderStatus(order.status)}
+                    disabled={statusUpdating === order.id}
                     onClick={() => {
                       const currentStatus = normalizeOrderStatus(order.status);
                       if (currentStatus === "paid" || currentStatus === "completed") {
@@ -12861,11 +12872,36 @@ function OrdersPanel({
                     }}>
                     <XCircle className="w-3.5 h-3.5" />Cancelar
                   </Button>
+                  )}
+                  {!isCancelledCard && (
                   <Button type="button" size="sm" variant="outline" className="gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50"
                     onClick={() => setProofModal(order.id)}>
                     <Upload className="w-3.5 h-3.5" />
                     {(order.proofUrls && order.proofUrls.length > 0) || order.proofUrl ? "Adicionar Comprovante" : "Upload Comprovante"}
                   </Button>
+                  )}
+                  {(order.proofUrls && order.proofUrls.length > 0) && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {order.proofUrls.map((url, i) => (
+                        <button key={i} title={`Comprovante ${i + 1}`}
+                          className="w-8 h-8 rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary transition"
+                          onClick={() => setProofViewer(url)}>
+                          {url.startsWith("data:image") ? (
+                            <img src={url} alt={`Comp. ${i + 1}`} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-muted text-[9px] font-bold text-muted-foreground">PDF</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!order.proofUrls?.length && order.proofUrl && (
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setProofViewer(order.proofUrl!)}>
+                      <Eye className="w-3.5 h-3.5" />Ver Comprovante
+                    </Button>
+                  )}
+                  </div>
+                  )}
                   <input
                     ref={(el) => { trackingInputRefs.current[order.id] = el; }}
                     type="file"
@@ -12877,6 +12913,8 @@ function OrdersPanel({
                       uploadTrackingLabel(order.id, file);
                     }}
                   />
+                  {!isCancelledCard && (
+                  <div className="flex gap-2 flex-wrap items-center">
                   <Button
                     size="sm"
                     variant="outline"
@@ -12899,7 +12937,11 @@ function OrdersPanel({
                       Dividir envio
                     </Button>
                   )}
-                  {!isSplitShipment && (
+                  </div>
+                  )}
+                  {!isSplitShipment && (!isCancelledCard || hasLinkedEnvioEcom || Boolean((order as { envioecomStatus?: string | null }).envioecomStatus)) && (
+                  <div className="flex gap-2 flex-wrap items-center">
+                  {!isCancelledCard && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -12912,8 +12954,7 @@ function OrdersPanel({
                     EnvioEcom
                   </Button>
                   )}
-                  {!isSplitShipment && (
-                  <>
+                  {!isCancelledCard && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -12925,73 +12966,35 @@ function OrdersPanel({
                     <LinkIcon className="w-3.5 h-3.5" />
                     Vincular EE
                   </Button>
-                  {((order as any).envioecomBarcode || (order as any).envioecomShipmentId) && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
-                        disabled={!!envioecomBusy[order.id]}
-                        onClick={() => { void generateEnvioEcomLabel(order); }}
-                      >
-                        Etiqueta EE
-                      </Button>
-                      {((order as any).envioecomLabelUrl || (order as any).trackingLabelUrl) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                          onClick={() => {
-                            const url = String(
-                              (order as any).envioecomLabelUrl || (order as any).trackingLabelUrl || "",
-                            ).trim();
-                            if (url) window.open(url, "_blank", "noopener,noreferrer");
-                          }}
-                        >
-                          Ver PDF
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
-                        disabled={!!envioecomBusy[order.id]}
-                        onClick={() => { void syncEnvioEcomStatus(order); }}
-                      >
-                        Sync status
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-amber-800 border-amber-200 hover:bg-amber-50"
-                        disabled={!!envioecomBusy[order.id]}
-                        onClick={() => { void unlinkEnvioEcomShipment(order); }}
-                        title="Solta a etiqueta neste pedido. Não cancela na EnvioEcom."
-                      >
-                        <Unlink className="w-3.5 h-3.5" />
-                        Desvincular
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50"
-                        disabled={!!envioecomBusy[order.id]}
-                        onClick={() => { void cancelEnvioEcomShipment(order); }}
-                      >
-                        Cancelar EE
-                      </Button>
-                    </>
                   )}
-                  {(order as any).envioecomStatus && (
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass((order as any).envioecomStatus)}`}>
-                      EE: {(order as any).envioecomStatus}
-                      {envioecomAccountNameById((order as any).envioecomAccountId)
-                        ? ` · ${envioecomAccountNameById((order as any).envioecomAccountId)}`
+                  <EnvioEcomManageMenu
+                    busy={!!envioecomBusy[order.id]}
+                    canManageShipment={hasLinkedEnvioEcom}
+                    hasPdf={Boolean(String((order as { envioecomLabelUrl?: string | null; trackingLabelUrl?: string | null }).envioecomLabelUrl || (order as { trackingLabelUrl?: string | null }).trackingLabelUrl || "").trim())}
+                    canUnlink={hasLinkedEnvioEcom}
+                    onGenerateLabel={() => { void generateEnvioEcomLabel(order); }}
+                    onOpenPdf={() => {
+                      const url = String(
+                        (order as { envioecomLabelUrl?: string | null; trackingLabelUrl?: string | null }).envioecomLabelUrl
+                        || (order as { trackingLabelUrl?: string | null }).trackingLabelUrl
+                        || "",
+                      ).trim();
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                    onSyncStatus={() => { void syncEnvioEcomStatus(order); }}
+                    onUnlink={() => { void unlinkEnvioEcomShipment(order); }}
+                    onCancelShipment={() => { void cancelEnvioEcomShipment(order); }}
+                  />
+                  {(order as { envioecomStatus?: string | null }).envioecomStatus && (
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass((order as { envioecomStatus?: string | null }).envioecomStatus)}`}>
+                      EE: {(order as { envioecomStatus?: string | null }).envioecomStatus}
+                      {envioecomAccountNameById((order as { envioecomAccountId?: string | null }).envioecomAccountId)
+                        ? ` · ${envioecomAccountNameById((order as { envioecomAccountId?: string | null }).envioecomAccountId)}`
                         : ""}
-                      {(order as any).envioecomBarcode ? ` · ${(order as any).envioecomBarcode}` : ""}
+                      {(order as { envioecomBarcode?: string | null }).envioecomBarcode ? ` · ${(order as { envioecomBarcode?: string | null }).envioecomBarcode}` : ""}
                     </span>
                   )}
-                  </>
+                  </div>
                   )}
                   {isSplitShipment && envioecomPackages.map((pkg) => (
                     <div key={pkg.id || pkg.inventoryPool} className="w-full flex flex-wrap items-center gap-1.5 rounded-xl border border-teal-100 bg-teal-50/40 px-2 py-1.5">
@@ -13050,7 +13053,7 @@ function OrdersPanel({
                           );
                         })}
                       </div>
-                      {pkg.id && !pkg.inventoryReserved && (
+                      {!isCancelledCard && pkg.id && !pkg.inventoryReserved && (
                         <>
                           {inventoryPoolNeedsExitPassword(pkg.inventoryPool) && (
                             <input
@@ -13085,48 +13088,33 @@ function OrdersPanel({
                           Baixa OK
                         </span>
                       )}
+                      {!isCancelledCard && (
                       <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomQuote(order, pkg.id); }}>
                         EnvioEcom
                       </Button>
+                      )}
+                      {!isCancelledCard && (
                       <Button size="sm" variant="outline" className="h-7 text-teal-800 border-teal-300" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomLink(order, { packageId: pkg.id }); }}>
                         Vincular
                       </Button>
-                      {(pkg.envioecomBarcode || pkg.envioecomShipmentId) && (
-                        <>
-                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void generateEnvioEcomLabel(order, pkg.id); }}>
-                            Etiqueta
-                          </Button>
-                          {pkg.envioecomLabelUrl && (
-                            <Button size="sm" variant="outline" className="h-7 text-emerald-700" onClick={() => window.open(String(pkg.envioecomLabelUrl), "_blank", "noopener,noreferrer")}>
-                              PDF
-                            </Button>
-                          )}
-                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void syncEnvioEcomStatus({
-                            ...order,
-                            envioecomShipmentId: pkg.envioecomShipmentId,
-                            envioecomBarcode: pkg.envioecomBarcode,
-                            envioecomAccountId: pkg.envioecomAccountId,
-                          } as AdminOrder, pkg.id); }}>
-                            Sync
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-7 text-red-700" disabled={!!envioecomBusy[order.id]} onClick={() => { void cancelEnvioEcomShipment(order, pkg.id); }}>
-                            Cancelar
-                          </Button>
-                        </>
                       )}
-                      {(pkg.envioecomBarcode || pkg.envioecomShipmentId || pkg.envioecomLabelUrl || pkg.envioecomStatus) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-amber-800 border-amber-200"
-                          disabled={!!envioecomBusy[order.id] || !pkg.id}
-                          onClick={() => { void unlinkEnvioEcomShipment(order, pkg.id); }}
-                          title="Solta a etiqueta só deste pacote. Não cancela na EnvioEcom."
-                        >
-                          <Unlink className="w-3 h-3" />
-                          Desvincular
-                        </Button>
-                      )}
+                      <EnvioEcomManageMenu
+                        compact
+                        busy={!!envioecomBusy[order.id]}
+                        canManageShipment={Boolean(pkg.envioecomBarcode || pkg.envioecomShipmentId)}
+                        hasPdf={Boolean(pkg.envioecomLabelUrl)}
+                        canUnlink={Boolean(pkg.id) && Boolean(pkg.envioecomBarcode || pkg.envioecomShipmentId || pkg.envioecomLabelUrl || pkg.envioecomStatus)}
+                        onGenerateLabel={() => { void generateEnvioEcomLabel(order, pkg.id); }}
+                        onOpenPdf={() => window.open(String(pkg.envioecomLabelUrl), "_blank", "noopener,noreferrer")}
+                        onSyncStatus={() => { void syncEnvioEcomStatus({
+                          ...order,
+                          envioecomShipmentId: pkg.envioecomShipmentId,
+                          envioecomBarcode: pkg.envioecomBarcode,
+                          envioecomAccountId: pkg.envioecomAccountId,
+                        } as AdminOrder, pkg.id); }}
+                        onUnlink={() => { void unlinkEnvioEcomShipment(order, pkg.id); }}
+                        onCancelShipment={() => { void cancelEnvioEcomShipment(order, pkg.id); }}
+                      />
                       {pkg.envioecomStatus && (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>
                           {pkg.envioecomStatus}{pkg.envioecomBarcode ? ` · ${pkg.envioecomBarcode}` : ""}
@@ -13134,26 +13122,6 @@ function OrdersPanel({
                       )}
                     </div>
                   ))}
-                  {(order.proofUrls && order.proofUrls.length > 0) && (
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {order.proofUrls.map((url, i) => (
-                        <button key={i} title={`Comprovante ${i + 1}`}
-                          className="w-8 h-8 rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary transition"
-                          onClick={() => setProofViewer(url)}>
-                          {url.startsWith("data:image") ? (
-                            <img src={url} alt={`Comp. ${i + 1}`} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-muted text-[9px] font-bold text-muted-foreground">PDF</div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {!order.proofUrls?.length && order.proofUrl && (
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setProofViewer(order.proofUrl!)}>
-                      <Eye className="w-3.5 h-3.5" />Ver Comprovante
-                    </Button>
-                  )}
                 </div>
               </div>
 
@@ -13195,7 +13163,7 @@ function OrdersPanel({
                         : "Aguardando estoque"}
                   </Button>
                 )}
-                {!isSplitShipment && (
+                {!isCancelledCard && !isSplitShipment && (
                   <div className="inline-flex flex-wrap items-center gap-1 min-h-8 rounded-full border border-amber-300 bg-amber-50 pl-2.5 pr-1 py-0.5 text-xs font-semibold text-amber-900">
                     <span className="whitespace-nowrap">
                       {inventoryReservedByOrder[order.id] ? "Baixa feita:" : "Baixa estoque:"}
@@ -13274,7 +13242,7 @@ function OrdersPanel({
                     )}
                   </div>
                 )}
-                {!hasReshipmentRecord && (
+                {!isCancelledCard && !hasReshipmentRecord && (
                 <Button
                   size="sm"
                   className={`gap-1.5 rounded-full px-5 py-2 font-semibold transition shadow-sm border ${showEnviadoUi
@@ -13307,23 +13275,21 @@ function OrdersPanel({
                   onClick={() => downloadOrder(order)}>
                   <Download className="w-3.5 h-3.5" />Baixar Pedido
                 </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50"
-                  onClick={() => copyOrder(order)}>
-                  {copiedOrderId === order.id ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedOrderId === order.id ? "Resumo copiado!" : "Copiar Resumo"}
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-indigo-700 border-indigo-200 hover:bg-indigo-50"
-                  onClick={() => copyOrderFull(order)}>
-                  {copiedOrderId === order.id + "-full" ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedOrderId === order.id + "-full" ? "Completo copiado!" : "Copiar Completo"}
-                </Button>
-                {isPaidOrCompleted && (
-                  <Button size="sm" variant="outline" className="gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                    onClick={() => copyOrderPostPayment(order)}>
-                    {copiedOrderId === order.id + "-post" ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedOrderId === order.id + "-post" ? "Pós-pagamento copiado!" : "Copiar pós-pagamento"}
-                  </Button>
-                )}
+                <OrderCopyMenu
+                  copiedKind={
+                    copiedOrderId === order.id
+                      ? "resumo"
+                      : copiedOrderId === order.id + "-full"
+                        ? "full"
+                        : copiedOrderId === order.id + "-post"
+                          ? "post"
+                          : null
+                  }
+                  showPostPayment={isPaidOrCompleted}
+                  onCopyResumo={() => copyOrder(order)}
+                  onCopyFull={() => copyOrderFull(order)}
+                  onCopyPost={() => copyOrderPostPayment(order)}
+                />
                 {isPrimary && (
                   <Button size="sm" variant="outline" className="gap-1.5 text-violet-600 border-violet-200 hover:bg-violet-50"
                     onClick={() => onEditOrder(order)}>
@@ -14902,7 +14868,7 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 // ---------------------------------------------------------------------------
 function CustomersPanel({
   customers, loading, onRefresh, onImpersonate, impersonatingId, canImpersonate,
-  onResetPassword, passwordResettingId, canResetPassword,
+  onResetPassword, passwordResettingId, canResetPassword, canAdjustStoreCredit,
   onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo, exportModalOpen, setExportModalOpen, exportColumns, setExportColumns,
 }: {
   customers: CustomerUserRecord[];
@@ -14914,6 +14880,7 @@ function CustomersPanel({
   onResetPassword: (customer: CustomerUserRecord, password?: string) => Promise<{ password: string; generated: boolean } | null>;
   passwordResettingId: string | null;
   canResetPassword: boolean;
+  canAdjustStoreCredit: boolean;
   onExportCSV: () => void;
   onSyncBrevo: () => void;
   exportingCSV: boolean;
@@ -14928,6 +14895,10 @@ function CustomersPanel({
   const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
   const [passwordVisible, setPasswordVisible] = useState(true);
   const [passwordCopied, setPasswordCopied] = useState(false);
+  const [walletModalCustomer, setWalletModalCustomer] = useState<CustomerUserRecord | null>(null);
+  const [walletAmountDraft, setWalletAmountDraft] = useState("");
+  const [walletNoteDraft, setWalletNoteDraft] = useState("");
+  const [walletAdjusting, setWalletAdjusting] = useState<"add" | "zero" | null>(null);
   const [appliedSearch, setAppliedSearch] = useState("");
   const [searchEpoch, setSearchEpoch] = useState(0);
 
@@ -14983,6 +14954,80 @@ function CustomersPanel({
       toast.success("Senha copiada.");
     } catch {
       toast.error("Não foi possível copiar a senha.");
+    }
+  };
+
+  const openWalletModal = (customer: CustomerUserRecord) => {
+    setWalletModalCustomer(customer);
+    setWalletAmountDraft("");
+    setWalletNoteDraft("");
+    setWalletAdjusting(null);
+  };
+
+  const closeWalletModal = () => {
+    setWalletModalCustomer(null);
+    setWalletAmountDraft("");
+    setWalletNoteDraft("");
+    setWalletAdjusting(null);
+  };
+
+  const walletBalanceOf = (customer: CustomerUserRecord | null) =>
+    Math.max(0, Number(customer?.storeCreditBalance || 0));
+
+  const submitWalletAdjust = async (action: "add" | "zero") => {
+    if (!walletModalCustomer) return;
+    if (!canAdjustStoreCredit) {
+      toast.error("Apenas administrador principal pode ajustar a carteira.");
+      return;
+    }
+    if (!walletModalCustomer.hasAccount) {
+      toast.error("Este comprador não possui conta cadastrada (compra como convidado).");
+      return;
+    }
+
+    const current = walletBalanceOf(walletModalCustomer);
+    if (action === "add") {
+      const amount = Number(walletAmountDraft.replace(",", ".").trim());
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error("Informe um valor positivo para adicionar.");
+        return;
+      }
+    } else if (current <= 0) {
+      toast.error("Cliente sem saldo para zerar.");
+      return;
+    } else if (!window.confirm(`Zerar o saldo de ${formatCurrency(current)} de ${walletModalCustomer.name}?`)) {
+      return;
+    }
+
+    setWalletAdjusting(action);
+    try {
+      const res = await fetch(`${BASE}/api/admin/customers/${encodeURIComponent(walletModalCustomer.id)}/store-credit`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          action,
+          amount: action === "add" ? Number(walletAmountDraft.replace(",", ".").trim()) : undefined,
+          note: walletNoteDraft.trim() || undefined,
+        }),
+      });
+      const data = await res.json() as { balance?: number; applied?: number; message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao ajustar saldo da carteira.");
+        return;
+      }
+      const nextBalance = Number(data.balance || 0);
+      setWalletModalCustomer((prev) => prev ? { ...prev, storeCreditBalance: nextBalance } : prev);
+      setWalletAmountDraft("");
+      onRefresh();
+      if (action === "zero") {
+        toast.success(`Saldo zerado. Carteira: ${formatCurrency(nextBalance)}.`);
+      } else {
+        toast.success(`Saldo adicionado. Carteira: ${formatCurrency(nextBalance)}.`);
+      }
+    } catch {
+      toast.error("Erro ao ajustar saldo da carteira.");
+    } finally {
+      setWalletAdjusting(null);
     }
   };
 
@@ -15047,6 +15092,7 @@ function CustomersPanel({
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">E-mail</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Cód. afiliado</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Carteira</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Cadastro em</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Ações</th>
               </tr>
@@ -15078,6 +15124,16 @@ function CustomersPanel({
                       <span className="text-muted-foreground text-xs">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    {!c.hasAccount ? (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${walletBalanceOf(c) > 0 ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+                        <Wallet className="w-3 h-3" />
+                        {formatCurrency(walletBalanceOf(c))}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateBR(c.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -15105,6 +15161,16 @@ function CustomersPanel({
                             Senha
                           </>
                         )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openWalletModal(c)}
+                        disabled={!c.hasAccount}
+                        className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-border bg-white hover:bg-muted text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                        title={!c.hasAccount ? "Comprador sem cadastro (convidado)" : "Ver / ajustar saldo da carteira"}
+                      >
+                        <Wallet className="w-3.5 h-3.5" />
+                        Carteira
                       </button>
                       <button
                         type="button"
@@ -15384,6 +15450,96 @@ function CustomersPanel({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {walletModalCustomer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Carteira do cliente</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {walletModalCustomer.name} · {walletModalCustomer.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeWalletModal}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"
+                aria-label="Fechar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saldo atual</p>
+              <p className={`text-2xl font-bold mt-1 ${walletBalanceOf(walletModalCustomer) > 0 ? "text-emerald-700" : "text-foreground"}`}>
+                {formatCurrency(walletBalanceOf(walletModalCustomer))}
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Valor para adicionar
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={walletAmountDraft}
+                onChange={(e) => setWalletAmountDraft(e.target.value)}
+                placeholder="Ex.: 50 ou 50,00"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitWalletAdjust("add");
+                }}
+                className="mt-1.5 w-full h-11 px-3 rounded-xl border-2 border-border focus:border-primary outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Motivo (opcional)
+              </label>
+              <input
+                type="text"
+                value={walletNoteDraft}
+                onChange={(e) => setWalletNoteDraft(e.target.value)}
+                placeholder="Ex.: cortesia, correção, estorno"
+                className="mt-1.5 w-full h-11 px-3 rounded-xl border-2 border-border focus:border-primary outline-none text-sm"
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => { void submitWalletAdjust("add"); }}
+                disabled={walletAdjusting !== null || !canAdjustStoreCredit}
+                className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              >
+                {walletAdjusting === "add" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Adicionar saldo
+              </button>
+              <button
+                type="button"
+                onClick={() => { void submitWalletAdjust("zero"); }}
+                disabled={walletAdjusting !== null || !canAdjustStoreCredit || walletBalanceOf(walletModalCustomer) <= 0}
+                className="flex-1 h-10 rounded-xl border-2 border-red-200 bg-white hover:bg-red-50 text-red-700 text-sm font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              >
+                {walletAdjusting === "zero" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                Zerar saldo
+              </button>
+            </div>
+            {!canAdjustStoreCredit && (
+              <p className="text-xs text-muted-foreground">Apenas o administrador principal pode adicionar ou zerar saldo.</p>
+            )}
+            <button
+              type="button"
+              onClick={closeWalletModal}
+              className="w-full h-10 rounded-xl border border-border text-sm font-semibold hover:bg-muted"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       )}

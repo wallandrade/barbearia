@@ -1,11 +1,14 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-09-10
+> **Última atualização:** 2026-09-18
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
 ## Changelog
 
+| Data | O quê | Impacto | O que NÃO mudou |
+|------|--------|---------|-----------------|
+| 2026-09-18 | Carteira na aba Clientes: `POST /api/admin/customers/:id/store-credit` só admin primário (`hasGlobalAccess`); `GET /admin/customers` mostra saldo a qualquer admin autenticado | Ajustar/zerar na lista sem ir na aba Seguro | Impersonate/senha e aba Seguro iguais |
 | 2026-09-10 | Janela da senha de baixa Motoboy/Minas: **30 min** | Uma senha cobre várias baixas no período | GET snapshot e token iguais |
 | 2026-09-10 | Senha de baixa: modal no Dar baixa agora Motoboy/Minas; `POST /admin/integrations/inventory/unlock`; janela 10 min no espelho | Dá para digitar a senha no Admin | GET snapshot e token iguais |
 | 2026-09-02 | Cadastro/login cliente: CPF opcional; pedidos guest ligam por e-mail **ou** CPF (`customer_users.document`) | Saldo da garantia 100% pode cair depois do cadastro | Sessão in-memory; senha PBKDF2 |
@@ -36,6 +39,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - **Não** há multi-tenant por `tenant_id`; isolamento = `sellerCode` + escopo.
 - Aba **Biblioteca** (fichas de compostos): todos os admins autenticados; não está em `PRIMARY_ONLY_TABS`. API das fichas continua pública (`/api/chat/*`).
 - Aba **Seguro**: `PRIMARY_ONLY_TABS`. `GET/POST /api/admin/store-credits*` = `requirePrimaryAdmin`. `POST /api/admin/orders/:id/insurance-claim` = `requireAdminAuth`.
+- Aba **Clientes**: listagem `GET /api/admin/customers` = `requireAdminAuth`. Ajuste de carteira `POST /api/admin/customers/:id/store-credit` = admin primário (`hasGlobalAccess`), igual senha/impersonate.
 
 ## Portal Motoboy (link secreto)
 
@@ -68,6 +72,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original”.
 - Admin primário: `POST /api/admin/customers/:id/set-password` gera ou define nova senha e devolve o plaintext **uma vez**; UI Admin aba Clientes → botão **Senha**.
 - Admin primário: impersonate `POST /api/admin/customers/:id/impersonate`.
+- Admin primário: carteira do cliente `POST /api/admin/customers/:id/store-credit` (`add` / `zero`); listagem já manda `storeCreditBalance`.
 - Chat de compostos (`/api/chat/*`): **público** (login ainda sem sessão); sem Bearer. Rate limit na rota.
 - Saldo da loja: `GET /api/me/store-credit` e `POST /api/me/orders/:id/insurance-claim` com `requireCustomerAuth` (só o próprio pedido).
 

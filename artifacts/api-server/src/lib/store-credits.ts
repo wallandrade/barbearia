@@ -4,7 +4,7 @@ import {
   customerStoreCreditsTable,
   db,
 } from "@workspace/db";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, inArray } from "drizzle-orm";
 
 export type StoreCreditType =
   | "insurance_cashback"
@@ -31,6 +31,24 @@ export async function getStoreCreditBalance(userId: string): Promise<number> {
   const n = Number(rows[0]?.balance || 0);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return roundMoney(n);
+}
+
+export async function getStoreCreditBalancesByUserIds(userIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const ids = Array.from(new Set(userIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (ids.length === 0) return map;
+  const rows = await db
+    .select({
+      userId: customerStoreCreditsTable.userId,
+      balance: customerStoreCreditsTable.balance,
+    })
+    .from(customerStoreCreditsTable)
+    .where(inArray(customerStoreCreditsTable.userId, ids));
+  for (const row of rows) {
+    const n = Number(row.balance || 0);
+    map.set(row.userId, Number.isFinite(n) && n > 0 ? roundMoney(n) : 0);
+  }
+  return map;
 }
 
 export async function listStoreCreditLedger(userId: string, limit = 30) {

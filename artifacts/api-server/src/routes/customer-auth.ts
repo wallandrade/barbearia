@@ -13,6 +13,8 @@ import {
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { claimGuestOrdersForCustomer, digitsOnlyDocument, isUsableCustomerDocument } from "../lib/claim-guest-orders";
+import { applyStoreCredit, getStoreCreditBalance, getStoreCreditBalancesByUserIds } from "../lib/store-credits";
+import { resolveAdminStoreCreditDelta } from "../lib/store-credits-policy";
 
 const router: IRouter = Router();
 
@@ -277,6 +279,13 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
       affiliateCodeMap.set(row.userId, row.affiliateCode);
     }
 
+    let storeCreditMap = new Map<string, number>();
+    try {
+      storeCreditMap = await getStoreCreditBalancesByUserIds(scopedCustomerIds);
+    } catch (err) {
+      console.warn("[Admin] store credit balances for customers failed", err);
+    }
+
     const registeredEmailSet = new Set<string>();
 
     const registeredCustomers = scopedCustomers.map((c) => {
@@ -289,6 +298,7 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
         orderCount: stats?.orderCount ?? 0,
         affiliateCode: affiliateCodeMap.get(c.id) ?? null,
         hasAccount: true,
+        storeCreditBalance: storeCreditMap.get(c.id) ?? 0,
       };
     });
 
@@ -303,6 +313,7 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
         orderCount: Number(row.orderCount || 0),
         affiliateCode: null,
         hasAccount: false,
+        storeCreditBalance: 0,
       }));
 
     const allCustomers = [...registeredCustomers, ...guestCustomers].sort((a, b) => {
@@ -497,6 +508,77 @@ router.post("/admin/customers/:id/set-password", requireAdminAuth, async (req, r
   } catch (err) {
     console.error("[Admin] set customer password error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao redefinir senha do cliente." });
+  }
+});
+
+// --------------------------------------------------------------------------
+// POST /api/admin/customers/:id/store-credit — credita ou zera a carteira (admin primário)
+// --------------------------------------------------------------------------
+router.post("/admin/customers/:id/store-credit", requireAdminAuth, async (req, res) => {
+  try {
+    const customerId = String(req.params.id || "").trim();
+    if (!customerId || customerId.startsWith("guest:")) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Cliente inválido ou sem conta cadastrada." });
+      return;
+    }
+
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Sessão inválida." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Apenas administrador principal pode ajustar a carteira." });
+      return;
+    }
+
+    const users = await db
+      .select({ id: customerUsersTable.id, name: customerUsersTable.name, email: customerUsersTable.email })
+      .from(customerUsersTable)
+      .where(eq(customerUsersTable.id, customerId))
+      .limit(1);
+
+    const user = users[0];
+    if (!user) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Cliente não encontrado." });
+      return;
+    }
+
+    const currentBalance = await getStoreCreditBalance(user.id);
+    const resolved = resolveAdminStoreCreditDelta({
+      action: String(req.body?.action || ""),
+      currentBalance,
+      amount: req.body?.amount,
+    });
+    if (!resolved.ok) {
+      res.status(400).json({ error: "INVALID_INPUT", message: resolved.error });
+      return;
+    }
+
+    const action = String(req.body?.action || "").trim();
+    const customNote = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+    const note = customNote
+      || (action === "zero" ? "Zerado na lista de clientes" : "Crédito na lista de clientes");
+
+    const result = await applyStoreCredit({
+      userId: user.id,
+      amount: resolved.amount,
+      type: "admin_adjust",
+      note,
+    });
+
+    console.warn(`[Admin] store credit ${action} by admin for user=${user.id} amount=${result.applied} balance=${result.balance}`);
+
+    res.json({
+      ok: true,
+      action,
+      applied: result.applied,
+      balance: result.balance,
+      user: { id: user.id, name: user.name, email: user.email },
+    });
+  } catch (err) {
+    console.error("[Admin] customer store credit error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao ajustar saldo da carteira." });
   }
 });
 
