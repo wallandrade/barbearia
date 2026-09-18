@@ -65,6 +65,14 @@ test("split: todos os pacotes com etiqueta saem da cópia", () => {
   }), true);
 });
 
+test("pacote nulo no split não derruba a cópia 48h", () => {
+  assert.equal(isSplitOrderPartiallyShipped([null as never, motoboyDone]), true);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: true,
+    envioecomPackages: [null as never, motoboyDone, minasPending],
+  }), false);
+});
+
 test("Aguardando coleta no pacote conta como pronto (não volta na 48h daquele pacote)", () => {
   assert.equal(isSplitOrderPartiallyShipped([
     { envioecomStatus: "Aguardando coleta" },

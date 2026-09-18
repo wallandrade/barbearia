@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-17 | Admin deixa de entrar no bundle da loja (`lazy`) | Falha no chunk do Admin não derruba Home/Meus pedidos | Rotas /admin iguais |
 | 2026-09-17 | Cópia 48h split: `isExcludedFromShippingCopyList` em `shipping-copy-list.ts` (não no `Admin.tsx`) | Pedido Enviado com pacote parado continua na lista | Aguardando coleta no pacote igual |
 | 2026-09-17 | Cópia 48h/Lista/Motoboy no Admin: `AdminOrdersCopyBar` no `AdminOrdersChargesSearchShell` (embaixo das sub-abas), não no card dashboard | Operação copia na aba Pedidos; Motoboy é 4ª pílula | Texto copiado e invariante 48h iguais |
 | 2026-09-17 | Anti-padrão: handlers/state do card de pedido **não** existem no `OrdersPanel` — passam por props | Evita `ReferenceError` e tela `Algo deu errado` no Admin | Badge/botão de carteira iguais |

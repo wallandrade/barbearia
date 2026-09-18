@@ -4513,7 +4513,7 @@ export default function Admin() {
       onReprocessQueue={reprocessShippingQueue}
       deadlineGroups={shippingCopyDeadlineHours.map((hours) => ({
         hours,
-        count: shippingCopyGroups[hours].orders.length,
+        count: shippingCopyGroups[hours]?.orders?.length || 0,
       }))}
       onCopyDeadline={copyDeadlineBatch}
       otherCount={shippingCopyNoQueue.length}

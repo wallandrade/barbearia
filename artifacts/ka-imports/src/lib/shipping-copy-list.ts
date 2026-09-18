@@ -69,7 +69,8 @@ export function isClosedReshipmentStatus(status?: string | null): boolean {
   return s === "reenvio_enviado" || s === "reenvio_resolvido_sem_entrada";
 }
 
-export function isSplitPackageDoneForCopy(pkg: ShippingCopyPackage): boolean {
+export function isSplitPackageDoneForCopy(pkg: ShippingCopyPackage | null | undefined): boolean {
+  if (!pkg) return false;
   if (pkg.enviado) return true;
   if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;
   if (isEnvioEcomPostedStatus(pkg.envioecomStatus)) return true;

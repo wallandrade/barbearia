@@ -28,7 +28,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-09-17 | Split: `orders.enviado` **não** tira da cópia 48h. Card **Enviado parcialmente** + texto só dos pacotes que faltam | #853 Minas volta na 48h; selo deixa de ser Enviado inteiro | Pedido sem split Enviado continua saindo; Aguardando coleta no pacote igual |
+| 2026-09-17 | Admin no `lazy()` — deixa de ir no bundle da loja | Tela “Algo deu errado” na Home depois do deploy do Admin | `/admin` igual |
 | 2026-09-17 | Meus pedidos: split **Enviado** continua Envio 1/2 (já saiu vs falta). Filho **cancelado** não seta `hasReshipmentChild` e some da lista | #853 mostra o pacote parado; #1091 cancelado não esconde o original | Reenvio **aberto** ainda esconde o rastreio no pai; Admin split/cópia 48h iguais |
 | 2026-09-17 | Card Admin de pedido **dividido**: cada faixa (Minas / Motoboy / Foz) mostra **foto + nome** só dos itens daquele pacote | Operação vê o que sai de cada origem, não só o texto | Cópia 48h, baixa por pacote e conta do cliente iguais |
 | 2026-09-17 | Reenvio **cancelado** sai das sub-abas Reenvio / estoque / Motoboy (`adminOrdersKindForRow`) | Card tipo #1327 some da fila ao clicar Cancelar; fica em Pedido normal | Cópia 48h já excluía cancelado; filho continua reenvio no lucro/badge |

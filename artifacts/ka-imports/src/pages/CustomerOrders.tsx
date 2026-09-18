@@ -826,11 +826,11 @@ export default function CustomerOrders() {
                               </div>
                               {splitOrder ? (
                                 <div className="space-y-2">
-                                  {packages.map((pkg, pkgIdx) => {
+                                  {packages.filter(Boolean).map((pkg, pkgIdx) => {
                                     const pkgSituation = customerPackageSituation(pkg);
                                     const history = getPackageTrackingHistory(pkg);
                                     return (
-                                      <div key={pkg.id} className="rounded-lg border border-blue-100 bg-white/80 px-2.5 py-2">
+                                      <div key={pkg.id || `pkg-${pkgIdx}`} className="rounded-lg border border-blue-100 bg-white/80 px-2.5 py-2">
                                         <div className="flex flex-wrap items-center gap-2">
                                           <p className="text-[11px] font-semibold text-blue-900">
                                             {customerPackageLabel(pkg, pkgIdx)}
@@ -959,15 +959,15 @@ export default function CustomerOrders() {
                           {expandedOrderId === order.id && (
                             <div className="mt-4 pt-4 border-t border-border/50 space-y-4">
                               {/* Products */}
-                              {splitOrder && packages.some((pkg) => packageShipmentItems(pkg).length > 0) ? (
+                              {splitOrder && packages.some((pkg) => pkg && packageShipmentItems(pkg).length > 0) ? (
                                 <div>
                                   <p className="text-sm font-semibold text-foreground mb-3">Produtos por envio</p>
                                   <div className="space-y-3">
-                                    {packages.map((pkg, pkgIdx) => {
+                                    {packages.filter(Boolean).map((pkg, pkgIdx) => {
                                       const pkgSituation = customerPackageSituation(pkg);
                                       const items = packageShipmentItems(pkg);
                                       return (
-                                        <div key={`${pkg.id}-details`} className="rounded-lg border border-border/40 p-3 space-y-2">
+                                        <div key={`${pkg.id || pkgIdx}-details`} className="rounded-lg border border-border/40 p-3 space-y-2">
                                           <div className="flex flex-wrap items-center gap-2">
                                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                               {customerPackageLabel(pkg, pkgIdx)}
