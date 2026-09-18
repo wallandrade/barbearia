@@ -579,6 +579,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
+import {
+  isClosedReshipmentStatus,
+  isExcludedFromShippingCopyList,
+  isSplitOrderPartiallyShipped,
+  productsForShippingCopy,
+} from "@/lib/shipping-copy-list";
 import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
@@ -10275,105 +10281,6 @@ function isEnvioEcomLabelReadyStatus(status: string | null | undefined): boolean
   );
 }
 
-/** Sai da lista "copiar pedidos para enviar" sem precisar de badge Enviado. */
-function isClosedReshipmentStatus(status?: string | null): boolean {
-  const s = String(status || "").trim().toLowerCase();
-  return s === "reenvio_enviado" || s === "reenvio_resolvido_sem_entrada";
-}
-
-function isExcludedFromShippingCopyList(order: {
-  enviado?: boolean | null;
-  aguardandoEstoque?: boolean | null;
-  envioecomStatus?: string | null;
-  envioecomLabelUrl?: string | null;
-  trackingLabelUrl?: string | null;
-  reshipmentStatus?: string | null;
-  envioecomPackages?: Array<{
-    enviado?: boolean | null;
-    envioecomStatus?: string | null;
-    envioecomLabelUrl?: string | null;
-  }>;
-}): boolean {
-  if (order.enviado) return true;
-  if (order.aguardandoEstoque) return true;
-  if (isClosedReshipmentStatus(order.reshipmentStatus)) return true;
-  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
-  if (packages.length >= 2) {
-    return packages.every((pkg) => {
-      if (pkg.enviado) return true;
-      if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;
-      if (isEnvioEcomPostedStatus(pkg.envioecomStatus)) return true;
-      return Boolean(String(pkg.envioecomLabelUrl || "").trim());
-    });
-  }
-  // Etiqueta pronta OU já coletado/expedido/etc. — não volta na cópia 48h.
-  if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
-  if (isEnvioEcomPostedStatus(order.envioecomStatus)) return true;
-  if (String(order.envioecomLabelUrl || "").trim()) return true;
-  if (String(order.trackingLabelUrl || "").trim()) return true;
-  return false;
-}
-
-function isSplitPackageDoneForCopy(pkg: {
-  enviado?: boolean | null;
-  envioecomStatus?: string | null;
-  envioecomLabelUrl?: string | null;
-}): boolean {
-  if (pkg.enviado) return true;
-  if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;
-  if (isEnvioEcomPostedStatus(pkg.envioecomStatus)) return true;
-  return Boolean(String(pkg.envioecomLabelUrl || "").trim());
-}
-
-function isSplitOrderPartiallyShipped(packages: Array<{
-  enviado?: boolean | null;
-  envioecomStatus?: string | null;
-  envioecomLabelUrl?: string | null;
-}>): boolean {
-  if (!Array.isArray(packages) || packages.length < 2) return false;
-  const done = packages.filter(isSplitPackageDoneForCopy).length;
-  return done > 0 && done < packages.length;
-}
-
-function findOrderProductForShipmentItem(
-  products: OrderProductLite[],
-  item: { productId?: string | null; productName?: string | null },
-): OrderProductLite | undefined {
-  const productId = String(item.productId || "").trim();
-  const name = String(item.productName || "").trim().toLowerCase();
-  return products.find((product) =>
-    (productId && String(product.id || "").trim() === productId)
-    || (name.length > 0 && String(product.name || "").trim().toLowerCase() === name),
-  );
-}
-
-/** Pedido dividido com parte já etiquetada: na cópia de envio entram só os itens que ainda faltam. */
-function productsForShippingCopy(order: any): OrderProductLite[] {
-  const all = getOrderProducts(order?.products);
-  const packages = Array.isArray(order?.envioecomPackages) ? order.envioecomPackages as SplitShipmentPackage[] : [];
-  if (!isSplitOrderPartiallyShipped(packages)) return all;
-
-  const pending = packages.filter((pkg) => !isSplitPackageDoneForCopy(pkg));
-  const rows: OrderProductLite[] = [];
-  for (const pkg of pending) {
-    for (const item of pkg.items || []) {
-      const productId = String(item.productId || "").trim();
-      const name = String(item.productName || "Produto").trim() || "Produto";
-      const qty = Number(item.quantity) || 0;
-      const fromOrder = findOrderProductForShipmentItem(all, item);
-      rows.push({
-        id: productId || fromOrder?.id || "",
-        name: name || fromOrder?.name || "Produto",
-        quantity: qty,
-        price: Number(fromOrder?.price) || 0,
-        costPrice: fromOrder?.costPrice,
-        image: fromOrder?.image,
-      });
-    }
-  }
-  return rows.length > 0 ? rows : all;
-}
-
 function isEnvioEcomShippedLikeStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   if (!s) return false;
@@ -12574,14 +12481,15 @@ function OrdersPanel({
           // Reenvio enviado conta como enviado (não usa o botão normal).
           const showEnviadoUi = !!enviados[order.id] || reshipmentIsSent;
           const isAguardandoEstoque = !!(order as { aguardandoEstoque?: boolean }).aguardandoEstoque;
-          const isPartialShipment = !showEnviadoUi && isSplitOrderPartiallyShipped(envioecomPackages);
-          const cardRingClass = envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
+          const isPartialShipment = isSplitOrderPartiallyShipped(envioecomPackages);
+          const showFullyEnviadoUi = showEnviadoUi && !isPartialShipment;
+          const cardRingClass = isPartialShipment
+            ? "ring-2 ring-amber-400"
+            : envioecomLabelReady || (enviados[order.id] && envioecomShippedLike)
             ? "ring-2 ring-emerald-500"
-            : isPartialShipment
-              ? "ring-2 ring-amber-400"
-              : isPrioridade
-                ? "ring-2 ring-red-400"
-                : "";
+            : isPrioridade
+              ? "ring-2 ring-red-400"
+              : "";
           const resolveProductImage = (product: OrderProductLite): string => {
             const fromSnapshot = String(product?.image || "").trim();
             if (fromSnapshot) return fromSnapshot;
@@ -12644,7 +12552,7 @@ function OrdersPanel({
                             Enviado parcialmente
                           </span>
                         )}
-                        {envioecomStatus ? (
+                        {envioecomStatus && !isPartialShipment ? (
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${freightStatusBadgeClass(envioecomStatus)}`}
                             title="Status EnvioEcom (atualiza com webhook/sync)"
@@ -12652,13 +12560,13 @@ function OrdersPanel({
                             <Truck className="w-3 h-3" />
                             {envioecomStatus}
                           </span>
-                        ) : showEnviadoUi ? (
+                        ) : showFullyEnviadoUi ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Enviado</span>
                         ) : isPartialShipment ? null : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Pendente para envio</span>
                         )}
-                        {/* Badge Enviado junto do status EE quando já marcado */}
-                        {showEnviadoUi && !!envioecomStatus && (
+                        {/* Badge Enviado junto do status EE quando já marcado (pedido inteiro, sem split parcial) */}
+                        {showFullyEnviadoUi && !!envioecomStatus && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">
                             Enviado
                           </span>
