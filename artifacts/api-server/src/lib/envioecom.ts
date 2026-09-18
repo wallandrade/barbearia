@@ -635,6 +635,96 @@ export function pickShipmentIdentifiers(rowInput: Record<string, unknown>): {
   };
 }
 
+/** ID interno do painel EnvioEcom (ex. 726270). Rastreio J&T 8880… não entra. */
+export function isEnvioEcomPanelShipmentId(value: string | null | undefined): boolean {
+  return /^\d{4,10}$/.test(String(value || "").trim());
+}
+
+export type EnvioEcomResolveRefs = {
+  shipmentId?: string | null;
+  barcode?: string | null;
+  trackingKey?: string | null;
+  externalOrderNumber?: string | null;
+  cpf?: string | null;
+  destinationCep?: string | null;
+  recipientName?: string | null;
+  allowCpfFallback?: boolean;
+  /** Vincular: só o ID/barcode colado; não recai no envio antigo por CPF/orderId. */
+  strictIdentifier?: boolean;
+};
+
+export function shipmentMatchesRequestedIdentifier(
+  picked: { shipmentId?: string | null; barcode?: string | null; trackingKey?: string | null },
+  refs: { shipmentId?: string | null; barcode?: string | null; trackingKey?: string | null },
+): boolean {
+  const shipmentId = String(refs.shipmentId || "").trim();
+  const barcode = String(refs.barcode || "").trim();
+  const trackingKey = String(refs.trackingKey || "").trim();
+  if (shipmentId && String(picked.shipmentId || "") === shipmentId) return true;
+  if (barcode && (String(picked.barcode || "") === barcode || String(picked.trackingKey || "") === barcode)) {
+    return true;
+  }
+  if (trackingKey && String(picked.trackingKey || "") === trackingKey) return true;
+  return false;
+}
+
+/** Pontuação da lista EnvioEcom. Vincular (strict) zera candidato que não é o código colado. */
+export function scoreEnvioEcomShipmentCandidate(
+  picked: ReturnType<typeof pickShipmentIdentifiers>,
+  refs: EnvioEcomResolveRefs,
+  rowTrackingKey?: string,
+): number {
+  const strict = Boolean(refs.strictIdentifier);
+  const allowCpfFallback = strict ? false : refs.allowCpfFallback !== false;
+  const shipmentId = String(refs.shipmentId || "").trim();
+  const barcode = String(refs.barcode || "").trim();
+  const trackingKey = String(refs.trackingKey || "").trim();
+  const external = String(refs.externalOrderNumber || "").trim().toLowerCase();
+  const destCep = digitsOnly(refs.destinationCep);
+  const cpf = digitsOnly(refs.cpf);
+  const nameNeedle = String(refs.recipientName || "").trim().toLowerCase();
+
+  if (strict && (shipmentId || barcode || trackingKey) && !shipmentMatchesRequestedIdentifier(picked, refs)) {
+    return 0;
+  }
+
+  let score = 0;
+  if (shipmentId && picked.shipmentId === shipmentId) score += 100;
+  if (
+    !strict &&
+    external &&
+    picked.externalOrderNumber &&
+    (picked.externalOrderNumber.toLowerCase() === external ||
+      picked.externalOrderNumber.toLowerCase().includes(external) ||
+      external.includes(picked.externalOrderNumber.toLowerCase()) ||
+      picked.externalOrderNumber.toLowerCase().includes(external.split("-")[0] || ""))
+  ) {
+    score += 80;
+  }
+  if (allowCpfFallback && destCep.length === 8 && picked.destinationCep === destCep) score += 40;
+  if (allowCpfFallback && cpf.length >= 11 && picked.documentNumber === cpf) score += 50;
+  if (
+    barcode &&
+    (picked.barcode === barcode ||
+      picked.trackingKey === barcode ||
+      String(rowTrackingKey || "") === barcode)
+  ) {
+    score += 120;
+  }
+  if (trackingKey && picked.trackingKey === trackingKey) score += 30;
+  if (
+    allowCpfFallback &&
+    nameNeedle &&
+    picked.recipientName &&
+    picked.recipientName.toLowerCase().includes(nameNeedle.split(" ")[0]!)
+  ) {
+    score += 15;
+  }
+  if (picked.barcode && !isProvisionalEnvioEcomBarcode(picked.barcode)) score += 10;
+  if (picked.shipmentId) score += 5;
+  return score;
+}
+
 /** Extrai barcode/shipping_id/status do retorno de POST /shipping/create */
 export function extractCreatedShipment(created: {
   shipping_create?: {
@@ -677,17 +767,7 @@ export function extractCreatedShipment(created: {
  * Resolve shipping_id + barcode atual na EnvioEcom.
  * Importante: após pagamento o barcode pode mudar (EC... → 8880... da transportadora).
  */
-export async function resolveLiveShipmentRefs(input: {
-  shipmentId?: string | null;
-  barcode?: string | null;
-  trackingKey?: string | null;
-  externalOrderNumber?: string | null;
-  cpf?: string | null;
-  destinationCep?: string | null;
-  recipientName?: string | null;
-  /** Pai com filho de reenvio: não achar o envio do filho por CPF/CEP/nome. */
-  allowCpfFallback?: boolean;
-}): Promise<{
+export async function resolveLiveShipmentRefs(input: EnvioEcomResolveRefs): Promise<{
   barcode: string | null;
   shipmentId: string | null;
   trackingKey: string | null;
@@ -699,7 +779,7 @@ export async function resolveLiveShipmentRefs(input: {
   const tryGet = async (id: string) => {
     try {
       let detail: { success?: boolean; data?: Record<string, unknown> };
-      if (/^\d+$/.test(String(id).trim())) {
+      if (isEnvioEcomPanelShipmentId(id)) {
         try {
           detail = await getShipmentByInternalId(id);
         } catch {
@@ -728,13 +808,25 @@ export async function resolveLiveShipmentRefs(input: {
   let barcode = String(input.barcode || "").trim();
   const trackingKey = String(input.trackingKey || "").trim();
 
+  const strictIdentifier = Boolean(input.strictIdentifier);
+  const requested = { shipmentId, barcode, trackingKey };
+
   let found =
     (shipmentId ? await tryGet(shipmentId) : null) ||
     (!isProvisionalEnvioEcomBarcode(barcode) && barcode ? await tryGet(barcode) : null) ||
     (trackingKey ? await tryGet(trackingKey) : null);
 
+  if (
+    strictIdentifier &&
+    found &&
+    (shipmentId || barcode || trackingKey) &&
+    !shipmentMatchesRequestedIdentifier(found, requested)
+  ) {
+    found = null;
+  }
+
   if (!found || isProvisionalEnvioEcomBarcode(found.barcode) || !found.shipmentId) {
-    const allowCpfFallback = input.allowCpfFallback !== false;
+    const allowCpfFallback = strictIdentifier ? false : input.allowCpfFallback !== false;
     const cpf = digitsOnly(input.cpf);
     const lists: Record<string, unknown>[] = [];
     const pushList = (payload: unknown, source: string) => {
@@ -772,50 +864,12 @@ export async function resolveLiveShipmentRefs(input: {
       }
     }
 
-    const destCep = digitsOnly(input.destinationCep);
-    const external = String(input.externalOrderNumber || "").trim().toLowerCase();
-    const nameNeedle = String(input.recipientName || "").trim().toLowerCase();
-
     type Scored = { score: number; picked: ReturnType<typeof pickShipmentIdentifiers>; raw: Record<string, unknown> };
     const scored: Scored[] = [];
 
     for (const rec of lists) {
       const picked = pickShipmentIdentifiers(rec);
-      let score = 0;
-      if (shipmentId && picked.shipmentId === shipmentId) score += 100;
-      if (
-        external &&
-        picked.externalOrderNumber &&
-        (picked.externalOrderNumber.toLowerCase() === external ||
-          picked.externalOrderNumber.toLowerCase().includes(external) ||
-          external.includes(picked.externalOrderNumber.toLowerCase()) ||
-          picked.externalOrderNumber.toLowerCase().includes(external.split("-")[0] || ""))
-      ) {
-        score += 80;
-      }
-      if (allowCpfFallback && destCep.length === 8 && picked.destinationCep === destCep) score += 40;
-      if (allowCpfFallback && cpf.length >= 11 && picked.documentNumber === cpf) score += 50;
-      if (
-        barcode &&
-        (picked.barcode === barcode ||
-          picked.trackingKey === barcode ||
-          String(rec.tracking_key || "") === barcode)
-      ) {
-        score += 30;
-      }
-      if (trackingKey && picked.trackingKey === trackingKey) score += 30;
-      if (
-        allowCpfFallback &&
-        nameNeedle &&
-        picked.recipientName &&
-        picked.recipientName.toLowerCase().includes(nameNeedle.split(" ")[0]!)
-      ) {
-        score += 15;
-      }
-      // Prefer definitive barcode
-      if (picked.barcode && !isProvisionalEnvioEcomBarcode(picked.barcode)) score += 10;
-      if (picked.shipmentId) score += 5;
-
+      const score = scoreEnvioEcomShipmentCandidate(picked, input, String(rec.tracking_key || ""));
       if (score >= 40) {
         scored.push({ score, picked, raw: flattenShipmentRow(rec) });
       }
@@ -848,18 +902,47 @@ export async function resolveLiveShipmentRefs(input: {
     } else if (!found) {
       console.warn("[EnvioEcom] resolve found no match", {
         lists: lists.length,
-        destCep,
-        external,
+        destCep: digitsOnly(input.destinationCep),
+        external: String(input.externalOrderNumber || "").trim().toLowerCase(),
         hadCpf: cpf.length >= 11,
         barcodePrefix: barcode.slice(0, 4),
       });
     }
   }
 
+  if (strictIdentifier && !found) {
+    return {
+      barcode: null,
+      shipmentId: null,
+      trackingKey: null,
+      status: null,
+      statusHistory: [],
+      deliveryMode: null,
+      raw: null,
+    };
+  }
+
   // Se achou shipping_id, busca detalhe fresco (barcode definitivo pós-pagamento)
   if (found?.shipmentId) {
     const fresh = await tryGet(found.shipmentId);
     if (fresh) found = fresh;
+  }
+
+  if (
+    strictIdentifier &&
+    found &&
+    (shipmentId || barcode || trackingKey) &&
+    !shipmentMatchesRequestedIdentifier(found, requested)
+  ) {
+    return {
+      barcode: null,
+      shipmentId: null,
+      trackingKey: null,
+      status: null,
+      statusHistory: [],
+      deliveryMode: null,
+      raw: null,
+    };
   }
 
   const statusHistory = Array.isArray(found?.statusHistory) ? found!.statusHistory! : [];

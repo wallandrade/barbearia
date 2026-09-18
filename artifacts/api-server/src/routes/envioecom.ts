@@ -416,7 +416,14 @@ function isBenignEnvioEcomCancelError(err: unknown): boolean {
 
 async function resolveLiveForOrder(
   order: typeof ordersTable.$inferSelect,
-  extra?: { shipmentId?: string; barcode?: string; accountId?: string; trackingKey?: string; externalOrderNumber?: string },
+  extra?: {
+    shipmentId?: string;
+    barcode?: string;
+    accountId?: string;
+    trackingKey?: string;
+    externalOrderNumber?: string;
+    strictIdentifier?: boolean;
+  },
 ) {
   const preferred =
     extra?.accountId ||
@@ -424,18 +431,22 @@ async function resolveLiveForOrder(
     undefined;
   const parentWithChild =
     !String(order.parentOrderId || "").trim() && (await orderHasReshipmentChild(order.id));
+  const strictIdentifier = Boolean(extra?.strictIdentifier);
   return withEnvioEcomAccountFallback(
     preferred,
     () =>
       resolveLiveShipmentRefs({
-        shipmentId: extra?.shipmentId || order.envioecomShipmentId,
-        barcode: extra?.barcode || order.envioecomBarcode || order.trackingCode,
-        trackingKey: extra?.trackingKey || order.envioecomTrackingKey,
-        externalOrderNumber: extra?.externalOrderNumber || order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
-        cpf: order.clientDocument,
-        destinationCep: order.addressCep,
-        recipientName: order.clientName,
-        allowCpfFallback: !parentWithChild,
+        shipmentId: extra?.shipmentId || (strictIdentifier ? undefined : order.envioecomShipmentId),
+        barcode: extra?.barcode || (strictIdentifier ? undefined : order.envioecomBarcode || order.trackingCode),
+        trackingKey: extra?.trackingKey || (strictIdentifier ? undefined : order.envioecomTrackingKey),
+        externalOrderNumber: strictIdentifier
+          ? extra?.externalOrderNumber
+          : extra?.externalOrderNumber || order.envioecomExternalOrderNumber || String(order.orderNumber || ""),
+        cpf: strictIdentifier ? undefined : order.clientDocument,
+        destinationCep: strictIdentifier ? undefined : order.addressCep,
+        recipientName: strictIdentifier ? undefined : order.clientName,
+        allowCpfFallback: strictIdentifier ? false : !parentWithChild,
+        strictIdentifier,
       }),
     (live) => Boolean(live.shipmentId || live.barcode),
   );
@@ -1348,14 +1359,16 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
       return;
     }
 
+    const isLink = Boolean(bodyShipmentId || bodyBarcode);
     const livePack = await resolveLiveForOrder(order, {
-      shipmentId: bodyShipmentId || targetPackage?.envioecomShipmentId || undefined,
-      barcode: bodyBarcode || targetPackage?.envioecomBarcode || undefined,
-      trackingKey: targetPackage?.envioecomTrackingKey || undefined,
-      externalOrderNumber: targetPackage?.envioecomExternalOrderNumber || undefined,
+      shipmentId: bodyShipmentId || (isLink ? undefined : targetPackage?.envioecomShipmentId) || undefined,
+      barcode: bodyBarcode || (isLink ? undefined : targetPackage?.envioecomBarcode) || undefined,
+      trackingKey: isLink ? undefined : targetPackage?.envioecomTrackingKey || undefined,
+      externalOrderNumber: isLink ? undefined : targetPackage?.envioecomExternalOrderNumber || undefined,
       accountId: readAccountId(req.body)
         || String(targetPackage?.envioecomAccountId || (order as { envioecomAccountId?: string | null }).envioecomAccountId || "")
         || undefined,
+      strictIdentifier: isLink,
     });
     const live = livePack.result;
     if (targetPackage && livePack.accountId) {
@@ -1367,8 +1380,9 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     if (!live.shipmentId && !live.barcode) {
       res.status(404).json({
         error: "SHIPMENT_NOT_FOUND",
-        message:
-          "Envio não encontrado na API. No painel existe, mas o código local pode estar desatualizado — confira CPF/CEP do pedido.",
+        message: isLink
+          ? "Esse ID/rastreio não foi encontrado na EnvioEcom. Confira o código (não reutiliza o envio anterior)."
+          : "Envio não encontrado na API. No painel existe, mas o código local pode estar desatualizado — confira CPF/CEP do pedido.",
       });
       return;
     }
@@ -1412,7 +1426,6 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
     const packages = await listOrderShipments(order.id);
-    const isLink = Boolean(bodyShipmentId || bodyBarcode);
     recordAdminActivity(
       req,
       order.id,

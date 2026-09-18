@@ -6,9 +6,11 @@ import {
   inventoryPoolForEnvioEcomAccount,
   isAwaitingPickupStatus,
   isEnvioEcomCancelStatus,
+  isEnvioEcomPanelShipmentId,
   isInTransitStatus,
   isLabelReadyStatus,
   nextEnvioEcomExternalOrderNumber,
+  scoreEnvioEcomShipmentCandidate,
 } from "./envioecom";
 
 test("Coleta Recebida conta como postado", () => {
@@ -71,4 +73,44 @@ test("conta EnvioEcom SP mapeia Motoboy e MG mapeia Minas (pool sugerido, sem ba
   assert.equal(inventoryPoolForEnvioEcomAccount("abc", "EnvioEcom MG"), "minas");
   assert.equal(inventoryPoolForEnvioEcomAccount("extra-uuid", "API 2"), "minas");
   assert.equal(inventoryPoolForEnvioEcomAccount(null, null), null);
+});
+
+test("ID do painel EnvioEcom é numérico curto; rastreio J&T não é", () => {
+  assert.equal(isEnvioEcomPanelShipmentId("726270"), true);
+  assert.equal(isEnvioEcomPanelShipmentId("888030936387775"), false);
+});
+
+test("vincular barcode novo não recai no envio antigo por CPF/orderId residual", () => {
+  const leftover = {
+    barcode: "888030919149606",
+    shipmentId: "111",
+    trackingKey: null,
+    status: "Entregue",
+    externalOrderNumber: "1040-abcd1234-motoboy",
+    destinationCep: "95010000",
+    documentNumber: "02147559083",
+    recipientName: "Andressa Nogueira Bissaco",
+  };
+  const neu = {
+    barcode: "888030936387775",
+    shipmentId: "222",
+    trackingKey: null,
+    status: "Envio criado",
+    externalOrderNumber: "999-other",
+    destinationCep: "95010000",
+    documentNumber: "02147559083",
+    recipientName: "Andressa Nogueira Bissaco",
+  };
+  const linkRefs = {
+    barcode: "888030936387775",
+    externalOrderNumber: "1040-abcd1234-motoboy",
+    cpf: "02147559083",
+    destinationCep: "95010000",
+    recipientName: "Andressa Nogueira Bissaco",
+    allowCpfFallback: true,
+    strictIdentifier: true,
+  };
+  assert.equal(scoreEnvioEcomShipmentCandidate(leftover, linkRefs), 0);
+  assert.ok(scoreEnvioEcomShipmentCandidate(neu, linkRefs) >= 40);
+  assert.ok(scoreEnvioEcomShipmentCandidate(neu, linkRefs) > scoreEnvioEcomShipmentCandidate(leftover, linkRefs));
 });

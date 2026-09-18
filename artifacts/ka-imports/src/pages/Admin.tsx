@@ -10834,6 +10834,7 @@ function OrdersPanel({
           deliveryMode?: string | null;
         };
         resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
+        packages?: unknown[];
         message?: string;
         error?: string;
       };
@@ -10842,8 +10843,8 @@ function OrdersPanel({
         return;
       }
 
-      const shipmentId = data.resolved?.shipmentId || parsed.shipment_id || (order as any).envioecomShipmentId;
-      const barcode = data.resolved?.barcode || data.tracking?.barcode || parsed.barcode || (order as any).envioecomBarcode;
+      const shipmentId = data.resolved?.shipmentId || parsed.shipment_id || null;
+      const barcode = data.resolved?.barcode || data.tracking?.barcode || parsed.barcode || null;
       const status = data.resolved?.status || data.tracking?.status;
 
       patchOrderLocal(order.id, {
@@ -10855,6 +10856,7 @@ function OrdersPanel({
         trackingCode: barcode || (order as any).trackingCode,
         // Só liga enviado se já postado; nunca desliga marcado manual.
         ...(isEnvioEcomPostedStatus(status) ? { enviado: true } : {}),
+        ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
       });
       if (isEnvioEcomPostedStatus(status)) {
         onSetOrderEnviado(order.id, true);
