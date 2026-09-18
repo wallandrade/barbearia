@@ -7,6 +7,11 @@ export type AdminSearchOrder = {
   clientEmail: string;
   addressCep?: string | null;
   products?: unknown;
+  shippingType?: string | null;
+  parentOrderId?: string | null;
+  observation?: string | null;
+  reshipment?: { id?: string | null } | null;
+  aguardandoEstoque?: boolean | null;
 };
 
 export type AdminSearchCharge = {

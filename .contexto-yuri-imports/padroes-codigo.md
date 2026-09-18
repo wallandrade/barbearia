@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-17 | Cópia 48h/Lista/Motoboy no Admin: `AdminOrdersCopyBar` no `AdminOrdersChargesSearchShell` (embaixo das sub-abas), não no card dashboard | Operação copia na aba Pedidos; Motoboy é 4ª pílula | Texto copiado e invariante 48h iguais |
 | 2026-09-17 | Anti-padrão: handlers/state do card de pedido **não** existem no `OrdersPanel` — passam por props | Evita `ReferenceError` e tela `Algo deu errado` no Admin | Badge/botão de carteira iguais |
 | 2026-09-11 | Anti-padrão: texto da busca de pedidos/clientes **não** vive no `Admin` pai | Digitar não redesenha o admin inteiro (cards, estoque, poll 5 s) | Filtro local igual; sem GET a cada tecla |
 | 2026-09-10 | Anti-padrão: selo Estoque OK do card Admin não pode casar por nome “parecido” | Evita verde com SKU 0 e primo com saldo | Lista de compra / previsão de toast iguais |
@@ -29,7 +30,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - Dados remotos: **TanStack Query** (client gerado em `lib/api-client-react` quando aplicável).
 - UI: Tailwind 4 + componentes estilo Radix/shadcn em `src/components`.
 - Páginas em `src/pages`; store em `src/store`; hooks/lib em `src/hooks`, `src/lib`.
-- Busca Admin pedidos/cobranças: estado no filho (`AdminOrdersChargesSearchShell` + `AdminDebouncedSearchInput`); pai só manda `seedSearch` (`goToOrder`). Visitantes ao vivo: `AdminLiveVisitorStats` (poll 5 s fora do pai). Clientes/recorrentes: busca interna do painel.
+- Busca Admin pedidos/cobranças: estado no filho (`AdminOrdersChargesSearchShell` + `AdminDebouncedSearchInput`); pai só manda `seedSearch` (`goToOrder`). Sub-abas + barra de copiar (`copyActions` / `AdminOrdersCopyBar`) no shell. Visitantes ao vivo: `AdminLiveVisitorStats` (poll 5 s fora do pai). Clientes/recorrentes: busca interna do painel.
 - Card da aba Pedidos: `OrdersPanel` é componente **separado** — state/handlers do pai (`storeCreditApplying`, `applyCustomerStoreCredit`, etc.) entram por **props**. Referência solta no filho vira `ReferenceError` e tela `Algo deu errado`.
 - Lazy routes / chunks manuais no Vite quando já existirem — preservar o padrão local.
 - Nome do package e tags SW (`ka-imports-admin`) são legado; UI fala **Yury**.

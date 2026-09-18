@@ -596,6 +596,7 @@ import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
   adminOrdersKindForRow,
+  isAdminOrdersReshipmentRow,
   isReshipmentChildOrder,
   type AdminOrdersKind,
 } from "@/lib/admin-orders-kind";
@@ -604,6 +605,7 @@ import { checkOrderItemsHaveStock } from "@/lib/order-stock-check";
 import { AdminDebouncedSearchInput } from "@/components/AdminDebouncedSearchInput";
 import { AdminLiveVisitorStats } from "@/components/AdminLiveVisitorStats";
 import { AdminOrdersChargesSearchShell } from "@/components/AdminOrdersChargesSearchShell";
+import { AdminOrdersCopyBar } from "@/components/AdminOrdersCopyBar";
 
 
 
@@ -4309,6 +4311,212 @@ export default function Admin() {
     }
   };
 
+  const isPostalShippingOrder = (o: AdminOrder) => {
+    const shippingType = String((o as { shippingType?: string }).shippingType || "").toLowerCase().trim();
+    if (shippingType === "motoboy") return false;
+    if (shippingType === "retirada" || shippingType === "pickup") return false;
+    return true;
+  };
+
+  const postalCopyOrders = ordersParaEnviar.filter((o) => {
+    if (!isPostalShippingOrder(o)) return false;
+    const isReshipment = isAdminOrdersReshipmentRow(o);
+    if (ordersKind === "reenvio") return isReshipment;
+    if (ordersKind === "normal") return !isReshipment;
+    return false;
+  });
+
+  const shippingCopyGroups: Record<number, { orders: typeof ordersParaEnviar; queueDate: string }> = {};
+  const shippingCopyNoQueue: typeof ordersParaEnviar = [];
+  postalCopyOrders.forEach((o) => {
+    const q = shippingQueueMap[o.id];
+    if (q) {
+      if (!shippingCopyGroups[q.deadlineHours]) shippingCopyGroups[q.deadlineHours] = { orders: [], queueDate: q.queueDate };
+      shippingCopyGroups[q.deadlineHours].orders.push(o);
+    } else {
+      shippingCopyNoQueue.push(o);
+    }
+  });
+  const shippingCopyDeadlineHours = Object.keys(shippingCopyGroups).map(Number).sort((a, b) => a - b);
+
+  const buildBatchText = (list: typeof ordersParaEnviar, deadlineHours: number, queueDate: string) => {
+    const dateFormatted = queueDate
+      ? new Date(queueDate + "T12:00:00").toLocaleDateString("pt-BR")
+      : "-";
+    const header = [
+      `🚨 POSTAR ATÉ: ${dateFormatted} às 18:00`,
+      `Lote de expedição: ${list.length} pedidos de 20 vagas`,
+      `Prazo de postagem: até ${deadlineHours} horas`,
+      "",
+    ].join("\n");
+
+    const orderBlocks = list.map((order) => {
+      const products = productsForShippingCopy(order);
+      const packages = Array.isArray((order as { envioecomPackages?: unknown[] }).envioecomPackages)
+        ? (order as { envioecomPackages: unknown[] }).envioecomPackages
+        : [];
+      const remainingLabel = isSplitOrderPartiallyShipped(packages as Array<{ enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null }>)
+        ? "Resumo pedido (restante):"
+        : "Resumo pedido:";
+      const ref = getOrderReference(order);
+      const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+      const isReshipment = Boolean(order?.reshipment?.id)
+        && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
+      const resumo = products.length
+        ? products.map((p) => `- ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n")
+        : "- Sem itens";
+      return [
+        isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
+        isReshipment ? `Data do pedido original: ${formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-"}` : "",
+        isReshipment ? `Motivo do reenvio: ${String(order?.reshipment?.ticketDescription || "Nao informado").trim()}` : "",
+        isReshipment ? "" : "",
+        `PEDIDO #${ref}`,
+        "",
+        `Nome: ${order?.clientName || "-"}`,
+        `Rua: ${rua}`,
+        `Bairro: ${order?.addressNeighborhood || "-"}`,
+        `Complemento: ${order?.addressComplement || "-"}`,
+        `Cidade: ${order?.addressCity || "-"}`,
+        `Estado: ${order?.addressState || "-"}`,
+        `CEP: ${order?.addressCep || "-"}`,
+        "",
+        remainingLabel,
+        resumo,
+        "_______________________________",
+      ].filter((line, i, arr) => !(line === "" && i < 5 && arr[i - 1] === "")).join("\n");
+    });
+
+    return header + orderBlocks.join("\n\n");
+  };
+
+  const copyDeadlineBatch = async (hours: number, event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const group = shippingCopyGroups[hours];
+    if (!group) {
+      toast.info("Nao ha pedidos neste prazo.");
+      return;
+    }
+    const text = buildBatchText(group.orders, hours, group.queueDate);
+    try {
+      const m = await copyText(text);
+      toast.success(m === "manual" ? "Texto aberto." : `${hours}h copiado (${group.orders.length} pedidos).`);
+    } catch {
+      toast.error("Erro ao copiar.");
+    }
+  };
+
+  const copyOtherPostalOrders = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (shippingCopyNoQueue.length === 0) {
+      toast.info("Nao ha pedidos sem fila para copiar.");
+      return;
+    }
+    const text = shippingCopyNoQueue.map((order, i) => supplierOrderBlock(order, i + 1)).join("\n\n");
+    try {
+      const m = await copyText(text);
+      toast.success(m === "manual" ? "Texto aberto." : `Outros copiado (${shippingCopyNoQueue.length} pedidos).`);
+    } catch {
+      toast.error("Erro ao copiar.");
+    }
+  };
+
+  const copyMotoboyOrders = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (motoboyOrdersParaCopiar.length === 0) {
+      toast.info("Nao ha entregas Motoboy para copiar.");
+      return;
+    }
+    const lines = [...motoboyOrdersParaCopiar]
+      .sort((a, b) => {
+        const aKey = `${String((a as { motoboySlotDate?: string | null }).motoboySlotDate || "9999-99-99")} ${String((a as { motoboySlotTime?: string | null }).motoboySlotTime || "99:99")}`;
+        const bKey = `${String((b as { motoboySlotDate?: string | null }).motoboySlotDate || "9999-99-99")} ${String((b as { motoboySlotTime?: string | null }).motoboySlotTime || "99:99")}`;
+        return aKey.localeCompare(bKey);
+      })
+      .map((order) => {
+        const products = productsForShippingCopy(order);
+        const ref = getOrderReference(order);
+        const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
+        const productsSubtotal = products.reduce(
+          (sum, p) => sum + (Number(p?.quantity) || 0) * (Number(p?.price) || 0),
+          0,
+        );
+        const motoboyFee = Math.max(0, Number(order?.shippingCost) || 0);
+        const productsPlusMotoboy = productsSubtotal + motoboyFee;
+        const resumo = products.length
+          ? products
+              .map((p) => {
+                const qty = Number(p?.quantity) || 0;
+                const price = Number(p?.price) || 0;
+                const lineTotal = qty * price;
+                return `• ${qty}x ${p?.name || "Produto"} — ${formatCurrency(lineTotal)}`;
+              })
+              .join("\n")
+          : "• Sem itens";
+        const paid = order.status === "paid" || order.status === "completed";
+        const slotLabel = formatMotoboySlotLabel(
+          (order as { motoboySlotDate?: string | null }).motoboySlotDate,
+          (order as { motoboySlotTime?: string | null }).motoboySlotTime,
+        );
+        return [
+          `📦 ENTREGA #${ref}`,
+          paid ? "✅ Pagamento: confirmado" : "⚠️ Pagamento: PENDENTE",
+          `🕐 Entrega: ${slotLabel}`,
+          `👤 Cliente: ${order?.clientName || "-"}`,
+          `📍 Endereço: ${rua}`,
+          `🏘️ Bairro: ${order?.addressNeighborhood || "-"}`,
+          `🏙️ Cidade: ${order?.addressCity || "-"} / ${order?.addressState || "-"}`,
+          `📮 CEP: ${order?.addressCep || "-"}`,
+          ``,
+          `📦 Itens:`,
+          resumo,
+          ``,
+          `💰 Produtos: ${formatCurrency(productsSubtotal)}`,
+          `🛵 Frete Motoboy: ${formatCurrency(motoboyFee)}`,
+          `💵 Total (produtos + Motoboy): ${formatCurrency(productsPlusMotoboy)}`,
+          `━━━━━━━━━━━━━━━━━━`,
+        ].join("\n");
+      });
+    const text = `🛵 ENTREGAS MOTOBOY\n━━━━━━━━━━━━━━━━━━\n\n` + lines.join("\n\n");
+    try {
+      const m = await copyText(text);
+      toast.success(m === "manual" ? "Texto aberto." : `Motoboy copiado (${motoboyOrdersParaCopiar.length} pedidos).`);
+    } catch {
+      toast.error("Erro ao copiar.");
+    }
+  };
+
+  const reprocessShippingQueue = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    try {
+      await fetch(`${BASE}/api/admin/shipping-queue/bootstrap`, { method: "POST", headers: authHeaders() });
+      toast.success("Fila reprocessada! Recarregue os pedidos em instantes.");
+      setTimeout(() => fetchOrders(true), 3000);
+    } catch {
+      toast.error("Erro ao reprocessar fila.");
+    }
+  };
+
+  const ordersCopyBar = (
+    <AdminOrdersCopyBar
+      ordersKind={ordersKind}
+      onCopyShoppingList={copyShoppingList}
+      onReprocessQueue={reprocessShippingQueue}
+      deadlineGroups={shippingCopyDeadlineHours.map((hours) => ({
+        hours,
+        count: shippingCopyGroups[hours].orders.length,
+      }))}
+      onCopyDeadline={copyDeadlineBatch}
+      otherCount={shippingCopyNoQueue.length}
+      onCopyOthers={copyOtherPostalOrders}
+      motoboyCount={motoboyOrdersParaCopiar.length}
+      onCopyMotoboy={copyMotoboyOrders}
+    />
+  );
+
   // ── Dashboard stats — uses independently fetched data (own API call) ─────
   const statsPaidOrders    = statsOrdersData.filter((o) => o.status === "paid" || o.status === "completed");
   const statsPixPaid       = statsPaidOrders.filter((o) => o.paymentMethod === "pix" || o.paymentMethod === "whatsapp_pix");
@@ -4680,195 +4888,9 @@ export default function Admin() {
               <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
                 <Truck className="w-4 h-4" /> Pedidos para Enviar
               </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={copyShoppingList}
-                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white"
-                >
-                  <ShoppingBag className="w-3.5 h-3.5" /> Lista de Compra
-                </button>
-                <button
-                  type="button"
-                  title="Reprocessar fila de expedição"
-                  onClick={async (e) => {
-                    e.preventDefault(); e.stopPropagation();
-                    try {
-                      await fetch(`${BASE}/api/admin/shipping-queue/bootstrap`, { method: "POST", headers: authHeaders() });
-                      toast.success("Fila reprocessada! Recarregue os pedidos em instantes.");
-                      setTimeout(() => fetchOrders(true), 3000);
-                    } catch { toast.error("Erro ao reprocessar fila."); }
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white"
-                >
-                  <IconLucide name="RefreshCw" className="w-3.5 h-3.5" /> Fila
-                </button>
-                {/* Copy buttons per queue deadline */}
-                {(() => {
-                  const groups: Record<number, { orders: typeof ordersParaEnviar; queueDate: string }> = {};
-                  const motoboyOrders = motoboyOrdersParaCopiar;
-                  const noQueue: typeof ordersParaEnviar = [];
-                  ordersParaEnviar.forEach((o) => {
-                    const shippingType = String((o as { shippingType?: string }).shippingType || "").toLowerCase();
-                    if (shippingType === "motoboy") return; // Motoboy no botão dedicado (inclui PIX pendente)
-                    if (shippingType === "retirada" || shippingType === "pickup") return; // retirada não entra na fila de envio
-                    const q = shippingQueueMap[o.id];
-                    if (q) {
-                      if (!groups[q.deadlineHours]) groups[q.deadlineHours] = { orders: [], queueDate: q.queueDate };
-                      groups[q.deadlineHours].orders.push(o);
-                    } else { noQueue.push(o); }
-                  });
-                  const sortedHours = Object.keys(groups).map(Number).sort((a, b) => a - b);
-
-                  const buildBatchText = (list: typeof ordersParaEnviar, deadlineHours: number, queueDate: string) => {
-                    const dateFormatted = queueDate
-                      ? new Date(queueDate + "T12:00:00").toLocaleDateString("pt-BR")
-                      : "-";
-                    const header = [
-                      `🚨 POSTAR ATÉ: ${dateFormatted} às 18:00`,
-                      `Lote de expedição: ${list.length} pedidos de 20 vagas`,
-                      `Prazo de postagem: até ${deadlineHours} horas`,
-                      "",
-                    ].join("\n");
-
-                    const orderBlocks = list.map((order) => {
-                      const products = productsForShippingCopy(order);
-                      const packages = Array.isArray((order as { envioecomPackages?: unknown[] }).envioecomPackages)
-                        ? (order as { envioecomPackages: unknown[] }).envioecomPackages
-                        : [];
-                      const remainingLabel = isSplitOrderPartiallyShipped(packages as Array<{ enviado?: boolean | null; envioecomStatus?: string | null; envioecomLabelUrl?: string | null }>)
-                        ? "Resumo pedido (restante):"
-                        : "Resumo pedido:";
-                      const ref = getOrderReference(order);
-                      const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-                      const isReshipment = Boolean(order?.reshipment?.id)
-                        && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
-                      const resumo = products.length
-                        ? products.map((p) => `- ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n")
-                        : "- Sem itens";
-                      return [
-                        isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
-                        isReshipment ? `Data do pedido original: ${formatDateBR(order?.reshipment?.originalOrderCreatedAt || order?.createdAt) || "-"}` : "",
-                        isReshipment ? `Motivo do reenvio: ${String(order?.reshipment?.ticketDescription || "Nao informado").trim()}` : "",
-                        isReshipment ? "" : "",
-                        `PEDIDO #${ref}`,
-                        "",
-                        `Nome: ${order?.clientName || "-"}`,
-                        `Rua: ${rua}`,
-                        `Bairro: ${order?.addressNeighborhood || "-"}`,
-                        `Complemento: ${order?.addressComplement || "-"}`,
-                        `Cidade: ${order?.addressCity || "-"}`,
-                        `Estado: ${order?.addressState || "-"}`,
-                        `CEP: ${order?.addressCep || "-"}`,
-                        "",
-                        remainingLabel,
-                        resumo,
-                        "_______________________________",
-                      ].filter((line, i, arr) => !(line === "" && i < 5 && arr[i - 1] === "")).join("\n");
-                    });
-
-                    return header + orderBlocks.join("\n\n");
-                  };
-
-                  return (
-                    <>
-                      {sortedHours.map((hours) => (
-                        <button key={hours} type="button"
-                          onClick={async (e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            const { orders: list, queueDate } = groups[hours];
-                            const text = buildBatchText(list, hours, queueDate);
-                            try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `${hours}h copiado (${list.length} pedidos).`); }
-                            catch { toast.error("Erro ao copiar."); }
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white whitespace-nowrap"
-                        >
-                          <Copy className="w-3.5 h-3.5" /> {hours}h ({groups[hours].orders.length})
-                        </button>
-                      ))}
-                      {noQueue.length > 0 && (
-                        <button type="button"
-                          onClick={async (e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            const text = noQueue.map((order, i) => supplierOrderBlock(order, i + 1)).join("\n\n");
-                            try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `Outros copiado (${noQueue.length} pedidos).`); }
-                            catch { toast.error("Erro ao copiar."); }
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/90 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-white whitespace-nowrap"
-                        >
-                          <Copy className="w-3.5 h-3.5" /> Outros ({noQueue.length})
-                        </button>
-                      )}
-                      {motoboyOrders.length > 0 && (
-                        <button type="button"
-                          onClick={async (e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            const lines = [...motoboyOrders]
-                              .sort((a, b) => {
-                                const aKey = `${String((a as { motoboySlotDate?: string | null }).motoboySlotDate || "9999-99-99")} ${String((a as { motoboySlotTime?: string | null }).motoboySlotTime || "99:99")}`;
-                                const bKey = `${String((b as { motoboySlotDate?: string | null }).motoboySlotDate || "9999-99-99")} ${String((b as { motoboySlotTime?: string | null }).motoboySlotTime || "99:99")}`;
-                                return aKey.localeCompare(bKey);
-                              })
-                              .map((order) => {
-                              const products = productsForShippingCopy(order);
-                              const ref = getOrderReference(order);
-                              const rua = [order?.addressStreet, order?.addressNumber].filter(Boolean).join(", ") || "-";
-                              const productsSubtotal = products.reduce(
-                                (sum, p) => sum + (Number(p?.quantity) || 0) * (Number(p?.price) || 0),
-                                0,
-                              );
-                              const motoboyFee = Math.max(0, Number(order?.shippingCost) || 0);
-                              const productsPlusMotoboy = productsSubtotal + motoboyFee;
-                              const resumo = products.length
-                                ? products
-                                    .map((p) => {
-                                      const qty = Number(p?.quantity) || 0;
-                                      const price = Number(p?.price) || 0;
-                                      const lineTotal = qty * price;
-                                      return `• ${qty}x ${p?.name || "Produto"} — ${formatCurrency(lineTotal)}`;
-                                    })
-                                    .join("\n")
-                                : "• Sem itens";
-                              const paid = order.status === "paid" || order.status === "completed";
-                              const slotLabel = formatMotoboySlotLabel(
-                                (order as { motoboySlotDate?: string | null }).motoboySlotDate,
-                                (order as { motoboySlotTime?: string | null }).motoboySlotTime,
-                              );
-                              return [
-                                `📦 ENTREGA #${ref}`,
-                                paid ? "✅ Pagamento: confirmado" : "⚠️ Pagamento: PENDENTE",
-                                `🕐 Entrega: ${slotLabel}`,
-                                `👤 Cliente: ${order?.clientName || "-"}`,
-                                `📍 Endereço: ${rua}`,
-                                `🏘️ Bairro: ${order?.addressNeighborhood || "-"}`,
-                                `🏙️ Cidade: ${order?.addressCity || "-"} / ${order?.addressState || "-"}`,
-                                `📮 CEP: ${order?.addressCep || "-"}`,
-                                ``,
-                                `📦 Itens:`,
-                                resumo,
-                                ``,
-                                `💰 Produtos: ${formatCurrency(productsSubtotal)}`,
-                                `🛵 Frete Motoboy: ${formatCurrency(motoboyFee)}`,
-                                `💵 Total (produtos + Motoboy): ${formatCurrency(productsPlusMotoboy)}`,
-                                `━━━━━━━━━━━━━━━━━━`,
-                              ].join("\n");
-                            });
-                            const text = `🛵 ENTREGAS MOTOBOY\n━━━━━━━━━━━━━━━━━━\n\n` + lines.join("\n\n");
-                            try { const m = await copyText(text); toast.success(m === "manual" ? "Texto aberto." : `Motoboy copiado (${motoboyOrders.length} pedidos).`); }
-                            catch { toast.error("Erro ao copiar."); }
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-800 hover:bg-orange-100 whitespace-nowrap"
-                        >
-                          🏍️ Motoboy ({motoboyOrders.length})
-                        </button>
-                      )}
-                    </>
-                  );
-                })()}
-                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
-                  {ordersParaEnviar.filter((o) => !isMotoboyOrder(o)).length + motoboyOrdersParaCopiar.length}
-                </span>
-              </div>
+              <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                {ordersParaEnviar.filter((o) => !isMotoboyOrder(o)).length + motoboyOrdersParaCopiar.length}
+              </span>
             </div>
             {ordersParaEnviar.length === 0 && motoboyOrdersParaCopiar.length === 0 ? (
               <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
@@ -4985,6 +5007,7 @@ export default function Admin() {
             tab={tab === "charges" ? "charges" : "orders"}
             ordersKind={ordersKind}
             setOrdersKind={setOrdersKind}
+            copyActions={tab === "orders" ? ordersCopyBar : undefined}
             filterControls={(
               <div className="flex gap-2 flex-wrap shrink-0">
                 <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer" />
@@ -5036,7 +5059,9 @@ export default function Admin() {
                 ? "Nenhum reenvio neste período"
                 : ordersKind === "aguardando_estoque"
                   ? "Nenhum pedido aguardando estoque neste período"
-                  : "Nenhum pedido encontrado"
+                  : ordersKind === "motoboy"
+                    ? "Nenhum pedido Motoboy neste período"
+                    : "Nenhum pedido encontrado"
             }
             trackingCandidates={orders.filter((order) => !order.enviado && !isCancelledOrderStatus(order.status))}
             productImageById={Object.fromEntries(

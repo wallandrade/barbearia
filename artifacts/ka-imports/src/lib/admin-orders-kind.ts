@@ -1,4 +1,4 @@
-export type AdminOrdersKind = "normal" | "reenvio" | "aguardando_estoque";
+export type AdminOrdersKind = "normal" | "reenvio" | "aguardando_estoque" | "motoboy";
 
 export type AdminOrdersKindRow = {
   shippingType?: string | null;
@@ -29,9 +29,15 @@ export function isAdminOrdersAwaitingStock(order: AdminOrdersKindRow | null | un
   return Boolean(order?.aguardandoEstoque);
 }
 
+/** Frete Motoboy (`shippingType`); reenvio e aguardando estoque vencem esta aba. */
+export function isAdminOrdersMotoboyRow(order: AdminOrdersKindRow | null | undefined): boolean {
+  return String(order?.shippingType || "").trim().toLowerCase() === "motoboy";
+}
+
 export function adminOrdersKindForRow(order: AdminOrdersKindRow | null | undefined): AdminOrdersKind {
   if (isAdminOrdersAwaitingStock(order)) return "aguardando_estoque";
   if (isAdminOrdersReshipmentRow(order)) return "reenvio";
+  if (isAdminOrdersMotoboyRow(order)) return "motoboy";
   return "normal";
 }
 
@@ -39,11 +45,5 @@ export function filterAdminOrdersByKind<T extends AdminOrdersKindRow>(
   orders: T[],
   kind: AdminOrdersKind,
 ): T[] {
-  return orders.filter((order) => {
-    const awaiting = isAdminOrdersAwaitingStock(order);
-    if (kind === "aguardando_estoque") return awaiting;
-    if (awaiting) return false;
-    const isReshipment = isAdminOrdersReshipmentRow(order);
-    return kind === "reenvio" ? isReshipment : !isReshipment;
-  });
+  return orders.filter((order) => adminOrdersKindForRow(order) === kind);
 }
