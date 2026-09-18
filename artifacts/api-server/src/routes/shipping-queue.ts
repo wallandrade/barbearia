@@ -20,6 +20,51 @@ router.get("/shipping-queue/preview", async (_req, res) => {
   }
 });
 
+type ShippingQueuePublicAlloc = {
+  queueDate: string;
+  queueSlot: number;
+  deadlineHours: number;
+  postingDeadlineAt: string;
+};
+
+function toPublicAlloc(row: {
+  queueDate: string;
+  queueSlot: number;
+  deadlineHours: number;
+  postingDeadlineAt: string;
+}): ShippingQueuePublicAlloc {
+  return {
+    queueDate: row.queueDate,
+    queueSlot: row.queueSlot,
+    deadlineHours: row.deadlineHours,
+    postingDeadlineAt: row.postingDeadlineAt,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/shipping-queue  (admin)
+// Todas as alocações ativas — o Admin usa isto no lugar de N GET por pedido.
+// Tem de vir ANTES de /:orderId.
+// ---------------------------------------------------------------------------
+router.get("/admin/shipping-queue", requireAdminAuth, async (_req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(shippingQueueTable)
+      .where(eq(shippingQueueTable.isActive, true));
+
+    const allocations: Record<string, ShippingQueuePublicAlloc> = {};
+    for (const row of rows) {
+      if (!row.orderId) continue;
+      allocations[row.orderId] = toPublicAlloc(row);
+    }
+    res.json({ allocations });
+  } catch (err) {
+    console.error("[ShippingQueue] list error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // GET /api/admin/shipping-queue/:orderId  (admin)
 // Returns the active queue allocation for a specific order.
@@ -35,7 +80,7 @@ router.get("/admin/shipping-queue/:orderId", requireAdminAuth, async (req, res) 
       .where(and(eq(shippingQueueTable.orderId, orderId), eq(shippingQueueTable.isActive, true)))
       .limit(1);
 
-    res.json({ allocation: rows[0] ?? null });
+    res.json({ allocation: rows[0] ? toPublicAlloc(rows[0]) : null });
   } catch (err) {
     console.error("[ShippingQueue] get error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });

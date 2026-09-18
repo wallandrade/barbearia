@@ -580,6 +580,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import {
+  findOrderProductForShipmentItem,
   isClosedReshipmentStatus,
   isExcludedFromShippingCopyList,
   isSplitOrderPartiallyShipped,
@@ -2017,19 +2018,31 @@ export default function Admin() {
       };
       if (_silent) startTransition(applyOrders);
       else applyOrders();
-      // Load shipping queue allocations for paid orders
+      // Fila de expedição: um GET de todas as alocações ativas (evita N+1 por pedido pago).
+      type QueueAlloc = { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string };
       const paidIds = (data.orders || []).filter((o) => o.status === "paid" || o.status === "completed").map((o) => o.id);
       if (paidIds.length > 0) {
-        const queueMap: Record<string, { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string }> = {};
-        await Promise.all(paidIds.map(async (oid) => {
-          try {
-            const qRes = await fetch(`${BASE}/api/admin/shipping-queue/${oid}`, { headers: authHeaders() });
-            if (qRes.ok) {
-              const qData = await qRes.json() as { allocation?: { queueDate: string; queueSlot: number; deadlineHours: number; postingDeadlineAt: string } | null };
-              if (qData.allocation) queueMap[oid] = qData.allocation;
+        let queueMap: Record<string, QueueAlloc> = {};
+        try {
+          const bulkRes = await fetch(`${BASE}/api/admin/shipping-queue`, { headers: authHeaders() });
+          if (bulkRes.ok) {
+            const bulkData = await bulkRes.json() as { allocations?: Record<string, QueueAlloc> };
+            queueMap = bulkData.allocations || {};
+          } else {
+            const BATCH = 8;
+            for (let i = 0; i < paidIds.length; i += BATCH) {
+              const slice = paidIds.slice(i, i + BATCH);
+              await Promise.all(slice.map(async (oid) => {
+                try {
+                  const qRes = await fetch(`${BASE}/api/admin/shipping-queue/${oid}`, { headers: authHeaders() });
+                  if (!qRes.ok) return;
+                  const qData = await qRes.json() as { allocation?: QueueAlloc | null };
+                  if (qData.allocation) queueMap[oid] = qData.allocation;
+                } catch { /* ignore */ }
+              }));
             }
-          } catch { /* ignore */ }
-        }));
+          }
+        } catch { /* ignore */ }
         if (_silent) startTransition(() => setShippingQueueMap(queueMap));
         else setShippingQueueMap(queueMap);
       }
@@ -11707,7 +11720,7 @@ function OrdersPanel({
       }
       if (Array.isArray(data.packages)) {
         patchOrderLocal(orderId, { envioecomPackages: data.packages } as Partial<AdminOrder>);
-        const allReserved = data.packages.every((pkg) => !!pkg.inventoryReserved);
+        const allReserved = data.packages.filter(Boolean).every((pkg) => !!pkg.inventoryReserved);
         setInventoryReservedByOrder((prev) => ({ ...prev, [orderId]: allReserved }));
       }
       onRefreshInventory();
@@ -12467,14 +12480,14 @@ function OrdersPanel({
           const hasReshipmentRecord = Boolean(order?.reshipment?.id);
           const reshipmentIsSent = String(order?.reshipment?.status || "") === "reenvio_enviado";
           const envioecomStatus = String((order as any).envioecomStatus || "").trim();
-          const envioecomPackages = Array.isArray((order as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages)
+          const envioecomPackages = (Array.isArray((order as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages)
             ? (order as { envioecomPackages: SplitShipmentPackage[] }).envioecomPackages
-            : [];
+            : []).filter((pkg): pkg is SplitShipmentPackage => !!pkg && typeof pkg === "object");
           const isSplitShipment = envioecomPackages.length >= 2;
           const canSplitShipment = orderProducts.length >= 2
             || orderProducts.reduce((sum, product) => sum + (Number(product.quantity) || 0), 0) >= 2;
           const envioecomLabelReady = isSplitShipment
-            ? envioecomPackages.every((pkg) => isEnvioEcomLabelReadyStatus(pkg.envioecomStatus) || Boolean(String(pkg.envioecomLabelUrl || "").trim()) || isEnvioEcomPostedStatus(pkg.envioecomStatus))
+            ? envioecomPackages.every((pkg) => isEnvioEcomLabelReadyStatus(pkg?.envioecomStatus) || Boolean(String(pkg?.envioecomLabelUrl || "").trim()) || isEnvioEcomPostedStatus(pkg?.envioecomStatus))
             : isEnvioEcomLabelReadyStatus(envioecomStatus);
           const envioecomShippedLike = isEnvioEcomShippedLikeStatus(envioecomStatus);
           // Badge Enviado segue a flag (manual ou postagem EE). Etiqueta pronta sozinha não desfaz.
@@ -12984,7 +12997,7 @@ function OrdersPanel({
                         {pkg.inventoryPoolLabel || pkg.inventoryPool}
                       </span>
                       <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        {(pkg.items || []).map((item, itemIndex) => {
+                        {(pkg.items || []).filter(Boolean).map((item, itemIndex) => {
                           const name = String(item.productName || "Produto").trim() || "Produto";
                           const qty = Number(item.quantity) || 0;
                           const fromOrder = findOrderProductForShipmentItem(orderProducts, item);

@@ -28,6 +28,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-17 | Card split Admin: `findOrderProductForShipmentItem` voltou a ser exportado; pacote nulo filtrado | Pedido dividido deixa de derrubar o Admin (`Algo deu errado`) | Foto/nome por pacote e cópia 48h iguais |
 | 2026-09-17 | Admin no `lazy()` — deixa de ir no bundle da loja | Tela “Algo deu errado” na Home depois do deploy do Admin | `/admin` igual |
 | 2026-09-17 | Meus pedidos: split **Enviado** continua Envio 1/2 (já saiu vs falta). Filho **cancelado** não seta `hasReshipmentChild` e some da lista | #853 mostra o pacote parado; #1091 cancelado não esconde o original | Reenvio **aberto** ainda esconde o rastreio no pai; Admin split/cópia 48h iguais |
 | 2026-09-17 | Card Admin de pedido **dividido**: cada faixa (Minas / Motoboy / Foz) mostra **foto + nome** só dos itens daquele pacote | Operação vê o que sai de cada origem, não só o texto | Cópia 48h, baixa por pacote e conta do cliente iguais |

@@ -124,7 +124,7 @@ function getOrderProducts(raw: unknown): ShippingCopyOrderProduct[] {
   return [];
 }
 
-function findOrderProductForShipmentItem(
+export function findOrderProductForShipmentItem(
   products: ShippingCopyOrderProduct[],
   item: { productId?: string | null; productName?: string | null; name?: string | null },
 ): ShippingCopyOrderProduct | undefined {

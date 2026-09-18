@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-17 | Extrair helper da cópia 48h **não** pode deixar `OrdersPanel` chamando função privada | `findOrderProductForShipmentItem` exportado — senão `ReferenceError` e tela `Algo deu errado` no pedido dividido | Matching id/nome igual |
 | 2026-09-17 | Admin deixa de entrar no bundle da loja (`lazy`) | Falha no chunk do Admin não derruba Home/Meus pedidos | Rotas /admin iguais |
 | 2026-09-17 | Cópia 48h split: `isExcludedFromShippingCopyList` em `shipping-copy-list.ts` (não no `Admin.tsx`) | Pedido Enviado com pacote parado continua na lista | Aguardando coleta no pacote igual |
 | 2026-09-17 | Cópia 48h/Lista/Motoboy no Admin: `AdminOrdersCopyBar` no `AdminOrdersChargesSearchShell` (embaixo das sub-abas), não no card dashboard | Operação copia na aba Pedidos; Motoboy é 4ª pílula | Texto copiado e invariante 48h iguais |
@@ -33,7 +34,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - UI: Tailwind 4 + componentes estilo Radix/shadcn em `src/components`.
 - Páginas em `src/pages`; store em `src/store`; hooks/lib em `src/hooks`, `src/lib`.
 - Busca Admin pedidos/cobranças: estado no filho (`AdminOrdersChargesSearchShell` + `AdminDebouncedSearchInput`); pai só manda `seedSearch` (`goToOrder`). Sub-abas + barra de copiar (`copyActions` / `AdminOrdersCopyBar`) no shell. Visitantes ao vivo: `AdminLiveVisitorStats` (poll 5 s fora do pai). Clientes/recorrentes: busca interna do painel.
-- Card da aba Pedidos: `OrdersPanel` é componente **separado** — state/handlers do pai (`storeCreditApplying`, `applyCustomerStoreCredit`, etc.) entram por **props**. Referência solta no filho vira `ReferenceError` e tela `Algo deu errado`.
+- Card da aba Pedidos: `OrdersPanel` é componente **separado** — state/handlers do pai (`storeCreditApplying`, `applyCustomerStoreCredit`, etc.) entram por **props**. Referência solta no filho vira `ReferenceError` e tela `Algo deu errado`. Helpers extraídos para `shipping-copy-list.ts` precisam **continuar exportados** se o card split ainda os chama (`findOrderProductForShipmentItem`).
 - Lazy routes / chunks manuais no Vite quando já existirem — preservar o padrão local.
 - Nome do package e tags SW (`ka-imports-admin`) são legado; UI fala **Yury**.
 
@@ -69,6 +70,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - Na busca de pedidos do admin, tratar query só-dígitos com `includes` em telefone/nº parcial **antes** de igualdade em `orderNumber` — priorizar número exato do pedido.
 - Texto da busca de pedidos/cobranças/clientes **no estado do `Admin` pai** — cada tecla redesenha cards, estoque e o poll de visitantes. Usar shell + debounce 300 ms + `startTransition`; pai só `seedSearch`.
 - Cópia 48h: **não** escrever que “Aguardando coleta não conta” — conta como etiqueta pronta (`isLabelReadyStatus`). Não meter aguardando coleta em `isInTransitStatus`. Ver invariante em `regras-negocio.md`.
+- Ao extrair lógica do `Admin.tsx` para `lib/`, **exportar** o que o `OrdersPanel` ainda usa. Função privada no módulo extraído = `ReferenceError` na lista de pedidos.
 - Selo **Estoque OK** no card Admin: **não** casar saldo por overlap de tokens / “nome inclui”. Usar `checkOrderItemsHaveStock` (ID + recadastro nome único), igual à baixa.
 
 ## Manutenção da memória viva (obrigatória)

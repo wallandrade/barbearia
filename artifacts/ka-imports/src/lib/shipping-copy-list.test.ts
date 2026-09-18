@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  findOrderProductForShipmentItem,
   isExcludedFromShippingCopyList,
   isSplitOrderPartiallyShipped,
   productsForShippingCopy,
@@ -71,6 +72,19 @@ test("pacote nulo no split não derruba a cópia 48h", () => {
     enviado: true,
     envioecomPackages: [null as never, motoboyDone, minasPending],
   }), false);
+});
+
+test("findOrderProductForShipmentItem casa por id ou nome", () => {
+  const products = [
+    { id: "g", name: "Gluconex 15mg 4 Frasco", quantity: 1, price: 1 },
+    { id: "l", name: "Landerlan Oxandrolona 5 mg 100 Comprimidos", quantity: 1, price: 1 },
+  ];
+  assert.equal(findOrderProductForShipmentItem(products, { productId: "g" })?.id, "g");
+  assert.equal(
+    findOrderProductForShipmentItem(products, { productName: "Landerlan Oxandrolona 5 mg 100 Comprimidos" })?.id,
+    "l",
+  );
+  assert.equal(findOrderProductForShipmentItem(products, { productId: "missing" }), undefined);
 });
 
 test("Aguardando coleta no pacote conta como pronto (não volta na 48h daquele pacote)", () => {
