@@ -116,59 +116,15 @@ export function listCustomerPackages(order: CustomerOrder): CustomerOrderPackage
   return Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
 }
 
-function packageIsCustomerTrackable(pkg: CustomerOrderPackage): boolean {
-  return Boolean(pkg.enviado) || packageHasEnvioEcomLink(pkg);
-}
-
-function mergeShipmentItems(packages: CustomerOrderPackage[]): CustomerShipmentItem[] {
-  const grouped = new Map<string, CustomerShipmentItem>();
-  for (const pkg of packages) {
-    for (const item of Array.isArray(pkg.items) ? pkg.items : []) {
-      const quantity = Number(item.quantity || 0);
-      if (!Number.isFinite(quantity) || quantity <= 0) continue;
-      const productId = String(item.productId || "").trim();
-      const productName = String(item.productName || item.name || "").trim();
-      if (!productId && !productName) continue;
-      const key = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
-      const prev = grouped.get(key);
-      grouped.set(key, {
-        productId: prev?.productId || productId || undefined,
-        productName: prev?.productName || productName || undefined,
-        name: prev?.name || item.name || productName || undefined,
-        quantity: (prev?.quantity || 0) + quantity,
-      });
-    }
-  }
-  return [...grouped.values()];
-}
-
 /**
- * Pacotes que o cliente deve ver. Split de estoque (Minas sem etiqueta) num pedido
- * já marcado Enviado some da conta: os itens entram no envio que tem rastreio.
- * Reenvio ainda aberto (sem `enviado` no pedido) continua mostrando o pacote parado.
- * Original enviado com filho de reenvio: nenhum pacote EE (o rastreio fica no filho).
+ * Pacotes que o cliente deve ver. Split mostra cada origem: o que já saiu
+ * (rastreio / enviado) e o que ainda falta (sem etiqueta), mesmo se o Admin
+ * já marcou o pedido inteiro como Enviado.
+ * Original enviado com filho de reenvio aberto: nenhum pacote EE (o rastreio fica no filho).
  */
 export function listCustomerFacingPackages(order: CustomerOrder): CustomerOrderPackage[] {
   if (shouldHideParentReshipmentTracking(order)) return [];
-  const packages = listCustomerPackages(order);
-  if (packages.length < 2) return packages;
-
-  if (!order.enviado) return packages;
-
-  const tracked = packages.filter(packageIsCustomerTrackable);
-  if (tracked.length === 0) return packages;
-
-  const leftoverItems = mergeShipmentItems(packages.filter((pkg) => !packageIsCustomerTrackable(pkg)));
-  if (leftoverItems.length === 0 && tracked.length >= 2) return tracked;
-
-  const [first, ...rest] = tracked;
-  const firstItems = mergeShipmentItems([{ ...first, items: [...(first.items || []), ...leftoverItems] }]);
-  const mergedFirst: CustomerOrderPackage = {
-    ...first,
-    items: firstItems.length > 0 ? firstItems : first.items,
-  };
-  if (tracked.length === 1) return [mergedFirst];
-  return [mergedFirst, ...rest];
+  return listCustomerPackages(order);
 }
 
 export function isSplitCustomerOrder(order: CustomerOrder): boolean {
@@ -429,15 +385,6 @@ function getSplitCustomerSituation(order: CustomerOrder): CustomerSituation | nu
     return { label: "Entregue", kind: "delivered" };
   }
 
-  if (order.enviado) {
-    const current = customerPrimaryTracking(order).status;
-    return {
-      label: current ? toCustomerFriendlyShippingLabel(current) : "Enviado",
-      kind: "shipping",
-      hint: customerShippingHint(current),
-    };
-  }
-
   const shipped = packages.filter(isCustomerPackageOnTheWay);
   if (shipped.length > 0 && shipped.length < packages.length) {
     return {
@@ -448,6 +395,15 @@ function getSplitCustomerSituation(order: CustomerOrder): CustomerSituation | nu
   }
   if (shipped.length === packages.length) {
     const current = normalizeShippingStatus(shipped[0]?.envioecomStatus);
+    return {
+      label: current ? toCustomerFriendlyShippingLabel(current) : "Enviado",
+      kind: "shipping",
+      hint: customerShippingHint(current),
+    };
+  }
+
+  if (order.enviado) {
+    const current = customerPrimaryTracking(order).status;
     return {
       label: current ? toCustomerFriendlyShippingLabel(current) : "Enviado",
       kind: "shipping",

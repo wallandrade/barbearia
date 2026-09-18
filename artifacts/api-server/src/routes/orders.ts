@@ -1385,7 +1385,12 @@ router.get("/me/orders", requireCustomerAuth, async (req, res) => {
       .where(eq(ordersTable.userId, customerSession.userId))
       .orderBy(desc(ordersTable.createdAt));
 
-    const withPackages = await presentCustomerOrders(orders);
+    const visible = orders.filter((row) => {
+      if (!String(row.parentOrderId || "").trim()) return true;
+      return !isCancelledCustomerOrderStatus(row.status);
+    });
+
+    const withPackages = await presentCustomerOrders(visible);
     res.json({ orders: withPackages });
   } catch (err) {
     console.error("Customer orders error:", err);
@@ -2782,6 +2787,11 @@ async function attachParentOrderNumbers<T extends { parentOrderId?: string | nul
   });
 }
 
+function isCancelledCustomerOrderStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").trim().toLowerCase();
+  return s === "cancelled" || s === "cancelado" || s === "canceled";
+}
+
 async function attachHasReshipmentChild<T extends { id: string }>(
   orders: T[],
 ): Promise<Array<T & { hasReshipmentChild: boolean }>> {
@@ -2789,10 +2799,11 @@ async function attachHasReshipmentChild<T extends { id: string }>(
   const parents = new Set<string>();
   if (ids.length > 0) {
     const rows = await db
-      .select({ parentOrderId: ordersTable.parentOrderId })
+      .select({ parentOrderId: ordersTable.parentOrderId, status: ordersTable.status })
       .from(ordersTable)
       .where(inArray(ordersTable.parentOrderId, ids));
     for (const row of rows) {
+      if (isCancelledCustomerOrderStatus(row.status)) continue;
       const parentId = String(row.parentOrderId || "").trim();
       if (parentId) parents.add(parentId);
     }

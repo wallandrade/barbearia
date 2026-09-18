@@ -100,7 +100,7 @@ test("split: pedido-level vazio ainda mostra seção e permite sync pelo pacote"
   assert.equal(hasTrackableShipment(row), true);
 });
 
-test("pedido já Enviado com split de estoque vira um envio só para o cliente", () => {
+test("pedido já Enviado com split de estoque continua Envio 1/2 na conta", () => {
   const row = order({
     id: "853",
     enviado: true,
@@ -135,13 +135,14 @@ test("pedido já Enviado com split de estoque vira um envio só para o cliente",
     ],
   });
 
-  assert.equal(isSplitCustomerOrder(row), false);
-  assert.notEqual(getCustomerSituation(row).label, "Enviado parcialmente");
+  assert.equal(isSplitCustomerOrder(row), true);
+  assert.equal(getCustomerSituation(row).label, "Enviado parcialmente");
   assert.equal(getCustomerSituation(row).kind, "shipping");
-  assert.match(getCustomerSituation(row).label, /Expedido/i);
   const facing = listCustomerFacingPackages(row);
-  assert.equal(facing.length, 1);
-  assert.equal(packageShipmentItems(facing[0]).length, 5);
+  assert.equal(facing.length, 2);
+  assert.equal(packageShipmentItems(facing[0]).length, 2);
+  assert.equal(packageShipmentItems(facing[1]).length, 3);
+  assert.equal(customerPackageSituation(facing[0]).label, "Aguardando envio");
   assert.equal(customerPrimaryTracking(row).barcode, "888030925010467");
   assert.equal(customerPrimaryTracking(row).history.length, 2);
 });
@@ -181,6 +182,35 @@ test("pai enviado com filho de reenvio esconde o rastreio EnvioEcom do reenvio",
   assert.equal(listCustomerFacingPackages(row).length, 0);
   assert.equal(customerPrimaryTracking(row).barcode, null);
   assert.equal(customerPrimaryTracking(row).history.length, 0);
+});
+
+test("filho de reenvio cancelado não esconde o rastreio do original", () => {
+  const row = order({
+    id: "853",
+    enviado: true,
+    status: "paid",
+    hasReshipmentChild: false,
+    envioecomPackages: [
+      {
+        id: "minas",
+        packageIndex: 1,
+        items: [{ productId: "l", productName: "Landerlan Oxandrolona 5 mg 100 Comprimidos", quantity: 1 }],
+      },
+      {
+        id: "moto",
+        packageIndex: 2,
+        envioecomBarcode: "888030925010467",
+        envioecomStatus: "Entregue",
+        envioecomStatusHistory: [{ status: "Entregue", updated_at: "2026-09-14T20:38:41.000Z" }],
+        items: [{ productId: "t", productName: "Tirzec 15mg Tirzepatida 4 Ampolas", quantity: 1 }],
+      },
+    ],
+  });
+  assert.equal(shouldHideParentReshipmentTracking(row), false);
+  assert.equal(isSplitCustomerOrder(row), true);
+  assert.equal(getCustomerSituation(row).label, "Enviado parcialmente");
+  assert.equal(shouldShowShipmentSection(row), true);
+  assert.equal(listCustomerFacingPackages(row).length, 2);
 });
 
 test("reenvio aberto continua split parcial mesmo com o pai já enviado", () => {
