@@ -10335,6 +10335,18 @@ function isSplitOrderPartiallyShipped(packages: Array<{
   return done > 0 && done < packages.length;
 }
 
+function findOrderProductForShipmentItem(
+  products: OrderProductLite[],
+  item: { productId?: string | null; productName?: string | null },
+): OrderProductLite | undefined {
+  const productId = String(item.productId || "").trim();
+  const name = String(item.productName || "").trim().toLowerCase();
+  return products.find((product) =>
+    (productId && String(product.id || "").trim() === productId)
+    || (name.length > 0 && String(product.name || "").trim().toLowerCase() === name),
+  );
+}
+
 /** Pedido dividido com parte já etiquetada: na cópia de envio entram só os itens que ainda faltam. */
 function productsForShippingCopy(order: any): OrderProductLite[] {
   const all = getOrderProducts(order?.products);
@@ -10348,10 +10360,7 @@ function productsForShippingCopy(order: any): OrderProductLite[] {
       const productId = String(item.productId || "").trim();
       const name = String(item.productName || "Produto").trim() || "Produto";
       const qty = Number(item.quantity) || 0;
-      const fromOrder = all.find((product) =>
-        (productId && String(product.id || "").trim() === productId)
-        || String(product.name || "").trim().toLowerCase() === name.toLowerCase(),
-      );
+      const fromOrder = findOrderProductForShipmentItem(all, item);
       rows.push({
         id: productId || fromOrder?.id || "",
         name: name || fromOrder?.name || "Produto",
@@ -13066,9 +13075,58 @@ function OrdersPanel({
                       <span className="text-[11px] font-bold text-teal-900">
                         {pkg.inventoryPoolLabel || pkg.inventoryPool}
                       </span>
-                      <span className="text-[11px] text-muted-foreground truncate max-w-[180px]">
-                        {(pkg.items || []).map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                        {(pkg.items || []).map((item, itemIndex) => {
+                          const name = String(item.productName || "Produto").trim() || "Produto";
+                          const qty = Number(item.quantity) || 0;
+                          const fromOrder = findOrderProductForShipmentItem(orderProducts, item);
+                          const imageSrc = resolveProductImage({
+                            id: String(item.productId || fromOrder?.id || ""),
+                            name,
+                            quantity: qty,
+                            price: Number(fromOrder?.price) || 0,
+                            image: fromOrder?.image,
+                          });
+                          return (
+                            <div
+                              key={`${pkg.id || pkg.inventoryPool}-${item.productId || name}-${itemIndex}`}
+                              className="flex items-center gap-1 min-w-0"
+                            >
+                              <div
+                                title={`${qty}x ${name}`}
+                                className={`group relative h-8 w-8 rounded-md overflow-visible shrink-0 ${imageSrc ? "cursor-zoom-in" : ""}`}
+                                onClick={() => {
+                                  if (!imageSrc) return;
+                                  setImagePreview({ src: imageSrc, name });
+                                }}
+                              >
+                                <div className="h-8 w-8 rounded-md overflow-hidden border border-teal-200 bg-white">
+                                  {imageSrc ? (
+                                    <img src={imageSrc} alt={name} className="h-full w-full object-cover" loading="lazy" />
+                                  ) : (
+                                    <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                                      <ShoppingBag className="w-3.5 h-3.5" />
+                                    </div>
+                                  )}
+                                </div>
+                                {imageSrc && (
+                                  <div className="pointer-events-none absolute left-9 top-1/2 z-30 hidden -translate-y-1/2 rounded-xl border border-border bg-white p-1 shadow-2xl opacity-0 scale-95 invisible transition-all duration-200 ease-out group-hover:opacity-100 group-hover:scale-100 group-hover:visible sm:block">
+                                    <img
+                                      src={imageSrc}
+                                      alt={`Zoom ${name}`}
+                                      className="h-28 w-28 rounded-lg object-cover"
+                                      loading="lazy"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">
+                                {qty}× {name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                       {pkg.id && !pkg.inventoryReserved && (
                         <>
                           {inventoryPoolNeedsExitPassword(pkg.inventoryPool) && (
