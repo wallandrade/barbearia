@@ -7,6 +7,7 @@ import {
   isAdminOrdersAwaitingStock,
   isAdminOrdersMotoboyRow,
   isAdminOrdersReshipmentRow,
+  isCancelledAdminOrderStatus,
   isReshipmentChildOrder,
 } from "./admin-orders-kind";
 
@@ -47,4 +48,25 @@ test("kind da linha: aguardando estoque vence reenvio, reenvio vence motoboy", (
   assert.equal(adminOrdersKindForRow({ parentOrderId: "abc" }), "reenvio");
   assert.equal(adminOrdersKindForRow({ shippingType: "motoboy", parentOrderId: "abc" }), "reenvio");
   assert.equal(adminOrdersKindForRow({ parentOrderId: "abc", aguardandoEstoque: true }), "aguardando_estoque");
+});
+
+test("reenvio cancelado sai da aba Reenvio e vai para Pedido normal", () => {
+  assert.equal(isCancelledAdminOrderStatus("cancelled"), true);
+  assert.equal(isCancelledAdminOrderStatus("Cancelado"), true);
+  assert.equal(isCancelledAdminOrderStatus("canceled"), true);
+  assert.equal(isCancelledAdminOrderStatus("paid"), false);
+  assert.equal(isAdminOrdersReshipmentRow({ parentOrderId: "pai", status: "cancelled" }), true);
+  assert.equal(adminOrdersKindForRow({ id: "1327", parentOrderId: "pai", status: "cancelled" }), "normal");
+  assert.equal(adminOrdersKindForRow({
+    parentOrderId: "pai",
+    status: "cancelled",
+    aguardandoEstoque: true,
+  }), "normal");
+  assert.equal(adminOrdersKindForRow({ shippingType: "motoboy", status: "cancelled" }), "normal");
+  const rows = [
+    { id: "r-open", parentOrderId: "pai", status: "paid" },
+    { id: "r-cancel", parentOrderId: "pai", status: "cancelled" },
+  ];
+  assert.deepEqual(filterAdminOrdersByKind(rows, "reenvio").map((o) => o.id), ["r-open"]);
+  assert.deepEqual(filterAdminOrdersByKind(rows, "normal").map((o) => o.id), ["r-cancel"]);
 });

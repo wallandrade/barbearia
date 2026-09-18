@@ -12,6 +12,7 @@ export type AdminSearchOrder = {
   observation?: string | null;
   reshipment?: { id?: string | null } | null;
   aguardandoEstoque?: boolean | null;
+  status?: string | null;
 };
 
 export type AdminSearchCharge = {

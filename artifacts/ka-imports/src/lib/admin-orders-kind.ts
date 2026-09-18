@@ -1,12 +1,19 @@
 export type AdminOrdersKind = "normal" | "reenvio" | "aguardando_estoque" | "motoboy";
 
 export type AdminOrdersKindRow = {
+  status?: string | null;
   shippingType?: string | null;
   parentOrderId?: string | null;
   observation?: string | null;
   reshipment?: { id?: string | null } | null;
   aguardandoEstoque?: boolean | null;
 };
+
+/** Status do pedido cancelado (não fica nas filas Reenvio / estoque / Motoboy). */
+export function isCancelledAdminOrderStatus(status?: string | null): boolean {
+  const value = String(status || "").trim().toLowerCase();
+  return value === "cancelled" || value === "cancelado" || value === "canceled";
+}
 
 /** Pedido filho de reenvio — custo do item original já foi no pedido pai; qty extra conta lucro. */
 export function isReshipmentChildOrder(order: AdminOrdersKindRow | null | undefined): boolean {
@@ -35,6 +42,7 @@ export function isAdminOrdersMotoboyRow(order: AdminOrdersKindRow | null | undef
 }
 
 export function adminOrdersKindForRow(order: AdminOrdersKindRow | null | undefined): AdminOrdersKind {
+  if (isCancelledAdminOrderStatus(order?.status)) return "normal";
   if (isAdminOrdersAwaitingStock(order)) return "aguardando_estoque";
   if (isAdminOrdersReshipmentRow(order)) return "reenvio";
   if (isAdminOrdersMotoboyRow(order)) return "motoboy";
