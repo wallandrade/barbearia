@@ -609,6 +609,7 @@ import {
 } from "@/lib/admin-orders-kind";
 import { estimateOrderCardProfit, extraQuantityForItem, qtyByProductId, summarizeReshipmentExtra } from "@/lib/reshipment-profit";
 import { checkOrderItemsHaveStock } from "@/lib/order-stock-check";
+import { sortCustomersByWalletDesc } from "@/lib/customer-list-sort";
 import { AdminDebouncedSearchInput } from "@/components/AdminDebouncedSearchInput";
 import { AdminLiveVisitorStats } from "@/components/AdminLiveVisitorStats";
 import { AdminOrdersChargesSearchShell } from "@/components/AdminOrdersChargesSearchShell";
@@ -14908,13 +14909,15 @@ function CustomersPanel({
   };
 
   const filtered = useMemo(() => {
-    if (!appliedSearch.trim()) return customers;
-    const q = appliedSearch.toLowerCase();
-    return customers.filter((c) => (
-      c.name.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q) ||
-      (c.affiliateCode || "").toLowerCase().includes(q)
-    ));
+    const q = appliedSearch.trim().toLowerCase();
+    const rows = !q
+      ? customers
+      : customers.filter((c) => (
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        (c.affiliateCode || "").toLowerCase().includes(q)
+      ));
+    return sortCustomersByWalletDesc(rows);
   }, [customers, appliedSearch]);
 
   const openPasswordModal = (customer: CustomerUserRecord) => {

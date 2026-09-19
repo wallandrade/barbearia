@@ -31,6 +31,8 @@
   --color-border: hsl(42 22% 84%);
   --color-input: hsl(42 22% 84%);
   --color-ring: hsl(43 86% 38%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(0 0% 8%);
   
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;

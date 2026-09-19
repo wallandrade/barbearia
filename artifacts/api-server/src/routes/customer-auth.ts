@@ -14,7 +14,7 @@ import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { claimGuestOrdersForCustomer, digitsOnlyDocument, isUsableCustomerDocument } from "../lib/claim-guest-orders";
 import { applyStoreCredit, getStoreCreditBalance, getStoreCreditBalancesByUserIds } from "../lib/store-credits";
-import { resolveAdminStoreCreditDelta } from "../lib/store-credits-policy";
+import { compareCustomersByWalletDesc, resolveAdminStoreCreditDelta } from "../lib/store-credits-policy";
 
 const router: IRouter = Router();
 
@@ -316,11 +316,7 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
         storeCreditBalance: 0,
       }));
 
-    const allCustomers = [...registeredCustomers, ...guestCustomers].sort((a, b) => {
-      const ta = new Date(a.createdAt || 0).getTime();
-      const tb = new Date(b.createdAt || 0).getTime();
-      return tb - ta;
-    });
+    const allCustomers = [...registeredCustomers, ...guestCustomers].sort(compareCustomersByWalletDesc);
 
     res.json({ customers: allCustomers });
   } catch (err) {
