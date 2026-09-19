@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-09-18 (menu Copiar sólido no celular)
+> **Última atualização:** 2026-09-18 (sem selo Risco alto no card)
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -28,6 +28,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-18 | Card Admin **não mostra** mais o selo Risco baixo/médio/alto (IP vs endereço) | Some o chip vermelho **Risco alto** da lista de pedidos | IP da compra, cidade e data no card iguais |
 | 2026-09-18 | Menu **Copiar** no card: fundo branco opaco; no celular vira folha embaixo da tela. Tema ganhou `popover` (dropdown não fica transparente) | Dá para ler Resumo/Completo no iPhone | Textos copiados e Gerenciar EE iguais |
 | 2026-09-18 | Aba Clientes ordena **maior saldo da carteira no topo** (empate = cadastro mais recente) | Quem tem crédito aparece primeiro na lista | Coluna/modal e ajuste na aba Seguro iguais |
 | 2026-09-18 | Aba Clientes: coluna **Carteira** + modal **Adicionar/Zerar** (`GET /admin/customers` manda `storeCreditBalance`; `POST /admin/customers/:id/store-credit`) | Dá para ver e ajustar o saldo sem ir na aba Seguro | Ajuste na aba Seguro, uso no checkout e abate no card iguais |
