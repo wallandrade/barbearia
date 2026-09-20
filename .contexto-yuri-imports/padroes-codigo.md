@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-09-18
+> **Última atualização:** 2026-09-20
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-20 | Card cancelado: **Marcar Pago** e comprovante visíveis; EE/OCR/baixa continuam ocultos | Cliente que paga depois do cancelamento volta a ser marcado no card | PATCH de status e split iguais |
 | 2026-09-18 | Dropdown Admin: `bg-white` + token `popover`; Copiar no celular é Sheet embaixo, não painel transparente | Card no iPhone deixa de misturar Copiar com os botões de baixo | Handlers e textos da cópia iguais |
 | 2026-09-18 | Card Admin Pedidos: botões agrupados (pagamento / etiqueta / EE); **Gerenciar EE** e **Copiar** em menu; cancelado esconde Pago/EE/baixa | Card tipo #1327 deixa de virar tapete de chips | Handlers, split por pacote e cópia 48h iguais |
 | 2026-09-17 | Extrair helper da cópia 48h **não** pode deixar `OrdersPanel` chamando função privada | `findOrderProductForShipmentItem` exportado — senão `ReferenceError` e tela `Algo deu errado` no pedido dividido | Matching id/nome igual |
@@ -36,7 +37,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - UI: Tailwind 4 + componentes estilo Radix/shadcn em `src/components`.
 - Páginas em `src/pages`; store em `src/store`; hooks/lib em `src/hooks`, `src/lib`.
 - Busca Admin pedidos/cobranças: estado no filho (`AdminOrdersChargesSearchShell` + `AdminDebouncedSearchInput`); pai só manda `seedSearch` (`goToOrder`). Sub-abas + barra de copiar (`copyActions` / `AdminOrdersCopyBar`) no shell. Visitantes ao vivo: `AdminLiveVisitorStats` (poll 5 s fora do pai). Clientes/recorrentes: busca interna do painel.
-- Card da aba Pedidos: `OrdersPanel` é componente **separado** — state/handlers do pai (`storeCreditApplying`, `applyCustomerStoreCredit`, etc.) entram por **props**. Referência solta no filho vira `ReferenceError` e tela `Algo deu errado`. Helpers extraídos para `shipping-copy-list.ts` precisam **continuar exportados** se o card split ainda os chama (`findOrderProductForShipmentItem`). Menus do card (`Gerenciar EE`, `Copiar`) ficam em `AdminOrderCardActionMenus.tsx` — não reespalhar Etiqueta EE / Sync / Desvincular / Cancelar EE nem os três Copiar no wrap. **Copiar** no celular abre folha branca embaixo (`Sheet`); no desktop é dropdown opaco. Pedido **cancelado** esconde Pago, EnvioEcom, Vincular, etiqueta OCR e baixa; WhatsApp / copiar / detalhes / PDF já vinculado continuam.
+- Card da aba Pedidos: `OrdersPanel` é componente **separado** — state/handlers do pai (`storeCreditApplying`, `applyCustomerStoreCredit`, etc.) entram por **props**. Referência solta no filho vira `ReferenceError` e tela `Algo deu errado`. Helpers extraídos para `shipping-copy-list.ts` precisam **continuar exportados** se o card split ainda os chama (`findOrderProductForShipmentItem`). Menus do card (`Gerenciar EE`, `Copiar`) ficam em `AdminOrderCardActionMenus.tsx` — não reespalhar Etiqueta EE / Sync / Desvincular / Cancelar EE nem os três Copiar no wrap. **Copiar** no celular abre folha branca embaixo (`Sheet`); no desktop é dropdown opaco. Pedido **cancelado** esconde EnvioEcom, Vincular, etiqueta OCR, baixa e abater saldo; **Marcar Pago** e comprovante ficam. WhatsApp / copiar / detalhes / PDF já vinculado continuam.
 - Lazy routes / chunks manuais no Vite quando já existirem — preservar o padrão local.
 - Nome do package e tags SW (`ka-imports-admin`) são legado; UI fala **Yury**.
 

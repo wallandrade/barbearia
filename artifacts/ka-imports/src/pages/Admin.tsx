@@ -12794,9 +12794,9 @@ function OrdersPanel({
                   </Button>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {(!isCancelledCard || hasProofs) && (
+                  {(!isCancelledCard || hasProofs || !isPaidOrCompleted) && (
                   <div className="flex gap-2 flex-wrap items-center">
-                  {!isCancelledCard && !isPaidOrCompleted && (
+                  {!isPaidOrCompleted && (
                   <Button type="button" size="sm" variant="outline" className="gap-1.5 text-green-700 border-green-200 hover:bg-green-50"
                     disabled={statusUpdating === order.id}
                     onClick={() => isCard ? onOpenCardPaidModal(order.id) : updateOrderStatus(order.id, "paid")}>
@@ -12839,7 +12839,7 @@ function OrdersPanel({
                     <XCircle className="w-3.5 h-3.5" />Cancelar
                   </Button>
                   )}
-                  {!isCancelledCard && (
+                  {!isPaidOrCompleted && (
                   <Button type="button" size="sm" variant="outline" className="gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50"
                     onClick={() => setProofModal(order.id)}>
                     <Upload className="w-3.5 h-3.5" />
