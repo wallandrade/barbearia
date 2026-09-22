@@ -7,6 +7,7 @@ import {
   inventoryPoolForEnvioEcomAccount,
   isAwaitingPickupStatus,
   isEnvioEcomCancelStatus,
+  shouldPollEnvioEcomStatus,
   isEnvioEcomPanelShipmentId,
   isInTransitStatus,
   isLabelReadyStatus,
@@ -14,6 +15,16 @@ import {
   pickEffectiveShipmentStatus,
   scoreEnvioEcomShipmentCandidate,
 } from "./envioecom";
+
+test("sync automático segue Processando envio e para em entregue/cancelado", () => {
+  assert.equal(shouldPollEnvioEcomStatus("Processando envio"), true);
+  assert.equal(shouldPollEnvioEcomStatus("Aguardando coleta"), true);
+  assert.equal(shouldPollEnvioEcomStatus("Coletado"), true);
+  assert.equal(shouldPollEnvioEcomStatus(""), true);
+  assert.equal(shouldPollEnvioEcomStatus("Entregue"), false);
+  assert.equal(shouldPollEnvioEcomStatus("Cancelado"), false);
+  assert.equal(shouldPollEnvioEcomStatus("Aguardando cancelamento"), false);
+});
 
 test("Coleta Recebida conta como postado", () => {
   assert.equal(isInTransitStatus("Coleta Recebida"), true);

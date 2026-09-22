@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
-import { db, ordersTable, siteSettingsTable } from "@workspace/db";
+import { and, desc, eq, gt, isNotNull, or, sql } from "drizzle-orm";
+import { db, orderShipmentsTable, ordersTable, siteSettingsTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
+import { broadcastNotification } from "./notifications";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
@@ -51,6 +52,7 @@ import {
   isEnvioEcomCancelStatus,
   isInTransitStatus,
   isLabelReadyStatus,
+  shouldPollEnvioEcomStatus,
   nextEnvioEcomExternalOrderNumber,
   isProvisionalEnvioEcomBarcode,
   mergeStatusHistoryWithTimeline,
@@ -453,6 +455,21 @@ async function resolveLiveForOrder(
   );
 }
 
+function publishEnvioEcomOrderRefresh(
+  orderId: string,
+  before: { status: string; barcode: string; enviado: boolean },
+  after: { status: string; barcode: string; enviado: boolean },
+) {
+  const statusChanged = before.status.trim().toLowerCase() !== after.status.trim().toLowerCase();
+  const barcodeChanged = before.barcode.trim() !== after.barcode.trim();
+  const enviadoChanged = before.enviado !== after.enviado;
+  if (!statusChanged && !barcodeChanged && !enviadoChanged) return;
+  broadcastNotification({
+    type: "order_updated",
+    data: { id: orderId, envioecomStatus: after.status },
+  });
+}
+
 async function applyShipmentStatusToOrder(params: {
   orderId: string;
   status: string;
@@ -531,6 +548,15 @@ async function applyShipmentStatusToOrder(params: {
     await updateOrderShipment(pkg.id, patch);
     const refreshed = await rollupOrderFromPackages(order.id);
     void refreshShippingQueueForOrder(order.id);
+    publishEnvioEcomOrderRefresh(order.id, {
+      status: String(pkg.envioecomStatus || ""),
+      barcode: String(pkg.envioecomBarcode || ""),
+      enviado: Boolean(pkg.enviado),
+    }, {
+      status: params.status,
+      barcode: String(params.barcode || pkg.envioecomBarcode || ""),
+      enviado: Boolean(patch.enviado ?? pkg.enviado),
+    });
     if (refreshed.every((row) => isDeliveredStatus(String(row.envioecomStatus || "")))) {
       void grantInsuranceCashbackIfEligible(order).catch((err) => {
         console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
@@ -594,6 +620,15 @@ async function applyShipmentStatusToOrder(params: {
 
   await db.update(ordersTable).set(patch).where(eq(ordersTable.id, order.id));
   void refreshShippingQueueForOrder(order.id);
+  publishEnvioEcomOrderRefresh(order.id, {
+    status: String(order.envioecomStatus || ""),
+    barcode: String(order.envioecomBarcode || order.trackingCode || ""),
+    enviado: Boolean(order.enviado),
+  }, {
+    status: params.status,
+    barcode: String(params.barcode || order.envioecomBarcode || order.trackingCode || ""),
+    enviado: Boolean(patch.enviado ?? order.enviado),
+  });
   if (isDeliveredStatus(params.status)) {
     void grantInsuranceCashbackIfEligible(order).catch((err) => {
       console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
@@ -2369,5 +2404,226 @@ router.get("/me/orders/:id/tracking", requireCustomerAuth, async (req, res) => {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar rastreio." });
   }
 });
+
+const OPEN_ENVIOECOM_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
+
+function autoSyncRank(status: string | null | undefined): number {
+  const st = String(status || "");
+  if (isLabelReadyStatus(st)) return 0;
+  if (!st.trim() || isAwaitingPaymentStatus(st) || /envio criado|^created$/i.test(st)) return 1;
+  if (isInTransitStatus(st)) return 2;
+  return 3;
+}
+
+function hasEnvioEcomBinding(barcode: string | null | undefined, shipmentId: string | null | undefined): boolean {
+  return Boolean(String(barcode || "").trim() || String(shipmentId || "").trim());
+}
+
+function statusTextSame(a: string | null | undefined, b: string | null | undefined): boolean {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+async function bumpEnvioEcomPollCursor(target: { orderId: string; packageId: string | null }) {
+  const now = new Date();
+  if (target.packageId) {
+    await db
+      .update(orderShipmentsTable)
+      .set({ envioecomStatusUpdatedAt: now })
+      .where(eq(orderShipmentsTable.id, target.packageId));
+    return;
+  }
+  await db
+    .update(ordersTable)
+    .set({ envioecomStatusUpdatedAt: now })
+    .where(eq(ordersTable.id, target.orderId));
+}
+
+type OpenSyncTarget = {
+  orderId: string;
+  packageId: string | null;
+  status: string | null;
+  barcode: string | null;
+  shipmentId: string | null;
+  trackingKey: string | null;
+  externalOrderNumber: string | null;
+  accountId: string | null;
+  updatedAtMs: number;
+};
+
+/**
+ * Puxa o status na API EnvioEcom dos envios ainda abertos (Processando envio,
+ * aguardando coleta, trânsito). Entregue/cancelado ficam de fora.
+ * Pedido dividido: cada pacote. Sem split: a linha do pedido.
+ */
+export async function syncOpenEnvioEcomShipments(limit = 8): Promise<{
+  checked: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+}> {
+  const empty = { checked: 0, updated: 0, unchanged: 0, failed: 0 };
+  if (!(await hasAnyEnvioEcomAccount())) return empty;
+
+  const cutoff = new Date(Date.now() - OPEN_ENVIOECOM_LOOKBACK_MS);
+  const batchSize = Math.min(20, Math.max(1, limit));
+
+  const pkgRows = await db
+    .select({
+      id: orderShipmentsTable.id,
+      orderId: orderShipmentsTable.orderId,
+      envioecomStatus: orderShipmentsTable.envioecomStatus,
+      envioecomBarcode: orderShipmentsTable.envioecomBarcode,
+      envioecomShipmentId: orderShipmentsTable.envioecomShipmentId,
+      envioecomTrackingKey: orderShipmentsTable.envioecomTrackingKey,
+      envioecomExternalOrderNumber: orderShipmentsTable.envioecomExternalOrderNumber,
+      envioecomAccountId: orderShipmentsTable.envioecomAccountId,
+      envioecomStatusUpdatedAt: orderShipmentsTable.envioecomStatusUpdatedAt,
+    })
+    .from(orderShipmentsTable)
+    .where(gt(orderShipmentsTable.createdAt, cutoff));
+
+  const packageCountByOrder = new Map<string, number>();
+  for (const row of pkgRows) {
+    packageCountByOrder.set(row.orderId, (packageCountByOrder.get(row.orderId) || 0) + 1);
+  }
+
+  const targets: OpenSyncTarget[] = [];
+  for (const row of pkgRows) {
+    if ((packageCountByOrder.get(row.orderId) || 0) < 2) continue;
+    if (!hasEnvioEcomBinding(row.envioecomBarcode, row.envioecomShipmentId)) continue;
+    if (!shouldPollEnvioEcomStatus(row.envioecomStatus)) continue;
+    targets.push({
+      orderId: row.orderId,
+      packageId: row.id,
+      status: row.envioecomStatus,
+      barcode: row.envioecomBarcode,
+      shipmentId: row.envioecomShipmentId,
+      trackingKey: row.envioecomTrackingKey,
+      externalOrderNumber: row.envioecomExternalOrderNumber,
+      accountId: row.envioecomAccountId,
+      updatedAtMs: row.envioecomStatusUpdatedAt?.getTime?.() ?? 0,
+    });
+  }
+
+  const orderRows = await db
+    .select({
+      id: ordersTable.id,
+      envioecomStatus: ordersTable.envioecomStatus,
+      envioecomBarcode: ordersTable.envioecomBarcode,
+      envioecomShipmentId: ordersTable.envioecomShipmentId,
+      envioecomTrackingKey: ordersTable.envioecomTrackingKey,
+      envioecomExternalOrderNumber: ordersTable.envioecomExternalOrderNumber,
+      envioecomAccountId: ordersTable.envioecomAccountId,
+      envioecomStatusUpdatedAt: ordersTable.envioecomStatusUpdatedAt,
+    })
+    .from(ordersTable)
+    .where(and(
+      gt(ordersTable.createdAt, cutoff),
+      or(
+        isNotNull(ordersTable.envioecomBarcode),
+        isNotNull(ordersTable.envioecomShipmentId),
+      ),
+    ));
+
+  for (const row of orderRows) {
+    if ((packageCountByOrder.get(row.id) || 0) >= 2) continue;
+    if (!hasEnvioEcomBinding(row.envioecomBarcode, row.envioecomShipmentId)) continue;
+    if (!shouldPollEnvioEcomStatus(row.envioecomStatus)) continue;
+    targets.push({
+      orderId: row.id,
+      packageId: null,
+      status: row.envioecomStatus,
+      barcode: row.envioecomBarcode,
+      shipmentId: row.envioecomShipmentId,
+      trackingKey: row.envioecomTrackingKey,
+      externalOrderNumber: row.envioecomExternalOrderNumber,
+      accountId: row.envioecomAccountId,
+      updatedAtMs: row.envioecomStatusUpdatedAt?.getTime?.() ?? 0,
+    });
+  }
+
+  targets.sort((a, b) => {
+    const rank = autoSyncRank(a.status) - autoSyncRank(b.status);
+    if (rank !== 0) return rank;
+    return a.updatedAtMs - b.updatedAtMs;
+  });
+
+  const batch = targets.slice(0, batchSize);
+  let updated = 0;
+  let unchanged = 0;
+  let failed = 0;
+
+  for (const target of batch) {
+    try {
+      const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, target.orderId)).limit(1);
+      const order = rows[0];
+      if (!order) {
+        unchanged += 1;
+        continue;
+      }
+
+      const livePack = await resolveLiveForOrder(order, {
+        shipmentId: target.shipmentId || undefined,
+        barcode: target.barcode || undefined,
+        trackingKey: target.trackingKey || undefined,
+        externalOrderNumber: target.externalOrderNumber || undefined,
+        accountId: target.accountId || undefined,
+        strictIdentifier: Boolean(target.packageId),
+      });
+      const live = livePack.result;
+      const liveStatus = String(live.status || "").trim();
+      const liveBarcode = String(live.barcode || "").trim();
+      if (!live.shipmentId && !live.barcode) {
+        await bumpEnvioEcomPollCursor(target);
+        failed += 1;
+        continue;
+      }
+
+      const storedBarcode = String(target.barcode || "").trim();
+      const changed = Boolean(liveStatus) && (
+        !statusTextSame(liveStatus, target.status) ||
+        (liveBarcode.length > 0 && liveBarcode !== storedBarcode)
+      );
+      if (!changed) {
+        await bumpEnvioEcomPollCursor(target);
+        unchanged += 1;
+      } else {
+        await applyShipmentStatusToOrder({
+          orderId: order.id,
+          status: liveStatus,
+          barcode: live.barcode,
+          shipmentId: live.shipmentId,
+          trackingKey: live.trackingKey,
+          deliveryMode: live.deliveryMode,
+          description: live.statusHistory?.length ? null : "Status sincronizado automaticamente",
+          updatedAt: new Date().toISOString(),
+          source: "auto-sync",
+          timeline: live.statusHistory,
+          accountId: livePack.accountId,
+          packageId: target.packageId,
+        });
+        updated += 1;
+        console.log(
+          `[EnvioEcom sync] #${order.orderNumber ?? order.id} ${target.status || "—"} → ${liveStatus}`,
+        );
+      }
+    } catch (err) {
+      failed += 1;
+      console.warn(
+        "[EnvioEcom sync] falha",
+        target.orderId,
+        err instanceof Error ? err.message : err,
+      );
+      try {
+        await bumpEnvioEcomPollCursor(target);
+      } catch {
+        /* cursor segue no próximo ciclo */
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  return { checked: batch.length, updated, unchanged, failed };
+}
 
 export default router;

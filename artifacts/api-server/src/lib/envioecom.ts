@@ -971,6 +971,18 @@ export function isEnvioEcomCancelStatus(status: string | null | undefined): bool
   return /cancelad/.test(s) || /aguardando\s+cancelamento/.test(s);
 }
 
+/**
+ * Sync automático (job): continua enquanto o envio pode mudar.
+ * Entregue e cancelado param. Processando envio / aguardando coleta / trânsito seguem.
+ */
+export function shouldPollEnvioEcomStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").trim();
+  if (!s) return true;
+  if (isDeliveredStatus(s)) return false;
+  if (isEnvioEcomCancelStatus(s)) return false;
+  return true;
+}
+
 /** orderId na EnvioEcom: estável no 1º create; sufixo novo depois de cancelar/desvincular (evita DUPLICATE_ORDER). */
 export function nextEnvioEcomExternalOrderNumber(
   order: {
