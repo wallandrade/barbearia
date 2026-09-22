@@ -1,12 +1,12 @@
 import { Router, type IRouter } from "express";
-import { db, productsTable, productCostHistoryTable, ordersTable } from "@workspace/db";
-import { db, productsTable, productCostHistoryTable, ordersTable, siteSettingsTable } from "@workspace/db";
+import { db, productsTable, productCostHistoryTable, ordersTable, siteSettingsTable, inventoryMotoboyBalancesTable, inventoryMinasBalancesTable } from "@workspace/db";
 import { eq, asc, desc, gte, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadProductImageToR2 } from "../lib/r2";
 import { loadPaidProductSoldMaps } from "../lib/product-sales-db";
 import { emptyProductSoldMaps, soldQtyForProduct } from "../lib/product-sales";
+import { customerStockQtyForProduct, customerStockTotals } from "../lib/customer-visible-stock";
 
 const router: IRouter = Router();
 const ALLOW_INLINE_IMAGE_FALLBACK = String(process.env.ALLOW_INLINE_IMAGE_FALLBACK || "true").toLowerCase() === "true";
@@ -41,6 +41,7 @@ type ProductBackupRecord = {
   isActive?: boolean;
   isSoldOut?: boolean;
   isLaunch?: boolean;
+  showStockQuantity?: boolean;
   sortOrder?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -188,6 +189,7 @@ function normalizeBackupProduct(raw: ProductBackupRecord): typeof productsTable.
     isActive: raw.isActive !== false,
     isSoldOut: raw.isSoldOut === true,
     isLaunch: raw.isLaunch === true,
+    showStockQuantity: raw.showStockQuantity === true,
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
     createdAt: parseBackupDate(raw.createdAt),
     updatedAt: parseBackupDate(raw.updatedAt),
@@ -239,6 +241,7 @@ function serializeProductBackup(p: typeof productsTable.$inferSelect): ProductBa
     isActive: Boolean(p.isActive),
     isSoldOut: Boolean(p.isSoldOut),
     isLaunch: Boolean(p.isLaunch),
+    showStockQuantity: Boolean(p.showStockQuantity),
     sortOrder: Number(p.sortOrder ?? 0),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -266,6 +269,7 @@ function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = fal
     isActive:    p.isActive,
     isSoldOut:   p.isSoldOut,
     isLaunch:    p.isLaunch,
+    showStockQuantity: Boolean(p.showStockQuantity),
     sortOrder:   p.sortOrder,
     createdAt:   p.createdAt.toISOString(),
   };
@@ -273,6 +277,20 @@ function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = fal
     return { ...product, costPrice: Number(p.costPrice ?? 0) };
   }
   return product;
+}
+
+async function loadMotoboyMinasStockTotals(): Promise<Map<string, number>> {
+  const [motoboyRows, minasRows] = await Promise.all([
+    db.select({
+      productId: inventoryMotoboyBalancesTable.productId,
+      quantity: inventoryMotoboyBalancesTable.quantity,
+    }).from(inventoryMotoboyBalancesTable),
+    db.select({
+      productId: inventoryMinasBalancesTable.productId,
+      quantity: inventoryMinasBalancesTable.quantity,
+    }).from(inventoryMinasBalancesTable),
+  ]);
+  return customerStockTotals([...motoboyRows, ...minasRows]);
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────────
@@ -296,10 +314,26 @@ router.get("/products", async (_req, res) => {
       console.error("[API] GET /api/products - sold qty:", err);
     }
 
-    const products = rows.map((row) => ({
-      ...mapProduct(row),
-      soldQty: soldQtyForProduct(soldMaps, row.id, row.name),
-    }));
+    let stockTotals: Map<string, number> | null = null;
+    if (rows.some((row) => Boolean(row.showStockQuantity))) {
+      try {
+        stockTotals = await loadMotoboyMinasStockTotals();
+      } catch (err) {
+        console.error("[API] GET /api/products - stock qty:", err);
+      }
+    }
+
+    const products = rows.map((row) => {
+      const product = {
+        ...mapProduct(row),
+        soldQty: soldQtyForProduct(soldMaps, row.id, row.name),
+      };
+      if (!product.showStockQuantity || !stockTotals) return product;
+      return {
+        ...product,
+        stockQty: customerStockQtyForProduct(stockTotals, row.id),
+      };
+    });
     products.sort((a, b) => {
       const aSoldOut = a.isSoldOut === true ? 1 : 0;
       const bSoldOut = b.isSoldOut === true ? 1 : 0;
@@ -395,14 +429,14 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
   try {
     const {
       name, description, category, brand, unit, price,
-      costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, sortOrder,
+      costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, showStockQuantity, sortOrder,
     } = req.body as {
       name: string; description?: string; category: string; brand?: string | null; unit: string;
       price: number; costPrice?: number | null; promoPrice?: number | null; promoEndsAt?: string | null;
       bulkDiscountEnabled?: boolean;
       bulkDiscountTiers?: BulkDiscountTierInput[] | null;
       variantGroups?: ProductVariantGroupInput[] | null;
-      image?: string | null; isActive?: boolean; isSoldOut?: boolean; isLaunch?: boolean; sortOrder?: number;
+      image?: string | null; isActive?: boolean; isSoldOut?: boolean; isLaunch?: boolean; showStockQuantity?: boolean; sortOrder?: number;
     };
 
     if (!name?.trim() || !category?.trim() || price == null) {
@@ -437,6 +471,7 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
       isActive:    isActive !== false,
       isSoldOut:   isSoldOut === true,
       isLaunch:    isLaunch === true,
+      showStockQuantity: showStockQuantity === true,
       sortOrder:   sortOrder ?? 0,
     });
 
@@ -599,14 +634,14 @@ router.patch("/admin/products/:id", requirePrimaryAdmin, async (req, res) => {
     if (Array.isArray(id)) id = id[0];
       const {
         name, description, category, brand, unit, price,
-        costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, sortOrder,
+        costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, showStockQuantity, sortOrder,
       } = req.body as Partial<{
         name: string; description: string | null; category: string; brand: string | null; unit: string;
         price: number; costPrice: number | null; promoPrice: number | null; promoEndsAt: string | null;
         bulkDiscountEnabled: boolean;
         bulkDiscountTiers: BulkDiscountTierInput[] | null;
         variantGroups: ProductVariantGroupInput[] | null;
-        image: string | null; isActive: boolean; isSoldOut: boolean; isLaunch: boolean; sortOrder: number;
+        image: string | null; isActive: boolean; isSoldOut: boolean; isLaunch: boolean; showStockQuantity: boolean; sortOrder: number;
       }>;
 
     const updates: Partial<typeof productsTable.$inferInsert> = { updatedAt: new Date() };
@@ -637,6 +672,7 @@ router.patch("/admin/products/:id", requirePrimaryAdmin, async (req, res) => {
     if (isActive   !== undefined) updates.isActive    = isActive;
     if (isSoldOut  !== undefined) updates.isSoldOut   = isSoldOut;
     if (isLaunch   !== undefined) updates.isLaunch    = isLaunch;
+    if (showStockQuantity !== undefined) updates.showStockQuantity = showStockQuantity === true;
     if (sortOrder  !== undefined) updates.sortOrder   = sortOrder;
 
     // Record cost price history and backfill recent orders when costPrice changes

@@ -110,6 +110,11 @@ export default function ProductDetail() {
       ? progressiveUnitPrice!
       : (hasPromo ? product.promoPrice! : product.price))
     : 0;
+  const visibleStockQty = (() => {
+    const raw = (product as { stockQty?: unknown } | null)?.stockQty;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+    return Math.max(0, Math.trunc(raw));
+  })();
 
   const progressiveOptions = useMemo(() => {
     if (!product || !isBulkDiscountEnabled || bulkDiscountTiers.length === 0) return [];
@@ -200,6 +205,9 @@ export default function ProductDetail() {
                   </div>
                 ) : (
                   <span className="text-3xl font-bold text-primary">{formatCurrency(displayUnitPrice)}</span>
+                )}
+                {visibleStockQty != null && (
+                  <p className="mt-2 text-sm font-semibold text-foreground">{visibleStockQty} em estoque</p>
                 )}
                 {isSoldOut && (
                   <p className="mt-2 text-sm font-semibold text-destructive">Produto esgotado no momento.</p>

@@ -250,6 +250,12 @@ components:
         brand:
           type: string
           nullable: true
+        showStockQuantity:
+          type: boolean
+          description: Interruptor do admin. Ligado, a loja pode mostrar a quantidade.
+        stockQty:
+          type: integer
+          description: Soma Motoboy + Minas. Só vem no GET público quando showStockQuantity está ligado.
       required:
         - id
         - name

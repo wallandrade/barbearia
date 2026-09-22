@@ -25,6 +25,7 @@ export const productsTable = mysqlTable("products", {
   isActive: boolean("is_active").notNull().default(true),
   isSoldOut: boolean("is_sold_out").notNull().default(false),
   isLaunch: boolean("is_launch").notNull().default(false),
+  showStockQuantity: boolean("show_stock_quantity").notNull().default(false),
   sortOrder: int("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

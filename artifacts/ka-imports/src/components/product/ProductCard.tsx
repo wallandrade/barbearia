@@ -68,6 +68,10 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank }
   const displayUnitPrice = hasBulkDiscount && oneBoxTier
     ? oneBoxTier.unitPrice
     : (hasPromo ? product.promoPrice! : product.price);
+  const stockQtyRaw = (product as Product & { stockQty?: unknown }).stockQty;
+  const visibleStockQty = typeof stockQtyRaw === "number" && Number.isFinite(stockQtyRaw)
+    ? Math.max(0, Math.trunc(stockQtyRaw))
+    : null;
   const href = sellerSlug ? `/${sellerSlug}/produto/${product.id}` : `/produto/${product.id}`;
   const { addItem, setIsOpen } = useCart();
   const [, setLocation] = useLocation();
@@ -149,6 +153,9 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank }
               <span className="font-bold text-xl text-primary">
                 {formatCurrency(displayUnitPrice)}
               </span>
+            )}
+            {visibleStockQty != null && (
+              <span className="text-xs font-semibold text-foreground mt-1">{visibleStockQty} em estoque</span>
             )}
           </div>
 

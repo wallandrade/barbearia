@@ -16873,7 +16873,7 @@ function ProductsPanel({
   };
 
   const openCreate = () => {
-    setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [], variantGroups: [] } as any);
+    setProductForm({ unit: "unidade", isActive: true, isSoldOut: false, isLaunch: false, showStockQuantity: false, sortOrder: 0, costPrice: 0, bulkDiscountEnabled: false, bulkDiscountTiers: [], variantGroups: [] } as any);
     setNewCategoryInput("");
     setNewBrandInput("");
     setProductFormOpen(true);
@@ -17497,6 +17497,22 @@ function ProductsPanel({
                       {productForm.isLaunch === true ? <IconLucide name="ToggleRight" className="w-7 h-7 text-blue-600" /> : <ToggleLeft className="w-7 h-7" />}
                     </button>
                   </div>
+
+                  <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mostrar estoque ao cliente</p>
+                      <p className="text-xs text-muted-foreground mt-1">Soma Motoboy + Minas. Foz Guaçu não entra e o carrinho continua igual.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({ ...productForm, showStockQuantity: (productForm as { showStockQuantity?: boolean }).showStockQuantity !== true } as typeof productForm)}
+                      className="text-muted-foreground hover:text-primary transition-colors shrink-0"
+                    >
+                      {(productForm as { showStockQuantity?: boolean }).showStockQuantity === true
+                        ? <IconLucide name="ToggleRight" className="w-7 h-7 text-primary" />
+                        : <ToggleLeft className="w-7 h-7" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Image upload */}
@@ -17592,6 +17608,7 @@ function ProductsPanel({
                       {!p.isActive && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Inativo</span>}
                       {p.isSoldOut && <span className="text-xs px-2 py-0.5 rounded-full bg-red-600 text-white">Esgotado</span>}
                       {p.isLaunch && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-600 text-white">Lançamento</span>}
+                      {(p as { showStockQuantity?: boolean }).showStockQuantity === true && <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">Estoque visível</span>}
                     </div>
                     {p.description && <p className="text-xs text-muted-foreground truncate">{p.description}</p>}
                     <div className="flex items-center gap-3 mt-1">
