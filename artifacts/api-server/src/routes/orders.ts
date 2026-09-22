@@ -61,6 +61,7 @@ import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
+import { diffEditedOrderProducts, snapshotProductImage, type OrderEditProductLine } from "../lib/order-activity-format";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
@@ -2149,8 +2150,18 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     const storeCreditFromEdit = roundOrderMoney(current[0].storeCreditFromEdit);
     const isPaid         = currentStatus === "paid" || currentStatus === "completed";
 
-    // Fetch catalog products to resolve prices with bulk-discount tiers
-    const editProductIds = Array.from(new Set(newProducts.map((p) => String(p?.id || "")).filter(Boolean)));
+    // Fetch catalog products to resolve prices with bulk-discount tiers.
+    // Ids atuais entram para a foto do item que saiu na edição.
+    const previousProductIds = (Array.isArray(current[0].products) ? current[0].products : [])
+      .map((item) => {
+        const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        return String(row.id || "").trim();
+      })
+      .filter(Boolean);
+    const editProductIds = Array.from(new Set([
+      ...newProducts.map((p) => String(p?.id || "").trim()),
+      ...previousProductIds,
+    ].filter(Boolean)));
     let editProductRows = new Map<string, typeof productsTable.$inferSelect>();
     if (editProductIds.length > 0) {
       const rows = await db.select().from(productsTable).where(inArray(productsTable.id, editProductIds));
@@ -2339,7 +2350,38 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       : walletCredit.skipped === "no_account"
         ? " · reducao sem conta (carteira nao creditada)"
         : "";
-    recordAdminActivity(req, id, "edit", "Editou o pedido", `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}`);
+    const catalogImageById = new Map(
+      Array.from(editProductRows.entries()).map(([productId, row]) => [productId, snapshotProductImage(row.image)] as const),
+    );
+    const withCatalogImage = (line: OrderEditProductLine): OrderEditProductLine => {
+      const productId = String(line.id || "").trim();
+      return {
+        ...line,
+        image: snapshotProductImage(line.image) || catalogImageById.get(productId) || null,
+      };
+    };
+    const beforeLines = (Array.isArray(current[0].products) ? current[0].products : []).map((item) => {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return withCatalogImage({
+        id: String(row.id || ""),
+        name: String(row.name || "Produto"),
+        quantity: Number(row.quantity) || 0,
+        image: row.image,
+      });
+    });
+    const changedProducts = diffEditedOrderProducts(
+      beforeLines,
+      resolvedProducts.map((product) => withCatalogImage(product)),
+    );
+    await recordOrderActivity({
+      orderId: id,
+      type: "edit",
+      label: "Editou o pedido",
+      actorType: "admin",
+      actorName: String(req.adminSession?.username || "").trim() || "admin",
+      detail: `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}`,
+      meta: changedProducts.length > 0 ? { products: changedProducts } : null,
+    });
     res.json({ ok: true, order: mapOrder(updated[0]), walletCredit });
   } catch (err) {
     console.error("Edit order error:", err);

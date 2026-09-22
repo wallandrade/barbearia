@@ -973,21 +973,27 @@ async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
 }
 
 async function ensureOrderActivityTable(databaseName: string): Promise<void> {
-  if (await tableExists("order_activity", databaseName)) return;
+  if (!(await tableExists("order_activity", databaseName))) {
+    await pool.query(`
+      CREATE TABLE order_activity (
+        id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+        order_id VARCHAR(255) NOT NULL,
+        type VARCHAR(64) NOT NULL,
+        label VARCHAR(255) NOT NULL,
+        actor_type VARCHAR(32) NOT NULL DEFAULT 'system',
+        actor_name VARCHAR(255) NULL,
+        detail TEXT NULL,
+        meta JSON NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY order_activity_order_id_created_idx (order_id, created_at)
+      )
+    `);
+    return;
+  }
 
-  await pool.query(`
-    CREATE TABLE order_activity (
-      id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
-      order_id VARCHAR(255) NOT NULL,
-      type VARCHAR(64) NOT NULL,
-      label VARCHAR(255) NOT NULL,
-      actor_type VARCHAR(32) NOT NULL DEFAULT 'system',
-      actor_name VARCHAR(255) NULL,
-      detail TEXT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      KEY order_activity_order_id_created_idx (order_id, created_at)
-    )
-  `);
+  if (!(await columnExists("order_activity", "meta", databaseName))) {
+    await pool.query("ALTER TABLE order_activity ADD COLUMN meta JSON NULL");
+  }
 }
 
 async function ensureSupplierPurchaseTables(databaseName: string): Promise<void> {

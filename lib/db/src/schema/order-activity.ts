@@ -1,4 +1,4 @@
-import { mysqlTable, int, varchar, text, timestamp } from "drizzle-orm/mysql-core";
+import { mysqlTable, int, varchar, text, json, timestamp } from "drizzle-orm/mysql-core";
 
 export const orderActivityTable = mysqlTable("order_activity", {
   id: int("id").primaryKey().autoincrement(),
@@ -8,6 +8,7 @@ export const orderActivityTable = mysqlTable("order_activity", {
   actorType: varchar("actor_type", { length: 32 }).notNull().default("system"),
   actorName: varchar("actor_name", { length: 255 }),
   detail: text("detail"),
+  meta: json("meta"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

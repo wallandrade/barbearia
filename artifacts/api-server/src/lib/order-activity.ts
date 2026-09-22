@@ -4,9 +4,10 @@ import {
   mergeSyntheticCreated,
   serializeActivityRow,
   type OrderActivityEvent,
+  type OrderActivityMeta,
 } from "./order-activity-format";
 
-export type { OrderActivityEvent } from "./order-activity-format";
+export type { OrderActivityEvent, OrderActivityMeta, OrderActivityProductChange } from "./order-activity-format";
 export type OrderActivityActorType = "admin" | "system" | "customer" | "webhook";
 
 function adminNameFromReq(req: { adminSession?: { username?: unknown } }): string {
@@ -20,10 +21,13 @@ export async function recordOrderActivity(params: {
   actorType?: OrderActivityActorType;
   actorName?: string | null;
   detail?: string | null;
+  meta?: OrderActivityMeta | null;
 }): Promise<void> {
   const orderId = String(params.orderId || "").trim();
   const label = String(params.label || "").trim();
   if (!orderId || !label) return;
+
+  const products = Array.isArray(params.meta?.products) ? params.meta.products.slice(0, 12) : [];
 
   try {
     await db.insert(orderActivityTable).values({
@@ -33,6 +37,7 @@ export async function recordOrderActivity(params: {
       actorType: params.actorType || "system",
       actorName: params.actorName ? String(params.actorName).trim().slice(0, 255) : null,
       detail: params.detail ? String(params.detail).trim().slice(0, 2000) : null,
+      meta: products.length > 0 ? { products } : null,
     });
   } catch (err) {
     console.error("[ORDER_ACTIVITY] Failed to record", {
@@ -49,6 +54,7 @@ export function recordAdminActivity(
   type: string,
   label: string,
   detail?: string | null,
+  meta?: OrderActivityMeta | null,
 ): void {
   void recordOrderActivity({
     orderId,
@@ -57,6 +63,7 @@ export function recordAdminActivity(
     actorType: "admin",
     actorName: adminNameFromReq(req),
     detail: detail ?? null,
+    meta: meta ?? null,
   });
 }
 

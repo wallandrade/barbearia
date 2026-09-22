@@ -218,6 +218,24 @@ function isoToSPDate(iso: string) {
 }
 
 type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; image?: string | null };
+type OrderActivityProductThumb = { id: string; name: string; image: string | null; fromQty: number; toQty: number };
+type OrderActivityEventView = {
+  id: string;
+  type: string;
+  label: string;
+  actorType: string;
+  actorName: string | null;
+  detail: string | null;
+  createdAt: string;
+  products?: OrderActivityProductThumb[];
+  synthetic?: boolean;
+};
+
+function activityProductQtyLabel(fromQty: number, toQty: number): string {
+  if (fromQty <= 0) return `entrou ${toQty}x`;
+  if (toQty <= 0) return `saiu ${fromQty}x`;
+  return `${fromQty} → ${toQty}`;
+}
 
 function getOrderReference(order: any): string {
   if (order?.orderNumber != null) return String(order.orderNumber);
@@ -11517,16 +11535,7 @@ function OrdersPanel({
   const [enviando, setEnviando] = useState<Record<string, boolean>>({});
   const [orderActivityById, setOrderActivityById] = useState<Record<string, {
     loading: boolean;
-    events: Array<{
-      id: string;
-      type: string;
-      label: string;
-      actorType: string;
-      actorName: string | null;
-      detail: string | null;
-      createdAt: string;
-      synthetic?: boolean;
-    }>;
+    events: OrderActivityEventView[];
   }>>({});
   const [adminPasswordModalOpen, setAdminPasswordModalOpen] = useState(false);
   const [adminPasswordModalTitle, setAdminPasswordModalTitle] = useState("Confirmar ação sensível");
@@ -11547,16 +11556,7 @@ function OrdersPanel({
     }));
     void fetch(`${BASE}/api/admin/orders/${encodeURIComponent(orderId)}/activity`, { headers: authHeaders() })
       .then(async (res) => {
-        const data = await res.json().catch(() => ({})) as { events?: Array<{
-          id: string;
-          type: string;
-          label: string;
-          actorType: string;
-          actorName: string | null;
-          detail: string | null;
-          createdAt: string;
-          synthetic?: boolean;
-        }> };
+        const data = await res.json().catch(() => ({})) as { events?: OrderActivityEventView[] };
         if (cancelled) return;
         setOrderActivityById((prev) => ({
           ...prev,
@@ -13461,6 +13461,40 @@ function OrdersPanel({
                               <p className="text-sm font-semibold text-slate-800">{event.label}</p>
                               {event.detail ? (
                                 <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap break-words">{event.detail}</p>
+                              ) : null}
+                              {Array.isArray(event.products) && event.products.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {event.products.map((product, productIdx) => {
+                                    const imageSrc = String(product.image || "").trim()
+                                      || (product.id ? String(productImageById[product.id] || "").trim() : "");
+                                    return (
+                                      <div
+                                        key={`${product.id || product.name}-${productIdx}`}
+                                        className="flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 pr-2"
+                                      >
+                                        <button
+                                          type="button"
+                                          className={`h-8 w-8 shrink-0 overflow-hidden rounded-l-lg bg-white ${imageSrc ? "cursor-zoom-in" : "cursor-default"}`}
+                                          onClick={() => {
+                                            if (!imageSrc) return;
+                                            setImagePreview({ src: imageSrc, name: product.name });
+                                          }}
+                                          aria-label={imageSrc ? `Ver foto de ${product.name}` : product.name}
+                                        >
+                                          {imageSrc ? (
+                                            <img src={imageSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
+                                          ) : (
+                                            <span className="flex h-full w-full items-center justify-center text-[9px] leading-none text-slate-400">foto</span>
+                                          )}
+                                        </button>
+                                        <span className="min-w-0 py-0.5">
+                                          <span className="block max-w-[160px] truncate text-xs font-medium text-slate-800">{product.name}</span>
+                                          <span className="block text-[11px] text-muted-foreground">{activityProductQtyLabel(Number(product.fromQty) || 0, Number(product.toQty) || 0)}</span>
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               ) : null}
                               <p className="text-[11px] text-muted-foreground mt-1">
                                 {[event.actorName, `${formatDateBR(event.createdAt)} ${formatTimeBR(event.createdAt)}`.trim()]
