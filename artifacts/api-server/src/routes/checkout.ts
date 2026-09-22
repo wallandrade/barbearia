@@ -18,6 +18,7 @@ import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
+import { normalizeStoredClientDocument } from "../lib/related-shipments";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
 import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
@@ -456,7 +457,7 @@ router.post("/checkout/pix", async (req, res) => {
       clientName:          client.name,
       clientEmail:         client.email,
       clientPhone:         client.phone,
-      clientDocument:      client.document,
+      clientDocument:      normalizeStoredClientDocument(client.document),
       purchaseIp,
       addressCep:          address?.cep          || null,
       addressStreet:       address?.street       || null,

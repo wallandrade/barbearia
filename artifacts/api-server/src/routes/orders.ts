@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, motoboyBookingsTable, customerUsersTable } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
-import { desc, and, gte, lte, eq, inArray, sql } from "drizzle-orm";
+import { desc, and, gte, lte, eq, inArray, ne, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth, verifyCurrentAdminPassword } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -41,6 +41,7 @@ import {
   ensurePackageInventoryDebited,
   getOrderShipment,
   listOrderShipments,
+  listOrderShipmentsByOrderIds,
   mapOrderShipmentPublic,
   OrderShipmentError,
   rollupOrderFromPackages,
@@ -48,7 +49,14 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { lookupIpGeo } from "../lib/ip-geo";
-import { resolveEnvioEcomInventoryPool } from "../lib/envioecom-accounts";
+import { listEnvioEcomAccountsPublic, resolveEnvioEcomInventoryPool } from "../lib/envioecom-accounts";
+import {
+  RELATED_SHIPMENTS_SCAN_LIMIT,
+  buildRelatedShipments,
+  cpfForRelatedShipments,
+  emptyRelatedShipments,
+  normalizeStoredClientDocument,
+} from "../lib/related-shipments";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
@@ -1260,7 +1268,7 @@ router.post("/orders", async (req, res) => {
       clientName:          client.name,
       clientEmail:         client.email,
       clientPhone:         client.phone,
-      clientDocument:      client.document,
+      clientDocument:      normalizeStoredClientDocument(client.document),
       purchaseIp,
       addressCep:          address?.cep          || null,
       addressStreet:       address?.street       || null,
@@ -2955,6 +2963,90 @@ router.patch("/admin/orders/:id/aguardando-estoque", requireAdminAuth, async (re
   } catch (err) {
     console.error("Update order aguardando estoque error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar fila de estoque do pedido." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/orders/:id/related-shipments — histórico do CPF antes de cotar
+// ---------------------------------------------------------------------------
+router.get("/admin/orders/:id/related-shipments", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+    const rows = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    const order = rows[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const cpf = cpfForRelatedShipments(order.clientDocument);
+    if (!cpf) {
+      res.json(emptyRelatedShipments(null));
+      return;
+    }
+
+    const others = await db
+      .select({
+        id: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
+        parentOrderId: ordersTable.parentOrderId,
+        createdAt: ordersTable.createdAt,
+        enviado: ordersTable.enviado,
+        trackingCode: ordersTable.trackingCode,
+        envioecomShipmentId: ordersTable.envioecomShipmentId,
+        envioecomBarcode: ordersTable.envioecomBarcode,
+        envioecomStatus: ordersTable.envioecomStatus,
+        envioecomStatusUpdatedAt: ordersTable.envioecomStatusUpdatedAt,
+        envioecomLabelUrl: ordersTable.envioecomLabelUrl,
+        envioecomAccountId: ordersTable.envioecomAccountId,
+        products: ordersTable.products,
+      })
+      .from(ordersTable)
+      .where(and(
+        inArray(ordersTable.status, ["paid", "completed"]),
+        ne(ordersTable.id, order.id),
+        sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${ordersTable.clientDocument}, '.', ''), '-', ''), '/', ''), ' ', ''), CHAR(9), '') = ${cpf}`,
+      ))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(RELATED_SHIPMENTS_SCAN_LIMIT);
+
+    const packageMap = await listOrderShipmentsByOrderIds(others.map((row) => row.id));
+    let accountNameById: Record<string, string> = {};
+    try {
+      const accounts = await listEnvioEcomAccountsPublic();
+      accountNameById = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
+    } catch {
+      accountNameById = {};
+    }
+
+    res.json(buildRelatedShipments({
+      cpf,
+      current: {
+        id: order.id,
+        parentOrderId: order.parentOrderId,
+        products: order.products,
+      },
+      others: others.map((row) => ({
+        ...row,
+        packages: (packageMap.get(row.id) || []).map((pkg) => ({
+          enviado: pkg.enviado,
+          items: pkg.items,
+          envioecomShipmentId: pkg.envioecomShipmentId,
+          envioecomBarcode: pkg.envioecomBarcode,
+          envioecomStatus: pkg.envioecomStatus,
+          envioecomStatusUpdatedAt: pkg.envioecomStatusUpdatedAt,
+          envioecomLabelUrl: pkg.envioecomLabelUrl,
+          envioecomAccountId: pkg.envioecomAccountId,
+        })),
+      })),
+      accountNameById,
+    }));
+  } catch (err) {
+    console.error("Related shipments error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar envios deste CPF." });
   }
 });
 

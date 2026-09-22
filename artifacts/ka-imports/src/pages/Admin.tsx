@@ -592,6 +592,8 @@ import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
 import AdminInventoryExitAccessPanel from "@/pages/AdminInventoryExitAccessPanel";
 import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
+import { CpfQuoteWarningModal, CpfRelatedShipmentsBlock } from "@/pages/AdminCpfRelatedShipments";
+import { fetchRelatedShipments, type RelatedShipmentsResponse } from "@/lib/related-shipments-client";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
@@ -10523,6 +10525,13 @@ function OrdersPanel({
     purpose: "quote" | "link";
     continueToLabel?: boolean;
     packageId?: string | null;
+    confirmSameProduct?: boolean;
+  }>(null);
+  const [cpfQuoteWarning, setCpfQuoteWarning] = useState<null | {
+    order: AdminOrder;
+    packageId?: string | null;
+    result: RelatedShipmentsResponse;
+    accounts: EnvioEcomAccountPublic[];
   }>(null);
   const [splitShipmentModal, setSplitShipmentModal] = useState<AdminOrder | null>(null);
   const [splitShipmentSaving, setSplitShipmentSaving] = useState(false);
@@ -10659,20 +10668,45 @@ function OrdersPanel({
     }
   };
 
+  const continueEnvioEcomQuote = (
+    order: AdminOrder,
+    packageId: string | null | undefined,
+    accounts: EnvioEcomAccountPublic[],
+    confirmSameProduct: boolean,
+  ) => {
+    if (accounts.length === 1) {
+      void quoteEnvioEcom(order, undefined, accounts[0].id, packageId);
+      return;
+    }
+    setEnvioecomAccountPicker({
+      order,
+      purpose: "quote",
+      packageId,
+      confirmSameProduct,
+    });
+  };
+
   const startEnvioEcomQuote = async (order: AdminOrder, packageId?: string | null) => {
-    const list = selectableEnvioEcomAccounts.length
-      ? envioecomAccounts
-      : await refreshEnvioEcomAccounts();
+    const accountsPromise = selectableEnvioEcomAccounts.length
+      ? Promise.resolve(envioecomAccounts)
+      : refreshEnvioEcomAccounts();
+    const relatedPromise = fetchRelatedShipments(order.id, authHeaders()).catch(() => null);
+    const [list, related] = await Promise.all([accountsPromise, relatedPromise]);
     const ready = list.filter((account) => account.configured);
     if (!ready.length) {
       toast.error("Nenhuma API EnvioEcom configurada. Cadastre em Configurações.");
       return;
     }
-    if (ready.length === 1) {
-      void quoteEnvioEcom(order, undefined, ready[0].id, packageId);
+    if (related && related.warningLevel !== "none") {
+      setCpfQuoteWarning({
+        order,
+        packageId: packageId || null,
+        result: related,
+        accounts: ready,
+      });
       return;
     }
-    setEnvioecomAccountPicker({ order, purpose: "quote", packageId });
+    continueEnvioEcomQuote(order, packageId, ready, false);
   };
 
   const createEnvioEcomShipment = async (
@@ -12691,7 +12725,10 @@ function OrdersPanel({
                   <h3 className="font-bold text-lg">{order.clientName}</h3>
                   <p className="text-sm text-muted-foreground">{order.clientEmail} · {order.clientPhone}</p>
                   {order.clientDocument && (
-                    <p className="text-xs text-muted-foreground mt-0.5">CPF: {order.clientDocument}</p>
+                    <>
+                      <p className="text-xs text-muted-foreground mt-0.5">CPF: {order.clientDocument}</p>
+                      <CpfRelatedShipmentsBlock orderId={order.id} getAuthHeaders={authHeaders} />
+                    </>
                   )}
                   <p className="text-xs text-muted-foreground mt-0.5">IP compra: {normalizeIp((order as any).purchaseIp)}</p>
                   {order.addressCity && (
@@ -13695,6 +13732,25 @@ function OrdersPanel({
           />
         )}
 
+        {cpfQuoteWarning && (
+          <CpfQuoteWarningModal
+            orderNumber={String(getOrderReference(cpfQuoteWarning.order))}
+            clientName={String(cpfQuoteWarning.order.clientName || "")}
+            result={cpfQuoteWarning.result}
+            onBack={() => setCpfQuoteWarning(null)}
+            onContinue={() => {
+              const pending = cpfQuoteWarning;
+              setCpfQuoteWarning(null);
+              continueEnvioEcomQuote(
+                pending.order,
+                pending.packageId,
+                pending.accounts,
+                pending.result.warningLevel === "same_product",
+              );
+            }}
+          />
+        )}
+
         {envioecomAccountPicker && (
           <div className="fixed inset-0 z-[125] bg-black/45 flex items-center justify-center p-4">
             <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
@@ -13721,6 +13777,13 @@ function OrdersPanel({
                     className="w-full text-left rounded-xl border border-border hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3 transition"
                     onClick={() => {
                       const picked = envioecomAccountPicker;
+                      if (
+                        picked.purpose === "quote"
+                        && picked.confirmSameProduct
+                        && !window.confirm("Este CPF já recebeu o mesmo produto recentemente. Continuar a cotação nesta API?")
+                      ) {
+                        return;
+                      }
                       setEnvioecomAccountPicker(null);
                       if (picked.purpose === "quote") {
                         void quoteEnvioEcom(picked.order, undefined, account.id, picked.packageId);

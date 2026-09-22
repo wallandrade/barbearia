@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-18
+> **Última atualização:** 2026-09-22
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-22 | Antes de cotar, `GET /api/admin/orders/:id/related-shipments` avisa envio recente do mesmo CPF. Conta `env` aparece como São Paulo; `tenant` como Conta da loja | Admin confirma; não bloqueia o create | Webhook, etiqueta e `SHIPMENT_EXISTS` iguais |
 | 2026-09-18 | Vincular EE (`POST .../sync` com barcode/ID no body) é **estrito**: não usa CPF/CEP/`orderId` residual do Desvincular. Sem match do código colado → 404, sem reatachar o envio antigo | #1040 deixa de voltar `8880…` Entregue ao colar outro rastreio | Create/etiqueta/webhook/Desvincular iguais; Sync sem body continua o fallback |
 | 2026-09-12 | Webhook/sync EE: vários pacotes/pedidos com o mesmo barcode preferem o **filho de reenvio**. Nº do pedido só casa se já houver vínculo EE. Pai com filho não usa fallback CPF/CEP/nome. Duplicata no pai é **Desvincular** local | #853 deixa de herdar `8880…` do #1091; cancelar na EE não | Create/etiqueta/cópia 48h iguais |
 | 2026-09-12 | Pedido `enviado` com pacote sem EE: conta junta os itens no rastreio que existe (não mostra “aguardando”). Split 1/2 só em pedido ainda aberto | Pedido enviado com EE próprio deixa de misturar pacote parado; reenvio aberto igual | Webhook/create/admin iguais |

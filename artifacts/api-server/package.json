@@ -10,7 +10,7 @@
     "start-only": "cross-env TZ=America/Sao_Paulo node dist/index.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:free-shipping": "node --test --import tsx ./src/lib/free-shipping.test.ts",
-    "test:envioecom": "node --test --import tsx ./src/lib/envioecom-status.test.ts ./src/lib/order-shipments.test.ts",
+    "test:envioecom": "node --test --import tsx ./src/lib/envioecom-status.test.ts ./src/lib/order-shipments.test.ts ./src/lib/related-shipments.test.ts",
     "test:inventory-dates": "node --test --import tsx ./src/lib/inventory-date-range.test.ts ./src/lib/inventory-movement-reason.test.ts ./src/lib/inventory-undo-ref.test.ts",
     "test:motoboy-distance": "node --test --import tsx ./src/lib/motoboy-distance.test.ts ./src/lib/motoboy-geocode.test.ts ./src/lib/motoboy-route.test.ts"
   },

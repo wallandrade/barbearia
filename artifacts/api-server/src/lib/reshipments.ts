@@ -32,6 +32,7 @@ import {
   reshipmentsTable,
   supportTicketsTable,
 } from "@workspace/db";
+import { normalizeStoredClientDocument } from "./related-shipments";
 
 export type ReshipmentStatus =
   | "reenvio_aguardando_estoque"
@@ -731,7 +732,7 @@ export async function createReshipmentChildOrder(params: {
     clientName: parent.clientName,
     clientEmail: parent.clientEmail,
     clientPhone: parent.clientPhone,
-    clientDocument: parent.clientDocument,
+    clientDocument: normalizeStoredClientDocument(parent.clientDocument),
     purchaseIp: parent.purchaseIp,
     ipCity: parent.ipCity,
     ipRegion: parent.ipRegion,
