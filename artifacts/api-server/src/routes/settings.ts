@@ -3,6 +3,10 @@ import { db, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadSiteSettingImageToR2 } from "../lib/r2";
+import {
+  SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
+  SHIPPING_QUEUE_MANUAL_HOURS_KEY,
+} from "../lib/shipping-queue-deadline";
 
 const router: IRouter = Router();
 
@@ -52,6 +56,8 @@ const ALLOWED_KEYS = [
   // EnvioEcom: qty e valor da etiqueta no create (nunca catálogo)
   "envioecom_shipment_item_qty",
   "envioecom_shipment_item_value",
+  SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
+  SHIPPING_QUEUE_MANUAL_HOURS_KEY,
 ];
 
 const IMAGE_SETTING_KEYS = new Set([
@@ -113,6 +119,15 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
           return;
         }
         const normalized = Math.min(180, Math.max(60, Math.round(parsed)));
+        storedValue = String(normalized);
+      }
+      if (key === SHIPPING_QUEUE_MANUAL_HOURS_KEY) {
+        const parsed = Number(String(value).trim().replace(",", "."));
+        if (!Number.isFinite(parsed)) {
+          res.status(400).json({ error: "INVALID_VALUE", message: "Informe as horas do prazo manual." });
+          return;
+        }
+        const normalized = Math.min(999, Math.max(1, Math.round(parsed)));
         storedValue = String(normalized);
       }
       if (IMAGE_SETTING_KEYS.has(key) && value.startsWith("data:image/")) {

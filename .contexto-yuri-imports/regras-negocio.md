@@ -28,6 +28,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-22 | `shipping_queue_manual_enabled` e `shipping_queue_manual_hours` entram em `ALLOWED_KEYS` | Salvar o prazo manual deixa de responder chave não aceita | Vagas e botão 48h continuam automáticos |
 | 2026-09-22 | Configurações: prazo manual da postagem no checkout (`shipping_queue_manual_enabled` + `shipping_queue_manual_hours`) | Ligado, “Postagem em até X horas” usa o número escolhido (1–999) | Vagas 20/dia, botão 48h do Admin e a fila real continuam automáticos |
 | 2026-09-22 | API puxa sozinha o status EnvioEcom dos envios abertos (a cada 2 min, lote 8). Se o status, o rastreio ou Enviado mudam, o Admin recarrega o card | Processando envio acompanha a EnvioEcom sem o botão Sync status | **Processando envio** continua etiqueta pronta: não marca Enviado e não baixa estoque. Entregue e cancelado saem do lote. Cópia 48h igual |
 | 2026-09-22 | Fila do checkout solta a vaga em **Aguardando coleta**, etiqueta pronta, coletado ou Enviado | “Postagem em até X horas” deixa de somar pedido que já tem etiqueta. Split só solta quando todos os pacotes saíram | Não marca Enviado e não baixa estoque. Cópia 48h igual |
