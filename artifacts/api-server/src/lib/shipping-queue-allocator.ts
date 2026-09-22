@@ -1,7 +1,12 @@
-import { db, shippingQueueTable, ordersTable, orderShipmentsTable } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { db, shippingQueueTable, ordersTable, orderShipmentsTable, siteSettingsTable } from "@workspace/db";
+import { eq, and, inArray, or } from "drizzle-orm";
 import crypto from "crypto";
 import { orderStillOccupiesShippingQueue } from "./order-shipments-logic";
+import {
+  SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
+  SHIPPING_QUEUE_MANUAL_HOURS_KEY,
+  resolveCheckoutDeadlineHours,
+} from "./shipping-queue-deadline";
 
 const MAX_PER_DAY = 20;
 const TZ = "America/Sao_Paulo";
@@ -246,9 +251,28 @@ export async function reallocateShippingSlot(orderId: string): Promise<Allocatio
   return allocateShippingSlot(orderId);
 }
 
+async function readManualDeadlineSettings(): Promise<{ enabled: string | null; hours: string | null }> {
+  try {
+    const rows = await db
+      .select({ key: siteSettingsTable.key, value: siteSettingsTable.value })
+      .from(siteSettingsTable)
+      .where(or(
+        eq(siteSettingsTable.key, SHIPPING_QUEUE_MANUAL_ENABLED_KEY),
+        eq(siteSettingsTable.key, SHIPPING_QUEUE_MANUAL_HOURS_KEY),
+      ));
+    const enabled = rows.find((row) => row.key === SHIPPING_QUEUE_MANUAL_ENABLED_KEY)?.value ?? null;
+    const hours = rows.find((row) => row.key === SHIPPING_QUEUE_MANUAL_HOURS_KEY)?.value ?? null;
+    return { enabled, hours };
+  } catch (err) {
+    console.warn("[ShippingQueue] prazo manual indisponível, usando cálculo automático:", err);
+    return { enabled: null, hours: null };
+  }
+}
+
 /**
  * Returns the current queue preview for the checkout page.
  * Shows how many slots remain in the nearest available date and the deadline hours.
+ * Com prazo manual nas Configurações, as horas exibidas são as escolhidas.
  */
 export async function getQueuePreview(): Promise<{
   availableSlots: number;
@@ -258,6 +282,12 @@ export async function getQueuePreview(): Promise<{
   const now = new Date();
   const todayStr = toSPDateStr(now);
   const counts = await releaseLabeledShippingSlots();
+  const manual = await readManualDeadlineSettings();
+  const applyDeadline = (calculatedHours: number) => resolveCheckoutDeadlineHours(
+    calculatedHours,
+    manual.enabled,
+    manual.hours,
+  );
 
   // Find the next available slot (standard logic)
   let nextSlotDateStr = "";
@@ -278,7 +308,7 @@ export async function getQueuePreview(): Promise<{
   }
 
   if (!nextSlotDateStr) {
-    return { availableSlots: 0, deadlineHours: 0, queueDate: "" };
+    return { availableSlots: 0, deadlineHours: applyDeadline(0), queueDate: "" };
   }
 
   // Datas anteriores a hoje que ainda têm pedido sem etiqueta.
@@ -288,7 +318,11 @@ export async function getQueuePreview(): Promise<{
   }
   const realDeadlineHours = (nextSlotOffset + backlogDays) * 24;
 
-  return { availableSlots: nextSlotAvailable, deadlineHours: realDeadlineHours, queueDate: nextSlotDateStr };
+  return {
+    availableSlots: nextSlotAvailable,
+    deadlineHours: applyDeadline(realDeadlineHours),
+    queueDate: nextSlotDateStr,
+  };
 }
 
 /**

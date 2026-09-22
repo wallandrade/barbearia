@@ -17974,6 +17974,8 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [storeWhatsappNumber, setStoreWhatsappNumber] = useState(settings["checkout_store_whatsapp_number"] ?? "");
   const [raffleWhatsappNumber, setRaffleWhatsappNumber] = useState(settings["checkout_raffle_whatsapp_number"] ?? "");
   const [siteName, setSiteName] = useState(settings["site_name"] ?? "");
+  const [queueManualEnabled, setQueueManualEnabled] = useState(["1", "true", "on", "yes"].includes(String(settings["shipping_queue_manual_enabled"] ?? "0").trim().toLowerCase()));
+  const [queueManualHours, setQueueManualHours] = useState(settings["shipping_queue_manual_hours"] ?? "");
   const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
   const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
   const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
@@ -18001,6 +18003,8 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setStoreWhatsappNumber(settings["checkout_store_whatsapp_number"] ?? "");
     setRaffleWhatsappNumber(settings["checkout_raffle_whatsapp_number"] ?? "");
     setSiteName(settings["site_name"] ?? "");
+    setQueueManualEnabled(["1", "true", "on", "yes"].includes(String(settings["shipping_queue_manual_enabled"] ?? "0").trim().toLowerCase()));
+    setQueueManualHours(settings["shipping_queue_manual_hours"] ?? "");
     setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
     setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
     setPromoCountdownText(settings["promo_countdown_text"] ?? "");
@@ -18041,6 +18045,67 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
       {/* ── APIs EnvioEcom ──────────────────────────────────────────────── */}
       <AdminEnvioEcomAccountsPanel />
       <AdminInventoryExitAccessPanel />
+
+      <div className="max-w-3xl">
+        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-primary" />
+          Prazo de postagem no checkout
+        </h2>
+        <p className="text-muted-foreground text-sm mb-5">
+          Desligado, o checkout calcula as horas da fila. Ligado, mostra o tempo que você escolher.
+        </p>
+        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+          <label className="flex items-center justify-between gap-4 cursor-pointer">
+            <div>
+              <p className="font-semibold">Prazo manual</p>
+              <p className="text-xs text-muted-foreground">O aviso “Postagem em até X horas” usa esse número. As vagas continuam automáticas.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={queueManualEnabled}
+              onChange={(e) => setQueueManualEnabled(e.target.checked)}
+              className="w-4 h-4"
+            />
+          </label>
+          <div>
+            <label className="block text-xs font-medium mb-1">Horas</label>
+            <input
+              type="number"
+              min={1}
+              max={999}
+              step={1}
+              value={queueManualHours}
+              onChange={(e) => setQueueManualHours(e.target.value)}
+              placeholder="Ex: 48"
+              disabled={!queueManualEnabled || !!loading["shipping_queue_manual_hours"]}
+              className="w-full max-w-xs h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm disabled:opacity-50"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (queueManualEnabled) {
+                const hours = Math.round(Number(String(queueManualHours).trim().replace(",", ".")));
+                if (!Number.isFinite(hours) || hours < 1 || hours > 999) {
+                  toast.error("Informe as horas do prazo manual, de 1 a 999.");
+                  return;
+                }
+                onSave("shipping_queue_manual_enabled", "1");
+                onSave("shipping_queue_manual_hours", String(hours));
+                return;
+              }
+              onSave("shipping_queue_manual_enabled", "0");
+            }}
+            disabled={!!loading["shipping_queue_manual_enabled"] || !!loading["shipping_queue_manual_hours"]}
+            className="gap-2"
+          >
+            {(loading["shipping_queue_manual_enabled"] || loading["shipping_queue_manual_hours"])
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Save className="w-4 h-4" />}
+            Salvar prazo
+          </Button>
+        </div>
+      </div>
 
       {/* ── Identidade Visual ─────────────────────────────────────────────── */}
       <div>
