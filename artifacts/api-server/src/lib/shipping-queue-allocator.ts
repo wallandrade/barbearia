@@ -1,6 +1,7 @@
-import { db, shippingQueueTable, ordersTable } from "@workspace/db";
-import { eq, and, sql, lt } from "drizzle-orm";
+import { db, shippingQueueTable, ordersTable, orderShipmentsTable } from "@workspace/db";
+import { eq, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
+import { orderStillOccupiesShippingQueue } from "./order-shipments-logic";
 
 const MAX_PER_DAY = 20;
 const TZ = "America/Sao_Paulo";
@@ -43,6 +44,115 @@ export function isStandardShipping(shippingType: string | null | undefined): boo
   return !["motoboy", "retirada", "pickup"].includes(lower);
 }
 
+const QUEUE_ID_CHUNK = 400;
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += QUEUE_ID_CHUNK) {
+    chunks.push(ids.slice(i, i + QUEUE_ID_CHUNK));
+  }
+  return chunks;
+}
+
+type QueuePackageFact = {
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+};
+
+async function loadPackagesByOrderId(orderIds: string[]): Promise<Map<string, QueuePackageFact[]>> {
+  const grouped = new Map<string, QueuePackageFact[]>();
+  for (const chunk of chunkIds(orderIds)) {
+    if (chunk.length === 0) continue;
+    const rows = await db
+      .select({
+        orderId: orderShipmentsTable.orderId,
+        enviado: orderShipmentsTable.enviado,
+        envioecomStatus: orderShipmentsTable.envioecomStatus,
+        envioecomLabelUrl: orderShipmentsTable.envioecomLabelUrl,
+      })
+      .from(orderShipmentsTable)
+      .where(inArray(orderShipmentsTable.orderId, chunk));
+    for (const row of rows) {
+      const list = grouped.get(row.orderId) ?? [];
+      list.push(row);
+      grouped.set(row.orderId, list);
+    }
+  }
+  return grouped;
+}
+
+async function orderNeedsShippingSlot(orderId: string): Promise<boolean> {
+  const [order] = await db
+    .select({
+      enviado: ordersTable.enviado,
+      envioecomStatus: ordersTable.envioecomStatus,
+      envioecomLabelUrl: ordersTable.envioecomLabelUrl,
+      trackingLabelUrl: ordersTable.trackingLabelUrl,
+    })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, orderId))
+    .limit(1);
+  if (!order) return false;
+  const packages = (await loadPackagesByOrderId([orderId])).get(orderId) ?? [];
+  return orderStillOccupiesShippingQueue({ ...order, packages });
+}
+
+/**
+ * Solta vagas de pedidos que já têm etiqueta, Aguardando coleta, coletado ou Enviado.
+ * Devolve a contagem das vagas que ainda ocupam cada data.
+ */
+export async function releaseLabeledShippingSlots(): Promise<Map<string, number>> {
+  const rows = await db
+    .select({
+      id: shippingQueueTable.id,
+      orderId: shippingQueueTable.orderId,
+      queueDate: shippingQueueTable.queueDate,
+      enviado: ordersTable.enviado,
+      envioecomStatus: ordersTable.envioecomStatus,
+      envioecomLabelUrl: ordersTable.envioecomLabelUrl,
+      trackingLabelUrl: ordersTable.trackingLabelUrl,
+    })
+    .from(shippingQueueTable)
+    .innerJoin(ordersTable, eq(shippingQueueTable.orderId, ordersTable.id))
+    .where(eq(shippingQueueTable.isActive, true));
+
+  const packagesByOrder = await loadPackagesByOrderId([...new Set(rows.map((row) => row.orderId))]);
+  const releaseIds: string[] = [];
+  const counts = new Map<string, number>();
+
+  for (const row of rows) {
+    const occupies = orderStillOccupiesShippingQueue({
+      enviado: row.enviado,
+      envioecomStatus: row.envioecomStatus,
+      envioecomLabelUrl: row.envioecomLabelUrl,
+      trackingLabelUrl: row.trackingLabelUrl,
+      packages: packagesByOrder.get(row.orderId) ?? [],
+    });
+    if (!occupies) {
+      releaseIds.push(row.id);
+      continue;
+    }
+    counts.set(row.queueDate, (counts.get(row.queueDate) ?? 0) + 1);
+  }
+
+  for (const chunk of chunkIds(releaseIds)) {
+    if (chunk.length === 0) continue;
+    await db
+      .update(shippingQueueTable)
+      .set({ isActive: false })
+      .where(inArray(shippingQueueTable.id, chunk));
+  }
+
+  return counts;
+}
+
+/** Tira o pedido da fila quando a etiqueta ou a postagem já aconteceu. Não cria vaga nova. */
+export async function refreshShippingQueueForOrder(orderId: string): Promise<void> {
+  if (await orderNeedsShippingSlot(orderId)) return;
+  await releaseShippingSlot(orderId);
+}
+
 // ---------------------------------------------------------------------------
 // Main allocation function
 // ---------------------------------------------------------------------------
@@ -64,7 +174,13 @@ export interface AllocationResult {
 export async function allocateShippingSlot(
   orderId: string,
   paymentDate?: Date,
+  openSlotCounts?: Map<string, number>,
 ): Promise<AllocationResult | null> {
+  if (!(await orderNeedsShippingSlot(orderId))) {
+    await releaseShippingSlot(orderId);
+    return null;
+  }
+
   // Already has an active allocation?
   const existing = await db
     .select()
@@ -78,19 +194,14 @@ export async function allocateShippingSlot(
   }
 
   const now = paymentDate ?? new Date();
+  const counts = openSlotCounts ?? await releaseLabeledShippingSlots();
 
   // Try each business-day offset starting from +2
   for (let bdOffset = 2; bdOffset <= 20; bdOffset++) {
     const postingDate = addBusinessDays(now, bdOffset);
     const dateStr = toSPDateStr(postingDate);
 
-    // Count active slots for this date
-    const countRows = await db
-      .select({ cnt: sql<number>`count(*)` })
-      .from(shippingQueueTable)
-      .where(and(eq(shippingQueueTable.queueDate, dateStr), eq(shippingQueueTable.isActive, true)));
-
-    const count = Number(countRows[0]?.cnt ?? 0);
+    const count = counts.get(dateStr) ?? 0;
 
     if (count < MAX_PER_DAY) {
       const slot = count + 1;
@@ -103,6 +214,7 @@ export async function allocateShippingSlot(
           id, orderId, queueDate: dateStr, queueSlot: slot,
           deadlineHours, postingDeadlineAt, isActive: true,
         });
+        counts.set(dateStr, count + 1);
         return { id, orderId, queueDate: dateStr, queueSlot: slot, deadlineHours, postingDeadlineAt };
       } catch {
         // Race condition: retry with next offset (slot was grabbed by another request)
@@ -145,6 +257,7 @@ export async function getQueuePreview(): Promise<{
 }> {
   const now = new Date();
   const todayStr = toSPDateStr(now);
+  const counts = await releaseLabeledShippingSlots();
 
   // Find the next available slot (standard logic)
   let nextSlotDateStr = "";
@@ -154,13 +267,7 @@ export async function getQueuePreview(): Promise<{
   for (let bdOffset = 2; bdOffset <= 20; bdOffset++) {
     const postingDate = addBusinessDays(now, bdOffset);
     const dateStr = toSPDateStr(postingDate);
-
-    const countRows = await db
-      .select({ cnt: sql<number>`count(*)` })
-      .from(shippingQueueTable)
-      .where(and(eq(shippingQueueTable.queueDate, dateStr), eq(shippingQueueTable.isActive, true)));
-
-    const count = Number(countRows[0]?.cnt ?? 0);
+    const count = counts.get(dateStr) ?? 0;
 
     if (count < MAX_PER_DAY) {
       nextSlotDateStr = dateStr;
@@ -174,21 +281,11 @@ export async function getQueuePreview(): Promise<{
     return { availableSlots: 0, deadlineHours: 0, queueDate: "" };
   }
 
-  // Count backlog: dates STRICTLY BEFORE today with unshipped active orders (overdue lotes only)
-  const backlogRows = await db
-    .select({ queueDate: shippingQueueTable.queueDate })
-    .from(shippingQueueTable)
-    .innerJoin(ordersTable, eq(shippingQueueTable.orderId, ordersTable.id))
-    .where(
-      and(
-        eq(shippingQueueTable.isActive, true),
-        eq(ordersTable.enviado, false),
-        lt(shippingQueueTable.queueDate, todayStr),
-      )
-    )
-    .groupBy(shippingQueueTable.queueDate);
-
-  const backlogDays = backlogRows.length;
+  // Datas anteriores a hoje que ainda têm pedido sem etiqueta.
+  let backlogDays = 0;
+  for (const [queueDate, count] of counts) {
+    if (count > 0 && queueDate < todayStr) backlogDays += 1;
+  }
   const realDeadlineHours = (nextSlotOffset + backlogDays) * 24;
 
   return { availableSlots: nextSlotAvailable, deadlineHours: realDeadlineHours, queueDate: nextSlotDateStr };
@@ -216,6 +313,7 @@ export async function bootstrapShippingQueue(): Promise<void> {
 
     const standardOrders = orders.filter((o) => isStandardShipping(o.shippingType));
     standardOrders.sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0));
+    const openSlotCounts = await releaseLabeledShippingSlots();
 
     for (const order of standardOrders) {
       const existing = await db
@@ -225,7 +323,7 @@ export async function bootstrapShippingQueue(): Promise<void> {
         .limit(1);
 
       if (existing.length === 0) {
-        await allocateShippingSlot(order.id, order.createdAt ?? new Date());
+        await allocateShippingSlot(order.id, order.createdAt ?? new Date(), openSlotCounts);
       }
     }
 

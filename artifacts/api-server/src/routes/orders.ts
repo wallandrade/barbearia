@@ -3501,6 +3501,10 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
           .where(eq(motoboyBookingsTable.orderId, id));
       }
       const inventoryReserved = rolled.every((pkg) => pkg.inventoryReserved);
+      if (isStandardShipping(String(order.shippingType || ""))) {
+        if (enviado) void releaseShippingSlot(id);
+        else void reallocateShippingSlot(id);
+      }
       broadcastNotification({ type: "order_enviado_updated", data: { id, enviado } });
       recordAdminActivity(req, id, "enviado", enviado ? "Marcou como enviado" : "Desmarcou enviado (pendente)");
       res.json({ ok: true, id, enviado, split: true, inventoryReserved });
@@ -3557,14 +3561,13 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
         .where(eq(motoboyBookingsTable.orderId, id));
     }
 
-    // Shipping queue: re-allocate if un-shipping (enviado → false), release if shipped
+    // Fila: Enviado ou etiqueta solta a vaga. Desmarcar Enviado só reabre se ainda não houver etiqueta.
     const orderRow = await db.select({ shippingType: ordersTable.shippingType })
       .from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
     const shippingType = String(orderRow[0]?.shippingType ?? "");
     if (isStandardShipping(shippingType)) {
-      if (!enviado) {
-        void reallocateShippingSlot(id);
-      }
+      if (enviado) void releaseShippingSlot(id);
+      else void reallocateShippingSlot(id);
     }
 
     broadcastNotification({ type: "order_enviado_updated", data: { id, enviado, inventoryPool } });

@@ -65,6 +65,39 @@ export function isPackageExcludedFromShippingCopyList(pkg: {
   return Boolean(String(pkg.envioecomLabelUrl || "").trim());
 }
 
+/**
+ * A vaga da fila do checkout continua só enquanto ainda falta etiqueta.
+ * Aguardando coleta, etiqueta pronta, URL, coletado e Enviado soltam a vaga.
+ * Não marca `enviado` e não baixa estoque. No split, solta só quando todos os pacotes já saíram.
+ */
+export function orderStillOccupiesShippingQueue(input: {
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+  trackingLabelUrl?: string | null;
+  packages?: Array<{
+    enviado?: boolean | null;
+    envioecomStatus?: string | null;
+    envioecomLabelUrl?: string | null;
+  }>;
+}): boolean {
+  const packages = Array.isArray(input.packages) ? input.packages : [];
+  if (packages.length >= 2) {
+    return !isSplitOrderExcludedFromShippingCopyList(packages);
+  }
+  if (packages.length === 1 && isPackageExcludedFromShippingCopyList(packages[0]!)) {
+    return false;
+  }
+  if (input.enviado) return false;
+  const status = String(input.envioecomStatus || "").trim();
+  if (status && (isLabelReadyStatus(status) || isInTransitStatus(status) || isDeliveredStatus(status))) {
+    return false;
+  }
+  if (String(input.envioecomLabelUrl || "").trim()) return false;
+  if (String(input.trackingLabelUrl || "").trim()) return false;
+  return true;
+}
+
 /** Split: sai da cópia 48h só quando TODOS os pacotes já têm etiqueta/postagem. */
 export function isSplitOrderExcludedFromShippingCopyList(
   packages: Array<{

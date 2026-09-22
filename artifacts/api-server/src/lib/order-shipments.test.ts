@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   isPackageExcludedFromShippingCopyList,
   isSplitOrderExcludedFromShippingCopyList,
+  orderStillOccupiesShippingQueue,
   isSplitOrderPartiallyShipped,
   nextPackageEnvioEcomExternalOrderNumber,
   parseShipmentItems,
@@ -82,6 +83,44 @@ test("cópia 48h no split só sai quando todos os pacotes têm etiqueta", () => 
     ]),
     true,
   );
+});
+
+test("Aguardando coleta solta a vaga da fila do checkout sem marcar enviado", () => {
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    envioecomStatus: "Aguardando coleta",
+  }), false);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    envioecomStatus: "Aguardando postagem",
+    envioecomLabelUrl: "https://x/a.pdf",
+  }), false);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    envioecomStatus: "Coletado",
+  }), false);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    envioecomStatus: "Envio criado",
+  }), true);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    envioecomStatus: "Coleta Solicitada",
+  }), true);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    packages: [
+      { enviado: false, envioecomStatus: "Aguardando coleta", envioecomLabelUrl: "https://x/a.pdf" },
+      { enviado: false, envioecomStatus: "Envio criado", envioecomLabelUrl: null },
+    ],
+  }), true);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    packages: [
+      { enviado: false, envioecomStatus: "Aguardando coleta", envioecomLabelUrl: null },
+      { enviado: false, envioecomStatus: "Etiqueta emitida", envioecomLabelUrl: "https://x/b.pdf" },
+    ],
+  }), false);
 });
 
 test("Aguardando coleta no pacote sai da cópia e um pacote só não usa a regra split", () => {

@@ -27,6 +27,7 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isSplitShipmentList } from "../lib/order-shipments-logic";
+import { refreshShippingQueueForOrder } from "../lib/shipping-queue-allocator";
 import {
   EnvioEcomApiError,
   appendStatusHistory,
@@ -529,6 +530,7 @@ async function applyShipmentStatusToOrder(params: {
 
     await updateOrderShipment(pkg.id, patch);
     const refreshed = await rollupOrderFromPackages(order.id);
+    void refreshShippingQueueForOrder(order.id);
     if (refreshed.every((row) => isDeliveredStatus(String(row.envioecomStatus || "")))) {
       void grantInsuranceCashbackIfEligible(order).catch((err) => {
         console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
@@ -591,6 +593,7 @@ async function applyShipmentStatusToOrder(params: {
   }
 
   await db.update(ordersTable).set(patch).where(eq(ordersTable.id, order.id));
+  void refreshShippingQueueForOrder(order.id);
   if (isDeliveredStatus(params.status)) {
     void grantInsuranceCashbackIfEligible(order).catch((err) => {
       console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
@@ -1293,6 +1296,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       }
     }
     if (targetPackage) await rollupOrderFromPackages(order.id);
+    void refreshShippingQueueForOrder(order.id);
     const packages = await listOrderShipments(order.id);
     const reserved = targetPackage
       ? !!packages.find((row) => row.id === targetPackage.id)?.inventoryReserved
