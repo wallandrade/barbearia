@@ -1329,15 +1329,18 @@ export function extractStatusHistoryFromShipment(
     if (single) mapped.push(single);
   }
 
-  // Ordena cronologicamente (antigo → novo) quando possível.
-  mapped.sort((a, b) => {
-    const ta = a.timestamp ?? (a.updated_at ? Date.parse(a.updated_at) : NaN);
-    const tb = b.timestamp ?? (b.updated_at ? Date.parse(b.updated_at) : NaN);
-    if (Number.isFinite(ta) && Number.isFinite(tb)) return ta - tb;
-    if (Number.isFinite(ta)) return -1;
-    if (Number.isFinite(tb)) return 1;
-    return 0;
+  // Ordena cronologicamente (antigo → novo). Data dd/mm/aaaa não pode ir para o fim.
+  const indexed = mapped.map((entry, index) => ({ entry, index }));
+  indexed.sort((a, b) => {
+    const ta = historyEventTimeMs(a.entry);
+    const tb = historyEventTimeMs(b.entry);
+    if (ta != null && tb != null && ta !== tb) return ta - tb;
+    if (ta != null && tb == null) return -1;
+    if (ta == null && tb != null) return 1;
+    return a.index - b.index;
   });
+  mapped.length = 0;
+  mapped.push(...indexed.map((row) => row.entry));
 
   // Dedup por status + updated_at/timestamp
   const out: StatusHistoryEntry[] = [];
@@ -1405,6 +1408,23 @@ export function isAwaitingPickupStatus(status: string): boolean {
   return (/aguardando/.test(s) && /colet/.test(s)) || /aguardando\s+postagem/.test(s);
 }
 
+/**
+ * Varredura da transportadora (Jadlog e afins) depois que o pacote saiu.
+ * "Coleta Solicitada" não entra: é o pedido de coleta, no mesmo instante do Envio criado.
+ */
+export function isCarrierScanStatus(status: string): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("em rota") ||
+    s.includes("transferência") ||
+    s.includes("transferencia") ||
+    /coleta\s+efetuada/.test(s) ||
+    /n[aã]o entrou/.test(s) ||
+    s.includes("depositad")
+  );
+}
+
 /** Status em que o pacote já foi postado / em trânsito (marca `enviado`). */
 export function isInTransitStatus(status: string): boolean {
   const s = status.toLowerCase();
@@ -1419,7 +1439,8 @@ export function isInTransitStatus(status: string): boolean {
     /coleta\s+recebida/.test(s) ||
     s.includes("recebido") ||
     s.includes("recebida") ||
-    s.includes("saiu para entrega")
+    s.includes("saiu para entrega") ||
+    isCarrierScanStatus(s)
   );
 }
 
@@ -1455,17 +1476,73 @@ export function shipmentStatusRank(status: string | null | undefined): number {
   return 5;
 }
 
+/** Instante do evento em ms. Aceita unix (s ou ms), ISO e dd/mm/aaaa hh:mm:ss. */
+export function historyEventTimeMs(entry: {
+  timestamp?: number | null;
+  updated_at?: string | null;
+} | null | undefined): number | null {
+  if (!entry) return null;
+  const ts = entry.timestamp;
+  if (typeof ts === "number" && Number.isFinite(ts) && ts > 0) {
+    return ts > 1e12 ? ts : ts * 1000;
+  }
+  const raw = String(entry.updated_at || "").trim();
+  if (!raw) return null;
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (br) {
+    const day = Number(br[1]);
+    const month = Number(br[2]);
+    const year = Number(br[3]);
+    const hour = Number(br[4] || 0);
+    const minute = Number(br[5] || 0);
+    const second = Number(br[6] || 0);
+    const local = new Date(year, month - 1, day, hour, minute, second);
+    if (
+      local.getFullYear() !== year ||
+      local.getMonth() !== month - 1 ||
+      local.getDate() !== day
+    ) {
+      return null;
+    }
+    const ms = local.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Evento com data mais nova. Empate de horário fica com o que vem depois na lista. */
+export function newestTimedHistoryEntry(
+  history: StatusHistoryEntry[] | null | undefined,
+): StatusHistoryEntry | null {
+  if (!Array.isArray(history) || !history.length) return null;
+  let best: StatusHistoryEntry | null = null;
+  let bestMs = -Infinity;
+  for (const entry of history) {
+    const ms = historyEventTimeMs(entry);
+    if (ms == null) continue;
+    if (ms >= bestMs) {
+      bestMs = ms;
+      best = entry;
+    }
+  }
+  return best;
+}
+
 /**
- * Campo `status` do envio às vezes fica em "Pronto para envio" enquanto o
- * status_history já tem "Coletado". Prefere o mais avançado entre os dois.
+ * Campo `status` do envio às vezes fica em "Envio criado" / "Pronto para envio"
+ * enquanto o histórico já tem a varredura da transportadora. Compara o rank do
+ * campo com o do evento mais novo (data brasileira inclusa).
  */
 export function pickEffectiveShipmentStatus(
   fieldStatus: string | null | undefined,
   history: StatusHistoryEntry[] | null | undefined,
 ): string | null {
   const field = String(fieldStatus || "").trim() || null;
-  const lastHist =
-    Array.isArray(history) && history.length
+  const timed = newestTimedHistoryEntry(history);
+  const lastHist = timed
+    ? String(timed.status || "").trim() || null
+    : Array.isArray(history) && history.length
       ? String(history[history.length - 1]?.status || "").trim() || null
       : null;
   if (!field && !lastHist) return null;

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ENVIOECOM_ENV_ACCOUNT_ID,
+  extractStatusHistoryFromShipment,
   inventoryPoolForEnvioEcomAccount,
   isAwaitingPickupStatus,
   isEnvioEcomCancelStatus,
@@ -10,6 +11,7 @@ import {
   isInTransitStatus,
   isLabelReadyStatus,
   nextEnvioEcomExternalOrderNumber,
+  pickEffectiveShipmentStatus,
   scoreEnvioEcomShipmentCandidate,
 } from "./envioecom";
 
@@ -28,6 +30,45 @@ test("Aguardando coleta NÃO conta como postado, mas é etiqueta pronta (sai da 
   assert.equal(isLabelReadyStatus("Aguardando coleta"), true);
   assert.equal(isLabelReadyStatus("Aguardando ser coletado"), true);
   assert.equal(isLabelReadyStatus("Aguardando postagem"), true);
+});
+
+test("varredura Jadlog conta como postado; Coleta Solicitada não", () => {
+  assert.equal(isInTransitStatus("EM ROTA - CO SAMAMBAIA 01"), true);
+  assert.equal(isInTransitStatus("Em Transferência - FL BRASILIA"), true);
+  assert.equal(isInTransitStatus("COLETA EFETUADA PELO MOTORISTA - CO ARACAJU"), true);
+  assert.equal(isInTransitStatus("NAO ENTROU NA UNIDADE - CO SAMAMBAIA 01"), true);
+  assert.equal(isInTransitStatus("DEPOSITADO NO PUDO BR16134 - CO SAO PAULO 12"), true);
+  assert.equal(isInTransitStatus("Coleta Solicitada"), false);
+  assert.equal(isInTransitStatus("Envio criado"), false);
+});
+
+test("histórico dd/mm/aaaa ordena e o status efetivo é a última varredura", () => {
+  const history = extractStatusHistoryFromShipment({
+    status_history: [
+      { status: "EM ROTA - CO SAMAMBAIA 01", date: "22/09/2026 08:08:08" },
+      { status: "NAO ENTROU NA UNIDADE - CO SAMAMBAIA 01", date: "21/09/2026 13:54:13" },
+      { status: "Envio criado", date: "16/09/2026 09:48:34" },
+      { status: "Pagamento confirmado", date: "16/09/2026 09:48:33" },
+    ],
+  });
+  assert.equal(history[0]?.status, "Pagamento confirmado");
+  assert.equal(history.at(-1)?.status, "EM ROTA - CO SAMAMBAIA 01");
+  assert.equal(
+    pickEffectiveShipmentStatus("Envio criado", history),
+    "EM ROTA - CO SAMAMBAIA 01",
+  );
+  assert.equal(
+    pickEffectiveShipmentStatus("Pronto para envio", [
+      { status: "Coletado", updated_at: "2026-09-07T12:00:00.000Z" },
+    ]),
+    "Coletado",
+  );
+  assert.equal(
+    pickEffectiveShipmentStatus("Entregue", [
+      { status: "EM ROTA - CO SAMAMBAIA 01", updated_at: "22/09/2026 08:08:08" },
+    ]),
+    "Entregue",
+  );
 });
 
 test("etiqueta pronta não é trânsito", () => {

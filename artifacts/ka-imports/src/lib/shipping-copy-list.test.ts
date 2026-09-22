@@ -87,6 +87,32 @@ test("findOrderProductForShipmentItem casa por id ou nome", () => {
   assert.equal(findOrderProductForShipmentItem(products, { productId: "missing" }), undefined);
 });
 
+test("EM ROTA sai da cópia; Coleta Solicitada e Aguardando coleta seguem a regra antiga", () => {
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomStatus: "EM ROTA - CO SAMAMBAIA 01",
+  }), true);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomStatus: "NAO ENTROU NA UNIDADE - FL BRASILIA",
+  }), true);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomStatus: "Coleta Solicitada",
+  }), false);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomStatus: "Aguardando coleta",
+  }), true);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomPackages: [
+      { envioecomStatus: "EM ROTA - CO SAMAMBAIA 01" },
+      { envioecomStatus: "Envio criado" },
+    ],
+  }), false);
+});
+
 test("Aguardando coleta no pacote conta como pronto (não volta na 48h daquele pacote)", () => {
   assert.equal(isSplitOrderPartiallyShipped([
     { envioecomStatus: "Aguardando coleta" },

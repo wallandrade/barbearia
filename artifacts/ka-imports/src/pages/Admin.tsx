@@ -10290,7 +10290,13 @@ function isEnvioEcomPostedStatus(status: string | null | undefined): boolean {
     s.includes("recebido") ||
     s.includes("recebida") ||
     s.includes("saiu para entrega") ||
-    s.includes("entregue")
+    s.includes("entregue") ||
+    s.includes("em rota") ||
+    s.includes("transferência") ||
+    s.includes("transferencia") ||
+    /coleta\s+efetuada/.test(s) ||
+    /n[aã]o entrou/.test(s) ||
+    s.includes("depositad")
   );
 }
 
@@ -10333,7 +10339,7 @@ function freightStatusBadgeClass(status: string | null | undefined): string {
   if (!s) return "bg-yellow-100 text-yellow-800 border-yellow-200";
   if (/cancelad/.test(s) || /aguardando\s+cancelamento/.test(s)) return "bg-red-50 text-red-800 border-red-200";
   if (/entregue/.test(s)) return "bg-emerald-50 text-emerald-800 border-emerald-200";
-  if (/saiu para entrega|saiu p\/ entrega|em rota de entrega/.test(s)) {
+  if (/saiu para entrega|saiu p\/ entrega|em rota/.test(s)) {
     return "bg-sky-50 text-sky-800 border-sky-200";
   }
   if (
@@ -10344,7 +10350,7 @@ function freightStatusBadgeClass(status: string | null | undefined): string {
   if (/aguardando postagem|aguardando pagamento|envio criado/.test(s)) {
     return "bg-amber-50 text-amber-900 border-amber-200";
   }
-  if (/expedido|recebido|recebida|coletado|coleta recebida|postado|tr[aâ]nsito/.test(s)) {
+  if (/expedido|recebido|recebida|coletado|coleta recebida|coleta efetuada|postado|tr[aâ]nsito|transfer[eê]ncia|n[aã]o entrou|depositad/.test(s)) {
     return "bg-slate-100 text-slate-700 border-slate-300";
   }
   return "bg-teal-50 text-teal-900 border-teal-200";

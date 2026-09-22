@@ -131,8 +131,7 @@ function TrackingTimeline({ events, eventKeyPrefix }: { events: TrackingHistoryE
           {[...events].reverse().map((event, idx, arr) => {
             const when = formatTrackingWhen(event);
             const statusRaw = String(event.status || "").trim();
-            const statusText =
-              toCustomerFriendlyShippingLabel(event.status) || statusRaw || "Atualização";
+            const statusText = statusRaw || "Atualização";
             const desc = String(event.description || "").trim();
             const loc = String(event.location || "").trim();
             const showDescription =

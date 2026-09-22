@@ -243,6 +243,34 @@ test("reenvio aberto continua split parcial mesmo com o pai já enviado", () => 
   assert.equal(hasTrackableShipment(row), true);
 });
 
+test("EM ROTA da Jadlog sai de embalando e vai para Saiu para entrega", () => {
+  const row = order({
+    envioecomBarcode: "12982700003710",
+    envioecomStatus: "EM ROTA - CO SAMAMBAIA 01",
+    envioecomStatusHistory: [
+      { status: "Envio criado", updated_at: "16/09/2026 09:48:34" },
+      { status: "NAO ENTROU NA UNIDADE - CO SAMAMBAIA 01", updated_at: "21/09/2026 13:54:13" },
+      { status: "EM ROTA - CO SAMAMBAIA 01", updated_at: "22/09/2026 08:08:08" },
+    ],
+  });
+  const situation = getCustomerSituation(row);
+  assert.equal(situation.label, "Saiu para entrega");
+  assert.equal(situation.kind, "shipping");
+  assert.equal(situation.hint ?? null, null);
+  assert.equal(customerPrimaryTracking(row).history[0]?.status, "Envio criado");
+  assert.equal(customerPrimaryTracking(row).history.at(-1)?.status, "EM ROTA - CO SAMAMBAIA 01");
+});
+
+test("NAO ENTROU NA UNIDADE conta como a caminho, com o texto da transportadora", () => {
+  const row = order({
+    envioecomBarcode: "12982700003710",
+    envioecomStatus: "NAO ENTROU NA UNIDADE - CO SAMAMBAIA 01",
+  });
+  const situation = getCustomerSituation(row);
+  assert.equal(situation.kind, "shipping");
+  assert.equal(situation.label, "NAO ENTROU NA UNIDADE - CO SAMAMBAIA 01");
+});
+
 test("envio manual: Entregue só após 25 dias (sem EnvioEcom)", () => {
   const daysAgo = (days: number) =>
     new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();

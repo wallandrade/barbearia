@@ -282,7 +282,12 @@ export function isShippingInTransit(status: string): boolean {
     s.includes("recebido") ||
     s.includes("recebida") ||
     s.includes("saiu para entrega") ||
-    s.includes("em rota")
+    s.includes("em rota") ||
+    s.includes("transferência") ||
+    s.includes("transferencia") ||
+    /coleta\s+efetuada/.test(s) ||
+    /n[aã]o entrou/.test(s) ||
+    s.includes("depositad")
   );
 }
 
