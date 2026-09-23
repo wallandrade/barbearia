@@ -19070,7 +19070,22 @@ function FretePanel({
     createdAt: string;
   }>>([]);
   const [proposalBusy, setProposalBusy] = useState<string | null>(null);
+  const [motoboyProductSearch, setMotoboyProductSearch] = useState("");
   const kmModeEnabled = parseMotoboyDistanceEnabled(settings["motoboy_distance_enabled"]);
+  const motoboyProductQuery = motoboyProductSearch
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  const visibleMotoboyProducts = motoboyProductQuery
+    ? products.filter((p) =>
+      p.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .includes(motoboyProductQuery),
+    )
+    : products;
 
   useEffect(() => {
     setFreeShippingMinSubtotal(settings["checkout_free_shipping_min_subtotal"] ?? "");
@@ -19441,11 +19456,24 @@ function FretePanel({
           </p>
         </div>
 
+        <div className="relative">
+          <IconLucide name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={motoboyProductSearch}
+            onChange={(e) => setMotoboyProductSearch(e.target.value)}
+            placeholder="Pesquisar produto por nome..."
+            className="w-full h-11 pl-10 pr-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+          />
+        </div>
+
         <div className="max-h-56 overflow-auto rounded-xl border border-border bg-muted/20 p-2 space-y-1">
           {products.length === 0 ? (
             <p className="text-xs text-muted-foreground px-2 py-2">Nenhum produto carregado. Abra a aba Produtos ou aguarde o carregamento.</p>
+          ) : visibleMotoboyProducts.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-2 py-2">Nenhum produto com esse nome.</p>
           ) : (
-            products.map((p) => {
+            visibleMotoboyProducts.map((p) => {
               const checked = motoboyEligibleProductIds.includes(p.id);
               const imageUrl = String(p.image || "").trim();
               return (
