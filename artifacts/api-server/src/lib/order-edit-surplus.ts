@@ -59,6 +59,8 @@ export async function creditOrderEditSurplus(order: {
   total?: string | number | null;
   paidAmount?: string | number | null;
   storeCreditFromEdit?: string | number | null;
+  storeCreditWithheldFromEdit?: string | number | null;
+  skipWallet?: boolean;
   status?: string | null;
 }): Promise<OrderEditWalletCreditResult> {
   const status = String(order.status || "").trim().toLowerCase();
@@ -70,9 +72,24 @@ export async function creditOrderEditSurplus(order: {
     newTotal: roundOrderMoney(order.total),
     paidAmount: roundOrderMoney(order.paidAmount),
     storeCreditFromEdit: roundOrderMoney(order.storeCreditFromEdit),
+    storeCreditWithheldFromEdit: roundOrderMoney(order.storeCreditWithheldFromEdit),
   });
   if (surplus <= 0) {
     return { credited: 0, skipped: "no_surplus", balance: null, userId: String(order.userId || "").trim() || null };
+  }
+
+  if (order.skipWallet) {
+    const nextWithheld = roundOrderMoney(roundOrderMoney(order.storeCreditWithheldFromEdit) + surplus);
+    await db.update(ordersTable).set({
+      storeCreditWithheldFromEdit: nextWithheld.toFixed(2),
+      updatedAt: new Date(),
+    }).where(eq(ordersTable.id, order.id));
+    return {
+      credited: 0,
+      skipped: "admin_skipped",
+      balance: null,
+      userId: String(order.userId || "").trim() || null,
+    };
   }
 
   const userId = await resolveCustomerUserIdForOrder(order);

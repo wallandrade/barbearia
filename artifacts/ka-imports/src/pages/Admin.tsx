@@ -41,6 +41,27 @@ function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | nu
   return `${dateLabel} às ${time}`;
 }
 
+function orderEditCreditParts(order: object | null | undefined): { wallet: number; withheld: number } {
+  const row = (order ?? {}) as {
+    storeCreditFromEdit?: number | null;
+    storeCreditWithheldFromEdit?: number | null;
+  };
+  const wallet = Number(row.storeCreditFromEdit || 0);
+  const withheld = Number(row.storeCreditWithheldFromEdit || 0);
+  return {
+    wallet: Number.isFinite(wallet) ? wallet : 0,
+    withheld: Number.isFinite(withheld) ? withheld : 0,
+  };
+}
+
+/** Já pago menos o que já foi para a carteira ou ficou na loja. Sem pago, usa o total do pedido. */
+function editPrepaidReference(order: { paidAmount?: number | null; total: number }): number {
+  const paid = Number(order.paidAmount || 0);
+  if (!(paid > 0)) return Number(order.total || 0);
+  const { wallet, withheld } = orderEditCreditParts(order);
+  return Math.max(0, paid - wallet - withheld);
+}
+
 function daysSince(date: string | Date | undefined | null): number {
   if (!date) return 0;
   const d = typeof date === "string" ? new Date(date) : date;
@@ -1594,6 +1615,7 @@ export default function Admin() {
     document: "",
   });
   const [editDiscount, setEditDiscount] = useState(0);
+  const [skipEditWalletCredit, setSkipEditWalletCredit] = useState(false);
   const [editProductSearch, setEditProductSearch] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editCatalog, setEditCatalog] = useState<AdminProduct[]>([]);
@@ -3620,6 +3642,7 @@ export default function Admin() {
       image: p.image ?? null,
     })));
     setEditDiscount(order.discountAmount || 0);
+    setSkipEditWalletCredit(false);
     setEditAddress({
       cep: String(order.addressCep || ""),
       street: String(order.addressStreet || ""),
@@ -3853,6 +3876,7 @@ export default function Admin() {
           clientPhone: editContact.phone,
           clientEmail: editContact.email,
           clientDocument: editContact.document,
+          skipWalletCredit: skipEditWalletCredit,
           address: {
             cep: editAddress.cep,
             street: editAddress.street,
@@ -3884,17 +3908,23 @@ export default function Admin() {
         toast.success(`Pedido editado. ${formatCurrency(creditedWallet)} creditado na carteira do cliente.`);
       } else if (data.walletCredit?.skipped === "no_account") {
         toast.success("Pedido editado. Cliente sem conta — a redução não foi para a carteira.");
+      } else if (data.walletCredit?.skipped === "admin_skipped") {
+        toast.success("Pedido editado. O saldo não foi para a carteira do cliente.");
       } else if (data.walletCredit?.skipped === "credit_error") {
         toast.success("Pedido editado. Não foi possível creditar a carteira agora — use o ajuste na aba Seguro.");
       } else {
         toast.success("Pedido editado com sucesso!");
       }
       const paidAmount = (data.order.paidAmount ?? editOrderModal.paidAmount) ?? null;
-      const alreadyInWallet = Number(data.order.storeCreditFromEdit ?? editOrderModal.storeCreditFromEdit ?? 0);
       const isPixOrder = editOrderModal.paymentMethod === "pix" || editOrderModal.paymentMethod === "whatsapp_pix";
 
       if (paidAmount != null && paidAmount > 0) {
-        const effectivePaid = Math.max(0, paidAmount - alreadyInWallet);
+        const effectivePaid = editPrepaidReference({
+          ...editOrderModal,
+          ...data.order,
+          paidAmount,
+          total: editOrderModal.total,
+        });
         const diff = total - effectivePaid;
         if (diff > 0.01) {
           setDiffOrder({ order: nextOrderSnapshot, diff, isPaid: true });
@@ -8145,17 +8175,15 @@ export default function Admin() {
                       : 0;
                     const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editDiscount || 0));
                     const hasPaidAmount = (editOrderModal.paidAmount ?? 0) > 0;
-                    const alreadyInWallet = Number(editOrderModal.storeCreditFromEdit || 0);
-                    const refValue = hasPaidAmount
-                      ? Math.max(0, (editOrderModal.paidAmount ?? 0) - alreadyInWallet)
-                      : editOrderModal.total;
+                    const { wallet: alreadyInWallet, withheld: alreadyWithheld } = orderEditCreditParts(editOrderModal);
+                    const refValue = editPrepaidReference(editOrderModal);
                     const diff = total - refValue;
                     return (
                       <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-sm space-y-1">
                         <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">Frete</span><span>{formatCurrency(editOrderModal.shippingCost)}</span></div>
                         {editOrderModal.includeInsurance && <div className="flex justify-between"><span className="text-muted-foreground">Seguro</span><span>{formatCurrency(insuranceAmount)}</span></div>}
-                        {(editOrderModal.discountAmount || 0) > 0 && <div className="flex justify-between text-green-700"><span>Desconto</span><span>-{formatCurrency(editOrderModal.discountAmount!)}</span></div>}
+                        {(editDiscount || 0) > 0 && <div className="flex justify-between text-green-700"><span>Desconto</span><span>-{formatCurrency(editDiscount)}</span></div>}
                         <div className="flex justify-between font-bold border-t border-border/50 pt-1 mt-1"><span>Novo Total</span><span>{formatCurrency(total)}</span></div>
                         {hasPaidAmount && (
                           <div className="flex justify-between text-xs text-muted-foreground">
@@ -8167,16 +8195,36 @@ export default function Admin() {
                             <span>Já na carteira</span><span>{formatCurrency(alreadyInWallet)}</span>
                           </div>
                         )}
+                        {alreadyWithheld > 0.01 && (
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>Ficou na loja</span><span>{formatCurrency(alreadyWithheld)}</span>
+                          </div>
+                        )}
                         {Math.abs(diff) > 0.01 && (
-                          <div className={`flex justify-between text-xs font-bold rounded px-1.5 py-0.5 mt-1 ${diff > 0 ? "text-orange-700 bg-orange-50" : "text-green-700 bg-green-50"}`}>
-                            <span>{diff > 0 ? (hasPaidAmount ? "PIX de diferença" : "Acréscimo") : "Vai para a carteira"}</span>
+                          <div className={`flex justify-between text-xs font-bold rounded px-1.5 py-0.5 mt-1 ${diff > 0 ? "text-orange-700 bg-orange-50" : skipEditWalletCredit ? "text-stone-700 bg-stone-100" : "text-green-700 bg-green-50"}`}>
+                            <span>{diff > 0 ? (hasPaidAmount ? "PIX de diferença" : "Acréscimo") : (skipEditWalletCredit ? "Não vai para a carteira" : "Vai para a carteira")}</span>
                             <span>{diff > 0 ? "+" : ""}{formatCurrency(diff)}</span>
                           </div>
                         )}
                         {diff < -0.01 && (
-                          <p className="text-[11px] text-emerald-800 flex items-start gap-1 pt-1">
+                          <label className="flex items-start gap-2 pt-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 rounded border-border"
+                              checked={skipEditWalletCredit}
+                              onChange={(e) => setSkipEditWalletCredit(e.target.checked)}
+                            />
+                            <span className="text-xs text-foreground leading-snug">
+                              Não enviar saldo para a carteira do cliente
+                            </span>
+                          </label>
+                        )}
+                        {diff < -0.01 && (
+                          <p className={`text-[11px] flex items-start gap-1 pt-1 ${skipEditWalletCredit ? "text-stone-600" : "text-emerald-800"}`}>
                             <Wallet className="w-3 h-3 mt-0.5 shrink-0" />
-                            Ao salvar, a redução entra na carteira se o cliente tiver conta na loja.
+                            {skipEditWalletCredit
+                              ? "Ao salvar, este saldo fica na loja e não entra na carteira do cliente."
+                              : "Ao salvar, a redução entra na carteira se o cliente tiver conta na loja."}
                           </p>
                         )}
                       </div>

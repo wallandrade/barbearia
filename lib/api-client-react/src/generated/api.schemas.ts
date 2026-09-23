@@ -131,6 +131,7 @@ export interface AdminOrder {
   insurancePixRefundDone?: boolean;
   storeCreditUsed?: number | null;
   storeCreditFromEdit?: number;
+  storeCreditWithheldFromEdit?: number;
   paidAmount?: number | null;
   parentOrderId?: string | null;
   total: number;

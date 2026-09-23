@@ -534,6 +534,9 @@ components:
         storeCreditFromEdit:
           type: number
           description: Soma já creditada na carteira por redução na edição do pedido
+        storeCreditWithheldFromEdit:
+          type: number
+          description: Soma de redução que o admin escolheu não enviar à carteira
         paidAmount:
           type: number
           nullable: true

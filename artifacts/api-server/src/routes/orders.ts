@@ -2118,9 +2118,10 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument } = req.body as {
+    const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument, skipWalletCredit } = req.body as {
       products: Array<{ id: string; name: string; quantity: number; price: number }>;
       discountAmount?: number;
+      skipWalletCredit?: boolean;
       clientPhone?: string | null;
       clientEmail?: string | null;
       clientDocument?: string | null;
@@ -2148,6 +2149,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     const currentStatus  = current[0].status;
     const paidAmount     = current[0].paidAmount ? Number(current[0].paidAmount) : null;
     const storeCreditFromEdit = roundOrderMoney(current[0].storeCreditFromEdit);
+    const storeCreditWithheldFromEdit = roundOrderMoney(current[0].storeCreditWithheldFromEdit);
     const isPaid         = currentStatus === "paid" || currentStatus === "completed";
 
     // Fetch catalog products to resolve prices with bulk-discount tiers.
@@ -2245,6 +2247,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       newTotal: total,
       paidAmount: recordedPaidAmount,
       storeCreditFromEdit,
+      storeCreditWithheldFromEdit,
       isPaidStatus: isPaid,
       previousTotal: currentTotal,
     });
@@ -2334,6 +2337,8 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
         total,
         paidAmount: recordedPaidAmount,
         storeCreditFromEdit,
+        storeCreditWithheldFromEdit,
+        skipWallet: skipWalletCredit === true,
         status: newStatus,
       });
     } catch (err) {
@@ -2349,7 +2354,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       ? ` · carteira +${walletCredit.credited.toFixed(2)}`
       : walletCredit.skipped === "no_account"
         ? " · reducao sem conta (carteira nao creditada)"
-        : "";
+        : walletCredit.skipped === "admin_skipped"
+          ? " · reducao sem carteira"
+          : "";
     const catalogImageById = new Map(
       Array.from(editProductRows.entries()).map(([productId, row]) => [productId, snapshotProductImage(row.image)] as const),
     );
@@ -2682,6 +2689,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     insurancePixRefundDone: !!o.insurancePixRefundDone,
     storeCreditUsed:     o.storeCreditUsed ? Number(o.storeCreditUsed) : null,
     storeCreditFromEdit: o.storeCreditFromEdit ? Number(o.storeCreditFromEdit) : 0,
+    storeCreditWithheldFromEdit: o.storeCreditWithheldFromEdit ? Number(o.storeCreditWithheldFromEdit) : 0,
     total:               Number(o.total),
     status:              o.status,
     paymentMethod:       o.paymentMethod || "pix",

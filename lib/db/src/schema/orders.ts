@@ -43,6 +43,8 @@ export const ordersTable = mysqlTable("orders", {
   storeCreditUsed: decimal("store_credit_used", { precision: 10, scale: 2 }),
   /** Soma ja creditada na carteira por reducao na edicao do pedido (paidAmount continua o PIX recebido). */
   storeCreditFromEdit: decimal("store_credit_from_edit", { precision: 10, scale: 2 }),
+  /** Soma de reducao que o admin escolheu nao enviar a carteira. Entra no prepaid efetivo para nao creditar depois. */
+  storeCreditWithheldFromEdit: decimal("store_credit_withheld_from_edit", { precision: 10, scale: 2 }),
   total: decimal("total", { precision: 10, scale: 2 }).notNull(),
   status: varchar("status", { length: 50 }).notNull().default("pending"),
   paymentMethod: varchar("payment_method", { length: 50 }).default("pix"),

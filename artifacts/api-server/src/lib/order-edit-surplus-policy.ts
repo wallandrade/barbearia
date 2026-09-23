@@ -6,24 +6,32 @@ export function roundOrderMoney(value: unknown): number {
 export function effectivePrepaidAmount(
   paidAmount: number | null | undefined,
   storeCreditFromEdit: number | null | undefined,
+  storeCreditWithheldFromEdit?: number | null,
 ): number {
   const paid = roundOrderMoney(paidAmount);
-  const alreadyCredited = Math.max(0, roundOrderMoney(storeCreditFromEdit));
-  return roundOrderMoney(Math.max(0, paid - alreadyCredited));
+  const alreadySettled = Math.max(0, roundOrderMoney(storeCreditFromEdit))
+    + Math.max(0, roundOrderMoney(storeCreditWithheldFromEdit));
+  return roundOrderMoney(Math.max(0, paid - alreadySettled));
 }
 
 /**
  * Quanto ainda dá para mandar à carteira: já pago efetivo − novo total.
+ * Já creditado e já retido na loja (admin marcou para não enviar) saem dessa conta.
  * Só quando há paidAmount (ou equivalente persistido) e o novo total ficou menor.
  */
 export function computeOrderEditSurplus(input: {
   newTotal: number;
   paidAmount: number | null | undefined;
   storeCreditFromEdit?: number | null;
+  storeCreditWithheldFromEdit?: number | null;
 }): number {
   const paid = roundOrderMoney(input.paidAmount);
   if (paid <= 0) return 0;
-  const prepaid = effectivePrepaidAmount(input.paidAmount, input.storeCreditFromEdit);
+  const prepaid = effectivePrepaidAmount(
+    input.paidAmount,
+    input.storeCreditFromEdit,
+    input.storeCreditWithheldFromEdit,
+  );
   const surplus = roundOrderMoney(prepaid - roundOrderMoney(input.newTotal));
   return surplus > 0.01 ? surplus : 0;
 }
@@ -33,6 +41,7 @@ export function nextStatusAfterOrderEdit(input: {
   newTotal: number;
   paidAmount: number | null | undefined;
   storeCreditFromEdit?: number | null;
+  storeCreditWithheldFromEdit?: number | null;
   isPaidStatus: boolean;
   previousTotal: number;
 }): string {
@@ -43,7 +52,11 @@ export function nextStatusAfterOrderEdit(input: {
 
   const paid = roundOrderMoney(input.paidAmount);
   if (paid > 0) {
-    const prepaid = effectivePrepaidAmount(input.paidAmount, input.storeCreditFromEdit);
+    const prepaid = effectivePrepaidAmount(
+      input.paidAmount,
+      input.storeCreditFromEdit,
+      input.storeCreditWithheldFromEdit,
+    );
     if (roundOrderMoney(input.newTotal) > prepaid + 0.01) return "awaiting_payment";
     return "paid";
   }
