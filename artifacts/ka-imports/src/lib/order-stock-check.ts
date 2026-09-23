@@ -1,4 +1,4 @@
-/** Selo de estoque no card Admin — mesma regra da baixa (`pickDebitProductId`), sem nome “parecido”. */
+/** Selo de estoque no card Admin — mesma regra da baixa (`pickDebitWithOrphanSameName`). Nome parecido não conta. Id órfão com o mesmo nome único conta. */
 
 export type OrderStockCheckItem = {
   id?: string | null;
@@ -55,6 +55,43 @@ function pickDebitProductId(
     return { productId: primaryId, available: Math.max(primaryQty, fallbackQty) };
   }
   return { productId: primaryId, available: primaryQty };
+}
+
+function catalogHasProductId(
+  index: ReturnType<typeof buildCatalogIndex>,
+  productId: string,
+): boolean {
+  return index.byId.has(productId) || index.byId.has(productId.toLowerCase());
+}
+
+/** Única linha fora do catálogo com o mesmo nome único. Espelha `pickDebitWithOrphanSameName`. */
+function pickOrphanSameName(
+  picked: { productId: string; available: number },
+  primaryId: string,
+  productName: string,
+  quantity: number,
+  catalog: ReturnType<typeof buildCatalogIndex>,
+  balances: OrderStockBalanceRow[],
+): { productId: string; available: number } {
+  if (picked.available >= quantity) return picked;
+  const folded = foldName(productName);
+  const primary = normalizeProductId(primaryId);
+  const unique = folded ? catalog.uniqueByName.get(folded) : undefined;
+  if (!folded || !unique || !primary) return picked;
+  if (unique.id !== primary && unique.id.toLowerCase() !== primary.toLowerCase()) return picked;
+
+  const orphans = balances.filter((row) => {
+    const qty = Number(row.quantity) || 0;
+    if (qty <= 0) return false;
+    const id = normalizeProductId(row.productId);
+    if (!id || catalogHasProductId(catalog, id)) return false;
+    return foldName(row.productName) === folded;
+  });
+  if (orphans.length !== 1) return picked;
+  const row = orphans[0]!;
+  const available = Number(row.quantity) || 0;
+  if (available <= picked.available) return picked;
+  return { productId: normalizeProductId(row.productId), available };
 }
 
 function buildStockById(balances: OrderStockBalanceRow[]): Map<string, number> {
@@ -154,11 +191,18 @@ export function checkOrderItemsHaveStock(params: {
 
   const missingItems: string[] = [];
   for (const item of grouped.values()) {
-    const picked = pickDebitProductId(
+    const picked = pickOrphanSameName(
+      pickDebitProductId(
+        item.productId,
+        item.fallbackProductId,
+        item.qty,
+        stock,
+      ),
       item.productId,
-      item.fallbackProductId,
+      item.label,
       item.qty,
-      stock,
+      catalog,
+      params.balances,
     );
     if (picked.available < item.qty) {
       missingItems.push(

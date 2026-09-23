@@ -195,6 +195,65 @@ export function pickDebitProductId(
   return { productId: primaryId, available: primaryQty };
 }
 
+export function buildNamedStockMap(rows: NamedStockRow[]): Map<string, number> {
+  const stock = new Map<string, number>();
+  for (const row of rows) {
+    const id = normalizeProductId(row.productId);
+    if (!id) continue;
+    const qty = Number(row.quantity) || 0;
+    const next = stockQtyFromMap(stock, id) + qty;
+    stock.set(id, next);
+    stock.set(id.toLowerCase(), next);
+  }
+  return stock;
+}
+
+function catalogHasProductId(index: CatalogIndex, productId: string): boolean {
+  return index.byId.has(productId) || index.byId.has(productId.toLowerCase());
+}
+
+/**
+ * Depois do id do pedido / recadastro: se ainda falta saldo, usa a única linha
+ * órfã (id fora do catálogo) com o mesmo nome único. Nome parecido não entra.
+ */
+export function pickDebitWithOrphanSameName(params: {
+  primaryId: string;
+  fallbackId: string | null | undefined;
+  quantity: number;
+  productName: string;
+  stock: Map<string, number>;
+  catalog: CatalogIndex;
+  namedBalances: NamedStockRow[];
+}): { productId: string; available: number } {
+  const picked = pickDebitProductId(
+    params.primaryId,
+    params.fallbackId,
+    params.quantity,
+    params.stock,
+  );
+  if (picked.available >= params.quantity) return picked;
+
+  const folded = foldInventoryName(params.productName);
+  const primaryId = normalizeProductId(params.primaryId);
+  const unique = folded ? params.catalog.uniqueByName.get(folded) : undefined;
+  if (!folded || !unique || !primaryId) return picked;
+  if (unique.id !== primaryId && unique.id.toLowerCase() !== primaryId.toLowerCase()) return picked;
+
+  const orphans = params.namedBalances.filter((row) => {
+    const qty = Number(row.quantity) || 0;
+    if (qty <= 0) return false;
+    const id = normalizeProductId(row.productId);
+    if (!id || catalogHasProductId(params.catalog, id)) return false;
+    return foldInventoryName(row.productName) === folded;
+  });
+  if (orphans.length !== 1) return picked;
+
+  const row = orphans[0]!;
+  const available = Number(row.quantity) || 0;
+  if (available <= picked.available) return picked;
+  return { productId: normalizeProductId(row.productId), available };
+}
+
 export function collectStockLookupIds(
   items: Array<{ productId: string; fallbackProductId?: string | null }>,
 ): string[] {

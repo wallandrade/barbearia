@@ -3,11 +3,13 @@ import test from "node:test";
 
 import {
   buildCatalogIndex,
+  buildNamedStockMap,
   buildProductNameMap,
   inventoryNamesLooselyMatch,
   mergeLegacyNamesIntoMap,
   normalizeProductId,
   pickDebitProductId,
+  pickDebitWithOrphanSameName,
   remapInventoryItem,
   resolveInventoryCatalogRef,
   resolveManualExitTarget,
@@ -120,6 +122,66 @@ test("saida manual: dois órfãos parecidos não chuta", () => {
     ],
   });
   assert.equal(picked.productId, "novo");
+  assert.equal(picked.available, 0);
+});
+
+test("baixa: id do catálogo em 0 usa a única linha órfã com o mesmo nome", () => {
+  const catalog = buildCatalogIndex([{ id: "novo-id", name: "MOTS-C 10MG BIOGENESIS" }]);
+  const named = [
+    { productId: "novo-id", productName: "MOTS-C 10MG BIOGENESIS", quantity: 0 },
+    { productId: "hash-velho", productName: "MOTS-C 10MG BIOGENESIS", quantity: 3 },
+  ];
+  const picked = pickDebitWithOrphanSameName({
+    primaryId: "novo-id",
+    fallbackId: null,
+    quantity: 1,
+    productName: "MOTS-C 10MG BIOGENESIS",
+    stock: buildNamedStockMap(named),
+    catalog,
+    namedBalances: named,
+  });
+  assert.equal(picked.productId, "hash-velho");
+  assert.equal(picked.available, 3);
+});
+
+test("baixa: nome parecido de outro cadastro não herda o saldo", () => {
+  const catalog = buildCatalogIndex([
+    { id: "sku-vial", name: "WOLVERINE BLEND BPC157 + TB500 20MG - 01 VIAL BIOGENESIS" },
+    { id: "sku-frasco", name: "WOLVERINE BLEND BPC157 + TB500 20MG BIOGENESIS" },
+  ]);
+  const named = [
+    { productId: "sku-vial", productName: "WOLVERINE BLEND BPC157 + TB500 20MG - 01 VIAL BIOGENESIS", quantity: 0 },
+    { productId: "sku-frasco", productName: "WOLVERINE BLEND BPC157 + TB500 20MG BIOGENESIS", quantity: 4 },
+  ];
+  const picked = pickDebitWithOrphanSameName({
+    primaryId: "sku-vial",
+    fallbackId: null,
+    quantity: 1,
+    productName: "WOLVERINE BLEND BPC157 + TB500 20MG - 01 VIAL BIOGENESIS",
+    stock: buildNamedStockMap(named),
+    catalog,
+    namedBalances: named,
+  });
+  assert.equal(picked.productId, "sku-vial");
+  assert.equal(picked.available, 0);
+});
+
+test("baixa: dois órfãos com o mesmo nome não escolhe um", () => {
+  const catalog = buildCatalogIndex([{ id: "novo-id", name: "Tesamorelin 10mg" }]);
+  const named = [
+    { productId: "hash-a", productName: "Tesamorelin 10mg", quantity: 2 },
+    { productId: "hash-b", productName: "Tesamorelin 10mg", quantity: 1 },
+  ];
+  const picked = pickDebitWithOrphanSameName({
+    primaryId: "novo-id",
+    fallbackId: null,
+    quantity: 1,
+    productName: "Tesamorelin 10mg",
+    stock: buildNamedStockMap(named),
+    catalog,
+    namedBalances: named,
+  });
+  assert.equal(picked.productId, "novo-id");
   assert.equal(picked.available, 0);
 });
 

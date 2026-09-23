@@ -1,11 +1,22 @@
-import { eq, inArray } from "drizzle-orm";
-import { db, inventoryBalancesTable, ordersTable } from "@workspace/db";
-import { collectStockLookupIds, pickDebitProductId, remapInventoryItem } from "./inventory-catalog";
-import { fetchCatalogIndex } from "./inventory-resolve";
+import { eq } from "drizzle-orm";
+import {
+  db,
+  inventoryBalancesTable,
+  inventoryMinasBalancesTable,
+  inventoryMotoboyBalancesTable,
+  ordersTable,
+} from "@workspace/db";
+import {
+  buildNamedStockMap,
+  mapInventoryBalanceRows,
+  pickDebitWithOrphanSameName,
+  remapInventoryItem,
+  type CatalogIndex,
+  type NamedStockRow,
+} from "./inventory-catalog";
+import { enrichNameMapWithLegacyOrders, fetchCatalogIndex, loadCatalogContext } from "./inventory-resolve";
 import { inventoryOrderLabel } from "./inventory-movement-reason";
 import {
-  getMinasStockMap,
-  getMotoboyStockMap,
   registerInventoryEntry,
   registerMinasInventoryEntry,
   registerMotoboyInventoryEntry,
@@ -116,20 +127,31 @@ export async function resolveOrderInventoryItems(products: unknown): Promise<Res
   return resolvedItems;
 }
 
-async function getStockMapForPool(pool: InventoryPoolKind, productIds: string[]): Promise<Map<string, number>> {
-  if (pool === "motoboy") return getMotoboyStockMap(productIds);
-  if (pool === "minas") return getMinasStockMap(productIds);
-  const balanceRows = productIds.length > 0
+async function listNamedBalancesForPool(pool: InventoryPoolKind): Promise<{
+  catalog: CatalogIndex;
+  balances: NamedStockRow[];
+}> {
+  const rows = pool === "motoboy"
     ? await db
-      .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
-      .from(inventoryBalancesTable)
-      .where(inArray(inventoryBalancesTable.productId, productIds))
-    : [];
-  const map = new Map<string, number>();
-  for (const row of balanceRows as Array<{ productId: string; quantity: number }>) {
-    map.set(String(row.productId), Number(row.quantity) || 0);
-  }
-  return map;
+      .select({ productId: inventoryMotoboyBalancesTable.productId, quantity: inventoryMotoboyBalancesTable.quantity })
+      .from(inventoryMotoboyBalancesTable)
+    : pool === "minas"
+      ? await db
+        .select({ productId: inventoryMinasBalancesTable.productId, quantity: inventoryMinasBalancesTable.quantity })
+        .from(inventoryMinasBalancesTable)
+      : await db
+        .select({ productId: inventoryBalancesTable.productId, quantity: inventoryBalancesTable.quantity })
+        .from(inventoryBalancesTable);
+  const catalog = await loadCatalogContext();
+  const nameMap = await enrichNameMapWithLegacyOrders(
+    catalog.nameMap,
+    catalog.index,
+    rows.map((row) => String(row.productId || "")),
+  );
+  return {
+    catalog: catalog.index,
+    balances: mapInventoryBalanceRows(rows, nameMap),
+  };
 }
 
 export async function pickOrderInventoryDebit(
@@ -143,11 +165,20 @@ export async function pickOrderInventoryDebit(
   details: string;
 }> {
   if (items.length === 0) return { ok: true, items: [] };
-  const stockByProduct = await getStockMapForPool(pool, collectStockLookupIds(items));
+  const named = await listNamedBalancesForPool(pool);
+  const stockByProduct = buildNamedStockMap(named.balances);
   const debitItems: Array<{ productId: string; productName: string; quantity: number }> = [];
   const insufficient: string[] = [];
   for (const item of items) {
-    const picked = pickDebitProductId(item.productId, item.fallbackProductId, item.quantity, stockByProduct);
+    const picked = pickDebitWithOrphanSameName({
+      primaryId: item.productId,
+      fallbackId: item.fallbackProductId,
+      quantity: item.quantity,
+      productName: item.productName,
+      stock: stockByProduct,
+      catalog: named.catalog,
+      namedBalances: named.balances,
+    });
     if (picked.available < item.quantity) {
       insufficient.push(`${item.productName} (precisa ${item.quantity}, disponível ${picked.available})`);
       continue;

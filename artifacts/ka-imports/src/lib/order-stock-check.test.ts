@@ -76,6 +76,46 @@ test("recadastro: se o produto novo está zerado, usa o id antigo com saldo", ()
   assert.equal(result.hasStock, true);
 });
 
+test("selo usa a linha órfã com o mesmo nome único quando o id do catálogo está 0", () => {
+  const result = checkOrderItemsHaveStock({
+    items: [{ id: "novo-id", name: "MOTS-C 10MG BIOGENESIS", quantity: 1 }],
+    balances: [
+      { productId: "novo-id", productName: "MOTS-C 10MG BIOGENESIS", quantity: 0 },
+      { productId: "hash-velho", productName: "MOTS-C 10MG BIOGENESIS", quantity: 3 },
+    ],
+    catalogNames: { "novo-id": "MOTS-C 10MG BIOGENESIS" },
+    poolLabel: "estoque Minas",
+  });
+  assert.equal(result.hasStock, true);
+  assert.deepEqual(result.missingItems, []);
+});
+
+test("dois órfãos com o mesmo nome não pintam o selo", () => {
+  const result = checkOrderItemsHaveStock({
+    items: [{ id: "novo-id", name: "MOTS-C 10MG BIOGENESIS", quantity: 1 }],
+    balances: [
+      { productId: "hash-a", productName: "MOTS-C 10MG BIOGENESIS", quantity: 2 },
+      { productId: "hash-b", productName: "MOTS-C 10MG BIOGENESIS", quantity: 1 },
+    ],
+    catalogNames: { "novo-id": "MOTS-C 10MG BIOGENESIS" },
+  });
+  assert.equal(result.hasStock, false);
+  assert.match(result.missingItems[0] || "", /tem 0/);
+});
+
+test("órfão com saldo menor que o pedido continua sem estoque e mostra a quantidade", () => {
+  const result = checkOrderItemsHaveStock({
+    items: [{ id: "novo-id", name: "Tesamorelin 10mg", quantity: 2 }],
+    balances: [
+      { productId: "hash-velho", productName: "Tesamorelin 10mg", quantity: 1 },
+    ],
+    catalogNames: { "novo-id": "Tesamorelin 10mg" },
+  });
+  assert.equal(result.hasStock, false);
+  assert.match(result.missingItems[0] || "", /tem 1/);
+  assert.match(result.missingItems[0] || "", /precisa 2/);
+});
+
 test("ID com caixa diferente ainda encontra o saldo", () => {
   const result = checkOrderItemsHaveStock({
     items: [{ id: "ABC123", name: "Peptídeo", quantity: 1 }],
