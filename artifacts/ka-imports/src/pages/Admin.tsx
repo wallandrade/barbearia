@@ -11591,6 +11591,7 @@ function OrdersPanel({
     loading: boolean;
     events: OrderActivityEventView[];
   }>>({});
+  const [orderActivityOpenId, setOrderActivityOpenId] = useState<string | null>(null);
   const [adminPasswordModalOpen, setAdminPasswordModalOpen] = useState(false);
   const [adminPasswordModalTitle, setAdminPasswordModalTitle] = useState("Confirmar ação sensível");
   const [adminPasswordModalDescription, setAdminPasswordModalDescription] = useState("");
@@ -11600,6 +11601,9 @@ function OrdersPanel({
   const adminPasswordActionRef = useRef<((password: string) => Promise<void>) | null>(null);
 
   const expandedOrderUpdatedAt = orders.find((item) => item.id === expandedOrder)?.updatedAt ?? "";
+  useEffect(() => {
+    setOrderActivityOpenId(null);
+  }, [expandedOrder]);
   useEffect(() => {
     if (!expandedOrder) return;
     const orderId = expandedOrder;
@@ -13490,8 +13494,18 @@ function OrdersPanel({
                       {order.cardTotalActual && <p className="text-purple-800">Total cobrado: <strong>{formatCurrency(Number(order.cardTotalActual))}</strong></p>}
                     </div>
                   )}
-                  <div className="mt-4 rounded-xl border border-border bg-white p-4 max-w-2xl">
-                    <p className="text-sm font-bold text-slate-900">Histórico do pedido</p>
+                  <div className="mt-4 rounded-xl border border-border bg-white max-w-2xl">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                      aria-expanded={orderActivityOpenId === order.id}
+                      onClick={() => setOrderActivityOpenId((current) => current === order.id ? null : order.id)}
+                    >
+                      <span className="text-sm font-bold text-slate-900">Histórico do pedido</span>
+                      <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${orderActivityOpenId === order.id ? "rotate-180" : ""}`} />
+                    </button>
+                    {orderActivityOpenId === order.id && (
+                    <div className="px-4 pb-4">
                     <p className="text-xs text-muted-foreground mb-3">Tudo que foi feito neste pedido · mais recente em cima</p>
                     {orderActivityById[order.id]?.loading && !orderActivityById[order.id]?.events?.length ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
@@ -13559,6 +13573,8 @@ function OrdersPanel({
                           </li>
                         ))}
                       </ol>
+                    )}
+                    </div>
                     )}
                   </div>
                   <div className="mt-4">
