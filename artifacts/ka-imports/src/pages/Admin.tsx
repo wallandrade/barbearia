@@ -238,7 +238,7 @@ function isoToSPDate(iso: string) {
   return iso ? iso.slice(0, 10) : "";
 }
 
-type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; image?: string | null };
+type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; lineDiscount?: number; image?: string | null };
 type OrderActivityProductThumb = { id: string; name: string; image: string | null; fromQty: number; toQty: number };
 type OrderActivityEventView = {
   id: string;
@@ -618,6 +618,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
+import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
 import {
   findOrderProductForShipmentItem,
   isClosedReshipmentStatus,
@@ -1599,7 +1600,7 @@ export default function Admin() {
   const [webhookCopied, setWebhookCopied] = useState(false);
   // Order editing
   const [editOrderModal, setEditOrderModal] = useState<AdminOrder | null>(null);
-  const [editItems, setEditItems] = useState<Array<{ id: string; name: string; quantity: number; price: number; image?: string | null }>>([]);
+  const [editItems, setEditItems] = useState<Array<{ id: string; name: string; quantity: number; price: number; lineDiscount?: number; image?: string | null }>>([]);
   const [editAddress, setEditAddress] = useState({
     cep: "",
     street: "",
@@ -3639,6 +3640,7 @@ export default function Admin() {
       name: p.name,
       quantity: p.quantity,
       price: p.price,
+      lineDiscount: Math.max(0, Number(p.lineDiscount) || 0),
       image: p.image ?? null,
     })));
     setEditDiscount(order.discountAmount || 0);
@@ -3847,7 +3849,7 @@ export default function Admin() {
     setEditSaving(true);
     const originalTotal = editOrderModal.total;
     try {
-      const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
+      const subtotal = editItems.reduce((s, p) => s + lineNetAmount(p.price, p.quantity, p.lineDiscount), 0);
       const shippingCost = editOrderModal.shippingCost;
       const insuranceAmount = editOrderModal.includeInsurance
         ? computeCartInsuranceAmount({
@@ -3855,7 +3857,11 @@ export default function Admin() {
             defaultPercent: parseInsurancePercent(settings["checkout_insurance_percent"]),
             specialPercent: parseOptionalInsurancePercent(settings["checkout_insurance_product_percent"]),
             specialProductIds: parseInsuranceProductIds(settings["checkout_insurance_product_ids"]),
-            items: editItems.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+            items: editItems.map((p) => {
+              const net = lineNetAmount(p.price, p.quantity, p.lineDiscount);
+              const unit = p.quantity > 0 ? net / p.quantity : p.price;
+              return { id: p.id, quantity: p.quantity, price: unit };
+            }),
             fallbackSubtotal: subtotal,
           })
         : 0;
@@ -8046,6 +8052,24 @@ export default function Admin() {
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{item.name}</p>
                               <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} × {item.quantity} = {formatCurrency(item.price * item.quantity)}</p>
+                              <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                Desconto
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={item.lineDiscount ? item.lineDiscount : ""}
+                                  placeholder="0,00"
+                                  onChange={(e) => {
+                                    const next = e.target.value === "" ? 0 : Math.max(0, parseFloat(e.target.value) || 0);
+                                    setEditItems((prev) => prev.map((row, j) => j === idx ? { ...row, lineDiscount: next } : row));
+                                  }}
+                                  className="h-7 w-24 px-2 rounded-md border border-border bg-white text-sm text-foreground outline-none focus:border-primary"
+                                />
+                              </label>
+                              {(item.lineDiscount || 0) > 0 && (
+                                <p className="text-[11px] text-green-700">Fica {formatCurrency(lineNetAmount(item.price, item.quantity, item.lineDiscount))}</p>
+                              )}
                             </div>
                             <div className="flex items-center gap-1">
                               <button className="w-7 h-7 rounded-lg border border-border hover:bg-muted flex items-center justify-center text-base"
@@ -8162,14 +8186,19 @@ export default function Admin() {
 
                   {/* Totals preview */}
                   {editItems.length > 0 && (() => {
-                    const subtotal = editItems.reduce((s, p) => s + p.price * p.quantity, 0);
+                    const subtotal = editItems.reduce((s, p) => s + lineNetAmount(p.price, p.quantity, p.lineDiscount), 0);
+                    const productDiscount = editItems.reduce((s, p) => s + clampLineDiscount(p.price, p.quantity, p.lineDiscount), 0);
                     const insuranceAmount = editOrderModal.includeInsurance
                       ? computeCartInsuranceAmount({
                           includeInsurance: true,
                           defaultPercent: parseInsurancePercent(settings["checkout_insurance_percent"]),
                           specialPercent: parseOptionalInsurancePercent(settings["checkout_insurance_product_percent"]),
                           specialProductIds: parseInsuranceProductIds(settings["checkout_insurance_product_ids"]),
-                          items: editItems.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+                          items: editItems.map((p) => {
+                            const net = lineNetAmount(p.price, p.quantity, p.lineDiscount);
+                            const unit = p.quantity > 0 ? net / p.quantity : p.price;
+                            return { id: p.id, quantity: p.quantity, price: unit };
+                          }),
                           fallbackSubtotal: subtotal,
                         })
                       : 0;
@@ -8180,7 +8209,8 @@ export default function Admin() {
                     const diff = total - refValue;
                     return (
                       <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-sm space-y-1">
-                        <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(subtotal + productDiscount)}</span></div>
+                        {productDiscount > 0 && <div className="flex justify-between text-green-700"><span>Desconto dos produtos</span><span>-{formatCurrency(productDiscount)}</span></div>}
                         <div className="flex justify-between"><span className="text-muted-foreground">Frete</span><span>{formatCurrency(editOrderModal.shippingCost)}</span></div>
                         {editOrderModal.includeInsurance && <div className="flex justify-between"><span className="text-muted-foreground">Seguro</span><span>{formatCurrency(insuranceAmount)}</span></div>}
                         {(editDiscount || 0) > 0 && <div className="flex justify-between text-green-700"><span>Desconto</span><span>-{formatCurrency(editDiscount)}</span></div>}
@@ -13414,6 +13444,13 @@ function OrdersPanel({
                   <div className="space-y-1">
                     {orderProducts.map((p, i) => {
                       const imageSrc = resolveProductImage(p);
+                      const lineDiscount = Math.max(0, Number(p.lineDiscount) || 0);
+                      const lineGross = (Number(p.price) || 0) * (Number(p.quantity) || 0);
+                      const lineNet = Math.max(0, lineGross - lineDiscount);
+                      const unitCost = p.costPrice != null
+                        ? Number(p.costPrice)
+                        : Number(productCostById[String(p.id)] || 0);
+                      const lineProfit = lineNet - unitCost * (Number(p.quantity) || 0);
                       return (
                       <div key={i} className="flex items-center justify-between text-sm gap-3">
                         <div className="flex items-center gap-2 min-w-0">
@@ -13446,12 +13483,23 @@ function OrdersPanel({
                           </div>
                           <span className="truncate">{p.quantity}x {p.name}</span>
                         </div>
-                        <span className="font-medium">{formatCurrency(p.price * p.quantity)}</span>
+                        <div className="text-right shrink-0">
+                          <p className="font-medium">{formatCurrency(lineNet)}</p>
+                          {lineDiscount > 0 && (
+                            <p className="text-[11px] text-green-700">Desconto −{formatCurrency(lineDiscount)}</p>
+                          )}
+                          <p className={`text-[11px] font-medium ${lineProfit >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                            Lucro: {formatCurrency(lineProfit)}
+                          </p>
+                        </div>
                       </div>
                     )})}
                   </div>
                   <div className="mt-3 text-sm space-y-0.5 text-muted-foreground">
-                    <p>Subtotal: {formatCurrency(Number(order.subtotal))}</p>
+                    <p>Subtotal: {formatCurrency(Number(order.subtotal) + orderProducts.reduce((sum, p) => sum + Math.max(0, Number(p.lineDiscount) || 0), 0))}</p>
+                    {orderProducts.some((p) => Number(p.lineDiscount) > 0) && (
+                      <p>Desconto dos produtos: <span className="text-green-700">-{formatCurrency(orderProducts.reduce((sum, p) => sum + Math.max(0, Number(p.lineDiscount) || 0), 0))}</span></p>
+                    )}
                     <p>Frete: {formatCurrency(Number(order.shippingCost))}</p>
                     {order.includeInsurance && (
                       <p>Seguro: {formatCurrency(Number(order.insuranceAmount))}{order.insurancePlan ? ` (${order.insurancePlan === "reduced" ? "reduzido" : "completo"})` : ""}</p>

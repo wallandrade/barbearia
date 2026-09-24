@@ -62,6 +62,7 @@ import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
 import { diffEditedOrderProducts, snapshotProductImage, type OrderEditProductLine } from "../lib/order-activity-format";
+import { clampLineDiscount, lineNetAmount } from "../lib/line-discount";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
@@ -2119,7 +2120,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
     const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument, skipWalletCredit } = req.body as {
-      products: Array<{ id: string; name: string; quantity: number; price: number }>;
+      products: Array<{ id: string; name: string; quantity: number; price: number; lineDiscount?: number }>;
       discountAmount?: number;
       skipWalletCredit?: boolean;
       clientPhone?: string | null;
@@ -2197,11 +2198,14 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       const extraQuantity = isChildReshipment
         ? extraQuantityVsParent({ id: productId, quantity }, parentQtyById)
         : undefined;
+      const billedQty = isChildReshipment ? Number(extraQuantity) || 0 : quantity;
+      const lineDiscount = clampLineDiscount(price, billedQty, item?.lineDiscount);
       return {
         id: productId,
         name: String(item?.name || "Produto"),
         quantity,
         price,
+        ...(lineDiscount > 0 ? { lineDiscount } : {}),
         ...(isChildReshipment ? { extraQuantity } : {}),
         ...(Number.isFinite(costPriceRaw) ? { costPrice: costPriceRaw } : {}),
       };
@@ -2211,7 +2215,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       const billedQty = isChildReshipment
         ? Number(product.extraQuantity) || 0
         : product.quantity;
-      return sum + billedQty * product.price;
+      return sum + lineNetAmount(product.price, billedQty, product.lineDiscount);
     }, 0);
     const computedShippingCost = Math.max(0, Number(current[0].shippingCost) || 0);
     const computedDiscountAmount = discountAmount !== undefined
@@ -2224,7 +2228,14 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       includeInsurance: Boolean(current[0].includeInsurance),
       insurancePlan: storedPlan,
       subtotal: computedSubtotal,
-      items: resolvedProducts.map((p) => ({ id: p.id, quantity: p.quantity, price: p.price })),
+      items: resolvedProducts.map((p) => {
+        const discount = Number(p.lineDiscount) || 0;
+        if (discount <= 0) return { id: p.id, quantity: p.quantity, price: p.price };
+        const billedQty = isChildReshipment ? Number(p.extraQuantity) || 0 : p.quantity;
+        const net = lineNetAmount(p.price, billedQty, discount);
+        const qty = billedQty > 0 ? billedQty : p.quantity;
+        return { id: p.id, quantity: qty, price: qty > 0 ? net / qty : 0 };
+      }),
     });
     const computedInsuranceAmount = computedInsurance.insuranceAmount;
     const existingCashback = Number(current[0].insuranceCashbackAmount || 0);
@@ -2386,7 +2397,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       label: "Editou o pedido",
       actorType: "admin",
       actorName: String(req.adminSession?.username || "").trim() || "admin",
-      detail: `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}`,
+      detail: `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}${resolvedProducts.some((p) => Number(p.lineDiscount) > 0) ? ` · desconto item: ${resolvedProducts.filter((p) => Number(p.lineDiscount) > 0).map((p) => `${p.name} -${Number(p.lineDiscount).toFixed(2)}`).join(", ")}` : ""}`,
       meta: changedProducts.length > 0 ? { products: changedProducts } : null,
     });
     res.json({ ok: true, order: mapOrder(updated[0]), walletCredit });
