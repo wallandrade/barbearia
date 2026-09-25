@@ -17904,7 +17904,7 @@ function ImageUploadCard({
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
 }) {
-  const [resizeMode, setResizeMode] = useState<ImageResizeMode>("cover");
+  const [resizeMode, setResizeMode] = useState<ImageResizeMode>("contain");
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

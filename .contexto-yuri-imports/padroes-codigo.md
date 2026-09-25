@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-09-20
+> **Última atualização:** 2026-09-24
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-24 | Banner da home (`Home.tsx`) em `h-auto w-full`, sem caixa `aspect-[32/7]` | Arte inteira; upload de banner default **contain** | Medidas recomendadas 1920×480 / 800×400 iguais |
 | 2026-09-20 | Card cancelado: **Marcar Pago** e comprovante visíveis; EE/OCR/baixa continuam ocultos | Cliente que paga depois do cancelamento volta a ser marcado no card | PATCH de status e split iguais |
 | 2026-09-18 | Dropdown Admin: `bg-white` + token `popover`; Copiar no celular é Sheet embaixo, não painel transparente | Card no iPhone deixa de misturar Copiar com os botões de baixo | Handlers e textos da cópia iguais |
 | 2026-09-18 | Card Admin Pedidos: botões agrupados (pagamento / etiqueta / EE); **Gerenciar EE** e **Copiar** em menu; cancelado esconde Pago/EE/baixa | Card tipo #1327 deixa de virar tapete de chips | Handlers, split por pacote e cópia 48h iguais |
