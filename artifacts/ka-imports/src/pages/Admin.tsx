@@ -17935,15 +17935,13 @@ function ImageUploadCard({
         const workingWidth = workingCanvas.width;
         const workingHeight = workingCanvas.height;
 
-        if (targetWidth && targetHeight) {
+        if (targetWidth && targetHeight && effectiveMode === "cover") {
           canvas.width = targetWidth;
           canvas.height = targetHeight;
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-          const scale = effectiveMode === "cover"
-            ? Math.max(targetWidth / workingWidth, targetHeight / workingHeight)
-            : Math.min(targetWidth / workingWidth, targetHeight / workingHeight);
+          const scale = Math.max(targetWidth / workingWidth, targetHeight / workingHeight);
           const drawWidth = Math.round(workingWidth * scale);
           const drawHeight = Math.round(workingHeight * scale);
           const offsetX = Math.round((targetWidth - drawWidth) / 2);
@@ -17985,7 +17983,9 @@ function ImageUploadCard({
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Dimensão da imagem</p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="text-sm text-foreground font-medium">
-              {targetWidth}×{targetHeight}px
+              {resizeMode === "cover"
+                ? `${targetWidth}×${targetHeight}px`
+                : `largura máx. ${targetWidth}px, altura da arte`}
             </div>
             <select
               value={resizeMode}
