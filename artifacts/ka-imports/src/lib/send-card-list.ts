@@ -123,6 +123,34 @@ export function sortSendCardOrders<T extends { createdAt?: string | null }>(orde
   });
 }
 
+function looseProductName(value: string): string {
+  return normalizeSendCardText(value).replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Foto de um produto pelo nome: catálogo exato, catálogo sem pontuação, depois imagem gravada no item. */
+export function sendCardImageForProductName(
+  name: string,
+  catalog: SendCardCatalogProduct[],
+  snapshots?: Array<{ name?: string | null; image?: string | null }>,
+): string | null {
+  const fromCatalog = sendCardProductImage({ name }, catalog);
+  if (fromCatalog) return fromCatalog;
+  const loose = looseProductName(name);
+  if (loose) {
+    const byLoose = catalog.find((product) => looseProductName(product.name) === loose);
+    const image = String(byLoose?.image || "").trim();
+    if (image) return image;
+  }
+  const exact = normalizeSendCardText(name);
+  for (const row of snapshots || []) {
+    const src = String(row.image || "").trim();
+    if (!src) continue;
+    if (normalizeSendCardText(String(row.name || "")) === exact) return src;
+    if (loose && looseProductName(String(row.name || "")) === loose) return src;
+  }
+  return null;
+}
+
 export function sendCardProductImage(
   item: { id?: string | null; name?: string | null; image?: string | null },
   catalog: SendCardCatalogProduct[],

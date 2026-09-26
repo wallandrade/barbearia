@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-09-24
+> **Última atualização:** 2026-09-26
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-26 | Card **Produtos mais vendidos** mostra a foto 32px | Casa o nome no catálogo (e na imagem gravada no item, se o cadastro não achar) | Ranking, faturamento e quantidade iguais |
 | 2026-09-24 | Banner da home em `h-auto w-full`; upload **contain** grava a altura da arte (sem canvas 1920×480) | Arte inteira e na largura da tela; **cover** ainda força o retângulo | Logo e medidas recomendadas iguais |
 | 2026-09-20 | Card cancelado: **Marcar Pago** e comprovante visíveis; EE/OCR/baixa continuam ocultos | Cliente que paga depois do cancelamento volta a ser marcado no card | PATCH de status e split iguais |
 | 2026-09-18 | Dropdown Admin: `bg-white` + token `popover`; Copiar no celular é Sheet embaixo, não painel transparente | Card no iPhone deixa de misturar Copiar com os botões de baixo | Handlers e textos da cópia iguais |

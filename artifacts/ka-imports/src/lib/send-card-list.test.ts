@@ -7,6 +7,7 @@ import {
   isSendCardLabelReadyStatus,
   sendCardBadgeCount,
   sendCardBadgeKey,
+  sendCardImageForProductName,
   sendCardProductImage,
   sortSendCardOrders,
 } from "./send-card-list";
@@ -125,4 +126,19 @@ test("foto: item, catálogo por id, catálogo pelo nome normalizado", () => {
   assert.equal(sendCardProductImage({ id: "p1", name: "x" }, catalog), "https://cat/id.jpg");
   assert.equal(sendCardProductImage({ id: "outro", name: "landerlan   oxandrolona" }, catalog), "https://cat/name.jpg");
   assert.equal(sendCardProductImage({ id: "outro", name: "sem foto" }, catalog), null);
+});
+
+test("mais vendidos: foto pelo nome mesmo com espaço e acento diferentes", () => {
+  const catalog = [
+    { id: "r1", name: "Retatrutida synedica 120mg em pó (acompanha água)", image: "https://cat/reta.jpg" },
+  ];
+  assert.equal(
+    sendCardImageForProductName("Retatrutida synedica 120mg em pó ( acompanha água )", catalog),
+    "https://cat/reta.jpg",
+  );
+  assert.equal(
+    sendCardImageForProductName("Sem cadastro", [], [{ name: "Sem cadastro", image: "https://pedido/item.jpg" }]),
+    "https://pedido/item.jpg",
+  );
+  assert.equal(sendCardImageForProductName("Sem foto", [], []), null);
 });

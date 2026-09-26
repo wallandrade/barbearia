@@ -668,6 +668,7 @@ import {
 import {
   isOnSendCard,
   sendCardBadgeCount,
+  sendCardImageForProductName,
   sendCardProductImage,
   sortSendCardOrders,
   type SendCardCatalogProduct,
@@ -4749,6 +4750,26 @@ export default function Admin() {
   const statsTopProducts = Array.isArray(financialSummary?.topProducts)
     ? financialSummary.topProducts
     : statsTopProductsFromOrders;
+  const topSoldCatalog: SendCardCatalogProduct[] = [];
+  const topSoldCatalogIds = new Set<string>();
+  for (const product of [...statsProductsData, ...products]) {
+    const id = String(product.id || "").trim();
+    if (!id || topSoldCatalogIds.has(id)) continue;
+    topSoldCatalogIds.add(id);
+    topSoldCatalog.push({
+      id,
+      name: String(product.name || ""),
+      image: (product as { image?: string | null }).image ?? null,
+    });
+  }
+  const topSoldSnapshots: Array<{ name: string; image?: string | null }> = [];
+  for (const order of statsOrdersData) {
+    for (const item of getOrderProducts(order.products)) {
+      if (!String(item.image || "").trim()) continue;
+      topSoldSnapshots.push({ name: item.name, image: item.image });
+    }
+  }
+  const topSoldImage = (name: string) => sendCardImageForProductName(name, topSoldCatalog, topSoldSnapshots);
 
   // All registered sellers for dropdowns — use sellers state (always loaded on mount)
   const allSellers = sellers.map((s) => s.slug);
@@ -5075,9 +5096,18 @@ export default function Admin() {
               <p className="text-sm text-indigo-700/80">Sem produtos vendidos no período selecionado.</p>
             ) : (
               <div className="space-y-2">
-                {statsTopProducts.map((product, idx) => (
-                  <div key={`${product.name}-${idx}`} className="flex items-center justify-between rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">
-                    <div className="min-w-0 pr-2">
+                {statsTopProducts.map((product, idx) => {
+                  const photo = topSoldImage(product.name);
+                  return (
+                  <div key={`${product.name}-${idx}`} className="flex items-center gap-2 rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">
+                    <span className="w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center shrink-0">
+                      {photo ? (
+                        <img src={photo} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <Package className="w-3.5 h-3.5 text-gray-500" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1 pr-2">
                       <p className="text-sm font-medium text-indigo-900 truncate">{idx + 1}. {product.name}</p>
                       <p className="text-xs text-indigo-700/80">Faturamento: {formatCurrency(product.revenue)}</p>
                     </div>
@@ -5085,7 +5115,8 @@ export default function Admin() {
                       {product.quantity} un
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
