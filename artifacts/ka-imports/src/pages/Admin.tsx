@@ -638,6 +638,7 @@ import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
 import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
+import { AdminDrePanel } from "@/components/AdminDrePanel";
 import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchasesPanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
@@ -1172,7 +1173,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout" | "seguro";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout" | "seguro";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1755,6 +1756,7 @@ export default function Admin() {
   const [statsDateFrom, setStatsDateFrom] = useState(todayStr());
   const [statsDateTo, setStatsDateTo]   = useState(todayStr());
   const [statsSeller, setStatsSeller]   = useState("all");
+  const [dreReload, setDreReload] = useState(0);
   // Stats data fetched independently from the API
   const [statsOrdersData, setStatsOrdersData] = useState<AdminOrder[]>([]);
   const [statsChargesData, setStatsChargesData] = useState<CustomCharge[]>([]);
@@ -3076,6 +3078,7 @@ export default function Admin() {
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
     else if (tab === "expenses")   fetchExpenses();
+    else if (tab === "dre")        setDreReload((value) => value + 1);
     else if (tab === "fretes")     { fetchShippingOptions(); fetchMotoboyNeighborhoods(); fetchCepRanges(); fetchSettings(); fetchProducts(); }
     else if (tab === "orderBumps") { fetchProducts(); fetchOrderBumpsData(); }
     else if (tab === "kyc")        fetchKycList();
@@ -5049,6 +5052,7 @@ export default function Admin() {
             { key: "recurringCustomers", label: "Clientes recorrentes", icon: "RefreshCw", count: recurringCustomers.length || undefined },
             { key: "charges",       label: "Links Pagamento",  icon: "LinkIcon",    count: charges.length },
             { key: "expenses",      label: "Despesas",         icon: "AlertTriangle", count: expenses.length || undefined },
+            { key: "dre",           label: "DRE",              icon: "PieChart" },
             { key: "kyc",           label: "KYC",              icon: "ShieldCheck", count: kycList.length > 0 ? kycList.filter((k) => k.status === "submitted").length : undefined },
             { key: "support",       label: "Suporte",          icon: "MessageCircle", count: supportTickets.filter((t) => t.status === "open").length || undefined },
             { key: "biblioteca",    label: "Biblioteca",       icon: "BookOpen" },
@@ -5076,7 +5080,16 @@ export default function Admin() {
           ))}
         </div>
 
-        {(tab === "orders" || tab === "charges") ? (
+        {tab === "dre" ? (
+          <AdminDrePanel
+            initialDateFrom={statsDateFrom}
+            initialDateTo={statsDateTo}
+            initialSeller={statsSeller}
+            sellers={allSellers}
+            onUnauthorized={handleUnauthorized}
+            refreshToken={dreReload}
+          />
+        ) : (tab === "orders" || tab === "charges") ? (
           <AdminOrdersChargesSearchShell
             seedSearch={seedSearch}
             onSeedConsumed={() => setSeedSearch("")}
