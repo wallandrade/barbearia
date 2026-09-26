@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-09-25
+> **Última atualização:** 2026-09-26
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -28,6 +28,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-26 | Admin Fretes: **Horários de entrega Motoboy** (`motoboy_slot_hours`) | Checkout oferece botões entre o primeiro e o último horário salvos. Sem valor, continua 10:00–20:00. Reserva fora da janela responde `SLOT_OUTSIDE_WINDOW` | Intervalo 2h no km e 1h/2h na faixa de CEP. Domingo, slot passado e corte das 18h iguais. Cópia 48h igual |
 | 2026-09-25 | Admin: aba **DRE** (`GET /api/admin/financial-dre`) | Resultado do período em linhas: receita, CMV, comissão, taxa, marketing, perdas e operacional. Compra de fornecedor fica fora. Link com pedido não entra de novo | Faturamento líquido do painel (`realNetRevenue`) igual. Cópia 48h igual |
 | 2026-09-23 | Admin Detalhes: **Histórico do pedido** começa fechado | A lista só abre no clique do título | Eventos e a posição abaixo de Produtos iguais |
 | 2026-09-23 | Admin Fretes: campo **Pesquisar produto por nome** na lista Motoboy | Filtra a lista visível (sem acento). Marcações fora da busca continuam | Lista salva e regra do checkout iguais |
@@ -262,7 +263,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
   - Slots: id `dist` usa intervalo 2h. Km: BrasilAPI CEP v2 (coords) + OSRM/Google (rua); Haversine só fallback.
 - Admin cópia **🏍️ Motoboy**: todos os pedidos `shippingType=motoboy` carregados, **incluindo PIX pendente**, desde que não cancelados/enviados/etiqueta EE. Texto: pagamento confirmado/pendente, **`🕐 Entrega: dd/mm/aaaa às HH:MM`** (de `motoboy_bookings`; senão “horário não informado”), endereço **sem telefone**, itens com valor, **Produtos** + **Frete Motoboy** (`shippingCost`) + **Total (produtos + Motoboy)**. Lista copiada ordenada pelo slot. Fila **48h/Outros** continua só pagos. Checkout **PIX/cartão/WhatsApp** grava o slot após criar o pedido.
 - Admin cópia **Lista de Compra**: agrega itens dos pedidos a enviar; estoque **abate** a quantidade a comprar, mas **não** entra no texto copiado. Linhas no formato `2x Nome` (sem prefixo `-`). Inclui “Comprar agora”, reenvios só se houver (“abater no pagamento”) e custo estimado.
-- Checkout Motoboy: `GET /api/motoboy-coverage/lookup`. **Km ligado** (default): ignora bairro cadastrado, cota km (`id=dist`). **Km desligado**: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span). Id de agendamento: `dist` **ou** bairro real **ou** `range_<cep_range_id>`; slots resolvem `intervalHours` (km = 2h). Horários candidatos: **10:00–20:00**. Se a data for **hoje** (America/Sao_Paulo), remove slots com início ≤ agora; `book` rejeita `SLOT_IN_PAST`. Calendário em YYYY-MM-DD **local**; após 18h o mínimo é amanhã; domingo pula para segunda.
+- Checkout Motoboy: `GET /api/motoboy-coverage/lookup`. **Km ligado** (default): ignora bairro cadastrado, cota km (`id=dist`). **Km desligado**: (1) lookup bairro ViaCEP com nome **normalizado** (sem acento, sem sufixo entre parênteses); (2) se não achar → faixa de CEP **mais específica** (menor span). Id de agendamento: `dist` **ou** bairro real **ou** `range_<cep_range_id>`; slots resolvem `intervalHours` (km = 2h). Horários candidatos: setting `motoboy_slot_hours` (Admin Fretes; default **10:00–20:00**), de `intervalHours` em `intervalHours`, até o último que cabe. Se a data for **hoje** (America/Sao_Paulo), remove slots com início ≤ agora; `book` rejeita `SLOT_IN_PAST`. Calendário em YYYY-MM-DD **local**; após 18h o mínimo é amanhã; domingo pula para segunda.
 - Seed regional capital: `scripts/seed-motoboy-cep-ranges-regioes.sql` — prefixos Correios **010–058** e **080–084** (incl. São Mateus 039/083, Vila Jacuí 08050–08069, Perus 052). Preço da faixa = **máximo** dos preços Motoboy dos distritos cobertos pela zona. Aplicar no MySQL (não sobe só com deploy FE/API).
 - Portal Motoboy (link secreto): FE `/motoboy?k=<MOTOBOY_PORTAL_TOKEN>`; API `motoboy-portal/*` + fila `admin/motoboy-proposals` (aprovar aplica em `motoboy_neighborhoods` / `motoboy_cep_ranges`). Tabela `motoboy_price_proposals` (runtime-schema). Subdomínio sugerido `motoboy.yury-imports.com` (CORS default + token na Railway).
 - **Sync cobertura → espelho:** `GET /api/integrations/motoboy/coverage` (`MOTOBOY_SYNC_TOKEN`); webhook outbound (`MOTOBOY_SYNC_WEBHOOK_URL` + `MOTOBOY_SYNC_WEBHOOK_SECRET`, HMAC body) em CRUD Fretes e approve portal. Yury = verdade; outro sistema só espelha. Sem fase 2 (proposta de volta).

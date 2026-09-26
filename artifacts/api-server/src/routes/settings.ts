@@ -7,6 +7,7 @@ import {
   SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
   SHIPPING_QUEUE_MANUAL_HOURS_KEY,
 } from "../lib/shipping-queue-deadline";
+import { MOTOBOY_SLOT_HOURS_KEY, motoboySlotHoursSaveError } from "../lib/motoboy-slot-window";
 
 const router: IRouter = Router();
 
@@ -33,6 +34,7 @@ const ALLOWED_KEYS = [
   "motoboy_distance_enabled",
   "motoboy_origin_cep",
   "motoboy_distance_config",
+  MOTOBOY_SLOT_HOURS_KEY,
   "site_password", "payment_password",
   // Taxas do gateway permitidas
   "gateway_fee_percent",
@@ -120,6 +122,13 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
         }
         const normalized = Math.min(180, Math.max(60, Math.round(parsed)));
         storedValue = String(normalized);
+      }
+      if (key === MOTOBOY_SLOT_HOURS_KEY) {
+        const message = motoboySlotHoursSaveError(value);
+        if (message) {
+          res.status(400).json({ error: "INVALID_VALUE", message });
+          return;
+        }
       }
       if (key === SHIPPING_QUEUE_MANUAL_HOURS_KEY) {
         const parsed = Number(String(value).trim().replace(",", "."));

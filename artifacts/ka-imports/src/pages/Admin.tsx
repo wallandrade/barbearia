@@ -642,6 +642,7 @@ import { AdminDrePanel } from "@/components/AdminDrePanel";
 import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchasesPanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
+import { MotoboySlotHoursCard } from "@/components/MotoboySlotHoursCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
@@ -19624,6 +19625,12 @@ function FretePanel({
           </div>
         </div>
       </div>
+
+      <MotoboySlotHoursCard
+        settings={settings}
+        loading={settingsLoading}
+        onSave={onSaveSetting}
+      />
 
       <MotoboyDistanceCard
         settings={settings}

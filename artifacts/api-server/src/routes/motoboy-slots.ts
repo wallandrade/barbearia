@@ -4,19 +4,33 @@ import {
   motoboyBookingsTable,
   motoboyCepRangesTable,
   motoboyNeighborhoodsTable,
+  siteSettingsTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 import { isMotoboySlotInPast, timeToMinutes } from "../lib/motoboy-slot-time";
 import { isMotoboyDistanceSlotId } from "../lib/motoboy-distance";
+import {
+  MOTOBOY_SLOT_HOURS_KEY,
+  buildMotoboyCandidateSlots,
+  parseMotoboySlotHours,
+  type MotoboySlotHours,
+} from "../lib/motoboy-slot-window";
 
 const router: IRouter = Router();
 
-const SLOT_START = 10; // 10:00
-const SLOT_LAST_START = 20; // última opção: 20:00 (entrega até 20h)
 const RANGE_ID_PREFIX = "range_";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
+
+async function loadMotoboySlotHours(): Promise<MotoboySlotHours> {
+  const rows = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, MOTOBOY_SLOT_HOURS_KEY))
+    .limit(1);
+  return parseMotoboySlotHours(rows[0]?.value);
+}
 
 /** Returns true if [aStart, aStart+aInterval) overlaps [bStart, bStart+bInterval) */
 function overlaps(aStart: number, aInterval: number, bStart: number, bInterval: number) {
@@ -77,11 +91,8 @@ router.get("/motoboy-slots/available", async (req, res) => {
       return;
     }
 
-    // Generate candidate slots (10:00 … 20:00, de intervalHours em intervalHours)
-    const candidates: string[] = [];
-    for (let h = SLOT_START; h <= SLOT_LAST_START; h += intervalHours) {
-      candidates.push(`${pad(h)}:00`);
-    }
+    const window = await loadMotoboySlotHours();
+    const candidates = buildMotoboyCandidateSlots(window.startHour, window.lastHour, intervalHours);
 
     // Load all non-released bookings for this date
     const bookings = await db
@@ -141,6 +152,16 @@ router.post("/motoboy-slots/book", async (req, res) => {
     if (neighborhoodId) {
       const resolved = await resolveIntervalHours(neighborhoodId);
       if (resolved != null) intervalHours = resolved;
+    }
+
+    const window = await loadMotoboySlotHours();
+    const candidates = buildMotoboyCandidateSlots(window.startHour, window.lastHour, intervalHours);
+    if (!candidates.includes(slotTime)) {
+      res.status(400).json({
+        error: "SLOT_OUTSIDE_WINDOW",
+        message: `Horário fora da janela de entrega (${pad(window.startHour)}:00–${pad(window.lastHour)}:00).`,
+      });
+      return;
     }
 
     // Double-check availability (race condition guard)
