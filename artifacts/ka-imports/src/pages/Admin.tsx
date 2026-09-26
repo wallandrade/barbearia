@@ -269,14 +269,74 @@ function getOrderReference(order: any): string {
   return String(order?.id || "-");
 }
 
+function DashboardPhotoThumb({
+  src,
+  name,
+  style,
+  onOpen,
+  onHover,
+  onHoverEnd,
+}: {
+  src: string | null;
+  name: string;
+  style?: React.CSSProperties;
+  onOpen?: (src: string, name: string) => void;
+  onHover?: (hover: { src: string; name: string; top: number; left: number }) => void;
+  onHoverEnd?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={src ? "Ampliar foto" : undefined}
+      className={`relative h-8 w-8 shrink-0 bg-transparent p-0 ${src ? "cursor-zoom-in" : ""}`}
+      style={style}
+      onMouseEnter={(event) => {
+        if (!src || !onHover) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        onHover({
+          src,
+          name,
+          top: rect.top + rect.height / 2,
+          left: rect.right + 10,
+        });
+      }}
+      onMouseLeave={() => onHoverEnd?.()}
+      onClick={(event) => {
+        if (!src || !onOpen) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onHoverEnd?.();
+        onOpen(src, name);
+      }}
+    >
+      <span className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-200">
+        {src ? (
+          <img src={src} alt={name} className="h-full w-full object-cover" />
+        ) : (
+          <Package className="h-3.5 w-3.5 text-gray-500" />
+        )}
+      </span>
+      {src ? (
+        <span className="pointer-events-none absolute -bottom-1 -right-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-amber-300 bg-white shadow-sm">
+          <Search className="h-2 w-2 text-amber-800" />
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 function SendCardProductThumbs({
   items,
   catalog,
   onOpen,
+  onHover,
+  onHoverEnd,
 }: {
   items: Array<{ id?: string | null; name?: string | null; image?: string | null }>;
   catalog: SendCardCatalogProduct[];
   onOpen?: (src: string, name: string) => void;
+  onHover?: (hover: { src: string; name: string; top: number; left: number }) => void;
+  onHoverEnd?: () => void;
 }) {
   const slots = items.length > 0 ? items : [{ id: "", name: "", image: null }];
   const shown = slots.slice(0, 4);
@@ -287,22 +347,15 @@ function SendCardProductThumbs({
         const src = items.length > 0 ? sendCardProductImage(item, catalog) : null;
         const name = String(item.name || "Produto");
         return (
-          <span
+          <DashboardPhotoThumb
             key={`${item.id || "vazio"}-${index}`}
-            className={`w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center ${src ? "cursor-zoom-in" : ""}`}
+            src={src}
+            name={name}
             style={{ marginLeft: index === 0 ? 0 : -8, zIndex: shown.length - index }}
-            onClick={(event) => {
-              if (!src || !onOpen) return;
-              event.stopPropagation();
-              onOpen(src, name);
-            }}
-          >
-            {src ? (
-              <img src={src} alt={name} className="w-full h-full object-cover" />
-            ) : (
-              <Package className="w-3.5 h-3.5 text-gray-500" />
-            )}
-          </span>
+            onOpen={onOpen}
+            onHover={onHover}
+            onHoverEnd={onHoverEnd}
+          />
         );
       })}
       {extra > 0 ? <span className="ml-1 text-[10px] font-bold text-amber-800">+{extra}</span> : null}
@@ -1478,6 +1531,7 @@ interface ClientErrorEvent {
 export default function Admin() {
 
   const [dashboardImagePreview, setDashboardImagePreview] = useState<{ src: string; name: string } | null>(null);
+  const [dashboardPhotoHover, setDashboardPhotoHover] = useState<{ src: string; name: string; top: number; left: number } | null>(null);
   // Financial summary (gateway fees/liquido real)
   const [financialSummary, setFinancialSummary] = React.useState<null | {
     totalRevenue: number;
@@ -5073,7 +5127,7 @@ export default function Admin() {
                 <CheckCircle className="w-4 h-4 text-green-500" /> Todos os pedidos pagos já foram enviados!
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+              <div className="space-y-1.5 max-h-[320px] overflow-y-auto" onScroll={() => setDashboardPhotoHover(null)}>
                 {sendCardOrders.map((o) => {
                   const lateDays = daysSince(o.createdAt);
                   const late = lateDays > 3;
@@ -5085,7 +5139,12 @@ export default function Admin() {
                       <SendCardProductThumbs
                         items={sendCardThumbProducts(o)}
                         catalog={sendCardCatalog}
-                        onOpen={(src, name) => setDashboardImagePreview({ src, name })}
+                        onOpen={(src, name) => {
+                          setDashboardPhotoHover(null);
+                          setDashboardImagePreview({ src, name });
+                        }}
+                        onHover={setDashboardPhotoHover}
+                        onHoverEnd={() => setDashboardPhotoHover(null)}
                       />
                       <div className="min-w-0 flex-1">
                         <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{o.clientName}</p>
@@ -5119,20 +5178,16 @@ export default function Admin() {
                   const photo = topSoldImage(product.name);
                   return (
                   <div key={`${product.name}-${idx}`} className="flex items-center gap-2 rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">
-                    <span
-                      className={`w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center shrink-0 ${photo ? "cursor-zoom-in" : ""}`}
-                      onClick={(event) => {
-                        if (!photo) return;
-                        event.stopPropagation();
-                        setDashboardImagePreview({ src: photo, name: product.name });
+                    <DashboardPhotoThumb
+                      src={photo}
+                      name={product.name}
+                      onOpen={(src, name) => {
+                        setDashboardPhotoHover(null);
+                        setDashboardImagePreview({ src, name });
                       }}
-                    >
-                      {photo ? (
-                        <img src={photo} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <Package className="w-3.5 h-3.5 text-gray-500" />
-                      )}
-                    </span>
+                      onHover={setDashboardPhotoHover}
+                      onHoverEnd={() => setDashboardPhotoHover(null)}
+                    />
                     <div className="min-w-0 flex-1 pr-2">
                       <p className="text-sm font-medium text-indigo-900 truncate">{idx + 1}. {product.name}</p>
                       <p className="text-xs text-indigo-700/80">Faturamento: {formatCurrency(product.revenue)}</p>
@@ -5147,6 +5202,20 @@ export default function Admin() {
             )}
           </div>
         </div>
+
+        {dashboardPhotoHover && !dashboardImagePreview && createPortal(
+          <div
+            className="pointer-events-none fixed z-[110] -translate-y-1/2 rounded-xl border border-border bg-white p-1 shadow-2xl"
+            style={{ top: dashboardPhotoHover.top, left: dashboardPhotoHover.left }}
+          >
+            <img
+              src={dashboardPhotoHover.src}
+              alt={`Zoom ${dashboardPhotoHover.name}`}
+              className="h-32 w-32 rounded-lg object-cover"
+            />
+          </div>,
+          document.body,
+        )}
 
         {createPortal(
           <AnimatePresence>
