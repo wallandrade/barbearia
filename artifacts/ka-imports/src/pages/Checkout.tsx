@@ -1587,7 +1587,7 @@ export default function Checkout() {
           `🏘️ *Bairro:* ${data.neighborhood}\n` +
           `📮 *CEP:* ${data.cep}\n` +
           (motoboySlotDate && motoboySlotTime
-            ? `🗓️ *Agendado:* ${new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — ${motoboySlotLabel || motoboySlotTime}\n`
+            ? `🗓️ *Receber:* ${new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — ${motoboySlotLabel || motoboySlotTime} (alguém em casa nesse intervalo)\n`
             : "") +
           `\n📦 *Itens:*\n${motoboyItemsText}\n\n` +
           `💰 *Subtotal:* ${formatCurrency(subtotal)}\n` +
@@ -2378,9 +2378,14 @@ export default function Checkout() {
                 {/* Motoboy scheduling calendar */}
                 {selectedShippingId?.startsWith("motoboy_") && motoboyNeighborhoodId && (
                   <div className="mt-4 bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-4">
-                    <p className="font-semibold text-sm text-orange-900 flex items-center gap-2">
-                      <span>🗓️</span> Agendar entrega Motoboy
-                    </p>
+                    <div>
+                      <p className="font-semibold text-sm text-orange-900 flex items-center gap-2">
+                        <span>🗓️</span> Quando você pode receber
+                      </p>
+                      <p className="text-xs text-orange-800 mt-1 leading-relaxed">
+                        Não tem horário marcado. Escolha o período em que vai ter alguém em casa — o motoboy entrega dentro desse intervalo.
+                      </p>
+                    </div>
 
                     {/* Date picker */}
                     <div>
@@ -2443,7 +2448,7 @@ export default function Checkout() {
                     {/* Time slot picker */}
                     {motoboySlotDate && (
                       <div>
-                        <label className="block text-xs font-medium text-orange-800 mb-2">Escolha o período</label>
+                        <label className="block text-xs font-medium text-orange-800 mb-2">Período com alguém em casa</label>
                         {motoboySlotLoading ? (
                           <div className="flex items-center gap-2 text-sm text-orange-700">
                             <Loader2 className="w-4 h-4 animate-spin" /> Carregando períodos...
@@ -2472,7 +2477,7 @@ export default function Checkout() {
 
                     {motoboySlotDate && motoboySlotTime && (
                       <p className="text-sm font-semibold text-green-700 flex items-center gap-1">
-                        ✅ Agendado para {new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — {motoboySlotLabel || motoboySlotTime}
+                        ✅ {new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — {motoboySlotLabel || motoboySlotTime}. Alguém precisa estar em casa nesse intervalo.
                       </p>
                     )}
                   </div>
