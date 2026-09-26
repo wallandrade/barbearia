@@ -272,9 +272,11 @@ function getOrderReference(order: any): string {
 function SendCardProductThumbs({
   items,
   catalog,
+  onOpen,
 }: {
   items: Array<{ id?: string | null; name?: string | null; image?: string | null }>;
   catalog: SendCardCatalogProduct[];
+  onOpen?: (src: string, name: string) => void;
 }) {
   const slots = items.length > 0 ? items : [{ id: "", name: "", image: null }];
   const shown = slots.slice(0, 4);
@@ -283,14 +285,20 @@ function SendCardProductThumbs({
     <div className="flex items-center shrink-0">
       {shown.map((item, index) => {
         const src = items.length > 0 ? sendCardProductImage(item, catalog) : null;
+        const name = String(item.name || "Produto");
         return (
           <span
             key={`${item.id || "vazio"}-${index}`}
-            className="w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center"
+            className={`w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center ${src ? "cursor-zoom-in" : ""}`}
             style={{ marginLeft: index === 0 ? 0 : -8, zIndex: shown.length - index }}
+            onClick={(event) => {
+              if (!src || !onOpen) return;
+              event.stopPropagation();
+              onOpen(src, name);
+            }}
           >
             {src ? (
-              <img src={src} alt="" className="w-full h-full object-cover" />
+              <img src={src} alt={name} className="w-full h-full object-cover" />
             ) : (
               <Package className="w-3.5 h-3.5 text-gray-500" />
             )}
@@ -1469,7 +1477,7 @@ interface ClientErrorEvent {
 // ---------------------------------------------------------------------------
 export default function Admin() {
 
-  // -------------------- TODOS OS useState DEVEM FICAR AQUI NO TOPO --------------------
+  const [dashboardImagePreview, setDashboardImagePreview] = useState<{ src: string; name: string } | null>(null);
   // Financial summary (gateway fees/liquido real)
   const [financialSummary, setFinancialSummary] = React.useState<null | {
     totalRevenue: number;
@@ -4242,9 +4250,15 @@ export default function Admin() {
   // Atualizar junto com stats (must be before the early return to respect Rules of Hooks)
   React.useEffect(() => { if (authChecked) fetchFinancialSummary(); }, [authChecked, statsDateFrom, statsDateTo, statsSeller, fetchFinancialSummary]);
 
-  // -------------------------------------------------------------------------
-  // Guard
-  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!dashboardImagePreview) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDashboardImagePreview(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dashboardImagePreview]);
+
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/30">
@@ -5068,7 +5082,11 @@ export default function Admin() {
                       key={o.id}
                       className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
                     >
-                      <SendCardProductThumbs items={sendCardThumbProducts(o)} catalog={sendCardCatalog} />
+                      <SendCardProductThumbs
+                        items={sendCardThumbProducts(o)}
+                        catalog={sendCardCatalog}
+                        onOpen={(src, name) => setDashboardImagePreview({ src, name })}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{o.clientName}</p>
                         <p className={`text-xs ${late ? "text-red-800/80" : "text-amber-700/80"}`}>#{getOrderReference(o)} · {formatDateBR(o.createdAt)}</p>
@@ -5101,7 +5119,14 @@ export default function Admin() {
                   const photo = topSoldImage(product.name);
                   return (
                   <div key={`${product.name}-${idx}`} className="flex items-center gap-2 rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">
-                    <span className="w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center shrink-0">
+                    <span
+                      className={`w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center shrink-0 ${photo ? "cursor-zoom-in" : ""}`}
+                      onClick={(event) => {
+                        if (!photo) return;
+                        event.stopPropagation();
+                        setDashboardImagePreview({ src: photo, name: product.name });
+                      }}
+                    >
                       {photo ? (
                         <img src={photo} alt="" className="w-full h-full object-cover" />
                       ) : (
@@ -5122,6 +5147,39 @@ export default function Admin() {
             )}
           </div>
         </div>
+
+        {createPortal(
+          <AnimatePresence>
+            {dashboardImagePreview && (
+              <motion.div
+                className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-[1px] p-4 sm:p-8 flex items-center justify-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDashboardImagePreview(null)}
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96, y: 6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 6 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="max-w-[94vw] rounded-2xl border border-white/20 bg-white p-2 shadow-2xl"
+                >
+                  <img
+                    src={dashboardImagePreview.src}
+                    alt={`Prévia ${dashboardImagePreview.name}`}
+                    className="max-h-[78vh] w-auto max-w-[90vw] rounded-xl object-contain"
+                  />
+                  <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground truncate max-w-[86vw]">
+                    {dashboardImagePreview.name}
+                  </p>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
 
         {/* Tabs */}
         <div className="flex gap-0 mb-6 border-b border-border overflow-x-auto bg-white rounded-t-xl">
