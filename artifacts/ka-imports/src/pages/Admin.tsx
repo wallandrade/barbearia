@@ -42,7 +42,8 @@ function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | nu
   const match = time.match(/^(\d{1,2}):(\d{2})$/);
   if (!match || !Number.isFinite(hours) || hours <= 0) return `${dateLabel} às ${time}`;
   const endMinutes = Number(match[1]) * 60 + Number(match[2]) + hours * 60;
-  const end = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+  const endHour = Math.floor(endMinutes / 60) % 24;
+  const end = `${String(endHour).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
   return `${dateLabel} das ${time} às ${end}`;
 }
 

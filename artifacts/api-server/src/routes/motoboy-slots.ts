@@ -104,14 +104,15 @@ router.get("/motoboy-slots/available", async (req, res) => {
         eq(motoboyBookingsTable.isReleased, false),
       ));
 
-    const available = motoboyPeriodOffers(periods).filter((slot) => {
-      if (isMotoboySlotInPast(date, slot.end)) return false;
-      const slotMin = timeToMinutes(slot.start);
-      const durationHours = Math.max(1, timeToMinutes(slot.end) / 60 - slotMin / 60);
+    const open = periods.filter((period) => {
+      if (isMotoboySlotInPast(date, `${pad(period.endHour)}:00`)) return false;
+      const slotMin = period.startHour * 60;
+      const durationHours = period.endHour - period.startHour;
       return !bookings.some((b) =>
         overlaps(slotMin, durationHours, timeToMinutes(b.slotTime), b.intervalHours)
       );
     });
+    const available = motoboyPeriodOffers(open);
 
     res.json({ slots: available, intervalHours });
   } catch (err) {

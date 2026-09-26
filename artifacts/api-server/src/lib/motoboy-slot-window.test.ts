@@ -43,3 +43,9 @@ test("checkout recebe o rótulo do período e a reserva acha pelo início", () =
   assert.deepEqual(findMotoboyPeriodByStart(periods, "08:00"), { startHour: 8, endHour: 11 });
   assert.equal(findMotoboyPeriodByStart(periods, "09:00"), null);
 });
+
+test("meia-noite no fim do período aparece como 00:00", () => {
+  assert.deepEqual(motoboyPeriodOffers([{ startHour: 19, endHour: 24 }]), [
+    { start: "19:00", end: "00:00", label: "Entrega das 19:00 às 00:00" },
+  ]);
+});

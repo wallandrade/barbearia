@@ -22,7 +22,8 @@ function isEndHour(n: number): boolean {
 }
 
 export function formatMotoboyHour(hour: number): string {
-  return `${String(hour).padStart(2, "0")}:00`;
+  const shown = hour === 24 ? 0 : hour;
+  return `${String(shown).padStart(2, "0")}:00`;
 }
 
 function readPeriod(raw: unknown): MotoboyDeliveryPeriod | null {

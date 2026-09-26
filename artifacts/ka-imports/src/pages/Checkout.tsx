@@ -206,7 +206,10 @@ export default function Checkout() {
         const start = String(slot.start || "").trim();
         if (!start) return [];
         const end = String(slot.end || "").trim();
-        const label = String(slot.label || "").trim() || (end ? `Entrega das ${start} às ${end}` : start);
+        const clock = (value: string) => value.replaceAll("24:00", "00:00");
+        const startClock = clock(start);
+        const endClock = clock(end);
+        const label = clock(String(slot.label || "").trim()) || (endClock ? `Entrega das ${startClock} às ${endClock}` : startClock);
         return [{ start, end, label }];
       });
       setMotoboyAvailableSlots(slots);
