@@ -13,7 +13,7 @@ import {
   stripAccents,
   type MotoboyDistanceConfig,
 } from "./motoboy-distance";
-import { geocodeCepBrasilApi, geocodeOriginCep } from "./motoboy-geocode";
+import { geocodeMotoboyCep, geocodeOriginCep } from "./motoboy-geocode";
 import { resolveMotoboyDistanceKm } from "./motoboy-route";
 
 export type MotoboyCoverageMatch = {
@@ -130,7 +130,7 @@ export async function lookupMotoboyCoverage(input: {
   }
 
   if (settings.enabled && cep.length === 8) {
-    const destCoords = await geocodeCepBrasilApi(cep);
+    const destCoords = await geocodeMotoboyCep(cep);
     let km: number | null = null;
     if (destCoords) {
       const originCoords = await geocodeOriginCep(settings.originCep);

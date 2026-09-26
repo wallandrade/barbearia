@@ -6,6 +6,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-26 | Motoboy por km: CEP cruza BrasilAPI v2 com AwesomeAPI (`lib/motoboy-geocode.ts`) | Pinos que divergem mais de 2 km usam a AwesomeAPI. Ponto genérico da Sé sem CEP `010` não vira km | OSRM/Google na rota; ViaCEP no endereço; faixa de CEP no fallback |
 | 2026-09-26 | Etiqueta, sync e subida da API: reenvio aberto (`reenvio_aguardando_estoque` / `reenvio_pronto_para_envio`) vira `reenvio_enviado` se já há PDF e rastreio real (barcode não `EC…` ou tracking key). Split exige isso em todos os pacotes | Não chama a baixa do PATCH de reenvio e não marca `orders.enviado` | Cancelado, `reenvio_resolvido_sem_entrada` e a cópia 48h iguais |
 | 2026-09-22 | Job `envioecom-status-job`: a cada 2 min puxa status dos envios abertos (lote 8, 90 dias). Mudança de status/barcode/`enviado` dispara SSE `order_updated` | Card Admin sai de Processando envio sem o botão Sync (a lista já recarrega a cada 20s) | Entregue/cancelado não entram no lote. Processando envio **não** marca Enviado. Baixa de estoque continua no botão. Cadastro do webhook EE continua manual |
 | 2026-09-22 | Antes de cotar, `GET /api/admin/orders/:id/related-shipments` avisa envio recente do mesmo CPF. Conta `env` aparece como São Paulo; `tenant` como Conta da loja | Admin confirma; não bloqueia o create | Webhook, etiqueta e `SHIPMENT_EXISTS` iguais |
@@ -157,7 +158,7 @@ Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha
 
 - Geo IP: `ip-api.com` — `lib/ip-geo.ts` (fire-and-forget em pedidos).
 - Distância rastreio cliente: BrasilAPI CEP + Nominatim — `lib/geo-distance.ts`.
-- Motoboy por km: BrasilAPI CEP v2 (`lib/motoboy-geocode.ts`) + **OSRM** (default) / Google Distance Matrix (`lib/motoboy-route.ts`); origem sem coords usa Praça da Sé. Haversine só se a rota falhar.
+- Motoboy por km: BrasilAPI CEP v2 + AwesomeAPI (`lib/motoboy-geocode.ts`, `geocodeMotoboyCep`) + **OSRM** (default) / Google Distance Matrix (`lib/motoboy-route.ts`); origem sem coords usa Praça da Sé. Fontes a até 2 km: BrasilAPI. Divergência maior: AwesomeAPI. Ponto genérico `-23.5475,-46.63611` fora de CEP `010` não entra no km. Haversine só se a rota falhar.
 - OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados) — fallback paralelo ao EnvioEcom.
 - **Chat informativo (compostos):** fluxo da loja e da aba Admin **Biblioteca** = `GET /api/chat/guide/:slug/:topic` (ficha fatiada, sem OpenAI). `POST /api/chat/ask` + `OPENAI_API_KEY` existem no backend mas o painel **não** usa. Status: `GET /api/chat/status` (produtos + tópicos). Não substitui médico; não confirma PIX/pedido.
 - **Extrato OFX (Banco Inter):** `lib/ofx-bank-statement.ts` + `lib/bank-statement-reconcile.ts`; rotas `POST .../analyze|apply|clear`, `GET .../bank-deposits`; UI abas **Extrato** + **Depósitos** (Desfazer por linha). Só créditos novos (FITID não usado); só pedidos manuais Inter; valor exato + janela + nome; **CPF/CNPJ** no NAME/MEMO vs `clientDocument` → score 100%.
