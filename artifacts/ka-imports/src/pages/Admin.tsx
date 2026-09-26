@@ -269,6 +269,39 @@ function getOrderReference(order: any): string {
   return String(order?.id || "-");
 }
 
+function SendCardProductThumbs({
+  items,
+  catalog,
+}: {
+  items: Array<{ id?: string | null; name?: string | null; image?: string | null }>;
+  catalog: SendCardCatalogProduct[];
+}) {
+  const slots = items.length > 0 ? items : [{ id: "", name: "", image: null }];
+  const shown = slots.slice(0, 4);
+  const extra = items.length - shown.length;
+  return (
+    <div className="flex items-center shrink-0">
+      {shown.map((item, index) => {
+        const src = items.length > 0 ? sendCardProductImage(item, catalog) : null;
+        return (
+          <span
+            key={`${item.id || "vazio"}-${index}`}
+            className="w-8 h-8 rounded-md border border-gray-200 bg-gray-200 overflow-hidden flex items-center justify-center"
+            style={{ marginLeft: index === 0 ? 0 : -8, zIndex: shown.length - index }}
+          >
+            {src ? (
+              <img src={src} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Package className="w-3.5 h-3.5 text-gray-500" />
+            )}
+          </span>
+        );
+      })}
+      {extra > 0 ? <span className="ml-1 text-[10px] font-bold text-amber-800">+{extra}</span> : null}
+    </div>
+  );
+}
+
 function getOrderProducts(raw: unknown): OrderProductLite[] {
   if (Array.isArray(raw)) return raw as OrderProductLite[];
   if (typeof raw === "string") {
@@ -615,7 +648,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2 } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -632,6 +665,14 @@ import {
   isSplitOrderPartiallyShipped,
   productsForShippingCopy,
 } from "@/lib/shipping-copy-list";
+import {
+  isOnSendCard,
+  sendCardBadgeCount,
+  sendCardProductImage,
+  sortSendCardOrders,
+  type SendCardCatalogProduct,
+  type SendCardOrder,
+} from "@/lib/send-card-list";
 import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
@@ -4258,6 +4299,16 @@ export default function Admin() {
       return aCreated - bCreated;
     });
 
+  const sendCardOrders = sortSendCardOrders(
+    orders.filter((order) => isOnSendCard(order as SendCardOrder)),
+  );
+  const sendCardBadge = sendCardBadgeCount(sendCardOrders as SendCardOrder[]);
+  const sendCardCatalog: SendCardCatalogProduct[] = products.map((product) => ({
+    id: String(product.id),
+    name: String(product.name || ""),
+    image: (product as { image?: string | null }).image ?? null,
+  }));
+
   /** Motoboy agendado entra na cópia mesmo se PIX ainda pendente (desde que não cancelado/enviado). */
   const isMotoboyOrder = (o: AdminOrder) =>
     String((o as { shippingType?: string }).shippingType || "").toLowerCase().trim() === "motoboy";
@@ -4978,38 +5029,39 @@ export default function Admin() {
                 <Truck className="w-4 h-4" /> Pedidos para Enviar
               </p>
               <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
-                {ordersParaEnviar.filter((o) => !isMotoboyOrder(o)).length + motoboyOrdersParaCopiar.length}
+                {sendCardBadge}
               </span>
             </div>
-            {ordersParaEnviar.length === 0 && motoboyOrdersParaCopiar.length === 0 ? (
+            {sendCardOrders.length === 0 ? (
               <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
                 <CheckCircle className="w-4 h-4 text-green-500" /> Todos os pedidos pagos já foram enviados!
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {[
-                  ...ordersParaEnviar.filter((o) => !isMotoboyOrder(o)),
-                  ...motoboyOrdersParaCopiar.filter((o) => !ordersParaEnviar.some((p) => p.id === o.id)),
-                ].slice(0, 5).map((o) => (
-                  <div key={o.id} className="flex items-center justify-between rounded-lg bg-white/70 border border-amber-100 px-3 py-1.5">
-                    <div className="min-w-0 pr-2">
-                      <p className="text-sm font-medium text-amber-900 truncate">
-                        {o.clientName}
-                        {isMotoboyOrder(o) ? " · 🏍️" : ""}
-                        {isMotoboyOrder(o) && o.status !== "paid" && o.status !== "completed" ? " · PIX pendente" : ""}
-                      </p>
-                      <p className="text-xs text-amber-700/80">#{getOrderReference(o)} · {formatDateBR(o.createdAt)}</p>
+              <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+                {sendCardOrders.map((o) => {
+                  const lateDays = daysSince(o.createdAt);
+                  const late = lateDays > 3;
+                  return (
+                    <div
+                      key={o.id}
+                      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
+                    >
+                      <SendCardProductThumbs items={getOrderProducts(o.products)} catalog={sendCardCatalog} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{o.clientName}</p>
+                        <p className={`text-xs ${late ? "text-red-800/80" : "text-amber-700/80"}`}>#{getOrderReference(o)} · {formatDateBR(o.createdAt)}</p>
+                      </div>
+                      {late ? (
+                        <span className="text-[10px] font-semibold text-red-800 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                          {lateDays} dias sem enviar
+                        </span>
+                      ) : null}
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${late ? "text-red-800 bg-red-100" : "text-amber-700 bg-amber-100"}`}>
+                        {formatCurrency(Number(o.total))}
+                      </span>
                     </div>
-                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full whitespace-nowrap">
-                      {formatCurrency(Number(o.total))}
-                    </span>
-                  </div>
-                ))}
-                {(ordersParaEnviar.filter((o) => !isMotoboyOrder(o)).length + motoboyOrdersParaCopiar.filter((o) => !ordersParaEnviar.some((p) => p.id === o.id)).length) > 5 && (
-                  <p className="text-xs text-amber-700 font-semibold text-center mt-1">
-                    +mais pedidos a enviar
-                  </p>
-                )}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -24,10 +24,21 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 **Proibido em changelog/código:** “Aguardando coleta não conta” para a **cópia**. Funções: `isExcludedFromShippingCopyList` / `isSplitOrderPartiallyShipped` (`artifacts/ka-imports/src/lib/shipping-copy-list.ts`); `isSplitOrderExcludedFromShippingCopyList` / `pendingCopyItemsFromSplitPackages` (`order-shipments-logic.ts`); `isLabelReadyStatus` / `isInTransitStatus` (`lib/envioecom.ts`). Teste: `shipping-copy-list.test.ts` + `envioecom-status.test.ts` + `order-shipments.test.ts`.
 
+## Card Pedidos para Enviar (painel)
+
+Não usa a função da cópia. Lê o mesmo `orders` da aba Pedidos (`dateFrom`/`dateTo`, status, vendedor, método, grupo). O pin desse GET já traz reenvio `reenvio_aguardando_estoque` ou `reenvio_pronto_para_envio` fora do período.
+
+Entra se está `paid`/`completed`, sem `enviado` e sem etiqueta pronta da tela, **ou** se o reenvio está aberto (`reshipment.id` e status fora de `reenvio_enviado`, `reenvio_resolvido_sem_entrada`, `reenvio_cancelado`). Reenvio aberto fica mesmo enviado ou cancelado. `aguardando_estoque` não tira do card. Motoboy com PIX pendente não entra. Etiqueta da tela: `enviado`, `envioecomLabelUrl` ou status sem acento contendo etiqueta emitida/gerada, pronto para envio, processando envio, aguardando expedicao, aguardando coleta, dc-e/dce emitida, coletado, em transito, postado, expedido, saiu para entrega, entregue, objeto entregue. "Aguardando ser coletado" contém `coletado` e sai. "Aguardando postagem" fica. `trackingLabelUrl` não conta. Dividido (2+ pacotes) só sai quando todos estão prontos.
+
+Ordem: `createdAt` crescente. Selo = chaves únicas (`reship:` + id do pai no reenvio aberto; `order:` + id no pedido normal). Pai sem reenvio aberto e filho com reenvio aberto contam dois. Linhas = lista inteira, caixa de 320px. Atraso (`floor` de 24h) só acima de 3 dias. Valor = `total`. Função: `isOnSendCard` / `sendCardBadgeKey` em `artifacts/ka-imports/src/lib/send-card-list.ts`.
+
+Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastreio é real (barcode que não começa com `EC`, ou tracking key). No dividido, todos os pacotes. Roda ao gravar etiqueta, no sync e na subida. Não baixa estoque e não marca `orders.enviado`. `closeOpenReshipmentIfLabelTracked` em `reshipment-label-tracked-apply.ts`.
+
 ## Changelog
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-26 | Card **Pedidos para Enviar** tem filtro próprio (`send-card-list.ts`) | Lista do `orders` da aba (data de hoje + pin de reenvio aberto). Selo deduplica `reship:`+pai e `order:`+id. Linhas em `createdAt` crescente, rolagem 320px, atraso depois de 3 dias, fotos. Reenvio aberto vira `reenvio_enviado` com etiqueta e rastreio real (não `EC…`), sem baixa | Cópia 48h (`isExcludedFromShippingCopyList`) igual. Motoboy com PIX pendente continua só na cópia |
 | 2026-09-26 | Período Motoboy que termina à meia-noite mostra 00:00 | Checkout, Admin e cópia deixam de escrever 24:00. O fim continua sendo a hora 24 na conta do intervalo | Reserva, sobreposição e cópia 48h iguais |
 | 2026-09-26 | Checkout Motoboy: faixa de dias no lugar do calendário | O cliente escolhe o dia em botões (SÁB 26/09). Domingo não aparece. Depois das 18h o primeiro dia é amanhã | Períodos, reserva, janela de 14 dias e cópia 48h iguais |
 | 2026-09-26 | Checkout Motoboy: texto deixa claro que não há hora marcada | O cliente lê que escolhe o período em que alguém estará em casa. O motoboy entrega dentro do intervalo | Períodos, reserva e cópia 48h iguais |

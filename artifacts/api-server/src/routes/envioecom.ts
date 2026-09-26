@@ -28,6 +28,7 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isSplitShipmentList } from "../lib/order-shipments-logic";
+import { closeOpenReshipmentIfLabelTracked } from "../lib/reshipment-label-tracked-apply";
 import { refreshShippingQueueForOrder } from "../lib/shipping-queue-allocator";
 import {
   EnvioEcomApiError,
@@ -470,6 +471,14 @@ function publishEnvioEcomOrderRefresh(
   });
 }
 
+async function closeReshipmentAfterLabelTracking(orderId: string): Promise<void> {
+  try {
+    await closeOpenReshipmentIfLabelTracked(orderId);
+  } catch (err) {
+    console.warn("[Reshipment] falha ao marcar reenvio enviado", orderId, err);
+  }
+}
+
 async function applyShipmentStatusToOrder(params: {
   orderId: string;
   status: string;
@@ -562,6 +571,7 @@ async function applyShipmentStatusToOrder(params: {
         console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
       });
     }
+    if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
     return { updated: true };
   }
 
@@ -634,6 +644,7 @@ async function applyShipmentStatusToOrder(params: {
       console.warn("[EnvioEcom] insurance cashback failed", order.id, err);
     });
   }
+  if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
   return { updated: true };
 }
 
@@ -1331,6 +1342,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       }
     }
     if (targetPackage) await rollupOrderFromPackages(order.id);
+    await closeReshipmentAfterLabelTracking(order.id);
     void refreshShippingQueueForOrder(order.id);
     const packages = await listOrderShipments(order.id);
     const reserved = targetPackage
@@ -1461,6 +1473,7 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
           })
           .where(eq(ordersTable.id, order.id));
       }
+      await closeReshipmentAfterLabelTracking(order.id);
     }
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);

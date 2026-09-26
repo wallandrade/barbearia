@@ -3,6 +3,7 @@ import { startReconciliationJob } from "./reconciliation";
 import { ensureRuntimeSchema } from "./runtime-schema";
 import { startRaffleExpiryJob } from "./raffle-expiry";
 import { startEnvioEcomStatusSyncJob } from "./envioecom-status-job";
+import { closeTrackedOpenReshipments } from "./lib/reshipment-label-tracked-apply";
 import { bootstrapShippingQueue } from "./lib/shipping-queue-allocator";
 
 function resolvePort(): number {
@@ -37,6 +38,15 @@ async function bootstrap(): Promise<void> {
     startRaffleExpiryJob();
     startEnvioEcomStatusSyncJob();
     void bootstrapShippingQueue();
+    void closeTrackedOpenReshipments()
+      .then((closed) => {
+        if (closed > 0) {
+          console.log(`[Reshipment] ${closed} reenvio(s) marcado(s) como enviado na subida (etiqueta com rastreio real).`);
+        }
+      })
+      .catch((err) => {
+        console.error("[Reshipment] varredura na subida falhou:", err);
+      });
 
     // Run schema sync in background to avoid blocking boot/health checks.
     void ensureRuntimeSchema();

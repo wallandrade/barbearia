@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-22
+> **Última atualização:** 2026-09-26
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-26 | Etiqueta, sync e subida da API: reenvio aberto (`reenvio_aguardando_estoque` / `reenvio_pronto_para_envio`) vira `reenvio_enviado` se já há PDF e rastreio real (barcode não `EC…` ou tracking key). Split exige isso em todos os pacotes | Não chama a baixa do PATCH de reenvio e não marca `orders.enviado` | Cancelado, `reenvio_resolvido_sem_entrada` e a cópia 48h iguais |
 | 2026-09-22 | Job `envioecom-status-job`: a cada 2 min puxa status dos envios abertos (lote 8, 90 dias). Mudança de status/barcode/`enviado` dispara SSE `order_updated` | Card Admin sai de Processando envio sem o botão Sync (a lista já recarrega a cada 20s) | Entregue/cancelado não entram no lote. Processando envio **não** marca Enviado. Baixa de estoque continua no botão. Cadastro do webhook EE continua manual |
 | 2026-09-22 | Antes de cotar, `GET /api/admin/orders/:id/related-shipments` avisa envio recente do mesmo CPF. Conta `env` aparece como São Paulo; `tenant` como Conta da loja | Admin confirma; não bloqueia o create | Webhook, etiqueta e `SHIPMENT_EXISTS` iguais |
 | 2026-09-18 | Vincular EE (`POST .../sync` com barcode/ID no body) é **estrito**: não usa CPF/CEP/`orderId` residual do Desvincular. Sem match do código colado → 404, sem reatachar o envio antigo | #1040 deixa de voltar `8880…` Entregue ao colar outro rastreio | Create/etiqueta/webhook/Desvincular iguais; Sync sem body continua o fallback |
