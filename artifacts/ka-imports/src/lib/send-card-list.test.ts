@@ -9,6 +9,7 @@ import {
   sendCardBadgeKey,
   sendCardImageForProductName,
   sendCardProductImage,
+  sendCardThumbProducts,
   sortSendCardOrders,
 } from "./send-card-list";
 
@@ -141,4 +142,42 @@ test("mais vendidos: foto pelo nome mesmo com espaço e acento diferentes", () =
     "https://pedido/item.jpg",
   );
   assert.equal(sendCardImageForProductName("Sem foto", [], []), null);
+});
+
+test("envio parcial: miniatura só do produto que ainda falta", () => {
+  const order = {
+    id: "1",
+    products: [
+      { id: "a", name: "Tirzec", image: "https://cat/tirzec.jpg" },
+      { id: "b", name: "Lipoless", image: "https://cat/lipo.jpg" },
+    ],
+    envioecomPackages: [
+      {
+        enviado: true,
+        envioecomStatus: "Coletado",
+        items: [{ productId: "a", productName: "Tirzec" }],
+      },
+      {
+        envioecomStatus: "Envio criado",
+        items: [{ productId: "b", productName: "Lipoless" }],
+      },
+    ],
+  };
+  assert.deepEqual(sendCardThumbProducts(order).map((item) => item.id), ["b"]);
+  assert.equal(sendCardThumbProducts(order)[0]?.image, "https://cat/lipo.jpg");
+});
+
+test("dividido com os dois pacotes abertos mostra as duas fotos", () => {
+  const order = {
+    id: "1",
+    products: [
+      { id: "a", name: "Tirzec", image: "https://cat/tirzec.jpg" },
+      { id: "b", name: "Lipoless", image: "https://cat/lipo.jpg" },
+    ],
+    envioecomPackages: [
+      { envioecomStatus: "Envio criado", items: [{ productId: "a" }] },
+      { envioecomStatus: "Aguardando postagem", items: [{ productId: "b" }] },
+    ],
+  };
+  assert.deepEqual(sendCardThumbProducts(order).map((item) => item.id), ["a", "b"]);
 });

@@ -1,9 +1,22 @@
 /** Fila do card Pedidos para Enviar. Não altera a cópia 48h. */
 
+export type SendCardPackageItem = {
+  productId?: string | null;
+  productName?: string | null;
+  name?: string | null;
+};
+
 export type SendCardPackage = {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  items?: SendCardPackageItem[] | null;
+};
+
+export type SendCardThumbProduct = {
+  id?: string | null;
+  name?: string | null;
+  image?: string | null;
 };
 
 export type SendCardOrder = {
@@ -64,6 +77,60 @@ export function isSendCardLabelReadyStatus(status: string | null | undefined): b
     return false;
   }
   return SCREEN_LABEL_PHRASES.some((phrase) => text.includes(phrase));
+}
+
+function parseSendCardProducts(raw: unknown): SendCardThumbProduct[] {
+  if (Array.isArray(raw)) return raw as SendCardThumbProduct[];
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed as SendCardThumbProduct[] : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function matchSendCardProduct(
+  products: SendCardThumbProduct[],
+  item: SendCardPackageItem,
+): SendCardThumbProduct | undefined {
+  const productId = String(item.productId || "").trim();
+  const name = normalizeSendCardText(String(item.productName || item.name || ""));
+  return products.find((product) =>
+    (productId && String(product.id || "").trim() === productId)
+    || (name.length > 0 && normalizeSendCardText(String(product.name || "")) === name),
+  );
+}
+
+/**
+ * Dividido com parte já pronta: a miniatura mostra só o produto do pacote que falta.
+ * Sem divisão, ou com todos os pacotes ainda abertos, mostra todos os itens.
+ */
+export function sendCardThumbProducts(order: SendCardOrder & { products?: unknown }): SendCardThumbProduct[] {
+  const all = parseSendCardProducts(order.products);
+  const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
+  if (packages.length < 2) return all;
+
+  const pending = packages.filter((pkg) => !isSendCardPackageReady(pkg));
+  const doneCount = packages.length - pending.length;
+  if (doneCount === 0 || pending.length === 0) return all;
+
+  const rows: SendCardThumbProduct[] = [];
+  for (const pkg of pending) {
+    for (const item of pkg.items || []) {
+      const fromOrder = matchSendCardProduct(all, item);
+      const productId = String(item.productId || "").trim();
+      const name = String(item.productName || item.name || fromOrder?.name || "").trim();
+      rows.push({
+        id: productId || fromOrder?.id || "",
+        name: name || fromOrder?.name || "",
+        image: fromOrder?.image ?? null,
+      });
+    }
+  }
+  return rows.length > 0 ? rows : all;
 }
 
 function isSendCardPackageReady(pkg: SendCardPackage | null | undefined): boolean {

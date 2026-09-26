@@ -670,6 +670,7 @@ import {
   sendCardBadgeCount,
   sendCardImageForProductName,
   sendCardProductImage,
+  sendCardThumbProducts,
   sortSendCardOrders,
   type SendCardCatalogProduct,
   type SendCardOrder,
@@ -5067,7 +5068,7 @@ export default function Admin() {
                       key={o.id}
                       className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
                     >
-                      <SendCardProductThumbs items={getOrderProducts(o.products)} catalog={sendCardCatalog} />
+                      <SendCardProductThumbs items={sendCardThumbProducts(o)} catalog={sendCardCatalog} />
                       <div className="min-w-0 flex-1">
                         <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{o.clientName}</p>
                         <p className={`text-xs ${late ? "text-red-800/80" : "text-amber-700/80"}`}>#{getOrderReference(o)} · {formatDateBR(o.createdAt)}</p>
