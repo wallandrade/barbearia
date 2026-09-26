@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   ShieldCheck, Truck, CreditCard, QrCode, ArrowLeft,
-  MessageCircle, AlertTriangle, MapPin, Loader2, Tag, X, CheckCircle2, Zap, Minus, Plus, ExternalLink, Camera, IdCard, FileText, Clock
+  MessageCircle, AlertTriangle, MapPin, Loader2, Tag, X, CheckCircle2, Zap, Minus, Plus, ExternalLink, Camera, IdCard, FileText, Clock, Calendar
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ import {
 } from "@/lib/checkout-insurance";
 import { CheckoutInsuranceOffer } from "@/components/CheckoutInsuranceOffer";
 import { coverageToShippingOption, fetchMotoboyCoverage, type MotoboyCoverageResult } from "@/lib/motoboy-coverage";
+import { listMotoboyDeliveryDays } from "@/lib/motoboy-delivery-days";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const LANDER_GOLD_MIN_QTY = 5;
@@ -78,14 +79,6 @@ function applyMotoboyCoverageResult(
 
 function genId() {
   return Math.random().toString(36).slice(2, 12);
-}
-
-/** YYYY-MM-DD em fuso local — evita min/max do Motoboy “pular” um dia com toISOString (UTC). */
-function toLocalYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function rememberAssignedSeller(sellerCode?: string | null, sellerWhatsapp?: string | null): void {
@@ -195,6 +188,34 @@ export default function Checkout() {
   const [motoboySlotLabel, setMotoboySlotLabel] = useState<string>("");
   const [motoboyAvailableSlots, setMotoboyAvailableSlots] = useState<Array<{ start: string; end: string; label: string }>>([]);
   const [motoboySlotLoading, setMotoboySlotLoading] = useState(false);
+  const motoboyDeliveryDays = useMemo(() => listMotoboyDeliveryDays(), []);
+  const selectMotoboyDeliveryDay = useCallback(async (date: string) => {
+    setMotoboySlotDate(date);
+    setMotoboySlotTime("");
+    setMotoboySlotLabel("");
+    setMotoboyAvailableSlots([]);
+    if (!date || !motoboyNeighborhoodId) return;
+    setMotoboySlotLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/motoboy-slots/available?date=${date}&neighborhood_id=${motoboyNeighborhoodId}`);
+      const data = await res.json() as { slots?: Array<{ start?: string; end?: string; label?: string } | string> };
+      const slots = (data.slots ?? []).flatMap((slot) => {
+        if (typeof slot === "string") {
+          return slot ? [{ start: slot, end: slot, label: slot }] : [];
+        }
+        const start = String(slot.start || "").trim();
+        if (!start) return [];
+        const end = String(slot.end || "").trim();
+        const label = String(slot.label || "").trim() || (end ? `Entrega das ${start} às ${end}` : start);
+        return [{ start, end, label }];
+      });
+      setMotoboyAvailableSlots(slots);
+    } catch {
+      setMotoboyAvailableSlots([]);
+    } finally {
+      setMotoboySlotLoading(false);
+    }
+  }, [motoboyNeighborhoodId]);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [queuePreview, setQueuePreview] = useState<{ availableSlots: number; deadlineHours: number } | null>(null);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
@@ -2375,82 +2396,44 @@ export default function Checkout() {
                   </div>
                 )}
 
-                {/* Motoboy scheduling calendar */}
+                {/* Motoboy scheduling days */}
                 {selectedShippingId?.startsWith("motoboy_") && motoboyNeighborhoodId && (
-                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-4">
+                  <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-4">
                     <div>
-                      <p className="font-semibold text-sm text-orange-900 flex items-center gap-2">
-                        <span>🗓️</span> Quando você pode receber
+                      <p className="font-semibold text-sm text-emerald-950 flex items-center gap-2">
+                        <Calendar className="w-4 h-4" /> Quando você pode receber
                       </p>
-                      <p className="text-xs text-orange-800 mt-1 leading-relaxed">
+                      <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
                         Não tem horário marcado. Escolha o período em que vai ter alguém em casa — o motoboy entrega dentro desse intervalo.
                       </p>
                     </div>
 
-                    {/* Date picker */}
                     <div>
-                      <label className="block text-xs font-medium text-orange-800 mb-1">Escolha a data</label>
-                      <input
-                        type="date"
-                        min={(() => {
-                          const d = new Date();
-                          if (d.getHours() >= 18) d.setDate(d.getDate() + 1);
-                          // Skip Sunday (0)
-                          if (d.getDay() === 0) d.setDate(d.getDate() + 1);
-                          return toLocalYmd(d);
-                        })()}
-                        max={(() => {
-                          const d = new Date();
-                          d.setDate(d.getDate() + 14);
-                          return toLocalYmd(d);
-                        })()}
-                        value={motoboySlotDate}
-                        onChange={async (e) => {
-                          let date = e.target.value;
-                          if (date) {
-                            const d = new Date(date + "T12:00:00");
-                            // Auto-advance Sunday to Monday
-                            if (d.getDay() === 0) {
-                              d.setDate(d.getDate() + 1);
-                              date = toLocalYmd(d);
-                            }
-                          }
-                          setMotoboySlotDate(date);
-                          setMotoboySlotTime("");
-                          setMotoboySlotLabel("");
-                          setMotoboyAvailableSlots([]);
-                          if (!date || !motoboyNeighborhoodId) return;
-                          setMotoboySlotLoading(true);
-                          try {
-                            const res = await fetch(`${BASE}/api/motoboy-slots/available?date=${date}&neighborhood_id=${motoboyNeighborhoodId}`);
-                            const data = await res.json() as { slots?: Array<{ start?: string; end?: string; label?: string } | string> };
-                            const slots = (data.slots ?? []).flatMap((slot) => {
-                              if (typeof slot === "string") {
-                                return slot ? [{ start: slot, end: slot, label: slot }] : [];
-                              }
-                              const start = String(slot.start || "").trim();
-                              if (!start) return [];
-                              const end = String(slot.end || "").trim();
-                              const label = String(slot.label || "").trim() || (end ? `Entrega das ${start} às ${end}` : start);
-                              return [{ start, end, label }];
-                            });
-                            setMotoboyAvailableSlots(slots);
-                          } catch { setMotoboyAvailableSlots([]); }
-                          finally { setMotoboySlotLoading(false); }
-                        }}
-                        className="w-full h-10 px-3 rounded-xl border-2 border-orange-200 outline-none focus:border-orange-400 text-sm bg-white"
-                      />
-                      {motoboySlotDate && new Date(motoboySlotDate + "T12:00:00").getDay() === 0 && (
-                        <p className="text-xs text-orange-700 mt-1">⚠️ Domingos sem entrega — data ajustada para segunda-feira.</p>
-                      )}
+                      <label className="block text-sm font-medium text-emerald-950 mb-2">Dia</label>
+                      <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-emerald-300 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-emerald-100">
+                        {motoboyDeliveryDays.map((day) => {
+                          const selected = motoboySlotDate === day.ymd;
+                          return (
+                            <button
+                              key={day.ymd}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => { void selectMotoboyDeliveryDay(day.ymd); }}
+                              className={`shrink-0 min-w-[4.5rem] rounded-xl border-2 px-2.5 py-2 text-center transition-all ${selected ? "border-emerald-800 bg-emerald-800 text-white" : "border-emerald-600/50 bg-white text-emerald-900 hover:border-emerald-700"}`}
+                            >
+                              <span className={`block text-[10px] font-semibold tracking-wide ${selected ? "text-emerald-100" : "text-emerald-700"}`}>{day.weekday}</span>
+                              <span className="block text-sm font-bold mt-0.5">{day.dayMonth}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    {/* Time slot picker */}
                     {motoboySlotDate && (
                       <div>
-                        <label className="block text-xs font-medium text-orange-800 mb-2">Período com alguém em casa</label>
+                        <label className="block text-sm font-medium text-emerald-950 mb-2">Período com alguém em casa</label>
                         {motoboySlotLoading ? (
-                          <div className="flex items-center gap-2 text-sm text-orange-700">
+                          <div className="flex items-center gap-2 text-sm text-emerald-800">
                             <Loader2 className="w-4 h-4 animate-spin" /> Carregando períodos...
                           </div>
                         ) : motoboyAvailableSlots.length === 0 ? (
@@ -2465,7 +2448,7 @@ export default function Checkout() {
                                   setMotoboySlotTime(slot.start);
                                   setMotoboySlotLabel(slot.label);
                                 }}
-                                className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 text-left transition-all ${motoboySlotTime === slot.start ? "border-orange-500 bg-orange-500 text-white" : "border-orange-200 bg-white text-orange-800 hover:border-orange-400"}`}
+                                className={`px-4 py-3 rounded-xl text-sm font-semibold border-2 text-left transition-all ${motoboySlotTime === slot.start ? "border-emerald-800 bg-emerald-800 text-white" : "border-emerald-300 bg-white text-emerald-900 hover:border-emerald-600"}`}
                               >
                                 {slot.label}
                               </button>
