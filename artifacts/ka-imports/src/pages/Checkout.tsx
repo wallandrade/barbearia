@@ -192,7 +192,8 @@ export default function Checkout() {
   // Motoboy scheduling
   const [motoboySlotDate, setMotoboySlotDate] = useState<string>("");
   const [motoboySlotTime, setMotoboySlotTime] = useState<string>("");
-  const [motoboyAvailableSlots, setMotoboyAvailableSlots] = useState<string[]>([]);
+  const [motoboySlotLabel, setMotoboySlotLabel] = useState<string>("");
+  const [motoboyAvailableSlots, setMotoboyAvailableSlots] = useState<Array<{ start: string; end: string; label: string }>>([]);
   const [motoboySlotLoading, setMotoboySlotLoading] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [queuePreview, setQueuePreview] = useState<{ availableSlots: number; deadlineHours: number } | null>(null);
@@ -509,7 +510,7 @@ export default function Checkout() {
   const requireMotoboySlot = () => {
     if (!selectedShippingId?.startsWith("motoboy_")) return true;
     if (!motoboySlotDate) { toast.error("Escolha uma data para a entrega por Motoboy."); return false; }
-    if (!motoboySlotTime) { toast.error("Escolha um horário para a entrega por Motoboy."); return false; }
+    if (!motoboySlotTime) { toast.error("Escolha um período para a entrega por Motoboy."); return false; }
     return true;
   };
 
@@ -519,7 +520,7 @@ export default function Checkout() {
   ): Promise<boolean> => {
     if (!selectedShippingId?.startsWith("motoboy_")) return true;
     if (!motoboySlotDate || !motoboySlotTime || !motoboyNeighborhoodId) {
-      toast.error("Escolha data e horário da entrega Motoboy.");
+      toast.error("Escolha data e período da entrega Motoboy.");
       return false;
     }
     try {
@@ -1586,7 +1587,7 @@ export default function Checkout() {
           `🏘️ *Bairro:* ${data.neighborhood}\n` +
           `📮 *CEP:* ${data.cep}\n` +
           (motoboySlotDate && motoboySlotTime
-            ? `🗓️ *Agendado:* ${new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} às ${motoboySlotTime}\n`
+            ? `🗓️ *Agendado:* ${new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — ${motoboySlotLabel || motoboySlotTime}\n`
             : "") +
           `\n📦 *Itens:*\n${motoboyItemsText}\n\n` +
           `💰 *Subtotal:* ${formatCurrency(subtotal)}\n` +
@@ -2411,13 +2412,24 @@ export default function Checkout() {
                           }
                           setMotoboySlotDate(date);
                           setMotoboySlotTime("");
+                          setMotoboySlotLabel("");
                           setMotoboyAvailableSlots([]);
                           if (!date || !motoboyNeighborhoodId) return;
                           setMotoboySlotLoading(true);
                           try {
                             const res = await fetch(`${BASE}/api/motoboy-slots/available?date=${date}&neighborhood_id=${motoboyNeighborhoodId}`);
-                            const data = await res.json() as { slots: string[] };
-                            setMotoboyAvailableSlots(data.slots ?? []);
+                            const data = await res.json() as { slots?: Array<{ start?: string; end?: string; label?: string } | string> };
+                            const slots = (data.slots ?? []).flatMap((slot) => {
+                              if (typeof slot === "string") {
+                                return slot ? [{ start: slot, end: slot, label: slot }] : [];
+                              }
+                              const start = String(slot.start || "").trim();
+                              if (!start) return [];
+                              const end = String(slot.end || "").trim();
+                              const label = String(slot.label || "").trim() || (end ? `Entrega das ${start} às ${end}` : start);
+                              return [{ start, end, label }];
+                            });
+                            setMotoboyAvailableSlots(slots);
                           } catch { setMotoboyAvailableSlots([]); }
                           finally { setMotoboySlotLoading(false); }
                         }}
@@ -2431,23 +2443,26 @@ export default function Checkout() {
                     {/* Time slot picker */}
                     {motoboySlotDate && (
                       <div>
-                        <label className="block text-xs font-medium text-orange-800 mb-2">Escolha o horário</label>
+                        <label className="block text-xs font-medium text-orange-800 mb-2">Escolha o período</label>
                         {motoboySlotLoading ? (
                           <div className="flex items-center gap-2 text-sm text-orange-700">
-                            <Loader2 className="w-4 h-4 animate-spin" /> Carregando horários...
+                            <Loader2 className="w-4 h-4 animate-spin" /> Carregando períodos...
                           </div>
                         ) : motoboyAvailableSlots.length === 0 ? (
-                          <p className="text-sm text-red-600">Nenhum horário disponível nesta data. Escolha outro dia.</p>
+                          <p className="text-sm text-red-600">Nenhum período disponível nesta data. Escolha outro dia.</p>
                         ) : (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-col gap-2">
                             {motoboyAvailableSlots.map((slot) => (
                               <button
-                                key={slot}
+                                key={slot.start}
                                 type="button"
-                                onClick={() => setMotoboySlotTime(slot)}
-                                className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${motoboySlotTime === slot ? "border-orange-500 bg-orange-500 text-white" : "border-orange-200 bg-white text-orange-800 hover:border-orange-400"}`}
+                                onClick={() => {
+                                  setMotoboySlotTime(slot.start);
+                                  setMotoboySlotLabel(slot.label);
+                                }}
+                                className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 text-left transition-all ${motoboySlotTime === slot.start ? "border-orange-500 bg-orange-500 text-white" : "border-orange-200 bg-white text-orange-800 hover:border-orange-400"}`}
                               >
-                                {slot}
+                                {slot.label}
                               </button>
                             ))}
                           </div>
@@ -2457,7 +2472,7 @@ export default function Checkout() {
 
                     {motoboySlotDate && motoboySlotTime && (
                       <p className="text-sm font-semibold text-green-700 flex items-center gap-1">
-                        ✅ Agendado para {new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} às {motoboySlotTime}
+                        ✅ Agendado para {new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — {motoboySlotLabel || motoboySlotTime}
                       </p>
                     )}
                   </div>

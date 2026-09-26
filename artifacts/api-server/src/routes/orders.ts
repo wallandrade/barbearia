@@ -1613,6 +1613,7 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
         reshipment: reshipmentByOrder.get(order.id) || null,
         motoboySlotDate: motoboyBooking?.slotDate ?? null,
         motoboySlotTime: motoboyBooking?.slotTime ?? null,
+        motoboySlotIntervalHours: motoboyBooking?.intervalHours ?? null,
       };
     });
 
@@ -2618,8 +2619,8 @@ async function enrichOrdersWithProductImages<T extends { products?: Array<{ id?:
   }));
 }
 
-async function loadMotoboyBookingMap(orderIds: string[]): Promise<Map<string, { slotDate: string; slotTime: string }>> {
-  const map = new Map<string, { slotDate: string; slotTime: string }>();
+async function loadMotoboyBookingMap(orderIds: string[]): Promise<Map<string, { slotDate: string; slotTime: string; intervalHours: number }>> {
+  const map = new Map<string, { slotDate: string; slotTime: string; intervalHours: number }>();
   const ids = Array.from(new Set(orderIds.map((id) => String(id || "").trim()).filter(Boolean)));
   if (ids.length === 0) return map;
 
@@ -2628,6 +2629,7 @@ async function loadMotoboyBookingMap(orderIds: string[]): Promise<Map<string, { 
       orderId: motoboyBookingsTable.orderId,
       slotDate: motoboyBookingsTable.slotDate,
       slotTime: motoboyBookingsTable.slotTime,
+      intervalHours: motoboyBookingsTable.intervalHours,
       isReleased: motoboyBookingsTable.isReleased,
       createdAt: motoboyBookingsTable.createdAt,
     })
@@ -2642,7 +2644,7 @@ async function loadMotoboyBookingMap(orderIds: string[]): Promise<Map<string, { 
   for (const row of rows) {
     const oid = String(row.orderId || "").trim();
     if (!oid || map.has(oid)) continue;
-    map.set(oid, { slotDate: row.slotDate, slotTime: row.slotTime });
+    map.set(oid, { slotDate: row.slotDate, slotTime: row.slotTime, intervalHours: row.intervalHours });
   }
   return map;
 }

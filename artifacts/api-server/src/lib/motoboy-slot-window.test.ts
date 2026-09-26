@@ -2,40 +2,44 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildMotoboyCandidateSlots,
+  findMotoboyPeriodByStart,
+  motoboyPeriodOffers,
   motoboySlotHoursSaveError,
-  parseMotoboySlotHours,
+  parseMotoboySlotPeriods,
 } from "./motoboy-slot-window";
 
-test("sem configuração usa 10:00–20:00", () => {
-  assert.deepEqual(parseMotoboySlotHours(undefined), { startHour: 10, lastHour: 20 });
-  assert.deepEqual(parseMotoboySlotHours(""), { startHour: 10, lastHour: 20 });
-  assert.deepEqual(parseMotoboySlotHours("não-json"), { startHour: 10, lastHour: 20 });
+test("sem configuração usa um período 10:00–20:00", () => {
+  assert.deepEqual(parseMotoboySlotPeriods(undefined), [{ startHour: 10, endHour: 20 }]);
+  assert.deepEqual(parseMotoboySlotPeriods(""), [{ startHour: 10, endHour: 20 }]);
 });
 
-test("aceita janela válida e rejeita invertida ou fora de 0–23", () => {
-  assert.deepEqual(parseMotoboySlotHours('{"startHour":9,"lastHour":21}'), { startHour: 9, lastHour: 21 });
-  assert.deepEqual(parseMotoboySlotHours('{"startHour":18,"lastHour":18}'), { startHour: 18, lastHour: 18 });
-  assert.deepEqual(parseMotoboySlotHours('{"startHour":22,"lastHour":8}'), { startHour: 10, lastHour: 20 });
-  assert.deepEqual(parseMotoboySlotHours('{"startHour":-1,"lastHour":20}'), { startHour: 10, lastHour: 20 });
-  assert.deepEqual(parseMotoboySlotHours('{"startHour":10.5,"lastHour":20}'), { startHour: 10, lastHour: 20 });
+test("janela antiga vira um período e a lista nova é aceita", () => {
+  assert.deepEqual(parseMotoboySlotPeriods('{"startHour":8,"lastHour":11}'), [{ startHour: 8, endHour: 11 }]);
+  assert.deepEqual(parseMotoboySlotPeriods('{"periods":[{"startHour":14,"endHour":17},{"startHour":8,"endHour":11}]}'), [
+    { startHour: 8, endHour: 11 },
+    { startHour: 14, endHour: 17 },
+  ]);
 });
 
-test("gravação exige primeiro horário <= último", () => {
-  assert.equal(motoboySlotHoursSaveError('{"startHour":8,"lastHour":19}'), null);
-  assert.match(motoboySlotHoursSaveError('{"startHour":19,"lastHour":8}') ?? "", /anterior/);
-  assert.match(motoboySlotHoursSaveError("[]") ?? "", /inválidos/i);
-});
-
-test("intervalos de 2h param no último horário que ainda cabe", () => {
-  assert.deepEqual(
-    buildMotoboyCandidateSlots(10, 20, 2),
-    ["10:00", "12:00", "14:00", "16:00", "18:00", "20:00"],
+test("gravação exige períodos válidos e sem cruzar", () => {
+  assert.equal(motoboySlotHoursSaveError('{"periods":[{"startHour":8,"endHour":11},{"startHour":14,"endHour":17}]}'), null);
+  assert.match(motoboySlotHoursSaveError('{"periods":[]}') ?? "", /pelo menos um/i);
+  assert.match(motoboySlotHoursSaveError('{"periods":[{"startHour":11,"endHour":8}]}') ?? "", /antes de terminar/);
+  assert.match(
+    motoboySlotHoursSaveError('{"periods":[{"startHour":8,"endHour":12},{"startHour":11,"endHour":14}]}') ?? "",
+    /cruzar/,
   );
-  assert.deepEqual(
-    buildMotoboyCandidateSlots(9, 21, 2),
-    ["09:00", "11:00", "13:00", "15:00", "17:00", "19:00", "21:00"],
-  );
-  assert.deepEqual(buildMotoboyCandidateSlots(10, 21, 2).at(-1), "20:00");
-  assert.deepEqual(buildMotoboyCandidateSlots(8, 12, 1), ["08:00", "09:00", "10:00", "11:00", "12:00"]);
+});
+
+test("checkout recebe o rótulo do período e a reserva acha pelo início", () => {
+  const periods = [
+    { startHour: 8, endHour: 11 },
+    { startHour: 18, endHour: 21 },
+  ];
+  assert.deepEqual(motoboyPeriodOffers(periods), [
+    { start: "08:00", end: "11:00", label: "Entrega das 08:00 às 11:00" },
+    { start: "18:00", end: "21:00", label: "Entrega das 18:00 às 21:00" },
+  ]);
+  assert.deepEqual(findMotoboyPeriodByStart(periods, "08:00"), { startHour: 8, endHour: 11 });
+  assert.equal(findMotoboyPeriodByStart(periods, "09:00"), null);
 });

@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 import { Button } from "@/components/ui/button";
 import {
-  DEFAULT_MOTOBOY_SLOT_LAST_HOUR,
-  DEFAULT_MOTOBOY_SLOT_START_HOUR,
   MOTOBOY_SLOT_HOURS_KEY,
-  parseMotoboySlotHours,
-  serializeMotoboySlotHours,
+  formatMotoboyHour,
+  motoboyPeriodsError,
+  parseMotoboySlotPeriods,
+  serializeMotoboySlotPeriods,
+  type MotoboyDeliveryPeriod,
 } from "@/lib/motoboy-slot-hours";
 
 type Props = {
@@ -16,36 +17,38 @@ type Props = {
   onSave: (key: string, value: string) => void | Promise<void>;
 };
 
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
+const START_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const END_HOURS = Array.from({ length: 24 }, (_, hour) => hour + 1);
 
-function labelHour(hour: number): string {
-  return `${String(hour).padStart(2, "0")}:00`;
+function nextPeriod(periods: MotoboyDeliveryPeriod[]): MotoboyDeliveryPeriod {
+  const last = periods[periods.length - 1];
+  const startHour = last ? Math.min(21, last.endHour) : 8;
+  const endHour = Math.min(24, startHour + 3);
+  if (endHour > startHour) return { startHour, endHour };
+  return { startHour: 21, endHour: 24 };
 }
 
 export function MotoboySlotHoursCard({ settings, loading, onSave }: Props) {
-  const saved = parseMotoboySlotHours(settings[MOTOBOY_SLOT_HOURS_KEY]);
-  const [startHour, setStartHour] = useState(saved.startHour);
-  const [lastHour, setLastHour] = useState(saved.lastHour);
+  const saved = parseMotoboySlotPeriods(settings[MOTOBOY_SLOT_HOURS_KEY]);
+  const [periods, setPeriods] = useState<MotoboyDeliveryPeriod[]>(saved);
   const [dirty, setDirty] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (dirty) return;
-    const next = parseMotoboySlotHours(settings[MOTOBOY_SLOT_HOURS_KEY]);
-    setStartHour(next.startHour);
-    setLastHour(next.lastHour);
+    setPeriods(parseMotoboySlotPeriods(settings[MOTOBOY_SLOT_HOURS_KEY]));
   }, [settings, dirty]);
 
   const saving = !!loading[MOTOBOY_SLOT_HOURS_KEY];
-  const invalid = startHour > lastHour;
+  const error = motoboyPeriodsError(periods);
+
+  const updatePeriod = (index: number, patch: Partial<MotoboyDeliveryPeriod>) => {
+    setPeriods((current) => current.map((period, i) => (i === index ? { ...period, ...patch } : period)));
+    setDirty(true);
+  };
 
   const save = async () => {
-    if (startHour > lastHour) {
-      setError("O primeiro horário precisa ser igual ou anterior ao último.");
-      return;
-    }
-    setError("");
-    await onSave(MOTOBOY_SLOT_HOURS_KEY, serializeMotoboySlotHours({ startHour, lastHour }));
+    if (error) return;
+    await onSave(MOTOBOY_SLOT_HOURS_KEY, serializeMotoboySlotPeriods(periods));
     setDirty(false);
   };
 
@@ -56,59 +59,79 @@ export function MotoboySlotHoursCard({ settings, loading, onSave }: Props) {
         Horários de entrega Motoboy
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
-        Primeiro e último horário que o checkout pode oferecer. Com Motoboy por km, o intervalo é de 2 horas a partir do primeiro.
-        Na faixa de CEP, o intervalo é o da faixa (1h ou 2h). O último botão é o maior horário que ainda cabe nesse intervalo.
+        Cada período aparece no checkout para o cliente escolher. Ex.: entrega das 08:00 às 11:00.
+        Um período já reservado naquele dia some da lista.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <div>
-          <label className="block text-xs font-medium mb-1" htmlFor="motoboy-slot-start">Primeiro horário</label>
-          <select
-            id="motoboy-slot-start"
-            value={startHour}
-            onChange={(e) => {
-              setStartHour(Number(e.target.value));
-              setDirty(true);
-              setError("");
-            }}
-            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm bg-white"
-          >
-            {HOUR_OPTIONS.map((hour) => (
-              <option key={hour} value={hour}>{labelHour(hour)}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium mb-1" htmlFor="motoboy-slot-last">Último horário</label>
-          <select
-            id="motoboy-slot-last"
-            value={lastHour}
-            onChange={(e) => {
-              setLastHour(Number(e.target.value));
-              setDirty(true);
-              setError("");
-            }}
-            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm bg-white"
-          >
-            {HOUR_OPTIONS.map((hour) => (
-              <option key={hour} value={hour}>{labelHour(hour)}</option>
-            ))}
-          </select>
-        </div>
+      <div className="space-y-3 mb-4">
+        {periods.map((period, index) => (
+          <div key={index} className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[140px] flex-1">
+              <label className="block text-xs font-medium mb-1" htmlFor={`motoboy-period-start-${index}`}>
+                Período de entrega das
+              </label>
+              <select
+                id={`motoboy-period-start-${index}`}
+                value={period.startHour}
+                onChange={(e) => updatePeriod(index, { startHour: Number(e.target.value) })}
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm bg-white"
+              >
+                {START_HOURS.map((hour) => (
+                  <option key={hour} value={hour}>{formatMotoboyHour(hour)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[140px] flex-1">
+              <label className="block text-xs font-medium mb-1" htmlFor={`motoboy-period-end-${index}`}>
+                às
+              </label>
+              <select
+                id={`motoboy-period-end-${index}`}
+                value={period.endHour}
+                onChange={(e) => updatePeriod(index, { endHour: Number(e.target.value) })}
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm bg-white"
+              >
+                {END_HOURS.map((hour) => (
+                  <option key={hour} value={hour}>{formatMotoboyHour(hour)}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPeriods((current) => current.filter((_, i) => i !== index));
+                setDirty(true);
+              }}
+              className="h-10 px-3 rounded-xl border border-border text-muted-foreground hover:text-destructive hover:border-destructive"
+              aria-label="Remover período"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
       </div>
 
-      <p className="text-[11px] text-muted-foreground mb-3">
-        Ex.: primeiro 10:00, último 21:00 e intervalo de 2h oferece até 20:00. Domingo continua sem entrega.
-        No dia de hoje, horário que já começou some. Depois das 18h o calendário só abre a partir de amanhã.
-        Sem valor salvo, permanece {labelHour(DEFAULT_MOTOBOY_SLOT_START_HOUR)}–{labelHour(DEFAULT_MOTOBOY_SLOT_LAST_HOUR)}.
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          setPeriods((current) => [...current, nextPeriod(current)]);
+          setDirty(true);
+        }}
+      >
+        <Plus className="w-4 h-4 mr-1" />
+        Adicionar outro período
+      </Button>
+
+      <p className="text-[11px] text-muted-foreground mt-3 mb-3">
+        Domingo continua sem entrega. No dia de hoje, o período some quando o horário final já passou.
+        Depois das 18h o calendário só abre a partir de amanhã. Sem valor salvo, fica um período das 10:00 às 20:00.
       </p>
-      {invalid && (
-        <p className="text-xs text-destructive mb-3">O primeiro horário precisa ser igual ou anterior ao último.</p>
-      )}
-      {error && !invalid && <p className="text-xs text-destructive mb-3">{error}</p>}
+      {error && <p className="text-xs text-destructive mb-3">{error}</p>}
 
       <div className="flex justify-end">
-        <Button type="button" size="sm" onClick={() => void save()} disabled={saving || invalid}>
+        <Button type="button" size="sm" onClick={() => void save()} disabled={saving || !!error}>
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar horários"}
         </Button>
       </div>

@@ -30,7 +30,7 @@ function isInventoryExitPasswordError(data: { error?: string; passwordRequired?:
   return /liberar a baixa/i.test(String(data.message || ""));
 }
 
-function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | null): string {
+function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | null, intervalHours?: number | null): string {
   const date = String(slotDate || "").trim();
   const time = String(slotTime || "").trim();
   if (!date || !time) return "horário não informado";
@@ -38,7 +38,12 @@ function formatMotoboySlotLabel(slotDate?: string | null, slotTime?: string | nu
   const dateLabel = Number.isFinite(parsed.getTime())
     ? parsed.toLocaleDateString("pt-BR")
     : date;
-  return `${dateLabel} às ${time}`;
+  const hours = Number(intervalHours);
+  const match = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match || !Number.isFinite(hours) || hours <= 0) return `${dateLabel} às ${time}`;
+  const endMinutes = Number(match[1]) * 60 + Number(match[2]) + hours * 60;
+  const end = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+  return `${dateLabel} das ${time} às ${end}`;
 }
 
 function orderEditCreditParts(order: object | null | undefined): { wallet: number; withheld: number } {
@@ -4541,6 +4546,7 @@ export default function Admin() {
         const slotLabel = formatMotoboySlotLabel(
           (order as { motoboySlotDate?: string | null }).motoboySlotDate,
           (order as { motoboySlotTime?: string | null }).motoboySlotTime,
+          (order as { motoboySlotIntervalHours?: number | null }).motoboySlotIntervalHours,
         );
         return [
           `📦 ENTREGA #${ref}`,

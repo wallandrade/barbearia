@@ -12,9 +12,11 @@ import { isMotoboySlotInPast, timeToMinutes } from "../lib/motoboy-slot-time";
 import { isMotoboyDistanceSlotId } from "../lib/motoboy-distance";
 import {
   MOTOBOY_SLOT_HOURS_KEY,
-  buildMotoboyCandidateSlots,
-  parseMotoboySlotHours,
-  type MotoboySlotHours,
+  findMotoboyPeriodByStart,
+  formatMotoboyHour,
+  motoboyPeriodOffers,
+  parseMotoboySlotPeriods,
+  type MotoboyDeliveryPeriod,
 } from "../lib/motoboy-slot-window";
 
 const router: IRouter = Router();
@@ -23,13 +25,13 @@ const RANGE_ID_PREFIX = "range_";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
-async function loadMotoboySlotHours(): Promise<MotoboySlotHours> {
+async function loadMotoboySlotPeriods(): Promise<MotoboyDeliveryPeriod[]> {
   const rows = await db
     .select({ value: siteSettingsTable.value })
     .from(siteSettingsTable)
     .where(eq(siteSettingsTable.key, MOTOBOY_SLOT_HOURS_KEY))
     .limit(1);
-  return parseMotoboySlotHours(rows[0]?.value);
+  return parseMotoboySlotPeriods(rows[0]?.value);
 }
 
 /** Returns true if [aStart, aStart+aInterval) overlaps [bStart, bStart+bInterval) */
@@ -91,8 +93,7 @@ router.get("/motoboy-slots/available", async (req, res) => {
       return;
     }
 
-    const window = await loadMotoboySlotHours();
-    const candidates = buildMotoboyCandidateSlots(window.startHour, window.lastHour, intervalHours);
+    const periods = await loadMotoboySlotPeriods();
 
     // Load all non-released bookings for this date
     const bookings = await db
@@ -103,12 +104,12 @@ router.get("/motoboy-slots/available", async (req, res) => {
         eq(motoboyBookingsTable.isReleased, false),
       ));
 
-    // Filter out slots that overlap with any booking or already passed (today, SP)
-    const available = candidates.filter((slot) => {
-      if (isMotoboySlotInPast(date, slot)) return false;
-      const slotMin = timeToMinutes(slot);
+    const available = motoboyPeriodOffers(periods).filter((slot) => {
+      if (isMotoboySlotInPast(date, slot.end)) return false;
+      const slotMin = timeToMinutes(slot.start);
+      const durationHours = Math.max(1, timeToMinutes(slot.end) / 60 - slotMin / 60);
       return !bookings.some((b) =>
-        overlaps(slotMin, intervalHours, timeToMinutes(b.slotTime), b.intervalHours)
+        overlaps(slotMin, durationHours, timeToMinutes(b.slotTime), b.intervalHours)
       );
     });
 
@@ -140,26 +141,28 @@ router.post("/motoboy-slots/book", async (req, res) => {
       return;
     }
 
-    if (isMotoboySlotInPast(slotDate, slotTime)) {
+    if (neighborhoodId) {
+      const resolved = await resolveIntervalHours(neighborhoodId);
+      if (resolved == null) {
+        res.status(404).json({ error: "NOT_FOUND", message: "Bairro, faixa de CEP ou cotação por km não encontrada." });
+        return;
+      }
+    }
+
+    const period = findMotoboyPeriodByStart(await loadMotoboySlotPeriods(), slotTime);
+    if (!period) {
       res.status(400).json({
-        error: "SLOT_IN_PAST",
-        message: "Este horário já passou. Escolha outro horário ou outra data.",
+        error: "SLOT_OUTSIDE_WINDOW",
+        message: "Este período não está na lista de entrega.",
       });
       return;
     }
 
-    let intervalHours = 1;
-    if (neighborhoodId) {
-      const resolved = await resolveIntervalHours(neighborhoodId);
-      if (resolved != null) intervalHours = resolved;
-    }
-
-    const window = await loadMotoboySlotHours();
-    const candidates = buildMotoboyCandidateSlots(window.startHour, window.lastHour, intervalHours);
-    if (!candidates.includes(slotTime)) {
+    const intervalHours = period.endHour - period.startHour;
+    if (isMotoboySlotInPast(slotDate, pad(period.endHour) + ":00")) {
       res.status(400).json({
-        error: "SLOT_OUTSIDE_WINDOW",
-        message: `Horário fora da janela de entrega (${pad(window.startHour)}:00–${pad(window.lastHour)}:00).`,
+        error: "SLOT_IN_PAST",
+        message: "Este período já encerrou. Escolha outro período ou outra data.",
       });
       return;
     }
@@ -179,7 +182,7 @@ router.post("/motoboy-slots/book", async (req, res) => {
     );
 
     if (conflict) {
-      res.status(409).json({ error: "SLOT_TAKEN", message: `Horário ${slotTime} não está mais disponível. Por favor, escolha outro horário.` });
+      res.status(409).json({ error: "SLOT_TAKEN", message: "Este período não está mais disponível. Escolha outro." });
       return;
     }
 
@@ -191,13 +194,15 @@ router.post("/motoboy-slots/book", async (req, res) => {
       neighborhoodName: neighborhoodName,
       city:             city ?? null,
       slotDate,
-      slotTime,
+      slotTime: formatMotoboyHour(period.startHour),
       intervalHours,
       isReleased: false,
       clientName: clientName ?? null,
     });
 
-    res.status(201).json({ booking: { id, slotDate, slotTime, intervalHours } });
+    res.status(201).json({
+      booking: { id, slotDate, slotTime: formatMotoboyHour(period.startHour), intervalHours },
+    });
   } catch (err) {
     console.error("[MotoboySlots] book error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao reservar horário." });
