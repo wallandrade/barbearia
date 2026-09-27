@@ -4373,6 +4373,21 @@ export default function Admin() {
     orders.filter((order) => isOnSendCard(order as SendCardOrder)),
   );
   const sendCardBadge = sendCardBadgeCount(sendCardOrders as SendCardOrder[]);
+  const copySendCardTxt = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (sendCardOrders.length === 0) {
+      toast.info("Nao ha pedidos para enviar.");
+      return;
+    }
+    const text = sendCardOrders.map((order, index) => supplierOrderBlock(order, index + 1)).join("\n\n");
+    try {
+      const mode = await copyText(text);
+      toast.success(mode === "manual" ? "Texto aberto para copia manual." : `Pedidos para enviar copiados (${sendCardOrders.length}).`);
+    } catch {
+      toast.error("Nao foi possivel copiar os pedidos.");
+    }
+  };
   const sendCardCatalog: SendCardCatalogProduct[] = products.map((product) => ({
     id: String(product.id),
     name: String(product.name || ""),
@@ -5118,9 +5133,18 @@ export default function Admin() {
               <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
                 <Truck className="w-4 h-4" /> Pedidos para Enviar
               </p>
-              <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
-                {sendCardBadge}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={copySendCardTxt}
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-900 bg-white border border-amber-300 px-2 py-0.5 rounded-full hover:bg-amber-100"
+                >
+                  <Copy className="w-3 h-3" /> Copiar TXT
+                </button>
+                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                  {sendCardBadge}
+                </span>
+              </div>
             </div>
             {sendCardOrders.length === 0 ? (
               <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
