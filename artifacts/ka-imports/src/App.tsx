@@ -14,6 +14,7 @@ import Home from "@/pages/Home";
 import CategoryPage from "@/pages/CategoryPage";
 import OffersPage from "@/pages/OffersPage";
 import SellerPage from "@/pages/SellerPage";
+import FreightLookup from "@/pages/FreightLookup";
 
 // ---------------------------------------------------------------------------
 // React Error Boundary — prevents blank white page on uncaught render errors
@@ -185,6 +186,7 @@ function Router() {
         <Route path="/ofertas"          component={OffersPage} />
         <Route path="/categoria/:categoryName" component={CategoryPage} />
         <Route path="/checkout"         component={Checkout} />
+        <Route path="/frete"            component={FreightLookup} />
         <Route path="/pix/:id"          component={PixPayment} />
         <Route path="/success"          component={Success} />
         <Route path="/admin/login"      component={AdminLogin} />

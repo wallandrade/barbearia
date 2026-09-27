@@ -78,6 +78,7 @@ export const RESERVED_ROOT_SEGMENTS = new Set([
   "grupo2",
   "minha-conta",
   "motoboy",
+  "frete",
 ]);
 
 export function getSellerSlugFromPath(path: string): string {

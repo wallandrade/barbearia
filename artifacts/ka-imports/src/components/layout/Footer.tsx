@@ -17,6 +17,7 @@ const RESERVED_FIRST_SEGMENTS = new Set([
   "kyc",
   "rifas",
   "produto",
+  "frete",
 ]);
 
 function getSellerSlugFromPathname(pathname: string): string | null {
