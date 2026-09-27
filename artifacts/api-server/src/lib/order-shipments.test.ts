@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isOpenShippingListOrder,
   isPackageExcludedFromShippingCopyList,
   isSplitOrderExcludedFromShippingCopyList,
   orderStillOccupiesShippingQueue,
@@ -83,6 +84,73 @@ test("cópia 48h no split só sai quando todos os pacotes têm etiqueta", () => 
     ]),
     true,
   );
+});
+
+test("pedido que falta enviar fica na lista mesmo fora da data", () => {
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    envioecomStatus: "Envio criado",
+  }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    envioecomStatus: "Aguardando postagem",
+  }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: true,
+    reshipmentStatus: "reenvio_pronto_para_envio",
+    envioecomStatus: "Etiqueta emitida",
+    envioecomLabelUrl: "https://x/a.pdf",
+  }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: true,
+    packages: [
+      { enviado: false, envioecomStatus: "Etiqueta emitida", envioecomLabelUrl: "https://x/a.pdf" },
+      { enviado: false, envioecomStatus: "Envio criado", envioecomLabelUrl: null },
+    ],
+  }), true);
+});
+
+test("etiqueta, enviado e cancelado saem da lista sem data", () => {
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    envioecomStatus: "Aguardando coleta",
+    envioecomLabelUrl: "https://x/a.pdf",
+  }), false);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    envioecomStatus: "Aguardando ser coletado",
+  }), false);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: true,
+  }), false);
+  assert.equal(isOpenShippingListOrder({
+    status: "cancelled",
+    enviado: false,
+  }), false);
+  assert.equal(isOpenShippingListOrder({
+    status: "awaiting_payment",
+    enviado: false,
+  }), false);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    reshipmentStatus: "reenvio_enviado",
+  }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: true,
+    packages: [
+      { enviado: false, envioecomStatus: "Aguardando coleta", envioecomLabelUrl: "https://x/a.pdf" },
+      { enviado: true, envioecomStatus: "Coletado", envioecomLabelUrl: "https://x/b.pdf" },
+    ],
+  }), false);
 });
 
 test("Aguardando coleta solta a vaga da fila do checkout sem marcar enviado", () => {

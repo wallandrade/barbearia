@@ -98,6 +98,94 @@ export function orderStillOccupiesShippingQueue(input: {
   return true;
 }
 
+const CLOSED_SEND_CARD_RESHIPMENT = new Set([
+  "reenvio_enviado",
+  "reenvio_resolvido_sem_entrada",
+  "reenvio_cancelado",
+]);
+
+/** Mesmas frases de `isSendCardLabelReadyStatus` no card do painel. Não é a cópia 48h. */
+const SEND_CARD_LABEL_PHRASES = [
+  "etiqueta emitida",
+  "etiqueta gerada",
+  "pronto para envio",
+  "processando envio",
+  "aguardando expedicao",
+  "aguardando coleta",
+  "dc-e emitida",
+  "dce emitida",
+  "coletado",
+  "em transito",
+  "postado",
+  "expedido",
+  "saiu para entrega",
+  "entregue",
+  "objeto entregue",
+];
+
+function normalizeSendCardPinText(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSendCardPinLabelStatus(status: string | null | undefined): boolean {
+  const text = normalizeSendCardPinText(String(status || ""));
+  if (!text) return false;
+  if (text.includes("cancelad") || text.includes("cancelamento") || text.includes("aguardando pagamento")) {
+    return false;
+  }
+  return SEND_CARD_LABEL_PHRASES.some((phrase) => text.includes(phrase));
+}
+
+function isSendCardPinPackageReady(pkg: {
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+} | null | undefined): boolean {
+  if (!pkg) return false;
+  if (pkg.enviado) return true;
+  if (String(pkg.envioecomLabelUrl || "").trim()) return true;
+  return isSendCardPinLabelStatus(pkg.envioecomStatus);
+}
+
+function isCancelledShippingOrderStatus(status: string | null | undefined): boolean {
+  const value = String(status || "").trim().toLowerCase();
+  return value === "cancelled" || value === "cancelado" || value === "canceled";
+}
+
+/**
+ * Quem o card Pedidos para Enviar mostra. Espelha `isOnSendCard`.
+ * Fora da cópia 48h: aguardando estoque fica, trackingLabelUrl não tira, Aguardando postagem fica.
+ */
+export function isOpenShippingListOrder(input: {
+  status?: string | null;
+  enviado?: boolean | null;
+  envioecomStatus?: string | null;
+  envioecomLabelUrl?: string | null;
+  reshipmentStatus?: string | null;
+  packages?: Array<{
+    enviado?: boolean | null;
+    envioecomStatus?: string | null;
+    envioecomLabelUrl?: string | null;
+  }>;
+}): boolean {
+  const reshipmentStatus = String(input.reshipmentStatus || "").trim().toLowerCase();
+  if (reshipmentStatus && !CLOSED_SEND_CARD_RESHIPMENT.has(reshipmentStatus)) return true;
+  if (isCancelledShippingOrderStatus(input.status)) return false;
+  const status = String(input.status || "").trim().toLowerCase();
+  if (status !== "paid" && status !== "completed") return false;
+
+  const packages = Array.isArray(input.packages) ? input.packages : [];
+  if (packages.length >= 2) return !packages.every(isSendCardPinPackageReady);
+  if (input.enviado) return false;
+  if (String(input.envioecomLabelUrl || "").trim()) return false;
+  return !isSendCardPinLabelStatus(input.envioecomStatus);
+}
+
 /** Split: sai da cópia 48h só quando TODOS os pacotes já têm etiqueta/postagem. */
 export function isSplitOrderExcludedFromShippingCopyList(
   packages: Array<{

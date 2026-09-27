@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-09-26
+> **Última atualização:** 2026-09-27
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -26,7 +26,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 ## Card Pedidos para Enviar (painel)
 
-Não usa a função da cópia. Lê o mesmo `orders` da aba Pedidos (`dateFrom`/`dateTo`, status, vendedor, método, grupo). O pin desse GET já traz reenvio `reenvio_aguardando_estoque` ou `reenvio_pronto_para_envio` fora do período.
+Não usa a função da cópia. Lê o mesmo `orders` da aba Pedidos (`dateFrom`/`dateTo`, status, vendedor, método, grupo). O pin desse GET (`pinReshipments` ligado, padrão) traz, fora do período, o reenvio aberto e também quem `isOnSendCard` ainda mostra (`isOpenShippingListOrder`). A Visão Geral pede `pinReshipments=0` e segue só o período.
 
 Entra se está `paid`/`completed`, sem `enviado` e sem etiqueta pronta da tela, **ou** se o reenvio está aberto (`reshipment.id` e status fora de `reenvio_enviado`, `reenvio_resolvido_sem_entrada`, `reenvio_cancelado`). Reenvio aberto fica mesmo enviado ou cancelado. `aguardando_estoque` não tira do card. Motoboy com PIX pendente não entra. Etiqueta da tela: `enviado`, `envioecomLabelUrl` ou status sem acento contendo etiqueta emitida/gerada, pronto para envio, processando envio, aguardando expedicao, aguardando coleta, dc-e/dce emitida, coletado, em transito, postado, expedido, saiu para entrega, entregue, objeto entregue. "Aguardando ser coletado" contém `coletado` e sai. "Aguardando postagem" fica. `trackingLabelUrl` não conta. Dividido (2+ pacotes) só sai quando todos estão prontos.
 
@@ -38,6 +38,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-09-27 | Card Pedidos para Enviar ignora o De/até | Quem o card ainda mostra permanece na lista em qualquer data | Visão Geral (`pinReshipments=0`) segue o período. Cópia 48h igual. Motoboy com PIX pendente continua fora do card |
 | 2026-09-26 | Lupa na foto do painel (enviar e mais vendidos) | Ícone no canto; mouse mostra 128 px ao lado, fora da rolagem; clique continua no zoom grande | Fila, selo, zoom da aba Pedidos e cópia 48h iguais |
 | 2026-09-26 | Foto do painel (enviar e mais vendidos) abre o zoom do pedido | Clique amplia; no card de enviar não troca de aba. Sem foto, o quadrado não abre | Fila, selo e cópia 48h iguais |
 | 2026-09-26 | Card **Pedidos para Enviar**: foto do dividido parcial só do pacote que falta | Envio parcial deixa de mostrar o produto já enviado | Cópia 48h igual. Pedido sem divisão continua com todas as fotos |

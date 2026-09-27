@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, motoboyBookingsTable, customerUsersTable } from "@workspace/db";
+import { db, pool, ordersTable, customChargesTable, productsTable, siteSettingsTable, reshipmentsTable, couponsTable, motoboyBookingsTable, customerUsersTable, orderShipmentsTable, type OrderShipment } from "@workspace/db";
 import { allocateShippingSlot, releaseShippingSlot, reallocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
-import { desc, and, gte, lte, eq, inArray, ne, sql } from "drizzle-orm";
+import { desc, and, gte, lte, eq, inArray, ne, sql, not, type SQL } from "drizzle-orm";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth, verifyCurrentAdminPassword } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -48,6 +48,7 @@ import {
   saveOrderShipmentAllocation,
   updateOrderShipment,
 } from "../lib/order-shipments";
+import { isOpenShippingListOrder } from "../lib/order-shipments-logic";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { listEnvioEcomAccountsPublic, resolveEnvioEcomInventoryPool } from "../lib/envioecom-accounts";
 import {
@@ -1476,6 +1477,113 @@ router.get("/orders/guest/:id", async (req, res) => {
   }
 });
 
+const PINNED_SHIPPING_ID_CHUNK = 400;
+const CLOSED_RESHIPMENT_FOR_PIN = new Set(["reenvio_enviado", "reenvio_resolvido_sem_entrada", "reenvio_cancelado"]);
+
+async function loadReshipmentStatusByOrderIds(orderIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (orderIds.length === 0) return map;
+  for (let i = 0; i < orderIds.length; i += PINNED_SHIPPING_ID_CHUNK) {
+    const rows = await db
+      .select({ orderId: reshipmentsTable.orderId, status: reshipmentsTable.status })
+      .from(reshipmentsTable)
+      .where(inArray(reshipmentsTable.orderId, orderIds.slice(i, i + PINNED_SHIPPING_ID_CHUNK)));
+    for (const row of rows) {
+      const prev = map.get(row.orderId);
+      if (!prev || CLOSED_RESHIPMENT_FOR_PIN.has(prev)) map.set(row.orderId, row.status);
+    }
+  }
+  return map;
+}
+
+async function loadShipmentsForPin(orderIds: string[]) {
+  const map = new Map<string, OrderShipment[]>();
+  for (let i = 0; i < orderIds.length; i += PINNED_SHIPPING_ID_CHUNK) {
+    const part = await listOrderShipmentsByOrderIds(orderIds.slice(i, i + PINNED_SHIPPING_ID_CHUNK));
+    for (const [id, rows] of part) map.set(id, rows);
+  }
+  return map;
+}
+
+/** Pedidos que ainda faltam enviar, ignorando createdAt. Outros filtros (status, vendedor) continuam. */
+async function loadPinnedUnshippedOrders(
+  nonDateConditions: SQL[],
+  dateConditions: SQL[],
+  alreadyIncludedIds: Set<string>,
+) {
+  const dateWindow = dateConditions.length > 0 ? and(...dateConditions) : undefined;
+  const scopeParts: SQL[] = [
+    sql`lower(${ordersTable.status}) not in ('cancelled', 'cancelado', 'canceled')`,
+    inArray(ordersTable.status, ["paid", "completed"]),
+  ];
+  scopeParts.push(...nonDateConditions);
+  if (dateWindow) scopeParts.push(not(dateWindow));
+  const scope = and(...scopeParts);
+  if (!scope) return [];
+
+  const directRows = await db
+    .select()
+    .from(ordersTable)
+    .where(and(scope, eq(ordersTable.enviado, false)))
+    .orderBy(desc(ordersTable.createdAt));
+
+  const directIds = directRows.map((row) => row.id).filter((id) => !alreadyIncludedIds.has(id));
+  const shipmentMap = await loadShipmentsForPin(directIds);
+  const reshipmentStatus = await loadReshipmentStatusByOrderIds(directIds);
+
+  const pinned = directRows.filter((row) => {
+    if (alreadyIncludedIds.has(row.id)) return false;
+    const packages = shipmentMap.get(row.id) || [];
+    return isOpenShippingListOrder({
+      status: row.status,
+      enviado: row.enviado,
+      envioecomStatus: row.envioecomStatus,
+      envioecomLabelUrl: row.envioecomLabelUrl,
+      reshipmentStatus: reshipmentStatus.get(row.id) || null,
+      packages: packages.length > 0 ? packages : undefined,
+    });
+  });
+
+  const seen = new Set([...alreadyIncludedIds, ...directRows.map((row) => row.id)]);
+  const openPackageRows = await db
+    .select({ orderId: orderShipmentsTable.orderId })
+    .from(orderShipmentsTable)
+    .where(and(
+      eq(orderShipmentsTable.enviado, false),
+      sql`trim(coalesce(${orderShipmentsTable.envioecomLabelUrl}, '')) = ''`,
+    ));
+  const splitCandidateIds = Array.from(new Set(openPackageRows.map((row) => row.orderId))).filter((id) => !seen.has(id));
+  if (splitCandidateIds.length === 0) return pinned;
+
+  const splitOrders: typeof directRows = [];
+  for (let i = 0; i < splitCandidateIds.length; i += PINNED_SHIPPING_ID_CHUNK) {
+    const slice = splitCandidateIds.slice(i, i + PINNED_SHIPPING_ID_CHUNK);
+    const rows = await db
+      .select()
+      .from(ordersTable)
+      .where(and(scope, eq(ordersTable.enviado, true), inArray(ordersTable.id, slice)));
+    splitOrders.push(...rows);
+  }
+
+  const splitIds = splitOrders.map((row) => row.id);
+  const splitShipments = await loadShipmentsForPin(splitIds);
+  const splitReshipment = await loadReshipmentStatusByOrderIds(splitIds);
+  const splitPinned = splitOrders.filter((row) => {
+    const packages = splitShipments.get(row.id) || [];
+    if (packages.length < 2) return false;
+    return isOpenShippingListOrder({
+      status: row.status,
+      enviado: row.enviado,
+      envioecomStatus: row.envioecomStatus,
+      envioecomLabelUrl: row.envioecomLabelUrl,
+      reshipmentStatus: splitReshipment.get(row.id) || null,
+      packages,
+    });
+  });
+
+  return [...pinned, ...splitPinned];
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/admin/orders  (protected)
 // ---------------------------------------------------------------------------
@@ -1525,16 +1633,18 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(ordersTable.createdAt));
 
-    // Keep active reshipments visible in Orders even if the order is outside the current date range.
+    // Reenvio ativo e pedido que ainda falta enviar ficam na lista mesmo fora do intervalo de data.
     let orders = baseOrders;
     if (shouldPinReshipments && dateConditions.length > 0) {
+      const seenIds = new Set<string>(baseOrders.map((o) => String(o.id)));
+      const extras: typeof baseOrders = [];
+
       const activeReshipments = await db
         .select({ orderId: reshipmentsTable.orderId })
         .from(reshipmentsTable)
         .where(inArray(reshipmentsTable.status, ["reenvio_aguardando_estoque", "reenvio_pronto_para_envio"]));
 
-      const baseOrderIds = new Set(baseOrders.map((o) => o.id));
-      const activeOrderIds = Array.from(new Set(activeReshipments.map((r) => r.orderId))).filter((id) => !baseOrderIds.has(id));
+      const activeOrderIds = Array.from(new Set(activeReshipments.map((r) => r.orderId))).filter((id) => !seenIds.has(id));
 
       if (activeOrderIds.length > 0) {
         const extraWhere = nonDateConditions.length > 0
@@ -1547,8 +1657,21 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
           .where(extraWhere)
           .orderBy(desc(ordersTable.createdAt));
 
-        orders = [...baseOrders, ...extraOrders];
+        for (const row of extraOrders) {
+          if (seenIds.has(row.id)) continue;
+          seenIds.add(row.id);
+          extras.push(row);
+        }
       }
+
+      const pinnedUnshipped = await loadPinnedUnshippedOrders(nonDateConditions, dateConditions, seenIds);
+      for (const row of pinnedUnshipped) {
+        if (seenIds.has(row.id)) continue;
+        seenIds.add(row.id);
+        extras.push(row);
+      }
+
+      if (extras.length > 0) orders = [...baseOrders, ...extras];
     }
 
     const reshipmentByOrder = await getReshipmentByOrderIds(orders.map((o) => o.id));
