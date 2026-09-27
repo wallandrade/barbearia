@@ -2378,7 +2378,11 @@ export default function Checkout() {
                   </div>
                 ) : (
                   <div className={`grid grid-cols-1 ${shippingOptions.length > 1 ? "sm:grid-cols-2" : ""} gap-4`}>
-                    {shippingOptions.map((opt) => (
+                    {shippingOptions.map((opt) => {
+                      const prazoLabel = !opt.id.startsWith("motoboy_") && carrierEstimate
+                        ? `${carrierEstimate.deliveryTimeDays} dia(s) úteis · ${carrierEstimate.carrier}`
+                        : opt.description;
+                      return (
                       <div
                         key={opt.id}
                         onClick={() => {
@@ -2404,8 +2408,8 @@ export default function Checkout() {
                               </span>
                             )}
                           </p>
-                          {opt.description && (
-                            <p className="text-sm text-muted-foreground mt-1">{opt.description}</p>
+                          {prazoLabel && (
+                            <p className="text-sm text-muted-foreground mt-1">{prazoLabel}</p>
                           )}
                           <p className="font-semibold text-primary mt-2">
                             {isFreeShippingEligible
@@ -2414,7 +2418,8 @@ export default function Checkout() {
                           </p>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -2436,12 +2441,6 @@ export default function Checkout() {
                     </p>
                     <p className="text-xs text-orange-700 mt-1">A vaga é confirmada após a aprovação do pagamento. O prazo de transporte começa depois da postagem.</p>
                   </div>
-                )}
-
-                {selectedShippingId && !selectedShippingId.startsWith("motoboy_") && carrierEstimate && (
-                  <p className="text-sm text-foreground mt-3">
-                    Entrega em {carrierEstimate.deliveryTimeDays} dia(s) · {carrierEstimate.carrier}
-                  </p>
                 )}
 
                 {/* Motoboy scheduling days */}
