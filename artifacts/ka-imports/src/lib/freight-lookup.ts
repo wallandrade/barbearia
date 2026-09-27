@@ -1,8 +1,21 @@
+import { coverageToShippingOption, type MotoboyCoverageResult } from "./motoboy-coverage";
+
 export type FreightOptionInput = {
   id: string;
   name: string;
   price: string | number;
 };
+
+export type FreightMotoboyCard = {
+  id: string;
+  name: string;
+  detail: string;
+  price: number;
+  byDistance: boolean;
+};
+
+export const MOTOBOY_CONSULT_HINT =
+  "Motoboy acima de 200 km neste CEP — consulte pessoalmente. O frete padrão da loja continua disponível.";
 
 export type FreightDeadline =
   | { kind: "loading" }
@@ -39,6 +52,25 @@ export function freightDeadlineFromResponse(
   const days = Number(body?.deliveryTimeDays);
   if (!Number.isFinite(days) || days < 1) return { kind: "unavailable" };
   return { kind: "days", days: Math.floor(days) };
+}
+
+export function motoboyCardFromCoverage(
+  coverage: MotoboyCoverageResult,
+  neighborhoodFallback: string,
+): { card: FreightMotoboyCard | null; consult: boolean } {
+  if (coverage.consult) return { card: null, consult: true };
+  if (!coverage.match) return { card: null, consult: false };
+  const option = coverageToShippingOption(coverage.match, neighborhoodFallback);
+  return {
+    consult: false,
+    card: {
+      id: option.id,
+      name: option.name,
+      detail: option.description ?? "",
+      price: option.price,
+      byDistance: option.id === "motoboy_dist",
+    },
+  };
 }
 
 export function freightDeadlineLabel(deadline: FreightDeadline): string {

@@ -37,13 +37,15 @@ export function coverageToShippingOption(
 
 export async function fetchMotoboyCoverage(
   base: string,
-  input: { cep: string; bairro?: string; cidade?: string },
+  input: { cep: string; bairro?: string; cidade?: string; signal?: AbortSignal },
 ): Promise<MotoboyCoverageResult> {
   const params = new URLSearchParams();
   params.set("cep", input.cep);
   if (input.bairro) params.set("bairro", input.bairro);
   if (input.cidade) params.set("cidade", input.cidade);
-  const res = await fetch(`${base}/api/motoboy-coverage/lookup?${params.toString()}`);
+  const res = await fetch(`${base}/api/motoboy-coverage/lookup?${params.toString()}`, {
+    signal: input.signal,
+  });
   if (!res.ok) return { match: null, consult: false };
   const data = await res.json() as MotoboyCoverageResult;
   return {

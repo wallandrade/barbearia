@@ -7,10 +7,14 @@ import {
   freightCepDigits,
   freightDeadlineFromResponse,
   freightDeadlineLabel,
+  MOTOBOY_CONSULT_HINT,
+  motoboyCardFromCoverage,
   standardFreightOptions,
   type FreightDeadline,
+  type FreightMotoboyCard,
   type FreightOptionInput,
 } from "@/lib/freight-lookup";
+import { fetchMotoboyCoverage } from "@/lib/motoboy-coverage";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -21,6 +25,9 @@ export default function FreightLookup() {
   const [options, setOptions] = useState<ListedOption[]>([]);
   const [optionsStatus, setOptionsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [deadline, setDeadline] = useState<FreightDeadline | null>(null);
+  const [motoboyCard, setMotoboyCard] = useState<FreightMotoboyCard | null>(null);
+  const [motoboyConsult, setMotoboyConsult] = useState(false);
+  const [motoboyLoading, setMotoboyLoading] = useState(false);
 
   const cep = freightCepDigits(cepDisplay);
   const showCards = cep.length === 8;
@@ -79,6 +86,53 @@ export default function FreightLookup() {
     };
   }, [cep]);
 
+  useEffect(() => {
+    if (cep.length !== 8) {
+      setMotoboyCard(null);
+      setMotoboyConsult(false);
+      setMotoboyLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setMotoboyLoading(true);
+    setMotoboyCard(null);
+    setMotoboyConsult(false);
+    (async () => {
+      try {
+        const via = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: controller.signal });
+        const data = await via.json() as { erro?: boolean; bairro?: string; localidade?: string };
+        if (cancelled) return;
+        if (!via.ok || data.erro) {
+          setMotoboyCard(null);
+          setMotoboyConsult(false);
+          return;
+        }
+        const coverage = await fetchMotoboyCoverage(BASE, {
+          cep,
+          bairro: data.bairro ?? "",
+          cidade: data.localidade ?? "",
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+        const result = motoboyCardFromCoverage(coverage, data.bairro ?? "");
+        setMotoboyCard(result.card);
+        setMotoboyConsult(result.consult);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setMotoboyCard(null);
+        setMotoboyConsult(false);
+      } finally {
+        if (!cancelled) setMotoboyLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [cep]);
+
   return (
     <AppLayout minimal>
       <div className="max-w-xl mx-auto px-4 py-12 w-full">
@@ -95,17 +149,22 @@ export default function FreightLookup() {
         <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50 space-y-6">
           <div className="w-full space-y-1.5">
             <label htmlFor="freight-cep" className="text-sm font-medium text-foreground ml-1">CEP</label>
-            <input
-              id="freight-cep"
-              type="text"
-              inputMode="numeric"
-              autoComplete="postal-code"
-              value={cepDisplay}
-              onChange={(event) => setCepDisplay(formatFreightCep(event.target.value))}
-              placeholder="00000-000"
-              maxLength={9}
-              className="flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200"
-            />
+            <div className="relative">
+              <input
+                id="freight-cep"
+                type="text"
+                inputMode="numeric"
+                autoComplete="postal-code"
+                value={cepDisplay}
+                onChange={(event) => setCepDisplay(formatFreightCep(event.target.value))}
+                placeholder="00000-000"
+                maxLength={9}
+                className="flex h-12 w-full rounded-xl border-2 border-border bg-white px-4 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/10 transition-all duration-200 pr-10"
+              />
+              {motoboyLoading && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
+              )}
+            </div>
           </div>
 
           {showCards && optionsStatus === "loading" && (
@@ -121,15 +180,15 @@ export default function FreightLookup() {
             </p>
           )}
 
-          {showCards && optionsStatus === "ready" && options.length === 0 && (
+          {showCards && optionsStatus === "ready" && options.length === 0 && !motoboyLoading && !motoboyCard && (
             <p className="py-4 text-muted-foreground text-sm text-center rounded-xl border-2 border-border">
               Nenhuma opção de frete disponível no momento.
             </p>
           )}
 
-          {showCards && optionsStatus === "ready" && options.length > 0 && visibleDeadline && (
+          {showCards && ((optionsStatus === "ready" && options.length > 0 && visibleDeadline) || motoboyCard) && (
             <div className="grid grid-cols-1 gap-4">
-              {options.map((option) => (
+              {optionsStatus === "ready" && visibleDeadline && options.map((option) => (
                 <div
                   key={option.id}
                   className="p-4 rounded-xl border-2 border-border flex items-start gap-4"
@@ -144,7 +203,32 @@ export default function FreightLookup() {
                   </div>
                 </div>
               ))}
+              {motoboyCard && (
+                <div className="p-4 rounded-xl border-2 border-border flex items-start gap-4">
+                  <span className="text-base leading-none mt-0.5">🏍️</span>
+                  <div>
+                    <p className="font-bold text-foreground flex items-center gap-2">
+                      {motoboyCard.name}
+                      <span className="text-xs font-normal px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full">
+                        {motoboyCard.byDistance ? "Por km" : "Seu bairro"}
+                      </span>
+                    </p>
+                    {motoboyCard.detail && (
+                      <p className="text-sm text-muted-foreground mt-1">{motoboyCard.detail}</p>
+                    )}
+                    <p className="font-semibold text-primary mt-2">
+                      {formatCurrency(motoboyCard.price)}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+
+          {showCards && motoboyConsult && (
+            <p className="text-xs text-amber-800">
+              {MOTOBOY_CONSULT_HINT}
+            </p>
           )}
         </div>
       </div>
