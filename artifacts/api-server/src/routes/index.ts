@@ -34,6 +34,7 @@ import motoboyProposalsRouter from "./motoboy-proposals";
 import motoboyCoverageSyncRouter from "./motoboy-coverage-sync";
 import inventorySyncRouter from "./inventory-sync";
 import shippingQueueRouter from "./shipping-queue";
+import shippingDeliveryEstimateRouter from "./shipping-delivery-estimate";
 
 import brevoRouter from "./brevo";
 import envioecomRouter from "./envioecom";
@@ -78,6 +79,7 @@ router.use(motoboyProposalsRouter);
 router.use(motoboyCoverageSyncRouter);
 router.use(inventorySyncRouter);
 router.use(shippingQueueRouter);
+router.use(shippingDeliveryEstimateRouter);
 router.use(brevoRouter);
 router.use(envioecomRouter);
 router.use(bankStatementRouter);

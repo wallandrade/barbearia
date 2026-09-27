@@ -10972,15 +10972,7 @@ function OrdersPanel({
     }
   };
 
-  const ENVIOECOM_CARRIER_OPTIONS = [
-    "Correios Sedex",
-    "Correios Pac",
-    "Correios Mini Envios",
-    "J&T Express envioEcom",
-    "Jadlog envioEcom",
-    "Ponto Loggi envioEcom",
-    "BUSLOG envioEcom",
-  ] as const;
+  const ENVIOECOM_CARRIER_OPTIONS = ENVIOECOM_CHECKOUT_CARRIER_OPTIONS;
 
   const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[], accountId?: string | null, packageId?: string | null) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
@@ -18315,6 +18307,38 @@ function ImageUploadCard({
   );
 }
 
+const ENVIOECOM_CHECKOUT_CARRIER_OPTIONS = [
+  "Correios Sedex",
+  "Correios Pac",
+  "Correios Mini Envios",
+  "J&T Express envioEcom",
+  "Jadlog envioEcom",
+  "Ponto Loggi envioEcom",
+  "BUSLOG envioEcom",
+] as const;
+
+const CHECKOUT_CARRIER_PRIORITY_KEY = "envioecom_checkout_carrier_priority";
+
+function parseCheckoutCarrierPrioritySetting(raw: string | undefined): string[] {
+  const allowed = new Map(ENVIOECOM_CHECKOUT_CARRIER_OPTIONS.map((carrier) => [carrier.toLowerCase(), carrier]));
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const item of parsed) {
+      const canonical = allowed.get(String(item ?? "").trim().toLowerCase());
+      if (!canonical || seen.has(canonical)) continue;
+      seen.add(canonical);
+      out.push(canonical);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
@@ -18344,6 +18368,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [siteName, setSiteName] = useState(settings["site_name"] ?? "");
   const [queueManualEnabled, setQueueManualEnabled] = useState(["1", "true", "on", "yes"].includes(String(settings["shipping_queue_manual_enabled"] ?? "0").trim().toLowerCase()));
   const [queueManualHours, setQueueManualHours] = useState(settings["shipping_queue_manual_hours"] ?? "");
+  const [carrierPriority, setCarrierPriority] = useState<string[]>(() => parseCheckoutCarrierPrioritySetting(settings[CHECKOUT_CARRIER_PRIORITY_KEY]));
   const [promoCountdownEnabled, setPromoCountdownEnabled] = useState(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
   const [promoCountdownDateTime, setPromoCountdownDateTime] = useState(settings["promo_countdown_datetime"] ?? "");
   const [promoCountdownText, setPromoCountdownText] = useState(settings["promo_countdown_text"] ?? "");
@@ -18373,6 +18398,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setSiteName(settings["site_name"] ?? "");
     setQueueManualEnabled(["1", "true", "on", "yes"].includes(String(settings["shipping_queue_manual_enabled"] ?? "0").trim().toLowerCase()));
     setQueueManualHours(settings["shipping_queue_manual_hours"] ?? "");
+    setCarrierPriority(parseCheckoutCarrierPrioritySetting(settings[CHECKOUT_CARRIER_PRIORITY_KEY]));
     setPromoCountdownEnabled(!["0", "false", "off", "no", "disabled"].includes(String(settings["promo_countdown_enabled"] ?? "0").toLowerCase()));
     setPromoCountdownDateTime(settings["promo_countdown_datetime"] ?? "");
     setPromoCountdownText(settings["promo_countdown_text"] ?? "");
@@ -18471,6 +18497,95 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <Save className="w-4 h-4" />}
             Salvar prazo
+          </Button>
+        </div>
+      </div>
+
+      <div className="max-w-3xl">
+        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+          <Truck className="w-5 h-5 text-primary" />
+          Prazo da transportadora no checkout
+        </h2>
+        <p className="text-muted-foreground text-sm mb-5">
+          A ordem é a prioridade. O checkout consulta o CEP na conta São Paulo e mostra o prazo da primeira que tiver cotação. Lista vazia desliga esse prazo. O preço do frete não muda.
+        </p>
+        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+          {carrierPriority.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma transportadora na fila. O checkout não mostra prazo de entrega.</p>
+          ) : (
+            <ol className="space-y-2">
+              {carrierPriority.map((carrier, index) => (
+                <li key={carrier} className="flex items-center gap-2 rounded-xl border border-border px-3 py-2">
+                  <span className="w-6 text-sm font-semibold text-muted-foreground">{index + 1}</span>
+                  <span className="flex-1 text-sm font-medium">{carrier}</span>
+                  <button
+                    type="button"
+                    aria-label={`Subir ${carrier}`}
+                    disabled={index === 0}
+                    onClick={() => {
+                      setCarrierPriority((prev) => {
+                        if (index === 0) return prev;
+                        const next = [...prev];
+                        const [item] = next.splice(index, 1);
+                        next.splice(index - 1, 0, item);
+                        return next;
+                      });
+                    }}
+                    className="p-1 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Descer ${carrier}`}
+                    disabled={index === carrierPriority.length - 1}
+                    onClick={() => {
+                      setCarrierPriority((prev) => {
+                        if (index >= prev.length - 1) return prev;
+                        const next = [...prev];
+                        const [item] = next.splice(index, 1);
+                        next.splice(index + 1, 0, item);
+                        return next;
+                      });
+                    }}
+                    className="p-1 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remover ${carrier}`}
+                    onClick={() => setCarrierPriority((prev) => prev.filter((item) => item !== carrier))}
+                    className="p-1 rounded-lg text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {ENVIOECOM_CHECKOUT_CARRIER_OPTIONS.filter((carrier) => !carrierPriority.includes(carrier)).map((carrier) => (
+              <button
+                key={carrier}
+                type="button"
+                onClick={() => setCarrierPriority((prev) => prev.includes(carrier) ? prev : [...prev, carrier])}
+                className="text-xs font-medium px-3 py-1.5 rounded-full border border-border hover:border-primary hover:text-primary"
+              >
+                + {carrier}
+              </button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            onClick={() => onSave(CHECKOUT_CARRIER_PRIORITY_KEY, JSON.stringify(carrierPriority))}
+            disabled={!!loading[CHECKOUT_CARRIER_PRIORITY_KEY]}
+            className="gap-2"
+          >
+            {loading[CHECKOUT_CARRIER_PRIORITY_KEY]
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Save className="w-4 h-4" />}
+            Salvar fila
           </Button>
         </div>
       </div>

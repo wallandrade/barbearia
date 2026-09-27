@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-26
+> **Última atualização:** 2026-09-27
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-27 | Checkout: `GET /api/shipping/delivery-estimate?cep=` cota a conta São Paulo e devolve só a 1ª transportadora da fila `envioecom_checkout_carrier_priority` que tiver `delivery_time` | Cliente vê “Entrega em X dia(s)” no frete padrão. Sem preço. Fila vazia não chama a API | Create/etiqueta do Admin, conta Minas e “Postagem em até X horas” iguais |
 | 2026-09-26 | Motoboy por km: CEP cruza BrasilAPI v2 com AwesomeAPI (`lib/motoboy-geocode.ts`) | Pinos que divergem mais de 2 km usam a AwesomeAPI. Ponto genérico da Sé sem CEP `010` não vira km | OSRM/Google na rota; ViaCEP no endereço; faixa de CEP no fallback |
 | 2026-09-26 | Etiqueta, sync e subida da API: reenvio aberto (`reenvio_aguardando_estoque` / `reenvio_pronto_para_envio`) vira `reenvio_enviado` se já há PDF e rastreio real (barcode não `EC…` ou tracking key). Split exige isso em todos os pacotes | Não chama a baixa do PATCH de reenvio e não marca `orders.enviado` | Cancelado, `reenvio_resolvido_sem_entrada` e a cópia 48h iguais |
 | 2026-09-22 | Job `envioecom-status-job`: a cada 2 min puxa status dos envios abertos (lote 8, 90 dias). Mudança de status/barcode/`enviado` dispara SSE `order_updated` | Card Admin sai de Processando envio sem o botão Sync (a lista já recarrega a cada 20s) | Entregue/cancelado não entram no lote. Processando envio **não** marca Enviado. Baixa de estoque continua no botão. Cadastro do webhook EE continua manual |
@@ -107,6 +108,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
 - Create: **`items` sempre 1 linha** das settings (`envioecom_shipment_item_name` default `Mercadoria`, `envioecom_shipment_item_qty` default 1, `envioecom_shipment_item_value` default R$5). Nunca nome/qty/preço do catálogo. Editável em Admin → Rastreios (`GET/PUT .../shipment-item-name` devolve/grava `name`, `quantity`, `declaredValue`). Cotação **não** usa esses settings (pacote 2×12×17, 0,3 kg, R$5). Envios já criados não mudam.
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)
+- **Prazo no checkout:** Configurações grava `envioecom_checkout_carrier_priority` (JSON ordenado; vazio = desligado). `GET /api/shipping/delivery-estimate?cep=` cota **uma vez** na conta São Paulo (`id=env`), pacote 2×12×17 / 0,3 kg / R$5, e `pickFirstCarrierQuote` fica com a primeira da fila que voltou com prazo ≥ 1 dia. Resposta só `carrier` + `deliveryTimeDays` (sem preço). Cache ~10 min por CEP+fila. Conta Minas não entra. Checkout mostra a linha só no frete padrão, depois do CEP; Motoboy esconde.
 - Cliente: card com Situação/EnvioEcom + eventos abertos (`status_history` da API → `envioecomStatusHistory`); soft-sync ao listar + poll ~2min + `GET /api/me/orders/:id/tracking` em `CustomerOrders.tsx`
 - Sync/soft-sync: `pickEffectiveShipmentStatus` — se `status` do envio ficar em Pronto/etiqueta mas o último `status_history` for Coletado/trânsito/entregue, grava o do histórico
 - Distância aproximada (pós-coleta): `geo-distance.ts` geocodifica último `location` do histórico (Nominatim) e cidade do cliente (BrasilAPI CEP v2 ou Nominatim); Haversine → `distanceKmFromCustomerCity` no payload de tracking; UI: “Está a cerca de X km da sua cidade” (não mostra em embalagem/entregue/sem local)

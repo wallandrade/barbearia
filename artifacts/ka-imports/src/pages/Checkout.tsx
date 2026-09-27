@@ -221,6 +221,7 @@ export default function Checkout() {
   }, [motoboyNeighborhoodId]);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [queuePreview, setQueuePreview] = useState<{ availableSlots: number; deadlineHours: number } | null>(null);
+  const [carrierEstimate, setCarrierEstimate] = useState<{ carrier: string; deliveryTimeDays: number } | null>(null);
   const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
   const [insurancePlan, setInsurancePlan] = useState<InsurancePlan>("none");
   const [insuranceEnabled, setInsuranceEnabled] = useState(true);
@@ -808,6 +809,44 @@ export default function Checkout() {
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const cep = cepDisplay.replace(/\D/g, "");
+    const standardShipping = Boolean(selectedShippingId && !selectedShippingId.startsWith("motoboy_"));
+    setCarrierEstimate(null);
+    if (cep.length !== 8 || !standardShipping) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetch(`${BASE}/api/shipping/delivery-estimate?cep=${cep}`, { signal: controller.signal })
+        .then(async (res) => {
+          if (cancelled) return;
+          if (!res.ok) {
+            setCarrierEstimate(null);
+            return;
+          }
+          const data = await res.json() as { carrier?: string | null; deliveryTimeDays?: number | null };
+          if (cancelled) return;
+          const days = Number(data.deliveryTimeDays);
+          const carrier = String(data.carrier || "").trim();
+          if (!carrier || !Number.isFinite(days) || days < 1) {
+            setCarrierEstimate(null);
+            return;
+          }
+          setCarrierEstimate({ carrier, deliveryTimeDays: Math.floor(days) });
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setCarrierEstimate(null);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [cepDisplay, selectedShippingId]);
 
   // Handle pending product added via seller checkout link (/{seller}?product={id})
   useEffect(() => {
@@ -2397,6 +2436,12 @@ export default function Checkout() {
                     </p>
                     <p className="text-xs text-orange-700 mt-1">A vaga é confirmada após a aprovação do pagamento. O prazo de transporte começa depois da postagem.</p>
                   </div>
+                )}
+
+                {selectedShippingId && !selectedShippingId.startsWith("motoboy_") && carrierEstimate && (
+                  <p className="text-sm text-foreground mt-3">
+                    Entrega em {carrierEstimate.deliveryTimeDays} dia(s) · {carrierEstimate.carrier}
+                  </p>
                 )}
 
                 {/* Motoboy scheduling days */}

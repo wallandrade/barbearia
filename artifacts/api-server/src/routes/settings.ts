@@ -4,6 +4,11 @@ import { eq } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadSiteSettingImageToR2 } from "../lib/r2";
 import {
+  CHECKOUT_CARRIER_PRIORITY_KEY,
+  checkoutCarrierPrioritySaveError,
+  parseCheckoutCarrierPriority,
+} from "../lib/checkout-carrier-priority";
+import {
   SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
   SHIPPING_QUEUE_MANUAL_HOURS_KEY,
 } from "../lib/shipping-queue-deadline";
@@ -60,6 +65,7 @@ const ALLOWED_KEYS = [
   "envioecom_shipment_item_value",
   SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
   SHIPPING_QUEUE_MANUAL_HOURS_KEY,
+  CHECKOUT_CARRIER_PRIORITY_KEY,
 ];
 
 const IMAGE_SETTING_KEYS = new Set([
@@ -138,6 +144,14 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
         }
         const normalized = Math.min(999, Math.max(1, Math.round(parsed)));
         storedValue = String(normalized);
+      }
+      if (key === CHECKOUT_CARRIER_PRIORITY_KEY) {
+        const message = checkoutCarrierPrioritySaveError(value);
+        if (message) {
+          res.status(400).json({ error: "INVALID_VALUE", message });
+          return;
+        }
+        storedValue = JSON.stringify(parseCheckoutCarrierPriority(value));
       }
       if (IMAGE_SETTING_KEYS.has(key) && value.startsWith("data:image/")) {
         if (isR2Configured()) {
