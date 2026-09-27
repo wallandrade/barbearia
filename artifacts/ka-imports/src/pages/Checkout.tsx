@@ -2380,7 +2380,7 @@ export default function Checkout() {
                   <div className={`grid grid-cols-1 ${shippingOptions.length > 1 ? "sm:grid-cols-2" : ""} gap-4`}>
                     {shippingOptions.map((opt) => {
                       const prazoLabel = !opt.id.startsWith("motoboy_") && carrierEstimate
-                        ? `${carrierEstimate.deliveryTimeDays} dia(s) úteis · ${carrierEstimate.carrier}`
+                        ? `${carrierEstimate.deliveryTimeDays} dia(s) úteis`
                         : opt.description;
                       return (
                       <div
