@@ -8,19 +8,69 @@ import {
   type RelatedShipmentsResponse,
 } from "@/lib/related-shipments-client";
 
-function ProductLine({ row }: { row: RelatedShipmentRow }) {
-  const shown = row.products.slice(0, 3);
-  const hidden = row.products.length - shown.length;
-  if (!shown.length) return null;
+function productThumbSrc(
+  product: RelatedShipmentRow["products"][number],
+  productImageById?: Record<string, string>,
+): string {
+  const fromShipment = String(product.image || "").trim();
+  if (fromShipment) return fromShipment;
+  const productId = String(product.productId || "").trim();
+  return productId ? String(productImageById?.[productId] || "").trim() : "";
+}
+
+function ProductLine({
+  row,
+  productImageById,
+  onPreviewImage,
+}: {
+  row: RelatedShipmentRow;
+  productImageById?: Record<string, string>;
+  onPreviewImage?: (src: string, name: string) => void;
+}) {
+  if (!row.products.length) return null;
   return (
-    <p className="text-[11px] text-muted-foreground">
-      {shown.map((product) => `${product.quantity}× ${product.productName}`).join(" · ")}
-      {hidden > 0 ? ` · +${hidden}` : ""}
-    </p>
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {row.products.map((product, index) => {
+        const imageSrc = productThumbSrc(product, productImageById);
+        return (
+          <div
+            key={`${product.productId || product.productName}-${index}`}
+            className="flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-white pr-2"
+          >
+            <button
+              type="button"
+              className={`h-8 w-8 shrink-0 overflow-hidden rounded-l-lg bg-white ${imageSrc ? "cursor-zoom-in" : "cursor-default"}`}
+              onClick={() => {
+                if (!imageSrc || !onPreviewImage) return;
+                onPreviewImage(imageSrc, product.productName);
+              }}
+              aria-label={imageSrc ? `Ver foto de ${product.productName}` : product.productName}
+            >
+              {imageSrc ? (
+                <img src={imageSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-[9px] leading-none text-slate-400">foto</span>
+              )}
+            </button>
+            <span className="block max-w-[180px] truncate py-0.5 text-[11px] font-medium text-foreground">
+              {product.quantity}× {product.productName}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-export function RelatedShipmentLines({ rows }: { rows: RelatedShipmentRow[] }) {
+export function RelatedShipmentLines({
+  rows,
+  productImageById,
+  onPreviewImage,
+}: {
+  rows: RelatedShipmentRow[];
+  productImageById?: Record<string, string>;
+  onPreviewImage?: (src: string, name: string) => void;
+}) {
   if (!rows.length) {
     return <p className="text-xs text-muted-foreground">Nenhum outro pedido pago deste CPF.</p>;
   }
@@ -50,7 +100,7 @@ export function RelatedShipmentLines({ rows }: { rows: RelatedShipmentRow[] }) {
               </span>
             )}
           </div>
-          <ProductLine row={row} />
+          <ProductLine row={row} productImageById={productImageById} onPreviewImage={onPreviewImage} />
         </li>
       ))}
     </ul>
@@ -60,9 +110,13 @@ export function RelatedShipmentLines({ rows }: { rows: RelatedShipmentRow[] }) {
 export function CpfRelatedShipmentsBlock({
   orderId,
   getAuthHeaders,
+  productImageById,
+  onPreviewImage,
 }: {
   orderId: string;
   getAuthHeaders: () => HeadersInit;
+  productImageById?: Record<string, string>;
+  onPreviewImage?: (src: string, name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -101,7 +155,13 @@ export function CpfRelatedShipmentsBlock({
             </p>
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
-          {data && <RelatedShipmentLines rows={data.shipments} />}
+          {data && (
+            <RelatedShipmentLines
+              rows={data.shipments}
+              productImageById={productImageById}
+              onPreviewImage={onPreviewImage}
+            />
+          )}
         </div>
       )}
     </div>
@@ -114,12 +174,16 @@ export function CpfQuoteWarningModal({
   result,
   onBack,
   onContinue,
+  productImageById,
+  onPreviewImage,
 }: {
   orderNumber: string;
   clientName: string;
   result: RelatedShipmentsResponse;
   onBack: () => void;
   onContinue: () => void;
+  productImageById?: Record<string, string>;
+  onPreviewImage?: (src: string, name: string) => void;
 }) {
   const sameProduct = result.warningLevel === "same_product";
   return (
@@ -137,7 +201,11 @@ export function CpfQuoteWarningModal({
           </p>
         </div>
         <div className="px-5 py-3 max-h-72 overflow-y-auto">
-          <RelatedShipmentLines rows={result.shipments} />
+          <RelatedShipmentLines
+            rows={result.shipments}
+            productImageById={productImageById}
+            onPreviewImage={onPreviewImage}
+          />
         </div>
         <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
           <button

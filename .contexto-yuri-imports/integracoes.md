@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-27
+> **Última atualização:** 2026-09-28
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-28 | `GET /api/admin/orders/:id/related-shipments` manda `products[].image` | Miniatura no alerta de CPF (URL do pedido ou do catálogo) | Create, webhook e etiqueta iguais. Base64 não vai na resposta |
 | 2026-09-27 | Página `/frete` chama `GET /api/motoboy-coverage/lookup` depois do ViaCEP | CEP coberto ganha card Motoboy com o preço da cobertura. `consult` (acima de 200 km) só avisa | Checkout, km e faixa de CEP iguais |
 | 2026-09-27 | Página `/frete` usa o mesmo `GET /api/shipping/delivery-estimate` | Mostra só `deliveryTimeDays` no card padrão, com o preço de `shipping_options`. HTTP 429 vira “Muitas consultas…” | Checkout, create e conta Minas iguais |
 | 2026-09-27 | Checkout: `GET /api/shipping/delivery-estimate?cep=` cota a conta São Paulo e devolve só a 1ª transportadora da fila `envioecom_checkout_carrier_priority` que tiver `delivery_time` | A descrição do card do frete padrão vira “X dia(s) úteis”, sem o nome da transportadora. Sem preço. Fila vazia não chama a API | Create/etiqueta do Admin, conta Minas e “Postagem em até X horas” iguais |

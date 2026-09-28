@@ -56,7 +56,9 @@ import {
   buildRelatedShipments,
   cpfForRelatedShipments,
   emptyRelatedShipments,
+  fillRelatedShipmentCatalogImages,
   normalizeStoredClientDocument,
+  relatedShipmentProductIdsMissingImage,
 } from "../lib/related-shipments";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
@@ -3208,7 +3210,7 @@ router.get("/admin/orders/:id/related-shipments", requireAdminAuth, async (req, 
       accountNameById = {};
     }
 
-    res.json(buildRelatedShipments({
+    const built = buildRelatedShipments({
       cpf,
       current: {
         id: order.id,
@@ -3229,7 +3231,19 @@ router.get("/admin/orders/:id/related-shipments", requireAdminAuth, async (req, 
         })),
       })),
       accountNameById,
-    }));
+    });
+    const missingImageIds = relatedShipmentProductIdsMissingImage(built);
+    let imageByProductId: Record<string, string | null> = {};
+    if (missingImageIds.length > 0) {
+      const catalog = await db
+        .select({ id: productsTable.id, image: productsTable.image })
+        .from(productsTable)
+        .where(inArray(productsTable.id, missingImageIds));
+      imageByProductId = Object.fromEntries(
+        catalog.map((row) => [row.id, row.image] as const),
+      );
+    }
+    res.json(fillRelatedShipmentCatalogImages(built, imageByProductId));
   } catch (err) {
     console.error("Related shipments error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar envios deste CPF." });

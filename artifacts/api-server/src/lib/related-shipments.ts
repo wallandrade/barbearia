@@ -1,5 +1,7 @@
 /** Histórico de envios do mesmo CPF antes de cotar. Não bloqueia create. */
 
+import { snapshotProductImage } from "./order-activity-format";
+
 export const RELATED_SHIPMENTS_RECENT_DAYS = 14;
 export const RELATED_SHIPMENTS_SCAN_LIMIT = 25;
 export const RELATED_SHIPMENTS_LIST_LIMIT = 8;
@@ -12,6 +14,7 @@ export type RelatedShipmentProduct = {
   productId: string;
   productName: string;
   quantity: number;
+  image: string | null;
 };
 
 export type RelatedShipmentRow = {
@@ -197,9 +200,53 @@ export function parseRelatedShipmentProducts(raw: unknown): RelatedShipmentProdu
       productId,
       productName: productName || "Produto",
       quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+      image: snapshotProductImage(row.image),
     });
   }
   return products;
+}
+
+function inheritOrderProductImages(
+  products: RelatedShipmentProduct[],
+  orderProducts: RelatedShipmentProduct[],
+): RelatedShipmentProduct[] {
+  const byId = new Map<string, string>();
+  for (const product of orderProducts) {
+    if (product.productId && product.image) byId.set(product.productId, product.image);
+  }
+  return products.map((product) => {
+    if (product.image || !product.productId) return product;
+    const image = byId.get(product.productId);
+    return image ? { ...product, image } : product;
+  });
+}
+
+export function relatedShipmentProductIdsMissingImage(result: RelatedShipmentsResult): string[] {
+  const ids = new Set<string>();
+  for (const row of result.shipments) {
+    for (const product of row.products) {
+      if (!product.image && product.productId) ids.add(product.productId);
+    }
+  }
+  return Array.from(ids);
+}
+
+/** Completa miniatura com a URL do catálogo. Base64 continua de fora. */
+export function fillRelatedShipmentCatalogImages(
+  result: RelatedShipmentsResult,
+  imageByProductId: Record<string, string | null | undefined>,
+): RelatedShipmentsResult {
+  return {
+    ...result,
+    shipments: result.shipments.map((row) => ({
+      ...row,
+      products: row.products.map((product) => {
+        if (product.image || !product.productId) return product;
+        const image = snapshotProductImage(imageByProductId[product.productId]);
+        return image ? { ...product, image } : product;
+      }),
+    })),
+  };
 }
 
 function productKeys(products: RelatedShipmentProduct[]): Set<string> {
@@ -301,7 +348,10 @@ export function buildRelatedShipments(input: {
         const real = hasRealEnvioEcomShipment(signals);
         if (!real && !signals.enviado) continue;
         const packageProducts = parseRelatedShipmentProducts(pkg.items);
-        pushRow(order, signals, packageProducts.length ? packageProducts : orderProducts, createdAt, false);
+        const products = packageProducts.length
+          ? inheritOrderProductImages(packageProducts, orderProducts)
+          : orderProducts;
+        pushRow(order, signals, products, createdAt, false);
         emitted += 1;
       }
       if (emitted === 0 && !isIgnoredRelatedShipmentStatus(orderSignals.status)) {

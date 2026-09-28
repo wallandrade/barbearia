@@ -5245,7 +5245,7 @@ export default function Admin() {
           <AnimatePresence>
             {dashboardImagePreview && (
               <motion.div
-                className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-[1px] p-4 sm:p-8 flex items-center justify-center"
+                className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-[1px] p-4 sm:p-8 flex items-center justify-center"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -13063,7 +13063,12 @@ function OrdersPanel({
                   {order.clientDocument && (
                     <>
                       <p className="text-xs text-muted-foreground mt-0.5">CPF: {order.clientDocument}</p>
-                      <CpfRelatedShipmentsBlock orderId={order.id} getAuthHeaders={authHeaders} />
+                      <CpfRelatedShipmentsBlock
+                        orderId={order.id}
+                        getAuthHeaders={authHeaders}
+                        productImageById={productImageById}
+                        onPreviewImage={(src, name) => setImagePreview({ src, name })}
+                      />
                     </>
                   )}
                   <p className="text-xs text-muted-foreground mt-0.5">IP compra: {normalizeIp((order as any).purchaseIp)}</p>
@@ -13892,7 +13897,7 @@ function OrdersPanel({
       <AnimatePresence>
         {imagePreview && (
           <motion.div
-            className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-[1px] p-4 sm:p-8 flex items-center justify-center"
+            className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-[1px] p-4 sm:p-8 flex items-center justify-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -14137,6 +14142,8 @@ function OrdersPanel({
             orderNumber={String(getOrderReference(cpfQuoteWarning.order))}
             clientName={String(cpfQuoteWarning.order.clientName || "")}
             result={cpfQuoteWarning.result}
+            productImageById={productImageById}
+            onPreviewImage={(src, name) => setImagePreview({ src, name })}
             onBack={() => setCpfQuoteWarning(null)}
             onContinue={() => {
               const pending = cpfQuoteWarning;

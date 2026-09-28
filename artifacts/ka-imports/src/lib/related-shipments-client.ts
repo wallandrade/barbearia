@@ -7,6 +7,7 @@ export type RelatedShipmentProduct = {
   productId: string;
   productName: string;
   quantity: number;
+  image?: string | null;
 };
 
 export type RelatedShipmentRow = {

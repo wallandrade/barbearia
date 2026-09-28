@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   buildRelatedShipments,
   cpfForRelatedShipments,
+  fillRelatedShipmentCatalogImages,
   normalizeStoredClientDocument,
+  relatedShipmentProductIdsMissingImage,
   type RelatedShipmentOrderSource,
 } from "./related-shipments";
 
@@ -237,6 +239,70 @@ test("aguardando coleta com rastreio alerta; nome sem id também coincide", () =
   );
   assert.equal(result.warningLevel, "same_product");
   assert.equal(result.shipments[0]?.hasEnvioEcom, true);
+});
+
+test("foto do pedido vai na lista; pacote herda a do pedido; catálogo completa o resto", () => {
+  const result = build([
+    order({
+      id: "photo",
+      createdAt: daysAgo(2),
+      enviado: true,
+      envioecomBarcode: "AM555555BR",
+      envioecomShipmentId: "55",
+      envioecomStatus: "Entregue",
+      envioecomStatusUpdatedAt: daysAgo(2),
+      products: [
+        { id: "sku-a", name: "JBL Tune", quantity: 1, image: "https://cdn.example/jbl.jpg" },
+        { id: "sku-b", name: "Outro", quantity: 1, image: "data:image/png;base64,aaaa" },
+      ],
+      packages: [
+        {
+          enviado: true,
+          items: [{ productId: "sku-a", productName: "JBL Tune", quantity: 1 }],
+          envioecomShipmentId: "55",
+          envioecomBarcode: "AM555555BR",
+          envioecomStatus: "Entregue",
+          envioecomStatusUpdatedAt: daysAgo(2),
+        },
+        {
+          enviado: true,
+          items: [{ id: "sku-c", name: "Sem foto", quantity: 1 }],
+          envioecomShipmentId: "56",
+          envioecomBarcode: "AM555556BR",
+          envioecomStatus: "Entregue",
+          envioecomStatusUpdatedAt: daysAgo(1),
+        },
+      ],
+    }),
+  ]);
+  const withPhoto = result.shipments.find((row) => row.products.some((product) => product.productId === "sku-a"));
+  assert.equal(withPhoto?.products[0]?.image, "https://cdn.example/jbl.jpg");
+  const missing = relatedShipmentProductIdsMissingImage(result);
+  assert.equal(missing.includes("sku-c"), true);
+  assert.equal(missing.includes("sku-a"), false);
+  const filled = fillRelatedShipmentCatalogImages(result, {
+    "sku-c": "https://cdn.example/sem.jpg",
+  });
+  const catalogRow = filled.shipments.find((row) => row.products.some((product) => product.productId === "sku-c"));
+  assert.equal(catalogRow?.products[0]?.image, "https://cdn.example/sem.jpg");
+
+  const base64 = build([
+    order({
+      id: "b64",
+      createdAt: daysAgo(2),
+      enviado: true,
+      envioecomBarcode: "AM444444BR",
+      envioecomShipmentId: "44",
+      envioecomStatus: "Entregue",
+      envioecomStatusUpdatedAt: daysAgo(2),
+      products: [{ id: "sku-b", name: "Outro", quantity: 1, image: "data:image/png;base64,aaaa" }],
+    }),
+  ]);
+  assert.equal(base64.shipments[0]?.products[0]?.image, null);
+  const stillEmpty = fillRelatedShipmentCatalogImages(base64, {
+    "sku-b": "data:image/png;base64,bbbb",
+  });
+  assert.equal(stillEmpty.shipments[0]?.products[0]?.image, null);
 });
 
 test("lista corta em 8 e as contagens usam a varredura inteira", () => {
