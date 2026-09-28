@@ -1887,6 +1887,8 @@ export default function Admin() {
   const sseUnauthorizedRef = useRef(false);
   const sseCookieMismatchNotifiedRef = useRef(false);
   const swRef  = useRef<ServiceWorkerRegistration | null>(null);
+  const pendingScrollOrderIdRef = useRef<string | null>(null);
+  const [scrollOrderNonce, setScrollOrderNonce] = useState(0);
 
   // -------------------- FIM DOS useState --------------------
 
@@ -1906,10 +1908,11 @@ export default function Admin() {
   }, [setLocation]);
 
   /** Abre pedido na aba Pedidos ampliando o filtro de data (API filtra por intervalo). */
-  const goToOrder = useCallback((orderId: string, orderCreatedAt?: string | null) => {
+  const goToOrder = useCallback((orderId: string, orderCreatedAt?: string | null, searchText?: string | null) => {
     const id = String(orderId || "").trim();
     if (!id) return;
-    setSeedSearch(id);
+    const search = String(searchText || "").trim();
+    setSeedSearch(search || id);
     setStatusFilter("all");
     setMethodFilter("all");
     const today = todayStr();
@@ -1924,6 +1927,8 @@ export default function Admin() {
     setTab("orders");
     setExpandedOrder(id);
     setPendingOrdersKindOrderId(id);
+    pendingScrollOrderIdRef.current = id;
+    setScrollOrderNonce((current) => current + 1);
   }, []);
 
   useEffect(() => {
@@ -1933,6 +1938,27 @@ export default function Admin() {
     setOrdersKind(adminOrdersKindForRow(found));
     setPendingOrdersKindOrderId(null);
   }, [pendingOrdersKindOrderId, orders]);
+
+  useEffect(() => {
+    const id = pendingScrollOrderIdRef.current;
+    if (!id || tab !== "orders") return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      const node = document.querySelector(`[data-admin-order-id="${CSS.escape(id)}"]`);
+      if (node instanceof HTMLElement) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        pendingScrollOrderIdRef.current = null;
+        window.clearInterval(timer);
+        return;
+      }
+      if (attempts >= 30) {
+        pendingScrollOrderIdRef.current = null;
+        window.clearInterval(timer);
+      }
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [tab, expandedOrder, orders, ordersKind, scrollOrderNonce]);
 
   const fetchFinancialSummary = React.useCallback(async () => {
     setFinancialSummaryLoading(true);
@@ -5158,7 +5184,12 @@ export default function Admin() {
                   return (
                     <div
                       key={o.id}
-                      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
+                      title="Abrir este pedido"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        goToOrder(o.id, o.createdAt, getOrderReference(o));
+                      }}
+                      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border cursor-pointer hover:brightness-[0.98] ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
                     >
                       <SendCardProductThumbs
                         items={sendCardThumbProducts(o)}
@@ -12870,7 +12901,7 @@ function OrdersPanel({
             return productId ? String(productImageById[productId] || "").trim() : "";
           };
           return (
-            <div key={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${cardRingClass}`}>
+            <div key={order.id} data-admin-order-id={order.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${isCard ? "border-purple-200" : "border-border/60"} ${cardRingClass}`}>
             {/* Shipping queue block — some se já marcado enviado OU etiqueta EE pronta */}
             {shippingQueueMap[order.id] && !isExcludedFromShippingCopyList({
               enviado: enviados[order.id] || reshipmentIsSent,
