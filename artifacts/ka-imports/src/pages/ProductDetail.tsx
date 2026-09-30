@@ -3,6 +3,7 @@ import { Link, useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { normalizeSelectedVariants, parseVariantGroups } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
@@ -13,16 +14,6 @@ type BulkDiscountTier = {
   maxQty: number | null;
   unitPrice: number;
   label?: string | null;
-};
-
-type ProductVariantGroup = {
-  name: string;
-  options: string[];
-};
-
-type SelectedVariant = {
-  groupName: string;
-  option: string;
 };
 
 function parseBulkDiscountTiers(raw: unknown): BulkDiscountTier[] {
@@ -52,22 +43,7 @@ function tierForQuantity(quantity: number, tiers: BulkDiscountTier[]): BulkDisco
   return tiers.find((tier) => quantity >= tier.minQty && (tier.maxQty == null || quantity <= tier.maxQty)) ?? null;
 }
 
-function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((group) => {
-      const item = group as Record<string, unknown>;
-      const name = String(item.name ?? "").trim();
-      const options = Array.isArray(item.options)
-        ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
-        : [];
-
-      if (!name || options.length === 0) return null;
-      return { name, options };
-    })
-    .filter((group): group is ProductVariantGroup => Boolean(group));
-}
+const PRODUCT_IMAGE_FALLBACK = "https://placehold.co/800x800/1a2b4a/ffffff?text=KA+Imports";
 
 export default function ProductDetail() {
   const [, paramsSeller] = useRoute("/:seller/produto/:id");
@@ -142,16 +118,17 @@ export default function ProductDetail() {
     setSelectedVariantMap({});
   }, [product?.id]);
 
-  const selectedVariants = useMemo<SelectedVariant[]>(
-    () => variantGroups
-      .map((group) => {
-        const option = String(selectedVariantMap[group.name] || "").trim();
-        if (!option) return null;
-        return { groupName: group.name, option };
-      })
-      .filter((item): item is SelectedVariant => Boolean(item)),
+  const selectedVariants = useMemo(
+    () => normalizeSelectedVariants(
+      variantGroups,
+      variantGroups.map((group) => ({
+        groupName: group.name,
+        option: selectedVariantMap[group.name] || "",
+      })),
+    ),
     [variantGroups, selectedVariantMap],
   );
+  const selectedVariantImage = selectedVariants.find((item) => item.image)?.image || null;
 
   const hasRequiredVariants = variantGroups.length === 0 || selectedVariants.length === variantGroups.length;
   const isSoldOut = product ? isProductUnavailable(product) : false;
@@ -183,7 +160,7 @@ export default function ProductDetail() {
           <div className="grid lg:grid-cols-2 gap-8 items-start">
             <div className="rounded-3xl border border-border/60 overflow-hidden bg-muted/20 shadow-sm">
               <img
-                src={product.image || "https://placehold.co/800x800/1a2b4a/ffffff?text=KA+Imports"}
+                src={selectedVariantImage || product.image || PRODUCT_IMAGE_FALLBACK}
                 alt={product.name}
                 className="w-full h-full object-cover aspect-square"
               />
@@ -219,17 +196,29 @@ export default function ProductDetail() {
                   <p className="text-sm font-semibold text-foreground">Escolha as variantes</p>
                   {variantGroups.map((group) => (
                     <div key={group.name}>
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{group.name}</label>
-                      <select
-                        value={selectedVariantMap[group.name] || ""}
-                        onChange={(event) => setSelectedVariantMap((prev) => ({ ...prev, [group.name]: event.target.value }))}
-                        className="w-full h-11 px-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm transition-colors"
-                      >
-                        <option value="">Selecione {group.name.toLowerCase()}...</option>
-                        {group.options.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">{group.name}</label>
+                      <div className="flex flex-wrap gap-2">
+                        {group.options.map((option) => {
+                          const selected = selectedVariantMap[group.name] === option.label;
+                          return (
+                            <button
+                              key={option.label}
+                              type="button"
+                              onClick={() => setSelectedVariantMap((prev) => ({ ...prev, [group.name]: option.label }))}
+                              className={`flex items-center gap-2 rounded-xl border-2 px-2 py-1.5 text-left text-sm transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-white hover:border-primary/40"}`}
+                            >
+                              <span className="w-10 h-10 rounded-lg overflow-hidden bg-muted shrink-0">
+                                <img
+                                  src={option.image || product.image || PRODUCT_IMAGE_FALLBACK}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              </span>
+                              <span className="font-medium pr-1">{option.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -245,7 +234,7 @@ export default function ProductDetail() {
                             {Array.from({ length: option.quantity }).map((_, index) => (
                               <div key={`${option.quantityLabel}-${index}`} className="w-8 h-8 rounded-full border border-white shadow-sm overflow-hidden bg-muted">
                                 <img
-                                  src={product.image || "https://placehold.co/120x120/1a2b4a/ffffff?text=KA"}
+                                  src={selectedVariantImage || product.image || PRODUCT_IMAGE_FALLBACK}
                                   alt={`${product.name} ${index + 1}`}
                                   className="w-full h-full object-cover"
                                 />

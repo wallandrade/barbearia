@@ -1,22 +1,20 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CartItem, Product } from "@workspace/api-client-react";
+import {
+  buildVariantLabel,
+  cartLineKey,
+  normalizeSelectedVariants,
+  parseVariantGroups,
+  variantImageFromSelection,
+  type SelectedVariant,
+} from "@/lib/product-variants";
 
 type BulkDiscountTier = {
   minQty: number;
   maxQty: number | null;
   unitPrice: number;
   label?: string | null;
-};
-
-type ProductVariantGroup = {
-  name: string;
-  options: string[];
-};
-
-type SelectedVariant = {
-  groupName: string;
-  option: string;
 };
 
 type ProductAvailability = Product & {
@@ -40,47 +38,22 @@ type CartItemExtended = CartItem & {
   bulkDiscountTiers?: BulkDiscountTier[];
   selectedVariants?: SelectedVariant[];
   variantLabel?: string;
+  lineKey?: string;
   isBump?: boolean;
   bumpForProductId?: string;
   bumpOfferId?: string;
   bumpProductId?: string;
 };
 
-function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((group) => {
-      const item = group as Record<string, unknown>;
-      const name = String(item.name ?? "").trim();
-      const options = Array.isArray(item.options)
-        ? item.options.map((option) => String(option ?? "").trim()).filter(Boolean)
-        : [];
-
-      if (!name || options.length === 0) return null;
-      return { name, options };
-    })
-    .filter((group): group is ProductVariantGroup => Boolean(group));
+function matchesCartLine(item: { id: string; lineKey?: string }, itemId: string): boolean {
+  if (item.lineKey) return item.lineKey === itemId;
+  return item.id === itemId;
 }
 
-function normalizeSelectedVariants(
-  groups: ProductVariantGroup[],
-  raw: Array<{ groupName?: string; option?: string }> | undefined,
-): SelectedVariant[] {
-  if (!Array.isArray(raw) || groups.length === 0) return [];
-
-  return groups
-    .map((group) => {
-      const picked = raw.find((item) => String(item.groupName || "").trim() === group.name);
-      const option = String(picked?.option || "").trim();
-      if (!option || !group.options.includes(option)) return null;
-      return { groupName: group.name, option };
-    })
-    .filter((item): item is SelectedVariant => Boolean(item));
-}
-
-function buildVariantLabel(selectedVariants: SelectedVariant[]): string {
-  return selectedVariants.map((item) => `${item.groupName}: ${item.option}`).join(" / ");
+function sameCartLine(item: CartItemExtended, lineKey: string): boolean {
+  if (item.isBump) return false;
+  const currentKey = item.lineKey || cartLineKey(item.id, item.selectedVariants ?? []);
+  return currentKey === lineKey;
 }
 
 function getBaseUnitPrice(product: Product): number {
@@ -201,13 +174,15 @@ export const useCart = create<CartState>()(
           }
           const variantLabel = buildVariantLabel(selectedVariants);
           const displayName = variantLabel ? `${product.name} - ${variantLabel}` : product.name;
+          const lineKey = cartLineKey(product.id, selectedVariants);
+          const lineImage = variantImageFromSelection(selectedVariants) || product.image;
           const bulkDiscountEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
           const bulkDiscountTiers = bulkDiscountEnabled
             ? parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers)
             : [];
           const baseUnitPrice = getBaseUnitPrice(product);
 
-          const existingItem = state.items.find((item) => item.id === product.id);
+          const existingItem = state.items.find((item) => sameCartLine(item, lineKey));
           const regularPrice = product.price;
 
           if (existingItem) {
@@ -216,17 +191,19 @@ export const useCart = create<CartState>()(
             const nextPrice = options?.unitPrice ?? getTierUnitPrice(baseUnitPrice, nextQuantity, tiersForPrice);
             return {
               items: state.items.map((item) =>
-                item.id === product.id
+                sameCartLine(item, lineKey)
                   ? {
                     ...item,
                     name: displayName,
                     quantity: nextQuantity,
                     price: nextPrice,
                     baseUnitPrice,
+                    image: lineImage,
                     bulkDiscountEnabled,
                     bulkDiscountTiers: tiersForPrice,
                     selectedVariants,
                     variantLabel: variantLabel || undefined,
+                    lineKey,
                   }
                   : item
               ),
@@ -241,12 +218,13 @@ export const useCart = create<CartState>()(
               ...state.items,
               {
                 id: product.id,
+                lineKey,
                 name: displayName,
                 price: initialPrice,
                 baseUnitPrice,
                 regularPrice,
                 quantity: addQuantity,
-                image: product.image,
+                image: lineImage,
                 bulkDiscountEnabled,
                 bulkDiscountTiers,
                 selectedVariants,
@@ -259,19 +237,32 @@ export const useCart = create<CartState>()(
       },
 
       removeItem: (itemId) => {
-        set((state) => ({
-          items: state.items.filter(
-            (item) =>
-              item.id !== itemId &&
-              item.bumpForProductId !== itemId
-          ),
-        }));
+        set((state) => {
+          const touchedProductIds = new Set(
+            state.items
+              .filter((item) => item.lineKey === itemId || item.id === itemId)
+              .map((item) => item.id),
+          );
+          const kept = state.items.filter(
+            (item) => item.lineKey !== itemId && item.id !== itemId && item.bumpForProductId !== itemId,
+          );
+          const productStillThere = (productId: string) =>
+            kept.some((item) => item.id === productId && item.isBump !== true);
+          return {
+            items: kept.filter((item) => {
+              if (item.isBump !== true) return true;
+              const anchor = item.bumpForProductId;
+              if (!anchor || !touchedProductIds.has(anchor)) return true;
+              return productStillThere(anchor);
+            }),
+          };
+        });
       },
 
       updateQuantity: (itemId, quantity) => {
         set((state) => ({
           items: state.items.map((item) =>
-            item.id === itemId
+            matchesCartLine(item, itemId)
               ? {
                 ...item,
                 quantity: Math.max(1, quantity),

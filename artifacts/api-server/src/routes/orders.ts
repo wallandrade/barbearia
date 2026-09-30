@@ -13,6 +13,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
+import { resolveLineImage } from "../lib/variant-groups";
 import {
   ensureOrderCommission,
   normalizeAffiliateCode,
@@ -1147,7 +1148,7 @@ router.post("/orders", async (req, res) => {
           quantity,
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
-          image: String(current.image || "").trim() || null,
+          image: resolveLineImage(current.image, current.variantGroups, selectedVariants),
           selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
           variantLabel: variantLabel || undefined,
         };

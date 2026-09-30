@@ -7,6 +7,7 @@ import { getR2MissingConfig, isR2Configured, uploadProductImageToR2 } from "../l
 import { loadPaidProductSoldMaps } from "../lib/product-sales-db";
 import { emptyProductSoldMaps, soldQtyForProduct } from "../lib/product-sales";
 import { customerStockQtyForProduct, customerStockTotals } from "../lib/customer-visible-stock";
+import { parseVariantGroups, type ProductVariantGroup as ProductVariantGroupInput } from "../lib/variant-groups";
 
 const router: IRouter = Router();
 const ALLOW_INLINE_IMAGE_FALLBACK = String(process.env.ALLOW_INLINE_IMAGE_FALLBACK || "true").toLowerCase() === "true";
@@ -16,11 +17,6 @@ type BulkDiscountTierInput = {
   maxQty: number | null;
   unitPrice: number;
   label: string | null;
-};
-
-type ProductVariantGroupInput = {
-  name: string;
-  options: string[];
 };
 
 type ProductBackupRecord = {
@@ -118,32 +114,6 @@ function validateBulkDiscountTiers(tiers: BulkDiscountTierInput[]): { ok: true }
   }
 
   return { ok: true };
-}
-
-function parseVariantGroups(raw: unknown): ProductVariantGroupInput[] {
-  if (!raw) return [];
-
-  try {
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .map((group) => {
-        const item = group as Record<string, unknown>;
-        const name = String(item.name ?? "").trim();
-        const optionsRaw = Array.isArray(item.options) ? item.options : [];
-        const options = optionsRaw
-          .map((option) => String(option ?? "").trim())
-          .filter(Boolean)
-          .filter((option, index, array) => array.indexOf(option) === index);
-
-        if (!name || options.length === 0) return null;
-        return { name, options };
-      })
-      .filter((group): group is ProductVariantGroupInput => Boolean(group));
-  } catch {
-    return [];
-  }
 }
 
 function parseBackupDate(raw: unknown): Date {

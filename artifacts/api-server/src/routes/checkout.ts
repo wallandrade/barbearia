@@ -17,6 +17,7 @@ import { recordOrderActivity } from "../lib/order-activity";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
+import { resolveLineImage } from "../lib/variant-groups";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { normalizeStoredClientDocument } from "../lib/related-shipments";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
@@ -327,7 +328,7 @@ router.post("/checkout/pix", async (req, res) => {
           quantity,
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
-          image: String(current.image || "").trim() || null,
+          image: resolveLineImage(current.image, current.variantGroups, selectedVariants),
           selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
           variantLabel: variantLabel || undefined,
         };

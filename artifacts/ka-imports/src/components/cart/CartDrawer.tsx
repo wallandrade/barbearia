@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Minus, ShoppingBag, ArrowRight } from "lucide-react";
+import { cartLineId } from "@/lib/product-variants";
 import { useCart } from "@/store/use-cart";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, getSellerSlugFromPath } from "@/lib/utils";
@@ -106,7 +107,7 @@ export function CartDrawer() {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.9 }}
-                      key={item.id} 
+                      key={cartLineId(item)} 
                       className="flex gap-4 p-3 rounded-2xl border bg-gray-50 border-border/50"
                     >
                       <div className="w-20 h-20 bg-white rounded-xl overflow-hidden shrink-0 shadow-sm">
@@ -130,7 +131,7 @@ export function CartDrawer() {
                             )}
                           </div>
                           <button 
-                            onClick={() => removeItem(item.id)}
+                            onClick={() => removeItem(cartLineId(item))}
                             className="text-muted-foreground hover:text-destructive p-1 transition-colors"
                           >
                             <X className="w-4 h-4" />
@@ -140,14 +141,14 @@ export function CartDrawer() {
                           <span className="font-bold text-primary">{formatCurrency(item.price)}</span>
                           <div className="flex items-center gap-3 bg-white border border-border rounded-lg p-1 shadow-sm">
                             <button 
-                              onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                              onClick={() => updateQuantity(cartLineId(item), item.quantity - 1)}
                               className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-foreground transition-colors"
                             >
                               <Minus className="w-3 h-3" />
                             </button>
                             <span className="text-sm font-medium w-4 text-center">{totalQty}</span>
                             <button 
-                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              onClick={() => updateQuantity(cartLineId(item), item.quantity + 1)}
                               className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-foreground transition-colors"
                             >
                               <Plus className="w-3 h-3" />

@@ -14,6 +14,7 @@ import { CheckoutLayout } from "@/components/layout/CheckoutLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
+import { cartLineId } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
@@ -434,7 +435,7 @@ export default function Checkout() {
 
   // Auto-apply tier bump when user manually changes cart quantity to match a tier
   const nonBumpSnapshot = useMemo(
-    () => items.filter((i) => !(i as { isBump?: boolean }).isBump).map((i) => `${i.id}:${i.quantity}`).join(","),
+    () => items.filter((i) => !(i as { isBump?: boolean }).isBump).map((i) => `${cartLineId(i)}:${i.quantity}`).join(","),
     [items]
   );
   useEffect(() => {
@@ -462,7 +463,7 @@ export default function Checkout() {
         const bestTier = [...bump.tiers].sort((a, b) => b.qty - a.qty).find((t) => t.qty <= cartQty);
         if (!bestTier || bestTier.qty <= 1) continue;
         const baseExtra = bestTier.qty - 1;
-        updateQuantity(cartItem.id, 1);
+        updateQuantity(cartLineId(cartItem), 1);
         addBumpItem(bump.id, cartItem.id, bumpProduct, bestTier.price / baseExtra, baseExtra);
         toast.success(`Desconto progressivo aplicado! (${bestTier.qty} ${bump.unit || "unidades"})`);
       } else if (cartQty > 1) {
@@ -472,13 +473,13 @@ export default function Checkout() {
         const bestTier = [...bump.tiers].sort((a, b) => b.qty - a.qty).find((t) => t.qty <= totalQty);
         removeItem(bumpCartId);
         if (bestTier && bestTier.qty > 1) {
-          updateQuantity(cartItem.id, 1);
+          updateQuantity(cartLineId(cartItem), 1);
           const baseExtra = bestTier.qty - 1;
           addBumpItem(bump.id, cartItem.id, bumpProduct, bestTier.price / baseExtra, baseExtra);
           toast.success(`Desconto atualizado! (${bestTier.qty} ${bump.unit || "unidades"})`);
         } else {
           // Abaixo do menor tier — mantém a nova qty sem bump
-          updateQuantity(cartItem.id, totalQty);
+          updateQuantity(cartLineId(cartItem), totalQty);
         }
       }
       // Caso 3: bumpItem existe e cartQty === 1 → tudo correto, nenhuma ação
@@ -662,7 +663,8 @@ export default function Checkout() {
     const bump = checkoutBumps.find(
       (b) => b.productId === item.id && b.discountType === "quantity_tiers" && b.tiers?.length
     );
-    if (!bump) { updateQuantity(item.id, item.quantity + 1); return; }
+    const lineId = cartLineId(item);
+    if (!bump) { updateQuantity(lineId, item.quantity + 1); return; }
 
     const bumpCartId = `bump_${bump.id}`;
     const bumpItem = items.find((i) => i.id === bumpCartId);
@@ -672,7 +674,7 @@ export default function Checkout() {
     const bestTier = [...bump.tiers!].sort((a, b) => b.qty - a.qty).find((t) => t.qty <= newTotal);
     if (bumpItem) removeItem(bumpCartId);
     if (bestTier && bestTier.qty > 1) {
-      updateQuantity(item.id, 1);
+      updateQuantity(lineId, 1);
       const baseExtra = bestTier.qty - 1;
       const regularPrice = (item as { regularPrice?: number }).regularPrice ?? item.price;
       const offerProduct = productCatalogById.get(bump.offerProductId || bump.productId) ?? {
@@ -684,7 +686,7 @@ export default function Checkout() {
       addBumpItem(bump.id, item.id, { id: offerProduct.id, name: offerProduct.name, price: offerProduct.price, image: offerProduct.image ?? undefined }, bestTier.price / baseExtra, baseExtra);
       toast.success(`${bestTier.qty} ${bump.unit || "unidades"} — desconto aplicado!`);
     } else {
-      updateQuantity(item.id, newTotal);
+      updateQuantity(lineId, newTotal);
     }
   }, [checkoutBumps, items, updateQuantity, removeItem, addBumpItem]);
 
@@ -698,14 +700,15 @@ export default function Checkout() {
     const currentTotal = bump ? (bumpItem ? 1 + (bumpItem.quantity ?? 0) : item.quantity) : item.quantity;
     const newTotal = currentTotal - 1;
 
-    if (newTotal <= 0) { removeItem(item.id); if (bumpItem && bumpCartId) removeItem(bumpCartId); return; }
+    const lineId = cartLineId(item);
+    if (newTotal <= 0) { removeItem(lineId); return; }
 
-    if (!bump) { updateQuantity(item.id, newTotal); return; }
+    if (!bump) { updateQuantity(lineId, newTotal); return; }
 
     if (bumpItem && bumpCartId) removeItem(bumpCartId);
     const bestTier = [...bump.tiers!].sort((a, b) => b.qty - a.qty).find((t) => t.qty <= newTotal);
     if (bestTier && bestTier.qty > 1) {
-      updateQuantity(item.id, 1);
+      updateQuantity(lineId, 1);
       const baseExtra = bestTier.qty - 1;
       const regularPrice = (item as { regularPrice?: number }).regularPrice ?? item.price;
       const offerProduct = productCatalogById.get(bump.offerProductId || bump.productId) ?? {
@@ -717,7 +720,7 @@ export default function Checkout() {
       addBumpItem(bump.id, item.id, { id: offerProduct.id, name: offerProduct.name, price: offerProduct.price, image: offerProduct.image ?? undefined }, bestTier.price / baseExtra, baseExtra);
       toast.success(`${bestTier.qty} ${bump.unit || "unidades"} — desconto aplicado!`);
     } else {
-      updateQuantity(item.id, newTotal);
+      updateQuantity(lineId, newTotal);
     }
   }, [checkoutBumps, items, updateQuantity, removeItem, addBumpItem]);
 
@@ -1965,7 +1968,7 @@ export default function Checkout() {
                   <h3 className="font-bold text-lg mb-4">Resumo do Pedido</h3>
                   <div className="space-y-3">
                     {items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3">
+                      <div key={cartLineId(item)} className="flex items-center gap-3">
                         {item.image && <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{item.name}</p>
@@ -2275,7 +2278,7 @@ export default function Checkout() {
                                     onClick={() => {
                                       if (alreadyApplied) return;
                                       // Always restructure: set main item to qty 1, add bump for extras
-                                      if (cartQty > 1) updateQuantity(cartItem.id, 1);
+                                      if (cartQty > 1) updateQuantity(cartLineId(cartItem), 1);
                                       addBumpItem(bump.id, cartItem.id, bumpProduct, pricePerExtraUnit, baseExtra);
                                       toast.success("Oferta adicionada!");
                                     }}
@@ -2556,7 +2559,7 @@ export default function Checkout() {
                   const mainTotal = item.price * item.quantity;
                   const bumpTotal = bumpItem ? bumpItem.price * bumpItem.quantity : 0;
                   return (
-                    <div key={item.id} className="space-y-2 rounded-xl p-2">
+                    <div key={cartLineId(item)} className="space-y-2 rounded-xl p-2">
                       <div className="flex gap-3 items-start">
                         <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0 border border-border">
                           <img src={(item as typeof item & { image?: string }).image} alt={item.name} className="w-full h-full object-cover" />
