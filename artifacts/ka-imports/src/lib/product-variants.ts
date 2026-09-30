@@ -206,6 +206,26 @@ export type OrderVariantChoice = {
   image: string | null;
 };
 
+/** Nome usado ao copiar o pedido: opções escolhidas, ou o nome do produto se não houve variante. */
+export function orderCopyItemName(product: { name?: string | null; selectedVariants?: unknown }): string {
+  const fallback = String(product.name || "Produto").trim() || "Produto";
+  const choices = readOrderVariantChoices(product.selectedVariants);
+  if (choices.length === 0) return fallback;
+  const groups: string[] = [];
+  const byName = new Map<string, string[]>();
+  for (const choice of choices) {
+    const current = byName.get(choice.groupName);
+    if (!current) {
+      byName.set(choice.groupName, [choice.option]);
+      groups.push(choice.groupName);
+      continue;
+    }
+    current.push(choice.option);
+  }
+  const label = groups.map((groupName) => (byName.get(groupName) ?? []).join(", ")).filter(Boolean).join(" / ");
+  return label || fallback;
+}
+
 export function readOrderVariantChoices(raw: unknown): OrderVariantChoice[] {
   if (!Array.isArray(raw)) return [];
   const choices: OrderVariantChoice[] = [];

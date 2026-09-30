@@ -385,7 +385,7 @@ export function orderToText(order: any): string {
     ? products
         .map((p) => {
           const qty = Number(p?.quantity) || 0;
-          return `- ${qty}x ${p?.name || "Produto"}`;
+          return `- ${qty}x ${orderCopyItemName(p)}`;
         })
         .join("\n")
     : "- Sem itens";
@@ -458,7 +458,7 @@ export function orderToFullText(order: any): string {
           const qty = Number(p?.quantity) || 0;
           const unitPrice = Number(p?.price) || 0;
           const lineTotal = qty * unitPrice;
-          return `- ${qty}x ${p?.name || "Produto"} (${formatCurrency(lineTotal)})`;
+          return `- ${qty}x ${orderCopyItemName(p)} (${formatCurrency(lineTotal)})`;
         })
         .join("\n")
     : "- Sem itens";
@@ -574,8 +574,7 @@ export function orderToPostPaymentText(order: any, deadlineHours: number = 48): 
     ? products
       .map((p) => {
         const qty = Number(p?.quantity) || 0;
-        const name = String(p?.name || "Produto").trim();
-        return `💊 ${qty}x ${name}`;
+        return `💊 ${qty}x ${orderCopyItemName(p)}`;
       })
       .join("\n")
     : "💊 1x Produto";
@@ -655,7 +654,7 @@ function supplierOrderBlock(order: any, sequence: number): string {
     ? products
         .map((p) => {
           const qty = Number(p?.quantity) || 0;
-          return `- ${qty}x ${p?.name || "Produto"}`;
+          return `- ${qty}x ${orderCopyItemName(p)}`;
         })
         .join("\n")
     : "- Sem itens";
@@ -719,7 +718,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
-import { parseVariantGroups, readEditorVariantGroups, type VariantGroup } from "@/lib/product-variants";
+import { orderCopyItemName, parseVariantGroups, readEditorVariantGroups, type VariantGroup } from "@/lib/product-variants";
 import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
 import {
   findOrderProductForShipmentItem,
@@ -4615,7 +4614,7 @@ export default function Admin() {
       const isReshipment = Boolean(order?.reshipment?.id)
         && !["reenvio_enviado", "reenvio_resolvido_sem_entrada"].includes(String(order?.reshipment?.status || ""));
       const resumo = products.length
-        ? products.map((p) => `- ${Number(p?.quantity) || 0}x ${p?.name || "Produto"}`).join("\n")
+        ? products.map((p) => `- ${Number(p?.quantity) || 0}x ${orderCopyItemName(p)}`).join("\n")
         : "- Sem itens";
       return [
         isReshipment ? "🚨 ATENCAO REENVIO - ABATER NO PAGAMENTO" : "",
@@ -4703,7 +4702,7 @@ export default function Admin() {
                 const qty = Number(p?.quantity) || 0;
                 const price = Number(p?.price) || 0;
                 const lineTotal = qty * price;
-                return `• ${qty}x ${p?.name || "Produto"} — ${formatCurrency(lineTotal)}`;
+                return `• ${qty}x ${orderCopyItemName(p)} — ${formatCurrency(lineTotal)}`;
               })
               .join("\n")
           : "• Sem itens";

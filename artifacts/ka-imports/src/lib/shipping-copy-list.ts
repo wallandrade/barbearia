@@ -20,6 +20,7 @@ export type ShippingCopyOrderProduct = {
   costPrice?: number;
   extraQuantity?: number;
   image?: string | null;
+  selectedVariants?: unknown;
 };
 
 function isEnvioEcomCancelStatus(status: string | null | undefined): boolean {
@@ -166,6 +167,7 @@ export function productsForShippingCopy(order: {
         price: Number(fromOrder?.price) || 0,
         costPrice: fromOrder?.costPrice,
         image: fromOrder?.image,
+        selectedVariants: fromOrder?.selectedVariants,
       });
     }
   }

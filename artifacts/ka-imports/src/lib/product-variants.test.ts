@@ -4,6 +4,7 @@ import {
   cartLineKey,
   parseVariantGroups,
   readEditorVariantGroups,
+  orderCopyItemName,
   readOrderVariantChoices,
   variantGalleryImages,
   variantImageFromSelection,
@@ -85,6 +86,19 @@ test("mostrar as selecionadas junta a foto de cada clique", () => {
     "https://cdn.example/tirzec.jpg",
   ]);
   assert.equal(variantImageFromSelection(groups, selected), null);
+});
+
+test("cópia do pedido usa o nome da variante", () => {
+  assert.equal(orderCopyItemName({
+    name: "Kit Degustação Tirzepatidas",
+    selectedVariants: [
+      { groupName: "Escolha seu kit", option: "Lipoless" },
+      { groupName: "Escolha seu kit", option: "TG" },
+      { groupName: "Escolha seu kit", option: "Gluconex" },
+      { groupName: "Escolha seu kit", option: "Tirzedral" },
+    ],
+  }), "Lipoless, TG, Gluconex, Tirzedral");
+  assert.equal(orderCopyItemName({ name: "Sem variante" }), "Sem variante");
 });
 
 test("resumo do pedido lê a foto gravada da opção", () => {
