@@ -12,6 +12,7 @@ test("opção antiga em texto continua válida e sem foto", () => {
         { label: "Branca", image: null },
       ],
       maxSelect: 1,
+      imageMode: "swap",
     },
   ]);
 });
@@ -65,6 +66,36 @@ test("seis opções com máximo 4 aceitam até 4", () => {
     { groupName: "Escolha seu kit", option: "A" },
   ]);
   assert.equal(five.ok, false);
+});
+
+test("sem trocar a foto o pedido fica com a imagem do produto", () => {
+  const groups = [{
+    name: "Cor",
+    swapImage: false,
+    options: [{ label: "Preta", image: "https://cdn.example/preta.jpg" }],
+  }];
+  assert.equal(
+    resolveLineImage("https://cdn.example/produto.jpg", groups, [{ groupName: "Cor", option: "Preta" }]),
+    "https://cdn.example/produto.jpg",
+  );
+});
+
+test("mostrar as selecionadas deixa o pedido com a foto do produto", () => {
+  const groups = [{
+    name: "Cor",
+    imageMode: "all",
+    options: [
+      { label: "Preta", image: "https://cdn.example/preta.jpg" },
+      { label: "Branca", image: "https://cdn.example/branca.jpg" },
+    ],
+  }];
+  assert.equal(
+    resolveLineImage("https://cdn.example/produto.jpg", groups, [
+      { groupName: "Cor", option: "Preta" },
+      { groupName: "Cor", option: "Branca" },
+    ]),
+    "https://cdn.example/produto.jpg",
+  );
 });
 
 test("foto do pedido usa a opção escolhida", () => {

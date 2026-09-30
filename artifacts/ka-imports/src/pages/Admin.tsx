@@ -17866,7 +17866,7 @@ function ProductsPanel({
                         type="button"
                         variant="outline"
                         onClick={() => {
-                          const next: VariantGroup[] = [...currentVariantGroups, { name: "", maxSelect: 1, options: [{ label: "", image: null }] }];
+                          const next: VariantGroup[] = [...currentVariantGroups, { name: "", maxSelect: 1, imageMode: "swap", options: [{ label: "", image: null }] }];
                           setProductForm({ ...(productForm as any), variantGroups: next } as any);
                         }}
                       >
@@ -17930,6 +17930,25 @@ function ProductsPanel({
                               >
                                 <Trash2 className="w-4 h-4 mr-1" />Remover
                               </Button>
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Foto ao selecionar</label>
+                              <select
+                                value={group.imageMode === "fixed" || group.imageMode === "all" ? group.imageMode : "swap"}
+                                onChange={(event) => {
+                                  const imageMode = event.target.value === "fixed" || event.target.value === "all" ? event.target.value : "swap";
+                                  const next = currentVariantGroups.map((item, index) => index === groupIndex
+                                    ? { ...item, imageMode }
+                                    : item);
+                                  setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                }}
+                                className={inp2}
+                              >
+                                <option value="swap">Trocar pela opção</option>
+                                <option value="fixed">Foto do produto</option>
+                                <option value="all">Mostrar as selecionadas</option>
+                              </select>
+                              <p className="text-xs text-muted-foreground mt-1">Mostrar as selecionadas junta na foto grande cada opção que o cliente marcar. Desmarcar tira essa foto.</p>
                             </div>
                             <div className="space-y-2">
                               {group.options.map((option, optionIndex) => {

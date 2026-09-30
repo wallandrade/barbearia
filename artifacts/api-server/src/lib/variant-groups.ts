@@ -8,7 +8,11 @@ export type ProductVariantGroup = {
   options: ProductVariantOption[];
   /** Quantas opções o cliente pode marcar neste grupo. 1 = escolha única. */
   maxSelect: number;
+  /** swap: uma foto. fixed: foto do produto. all: a página junta as fotos; o pedido fica com a do produto. */
+  imageMode: VariantImageMode;
 };
+
+export type VariantImageMode = "swap" | "fixed" | "all";
 
 export type SelectedVariantRef = {
   groupName: string;
@@ -31,6 +35,12 @@ export function variantImageUrl(raw: unknown): string | null {
   const value = raw.trim();
   if (!value.startsWith("https://") && !value.startsWith("http://")) return null;
   return value;
+}
+
+export function readImageMode(mode: unknown, swapImage?: unknown): VariantImageMode {
+  if (mode === "fixed" || mode === "all" || mode === "swap") return mode;
+  if (swapImage === false || swapImage === 0 || swapImage === "0" || swapImage === "false") return "fixed";
+  return "swap";
 }
 
 export function readMaxSelect(raw: unknown): number {
@@ -69,7 +79,7 @@ export function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
       }
       if (!name || options.length === 0) return null;
       const maxSelect = Math.min(readMaxSelect(item?.maxSelect), options.length);
-      return { name, options, maxSelect };
+      return { name, options, maxSelect, imageMode: readImageMode(item?.imageMode, item?.swapImage) };
     })
     .filter((group): group is ProductVariantGroup => Boolean(group));
 }
@@ -134,7 +144,8 @@ export function resolveLineImage(
     const groupName = String(picked.groupName || "").trim();
     const optionLabel = String(picked.option || "").trim();
     const group = groups.find((item) => item.name === groupName);
-    const option = group?.options.find((item) => item.label === optionLabel);
+    if (!group || group.imageMode !== "swap") continue;
+    const option = group.options.find((item) => item.label === optionLabel);
     if (option?.image) return option.image;
   }
   const fallback = String(productImage || "").trim();

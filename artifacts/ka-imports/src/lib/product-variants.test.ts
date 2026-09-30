@@ -4,6 +4,8 @@ import {
   cartLineKey,
   parseVariantGroups,
   readEditorVariantGroups,
+  variantGalleryImages,
+  variantImageFromSelection,
   variantSelectionError,
 } from "./product-variants";
 
@@ -40,6 +42,48 @@ test("máximo 4 em 6 opções bloqueia a quinta", () => {
     variantSelectionError(groups, [...four, { groupName: "Escolha seu kit", option: "A" }]),
     "Selecione 4 opções em Escolha seu kit.",
   );
+});
+
+test("foto grande só troca quando o grupo permite", () => {
+  const groups = parseVariantGroups([{
+    name: "Cor",
+    swapImage: false,
+    options: [{ label: "Preta", image: "https://cdn.example/preta.jpg" }],
+  }]);
+  assert.equal(groups[0]?.imageMode, "fixed");
+  assert.equal(
+    variantImageFromSelection(groups, [{ groupName: "Cor", option: "Preta", image: "https://cdn.example/preta.jpg" }]),
+    null,
+  );
+  const swapping = parseVariantGroups([{
+    name: "Cor",
+    options: [{ label: "Preta", image: "https://cdn.example/preta.jpg" }],
+  }]);
+  assert.equal(
+    variantImageFromSelection(swapping, [{ groupName: "Cor", option: "Preta", image: "https://cdn.example/preta.jpg" }]),
+    "https://cdn.example/preta.jpg",
+  );
+});
+
+test("mostrar as selecionadas junta a foto de cada clique", () => {
+  const groups = parseVariantGroups([{
+    name: "Kit",
+    imageMode: "all",
+    maxSelect: 4,
+    options: [
+      { label: "TG", image: "https://cdn.example/tg.jpg" },
+      { label: "Tirzec", image: "https://cdn.example/tirzec.jpg" },
+    ],
+  }]);
+  const selected = [
+    { groupName: "Kit", option: "TG", image: "https://cdn.example/tg.jpg" },
+    { groupName: "Kit", option: "Tirzec", image: "https://cdn.example/tirzec.jpg" },
+  ];
+  assert.deepEqual(variantGalleryImages(groups, selected), [
+    "https://cdn.example/tg.jpg",
+    "https://cdn.example/tirzec.jpg",
+  ]);
+  assert.equal(variantImageFromSelection(groups, selected), null);
 });
 
 test("rascunho do admin guarda o máximo", () => {

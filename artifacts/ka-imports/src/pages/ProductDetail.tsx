@@ -3,7 +3,7 @@ import { Link, useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { normalizeSelectedVariants, parseVariantGroups, variantSelectionError } from "@/lib/product-variants";
+import { normalizeSelectedVariants, parseVariantGroups, variantGalleryImages, variantImageFromSelection, variantSelectionError } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
@@ -129,7 +129,8 @@ export default function ProductDetail() {
     [variantGroups, selectedVariantRaw],
   );
   const variantError = variantSelectionError(variantGroups, selectedVariantRaw);
-  const selectedVariantImage = selectedVariants.find((item) => item.image)?.image || null;
+  const selectedVariantImage = variantImageFromSelection(variantGroups, selectedVariants);
+  const galleryImages = variantGalleryImages(variantGroups, selectedVariants);
 
   const hasRequiredVariants = variantError == null;
   const isSoldOut = product ? isProductUnavailable(product) : false;
@@ -159,12 +160,25 @@ export default function ProductDetail() {
           </div>
         ) : (
           <div className="grid lg:grid-cols-2 gap-8 items-start">
-            <div className="rounded-3xl border border-border/60 overflow-hidden bg-muted/20 shadow-sm">
-              <img
-                src={selectedVariantImage || product.image || PRODUCT_IMAGE_FALLBACK}
-                alt={product.name}
-                className="w-full h-full object-cover aspect-square"
-              />
+            <div className="rounded-3xl border border-border/60 overflow-hidden bg-muted/20 shadow-sm aspect-square">
+              {galleryImages.length > 0 ? (
+                <div className={`grid h-full w-full auto-rows-fr ${galleryImages.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                  {galleryImages.map((src, index) => (
+                    <img
+                      key={`${src}-${index}`}
+                      src={src}
+                      alt=""
+                      className={`h-full w-full object-cover ${galleryImages.length > 1 && galleryImages.length % 2 === 1 && index === galleryImages.length - 1 ? "col-span-2" : ""}`}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <img
+                  src={selectedVariantImage || product.image || PRODUCT_IMAGE_FALLBACK}
+                  alt={product.name}
+                  className="h-full w-full object-cover"
+                />
+              )}
             </div>
 
             <div className="space-y-5">

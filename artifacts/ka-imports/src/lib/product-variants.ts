@@ -8,7 +8,11 @@ export type VariantGroup = {
   options: VariantOption[];
   /** Quantas opções o cliente pode marcar. 1 = escolha única. */
   maxSelect: number;
+  /** swap: uma foto. fixed: foto do produto. all: junta as fotos marcadas. */
+  imageMode: VariantImageMode;
 };
+
+export type VariantImageMode = "swap" | "fixed" | "all";
 
 export type SelectedVariant = {
   groupName: string;
@@ -32,6 +36,12 @@ export function variantImageUrl(raw: unknown): string | null {
   const value = raw.trim();
   if (!value.startsWith("https://") && !value.startsWith("http://")) return null;
   return value;
+}
+
+export function readImageMode(mode: unknown, swapImage?: unknown): VariantImageMode {
+  if (mode === "fixed" || mode === "all" || mode === "swap") return mode;
+  if (swapImage === false || swapImage === 0 || swapImage === "0" || swapImage === "false") return "fixed";
+  return "swap";
 }
 
 export function readMaxSelect(raw: unknown): number {
@@ -70,7 +80,7 @@ export function parseVariantGroups(raw: unknown): VariantGroup[] {
       }
       if (!name || options.length === 0) return null;
       const maxSelect = Math.min(readMaxSelect(item?.maxSelect), options.length);
-      return { name, options, maxSelect };
+      return { name, options, maxSelect, imageMode: readImageMode(item?.imageMode, item?.swapImage) };
     })
     .filter((group): group is VariantGroup => Boolean(group));
 }
@@ -98,6 +108,7 @@ export function readEditorVariantGroups(raw: unknown): VariantGroup[] {
     return {
       name,
       maxSelect: readMaxSelect(item.maxSelect),
+      imageMode: readImageMode(item.imageMode, item.swapImage),
       options: options.length > 0 ? options : [{ label: "", image: null }],
     };
   });
@@ -164,8 +175,29 @@ export function buildVariantLabel(selectedVariants: SelectedVariant[]): string {
   return order.map((groupName) => `${groupName}: ${(byName.get(groupName) ?? []).join(", ")}`).join(" / ");
 }
 
-export function variantImageFromSelection(selectedVariants: SelectedVariant[]): string | null {
-  return selectedVariants.find((item) => item.image)?.image ?? null;
+export function variantImageFromSelection(
+  groups: VariantGroup[],
+  selectedVariants: SelectedVariant[],
+): string | null {
+  for (const item of selectedVariants) {
+    const group = groups.find((current) => current.name === item.groupName);
+    if (!group || group.imageMode !== "swap") continue;
+    if (item.image) return item.image;
+  }
+  return null;
+}
+
+export function variantGalleryImages(
+  groups: VariantGroup[],
+  selectedVariants: SelectedVariant[],
+): string[] {
+  const images: string[] = [];
+  for (const item of selectedVariants) {
+    const group = groups.find((current) => current.name === item.groupName);
+    if (!group || group.imageMode !== "all" || !item.image) continue;
+    images.push(item.image);
+  }
+  return images;
 }
 
 export function cartLineKey(productId: string, selectedVariants: SelectedVariant[]): string {

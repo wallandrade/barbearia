@@ -176,7 +176,7 @@ export const useCart = create<CartState>()(
           const variantLabel = buildVariantLabel(selectedVariants);
           const displayName = variantLabel ? `${product.name} - ${variantLabel}` : product.name;
           const lineKey = cartLineKey(product.id, selectedVariants);
-          const lineImage = variantImageFromSelection(selectedVariants) || product.image;
+          const lineImage = variantImageFromSelection(variantGroups, selectedVariants) || product.image;
           const bulkDiscountEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
           const bulkDiscountTiers = bulkDiscountEnabled
             ? parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers)
