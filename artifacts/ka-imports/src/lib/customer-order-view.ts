@@ -13,6 +13,7 @@ export type CustomerOrderProduct = {
   quantity: number;
   price: number;
   image?: string | null;
+  selectedVariants?: unknown;
 };
 
 export type CustomerShipmentItem = {
@@ -212,6 +213,21 @@ export function findOrderProductImage(
   const name = item.name.toLowerCase();
   const byName = products.find((product) => String(product.name || "").trim().toLowerCase() === name);
   return String(byName?.image || "").trim() || null;
+}
+
+export function findOrderVariantChoices(
+  order: CustomerOrder,
+  item: { productId?: string; name: string },
+): unknown {
+  const products = Array.isArray(order.products) ? order.products : [];
+  const id = String(item.productId || "").trim();
+  if (id) {
+    const byId = products.find((product) => String(product.id || "").trim() === id);
+    if (byId?.selectedVariants) return byId.selectedVariants;
+  }
+  const name = item.name.toLowerCase();
+  const byName = products.find((product) => String(product.name || "").trim().toLowerCase() === name);
+  return byName?.selectedVariants;
 }
 
 export function normalizeShippingStatus(raw: string | null | undefined): string {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acceptSelectedVariants, parseVariantGroups, resolveLineImage } from "./variant-groups";
+import { acceptSelectedVariants, parseVariantGroups, resolveLineImage, snapshotSelectedVariants } from "./variant-groups";
 
 test("opção antiga em texto continua válida e sem foto", () => {
   const groups = parseVariantGroups([{ name: "Cor", options: ["Preta", "Branca"] }]);
@@ -93,6 +93,34 @@ test("mostrar as selecionadas deixa o pedido com a foto do produto", () => {
     resolveLineImage("https://cdn.example/produto.jpg", groups, [
       { groupName: "Cor", option: "Preta" },
       { groupName: "Cor", option: "Branca" },
+    ]),
+    "https://cdn.example/produto.jpg",
+  );
+});
+
+test("resumo guarda a foto de cada opção mesmo sem trocar a foto da linha", () => {
+  const groups = parseVariantGroups([{
+    name: "Escolha seu kit",
+    imageMode: "all",
+    maxSelect: 2,
+    options: [
+      { label: "TG", image: "https://cdn.example/tg.jpg" },
+      { label: "Lipoless", image: "https://cdn.example/lipoless.jpg" },
+    ],
+  }]);
+  assert.deepEqual(
+    snapshotSelectedVariants(groups, [
+      { groupName: "Escolha seu kit", option: "Lipoless" },
+      { groupName: "Escolha seu kit", option: "TG" },
+    ]),
+    [
+      { groupName: "Escolha seu kit", option: "Lipoless", image: "https://cdn.example/lipoless.jpg" },
+      { groupName: "Escolha seu kit", option: "TG", image: "https://cdn.example/tg.jpg" },
+    ],
+  );
+  assert.equal(
+    resolveLineImage("https://cdn.example/produto.jpg", groups, [
+      { groupName: "Escolha seu kit", option: "TG" },
     ]),
     "https://cdn.example/produto.jpg",
   );

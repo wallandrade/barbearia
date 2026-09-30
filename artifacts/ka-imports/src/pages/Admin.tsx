@@ -244,7 +244,7 @@ function isoToSPDate(iso: string) {
   return iso ? iso.slice(0, 10) : "";
 }
 
-type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; lineDiscount?: number; image?: string | null };
+type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; lineDiscount?: number; image?: string | null; selectedVariants?: unknown };
 type OrderActivityProductThumb = { id: string; name: string; image: string | null; fromQty: number; toQty: number };
 type OrderActivityEventView = {
   id: string;
@@ -720,6 +720,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
 import { parseVariantGroups, readEditorVariantGroups, type VariantGroup } from "@/lib/product-variants";
+import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
 import {
   findOrderProductForShipmentItem,
   isClosedReshipmentStatus,
@@ -13753,8 +13754,8 @@ function OrdersPanel({
                         : Number(productCostById[String(p.id)] || 0);
                       const lineProfit = lineNet - unitCost * (Number(p.quantity) || 0);
                       return (
-                      <div key={i} className="flex items-center justify-between text-sm gap-3">
-                        <div className="flex items-center gap-2 min-w-0">
+                      <div key={i} className="flex items-start justify-between text-sm gap-3">
+                        <div className="flex items-start gap-2 min-w-0">
                           <div
                             className={`group relative h-9 w-9 overflow-visible shrink-0 ${imageSrc ? "cursor-zoom-in" : ""}`}
                             onClick={() => {
@@ -13782,7 +13783,10 @@ function OrdersPanel({
                               </div>
                             )}
                           </div>
-                          <span className="truncate">{p.quantity}x {p.name}</span>
+                          <div className="min-w-0">
+                            <p className="break-words">{p.quantity}x {p.name}</p>
+                            <OrderVariantChoices raw={p.selectedVariants} />
+                          </div>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-medium">{formatCurrency(lineNet)}</p>

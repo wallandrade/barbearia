@@ -13,7 +13,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
-import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage } from "../lib/variant-groups";
+import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage, snapshotSelectedVariants, variantImageUrl } from "../lib/variant-groups";
 import {
   ensureOrderCommission,
   normalizeAffiliateCode,
@@ -1124,18 +1124,17 @@ router.post("/orders", async (req, res) => {
         const isBump = item.isBump === true;
         const serverUnitPrice = isBump ? sentUnitPrice : resolveUnitPriceForQuantity(current, quantity);
         const rawSelectedVariants = normalizeOrderItemVariants(item.selectedVariants);
+        const groups = parseVariantGroups(current.variantGroups);
         let selectedVariants = rawSelectedVariants;
-        if (!isBump) {
-          const groups = parseVariantGroups(current.variantGroups);
-          if (groups.length > 0) {
-            const accepted = acceptSelectedVariants(groups, rawSelectedVariants);
-            if (!accepted.ok) {
-              variantErrors.push(accepted.message);
-              return null;
-            }
-            selectedVariants = accepted.selected;
+        if (!isBump && groups.length > 0) {
+          const accepted = acceptSelectedVariants(groups, rawSelectedVariants);
+          if (!accepted.ok) {
+            variantErrors.push(accepted.message);
+            return null;
           }
+          selectedVariants = accepted.selected;
         }
+        const variantSnapshots = snapshotSelectedVariants(groups, selectedVariants);
         const variantLabel = String(item.variantLabel || "").trim() || buildVariantLabel(selectedVariants);
         const rawName = String(item.name || current.name || "Produto");
         const productName = variantLabel && !rawName.includes(variantLabel)
@@ -1158,7 +1157,7 @@ router.post("/orders", async (req, res) => {
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
           image: resolveLineImage(current.image, current.variantGroups, selectedVariants),
-          selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
+          selectedVariants: variantSnapshots.length > 0 ? variantSnapshots : undefined,
           variantLabel: variantLabel || undefined,
         };
       })
@@ -1169,7 +1168,7 @@ router.post("/orders", async (req, res) => {
         price: number;
         costPrice: number;
         image: string | null;
-        selectedVariants?: Array<{ groupName: string; option: string }>;
+        selectedVariants?: Array<{ groupName: string; option: string; image: string | null }>;
         variantLabel?: string;
       } => Boolean(item));
 
@@ -1777,7 +1776,8 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
 
     const withPackages = await attachShipmentsToMappedOrders(prioritized);
     const withExtra = await attachReshipmentExtraQuantities(withPackages);
-    res.json({ orders: withExtra });
+    const withVariantPhotos = await enrichSelectedVariantImages(withExtra);
+    res.json({ orders: withVariantPhotos });
   } catch (err) {
     console.error("Admin orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
@@ -3028,8 +3028,43 @@ async function attachHasReshipmentChild<T extends { id: string }>(
   }));
 }
 
+async function enrichSelectedVariantImages<T extends { products?: Array<{ id?: string; selectedVariants?: unknown }> }>(
+  orders: T[],
+): Promise<T[]> {
+  const missingIds = new Set<string>();
+  for (const order of orders) {
+    for (const product of order.products || []) {
+      const selected = Array.isArray(product.selectedVariants) ? product.selectedVariants : [];
+      const needsPhoto = selected.some((item) => !variantImageUrl((item as { image?: unknown })?.image));
+      const id = String(product.id || "").trim();
+      if (needsPhoto && id) missingIds.add(id);
+    }
+  }
+  if (missingIds.size === 0) return orders;
+
+  const rows = await db
+    .select({ id: productsTable.id, variantGroups: productsTable.variantGroups })
+    .from(productsTable)
+    .where(inArray(productsTable.id, Array.from(missingIds)));
+  const groupsById = new Map(rows.map((row) => [row.id, parseVariantGroups(row.variantGroups)]));
+
+  return orders.map((order) => ({
+    ...order,
+    products: (order.products || []).map((product) => {
+      const selected = Array.isArray(product.selectedVariants)
+        ? product.selectedVariants as Array<{ groupName?: string; option?: string; image?: unknown }>
+        : [];
+      if (selected.length === 0) return product;
+      const groups = groupsById.get(String(product.id || "").trim()) ?? [];
+      return { ...product, selectedVariants: snapshotSelectedVariants(groups, selected) };
+    }),
+  })) as T[];
+}
+
 async function presentCustomerOrders(rows: Array<typeof ordersTable.$inferSelect>) {
-  const mapped = await enrichOrdersWithProductImages(rows.map((row) => mapOrderForCustomer(row)));
+  const mapped = await enrichSelectedVariantImages(
+    await enrichOrdersWithProductImages(rows.map((row) => mapOrderForCustomer(row))),
+  );
   const withParents = await attachParentOrderNumbers(mapped);
   const withChildren = await attachHasReshipmentChild(withParents);
   return attachShipmentsToMappedOrders(withChildren);

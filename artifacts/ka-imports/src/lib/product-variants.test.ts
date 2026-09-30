@@ -4,6 +4,7 @@ import {
   cartLineKey,
   parseVariantGroups,
   readEditorVariantGroups,
+  readOrderVariantChoices,
   variantGalleryImages,
   variantImageFromSelection,
   variantSelectionError,
@@ -84,6 +85,16 @@ test("mostrar as selecionadas junta a foto de cada clique", () => {
     "https://cdn.example/tirzec.jpg",
   ]);
   assert.equal(variantImageFromSelection(groups, selected), null);
+});
+
+test("resumo do pedido lê a foto gravada da opção", () => {
+  assert.deepEqual(readOrderVariantChoices([
+    { groupName: "Escolha seu kit", option: "TG", image: "https://cdn.example/tg.jpg" },
+    { groupName: "Escolha seu kit", option: "Lipoless", image: "data:image/jpeg;base64,abc" },
+  ]), [
+    { groupName: "Escolha seu kit", option: "TG", image: "https://cdn.example/tg.jpg" },
+    { groupName: "Escolha seu kit", option: "Lipoless", image: null },
+  ]);
 });
 
 test("rascunho do admin guarda o máximo", () => {

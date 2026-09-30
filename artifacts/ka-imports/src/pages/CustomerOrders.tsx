@@ -10,6 +10,7 @@ import {
   customerReshipmentLabel,
   customerShippingHint,
   findOrderProductImage,
+  findOrderVariantChoices,
   getCustomerSituation,
   getPackageTrackingHistory,
   getSituationBadgeClass,
@@ -31,6 +32,7 @@ import {
 import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
+import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -213,7 +215,7 @@ function PackageProductRows({ order, pkg }: { order: CustomerOrder; pkg: Custome
       {items.map((item, idx) => {
         const image = findOrderProductImage(order, item);
         return (
-          <li key={`${pkg.id}-item-${idx}`} className="flex items-center gap-2 min-w-0">
+          <li key={`${pkg.id}-item-${idx}`} className="flex items-start gap-2 min-w-0">
             <div className="w-8 h-8 rounded-md border border-blue-100 bg-white overflow-hidden flex items-center justify-center shrink-0">
               {image ? (
                 <img src={image} alt={item.name} className="w-full h-full object-cover" loading="lazy" />
@@ -221,9 +223,12 @@ function PackageProductRows({ order, pkg }: { order: CustomerOrder; pkg: Custome
                 <Package className="w-3.5 h-3.5 text-muted-foreground" />
               )}
             </div>
-            <p className="text-xs text-blue-950 min-w-0 truncate">
-              {item.quantity}x {item.name}
-            </p>
+            <div className="min-w-0">
+              <p className="text-xs text-blue-950 break-words">
+                {item.quantity}x {item.name}
+              </p>
+              <OrderVariantChoices raw={findOrderVariantChoices(order, item)} />
+            </div>
           </li>
         );
       })}
@@ -772,9 +777,10 @@ export default function CustomerOrders() {
                                 </span>
                               )}
                               <div className="min-w-0 flex-1 pl-1">
-                                <p className="text-sm font-medium text-foreground truncate">
+                                <p className="text-sm font-medium text-foreground break-words">
                                   {order.products[0].quantity}x {order.products[0].name}
                                 </p>
+                                <OrderVariantChoices raw={order.products[0].selectedVariants} />
                                 {order.products.length > 1 && (
                                   <p className="text-xs text-muted-foreground">
                                     +{order.products.length - 1} item{order.products.length > 2 ? "s" : ""}
@@ -999,9 +1005,12 @@ export default function CustomerOrders() {
                                                       <Package className="w-4 h-4 text-muted-foreground" />
                                                     )}
                                                   </div>
-                                                  <p className="font-medium text-foreground text-sm truncate">
-                                                    {item.quantity}x {item.name}
-                                                  </p>
+                                                  <div className="min-w-0">
+                                                    <p className="font-medium text-foreground text-sm break-words">
+                                                      {item.quantity}x {item.name}
+                                                    </p>
+                                                    <OrderVariantChoices raw={catalog?.selectedVariants} />
+                                                  </div>
                                                 </div>
                                                 {unitPrice > 0 ? (
                                                   <p className="font-semibold text-foreground ml-3 shrink-0">
@@ -1038,9 +1047,12 @@ export default function CustomerOrders() {
                                               <Package className="w-4 h-4 text-muted-foreground" />
                                             )}
                                           </div>
-                                          <p className="font-medium text-foreground text-sm truncate">
-                                            {product.quantity}x {product.name}
-                                          </p>
+                                          <div className="min-w-0">
+                                            <p className="font-medium text-foreground text-sm break-words">
+                                              {product.quantity}x {product.name}
+                                            </p>
+                                            <OrderVariantChoices raw={product.selectedVariants} />
+                                          </div>
                                         </div>
                                         <p className="font-semibold text-foreground ml-3 shrink-0">
                                           {formatCurrency(product.price * product.quantity)}

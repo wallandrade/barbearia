@@ -116,6 +116,34 @@ export function acceptSelectedVariants(
   return { ok: true, selected };
 }
 
+export type SelectedVariantSnapshot = {
+  groupName: string;
+  option: string;
+  image: string | null;
+};
+
+/** Foto de cada opção escolhida, para o resumo do pedido. A foto da linha continua em resolveLineImage. */
+export function snapshotSelectedVariants(
+  groups: ProductVariantGroup[],
+  selected: Array<SelectedVariantRef & { image?: unknown }>,
+): SelectedVariantSnapshot[] {
+  const snapshots: SelectedVariantSnapshot[] = [];
+  for (const picked of selected) {
+    const groupName = String(picked.groupName || "").trim();
+    const optionLabel = String(picked.option || "").trim();
+    if (!groupName || !optionLabel) continue;
+    const stored = variantImageUrl(picked.image);
+    const group = groups.find((item) => item.name === groupName);
+    const option = group?.options.find((item) => item.label === optionLabel);
+    snapshots.push({
+      groupName,
+      option: optionLabel,
+      image: stored || option?.image || null,
+    });
+  }
+  return snapshots;
+}
+
 export function buildVariantLabel(variants: SelectedVariantRef[]): string {
   const order: string[] = [];
   const byName = new Map<string, string[]>();

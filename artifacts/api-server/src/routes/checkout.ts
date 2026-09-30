@@ -17,7 +17,7 @@ import { recordOrderActivity } from "../lib/order-activity";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
-import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage } from "../lib/variant-groups";
+import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage, snapshotSelectedVariants } from "../lib/variant-groups";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { normalizeStoredClientDocument } from "../lib/related-shipments";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
@@ -304,18 +304,17 @@ router.post("/checkout/pix", async (req, res) => {
         const isBump = item.isBump === true;
         const serverUnitPrice = isBump ? sentUnitPrice : resolveUnitPriceForQuantity(current, quantity);
         const rawSelectedVariants = normalizeOrderItemVariants(item.selectedVariants);
+        const groups = parseVariantGroups(current.variantGroups);
         let selectedVariants = rawSelectedVariants;
-        if (!isBump) {
-          const groups = parseVariantGroups(current.variantGroups);
-          if (groups.length > 0) {
-            const accepted = acceptSelectedVariants(groups, rawSelectedVariants);
-            if (!accepted.ok) {
-              variantErrors.push(accepted.message);
-              return null;
-            }
-            selectedVariants = accepted.selected;
+        if (!isBump && groups.length > 0) {
+          const accepted = acceptSelectedVariants(groups, rawSelectedVariants);
+          if (!accepted.ok) {
+            variantErrors.push(accepted.message);
+            return null;
           }
+          selectedVariants = accepted.selected;
         }
+        const variantSnapshots = snapshotSelectedVariants(groups, selectedVariants);
         const variantLabel = String(item.variantLabel || "").trim() || buildVariantLabel(selectedVariants);
         const rawName = String(item.name || current.name || "Produto");
         const productName = variantLabel && !rawName.includes(variantLabel)
@@ -338,7 +337,7 @@ router.post("/checkout/pix", async (req, res) => {
           price: serverUnitPrice,
           costPrice: Number(current.costPrice || 0),
           image: resolveLineImage(current.image, current.variantGroups, selectedVariants),
-          selectedVariants: selectedVariants.length > 0 ? selectedVariants : undefined,
+          selectedVariants: variantSnapshots.length > 0 ? variantSnapshots : undefined,
           variantLabel: variantLabel || undefined,
         };
       })
@@ -349,7 +348,7 @@ router.post("/checkout/pix", async (req, res) => {
         price: number;
         costPrice: number;
         image: string | null;
-        selectedVariants?: Array<{ groupName: string; option: string }>;
+        selectedVariants?: Array<{ groupName: string; option: string; image: string | null }>;
         variantLabel?: string;
       } => Boolean(item));
 

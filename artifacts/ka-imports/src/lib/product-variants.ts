@@ -200,6 +200,26 @@ export function variantGalleryImages(
   return images;
 }
 
+export type OrderVariantChoice = {
+  groupName: string;
+  option: string;
+  image: string | null;
+};
+
+export function readOrderVariantChoices(raw: unknown): OrderVariantChoice[] {
+  if (!Array.isArray(raw)) return [];
+  const choices: OrderVariantChoice[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const value = item as Record<string, unknown>;
+    const groupName = String(value.groupName ?? "").trim();
+    const option = String(value.option ?? "").trim();
+    if (!groupName || !option) continue;
+    choices.push({ groupName, option, image: variantImageUrl(value.image) });
+  }
+  return choices;
+}
+
 export function cartLineKey(productId: string, selectedVariants: SelectedVariant[]): string {
   if (selectedVariants.length === 0) return productId;
   const signature = selectedVariants
