@@ -91,11 +91,13 @@ export function acceptSelectedVariants(
       if (!group.options.some((option) => option.label === optionLabel)) continue;
       seen.add(optionLabel);
     }
-    if (seen.size < 1) {
-      return { ok: false, message: `Selecione ao menos uma opção em ${group.name}.` };
-    }
-    if (seen.size > max) {
-      return { ok: false, message: `Em ${group.name} dá para escolher até ${max}.` };
+    if (seen.size !== max) {
+      return {
+        ok: false,
+        message: max === 1
+          ? `Selecione uma opção em ${group.name}.`
+          : `Selecione ${max} opções em ${group.name}.`,
+      };
     }
     for (const optionLabel of seen) {
       selected.push({ groupName: group.name, option: optionLabel });

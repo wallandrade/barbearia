@@ -33,8 +33,12 @@ test("máximo 4 em 6 opções bloqueia a quinta", () => {
   const four = ["TG", "Tirzec", "Lipoless", "Gluconex"].map((option) => ({ groupName: "Escolha seu kit", option }));
   assert.equal(variantSelectionError(groups, four), null);
   assert.equal(
+    variantSelectionError(groups, four.slice(0, 1)),
+    "Selecione 4 opções em Escolha seu kit.",
+  );
+  assert.equal(
     variantSelectionError(groups, [...four, { groupName: "Escolha seu kit", option: "A" }]),
-    "Em Escolha seu kit dá para escolher até 4.",
+    "Selecione 4 opções em Escolha seu kit.",
   );
 });
 

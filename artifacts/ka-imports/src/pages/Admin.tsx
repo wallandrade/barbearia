@@ -17860,7 +17860,7 @@ function ProductsPanel({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block">Variantes do Produto</label>
-                        <p className="text-xs text-muted-foreground mt-1">Cada opção tem nome e foto. O máximo diz até quantas o cliente marca. Ex.: 6 opções e máximo 4.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Cada opção tem nome e foto. O máximo é quantas o cliente precisa marcar para comprar. Ex.: 6 opções e máximo 4.</p>
                       </div>
                       <Button
                         type="button"

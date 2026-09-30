@@ -52,6 +52,11 @@ test("seis opções com máximo 4 aceitam até 4", () => {
   ]);
   assert.equal(four.ok, true);
 
+  const one = acceptSelectedVariants(groups, [
+    { groupName: "Escolha seu kit", option: "TG" },
+  ]);
+  assert.equal(one.ok, false);
+
   const five = acceptSelectedVariants(groups, [
     { groupName: "Escolha seu kit", option: "TG" },
     { groupName: "Escolha seu kit", option: "Tirzec" },

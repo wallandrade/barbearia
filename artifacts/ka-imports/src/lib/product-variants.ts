@@ -140,8 +140,11 @@ export function variantSelectionError(
       const label = String(item.option || "").trim();
       if (group.options.some((option) => option.label === label)) labels.add(label);
     }
-    if (labels.size < 1) return `Selecione ao menos uma opção em ${group.name}.`;
-    if (labels.size > max) return `Em ${group.name} dá para escolher até ${max}.`;
+    if (labels.size !== max) {
+      return max === 1
+        ? `Selecione uma opção em ${group.name}.`
+        : `Selecione ${max} opções em ${group.name}.`;
+    }
   }
   return null;
 }
