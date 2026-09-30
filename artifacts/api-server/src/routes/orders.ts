@@ -13,7 +13,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
-import { resolveLineImage } from "../lib/variant-groups";
+import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage } from "../lib/variant-groups";
 import {
   ensureOrderCommission,
   normalizeAffiliateCode,
@@ -334,10 +334,6 @@ function normalizeOrderItemVariants(raw: unknown): Array<{ groupName: string; op
       return { groupName, option };
     })
     .filter((item): item is { groupName: string; option: string } => Boolean(item));
-}
-
-function buildVariantLabel(variants: Array<{ groupName: string; option: string }>): string {
-  return variants.map((item) => `${item.groupName}: ${item.option}`).join(" / ");
 }
 
 type TrackingParseResult = {
@@ -1110,6 +1106,7 @@ router.post("/orders", async (req, res) => {
     }
 
     const unavailableProducts: string[] = [];
+    const variantErrors: string[] = [];
     const priceChanges: Array<{ id: string; name: string; sentPrice: number; currentPrice: number }> = [];
     const orderProducts = productItems
       .map((item) => {
@@ -1126,7 +1123,19 @@ router.post("/orders", async (req, res) => {
         const sentUnitPrice = Number(item.price) || 0;
         const isBump = item.isBump === true;
         const serverUnitPrice = isBump ? sentUnitPrice : resolveUnitPriceForQuantity(current, quantity);
-        const selectedVariants = normalizeOrderItemVariants(item.selectedVariants);
+        const rawSelectedVariants = normalizeOrderItemVariants(item.selectedVariants);
+        let selectedVariants = rawSelectedVariants;
+        if (!isBump) {
+          const groups = parseVariantGroups(current.variantGroups);
+          if (groups.length > 0) {
+            const accepted = acceptSelectedVariants(groups, rawSelectedVariants);
+            if (!accepted.ok) {
+              variantErrors.push(accepted.message);
+              return null;
+            }
+            selectedVariants = accepted.selected;
+          }
+        }
         const variantLabel = String(item.variantLabel || "").trim() || buildVariantLabel(selectedVariants);
         const rawName = String(item.name || current.name || "Produto");
         const productName = variantLabel && !rawName.includes(variantLabel)
@@ -1163,6 +1172,14 @@ router.post("/orders", async (req, res) => {
         selectedVariants?: Array<{ groupName: string; option: string }>;
         variantLabel?: string;
       } => Boolean(item));
+
+    if (variantErrors.length > 0) {
+      res.status(400).json({
+        error: "INVALID_VARIANT",
+        message: variantErrors[0],
+      });
+      return;
+    }
 
     if (unavailableProducts.length > 0) {
       res.status(400).json({

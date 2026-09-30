@@ -3,7 +3,7 @@ import { Link, useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { normalizeSelectedVariants, parseVariantGroups } from "@/lib/product-variants";
+import { normalizeSelectedVariants, parseVariantGroups, variantSelectionError } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
@@ -112,25 +112,26 @@ export default function ProductDetail() {
     () => parseVariantGroups((product as { variantGroups?: unknown } | null)?.variantGroups),
     [product],
   );
-  const [selectedVariantMap, setSelectedVariantMap] = useState<Record<string, string>>({});
+  const [selectedVariantMap, setSelectedVariantMap] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     setSelectedVariantMap({});
   }, [product?.id]);
 
-  const selectedVariants = useMemo(
-    () => normalizeSelectedVariants(
-      variantGroups,
-      variantGroups.map((group) => ({
-        groupName: group.name,
-        option: selectedVariantMap[group.name] || "",
-      })),
+  const selectedVariantRaw = useMemo(
+    () => variantGroups.flatMap((group) =>
+      (selectedVariantMap[group.name] ?? []).map((option) => ({ groupName: group.name, option })),
     ),
     [variantGroups, selectedVariantMap],
   );
+  const selectedVariants = useMemo(
+    () => normalizeSelectedVariants(variantGroups, selectedVariantRaw),
+    [variantGroups, selectedVariantRaw],
+  );
+  const variantError = variantSelectionError(variantGroups, selectedVariantRaw);
   const selectedVariantImage = selectedVariants.find((item) => item.image)?.image || null;
 
-  const hasRequiredVariants = variantGroups.length === 0 || selectedVariants.length === variantGroups.length;
+  const hasRequiredVariants = variantError == null;
   const isSoldOut = product ? isProductUnavailable(product) : false;
   const backHref = sellerSlug ? `/${sellerSlug}` : "/";
 
@@ -194,18 +195,36 @@ export default function ProductDetail() {
               {variantGroups.length > 0 && (
                 <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
                   <p className="text-sm font-semibold text-foreground">Escolha as variantes</p>
-                  {variantGroups.map((group) => (
+                  {variantGroups.map((group) => {
+                    const picked = selectedVariantMap[group.name] ?? [];
+                    const max = group.maxSelect > 0 ? group.maxSelect : 1;
+                    return (
                     <div key={group.name}>
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">{group.name}</label>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group.name}</label>
+                        {max > 1 && (
+                          <span className="text-xs font-medium text-muted-foreground">{picked.length} de {max}</span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {group.options.map((option) => {
-                          const selected = selectedVariantMap[group.name] === option.label;
+                          const selected = picked.includes(option.label);
+                          const blocked = !selected && max > 1 && picked.length >= max;
                           return (
                             <button
                               key={option.label}
                               type="button"
-                              onClick={() => setSelectedVariantMap((prev) => ({ ...prev, [group.name]: option.label }))}
-                              className={`flex items-center gap-2 rounded-xl border-2 px-2 py-1.5 text-left text-sm transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-white hover:border-primary/40"}`}
+                              disabled={blocked}
+                              onClick={() => setSelectedVariantMap((prev) => {
+                                const current = prev[group.name] ?? [];
+                                if (current.includes(option.label)) {
+                                  return { ...prev, [group.name]: current.filter((label) => label !== option.label) };
+                                }
+                                if (max <= 1) return { ...prev, [group.name]: [option.label] };
+                                if (current.length >= max) return prev;
+                                return { ...prev, [group.name]: [...current, option.label] };
+                              })}
+                              className={`flex items-center gap-2 rounded-xl border-2 px-2 py-1.5 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${selected ? "border-primary bg-primary/5" : "border-border bg-white hover:border-primary/40"}`}
                             >
                               <span className="w-10 h-10 rounded-lg overflow-hidden bg-muted shrink-0">
                                 <img
@@ -220,7 +239,8 @@ export default function ProductDetail() {
                         })}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -261,7 +281,7 @@ export default function ProductDetail() {
                             return;
                           }
                           if (!hasRequiredVariants) {
-                            toast.error("Selecione todas as variantes para continuar.");
+                            toast.error(variantError || "Selecione as variantes para continuar.");
                             return;
                           }
                           addItem(product, {
@@ -289,7 +309,7 @@ export default function ProductDetail() {
                       return;
                     }
                     if (!hasRequiredVariants) {
-                      toast.error("Selecione todas as variantes para continuar.");
+                      toast.error(variantError || "Selecione as variantes para continuar.");
                       return;
                     }
                     addItem(product, { selectedVariants });

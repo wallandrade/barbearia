@@ -7,6 +7,7 @@ import {
   normalizeSelectedVariants,
   parseVariantGroups,
   variantImageFromSelection,
+  variantSelectionError,
   type SelectedVariant,
 } from "@/lib/product-variants";
 
@@ -168,10 +169,10 @@ export const useCart = create<CartState>()(
 
           const addQuantity = Math.max(1, Number(options?.quantity ?? 1) || 1);
           const variantGroups = parseVariantGroups((product as Product & { variantGroups?: unknown }).variantGroups);
-          const selectedVariants = normalizeSelectedVariants(variantGroups, options?.selectedVariants);
-          if (variantGroups.length > 0 && selectedVariants.length !== variantGroups.length) {
+          if (variantSelectionError(variantGroups, options?.selectedVariants)) {
             return state;
           }
+          const selectedVariants = normalizeSelectedVariants(variantGroups, options?.selectedVariants);
           const variantLabel = buildVariantLabel(selectedVariants);
           const displayName = variantLabel ? `${product.name} - ${variantLabel}` : product.name;
           const lineKey = cartLineKey(product.id, selectedVariants);

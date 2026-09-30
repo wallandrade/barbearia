@@ -6,6 +6,8 @@ export type VariantOption = {
 export type VariantGroup = {
   name: string;
   options: VariantOption[];
+  /** Quantas opções o cliente pode marcar. 1 = escolha única. */
+  maxSelect: number;
 };
 
 export type SelectedVariant = {
@@ -30,6 +32,12 @@ export function variantImageUrl(raw: unknown): string | null {
   const value = raw.trim();
   if (!value.startsWith("https://") && !value.startsWith("http://")) return null;
   return value;
+}
+
+export function readMaxSelect(raw: unknown): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) return 1;
+  return Math.min(99, Math.trunc(value));
 }
 
 function parseStoredOption(raw: unknown): VariantOption | null {
@@ -61,7 +69,8 @@ export function parseVariantGroups(raw: unknown): VariantGroup[] {
         options.push(option);
       }
       if (!name || options.length === 0) return null;
-      return { name, options };
+      const maxSelect = Math.min(readMaxSelect(item?.maxSelect), options.length);
+      return { name, options, maxSelect };
     })
     .filter((group): group is VariantGroup => Boolean(group));
 }
@@ -88,6 +97,7 @@ export function readEditorVariantGroups(raw: unknown): VariantGroup[] {
       .filter((option): option is VariantOption => Boolean(option));
     return {
       name,
+      maxSelect: readMaxSelect(item.maxSelect),
       options: options.length > 0 ? options : [{ label: "", image: null }],
     };
   });
@@ -101,17 +111,54 @@ export function normalizeSelectedVariants(
 
   const selected: SelectedVariant[] = [];
   for (const group of groups) {
-    const picked = raw.find((item) => String(item.groupName || "").trim() === group.name);
-    const optionLabel = String(picked?.option || "").trim();
-    const option = group.options.find((item) => item.label === optionLabel);
-    if (!option) continue;
-    selected.push({ groupName: group.name, option: option.label, image: option.image });
+    const max = group.maxSelect > 0 ? group.maxSelect : 1;
+    const seen = new Set<string>();
+    for (const item of raw) {
+      if (String(item.groupName || "").trim() !== group.name) continue;
+      const optionLabel = String(item.option || "").trim();
+      if (!optionLabel || seen.has(optionLabel)) continue;
+      const option = group.options.find((current) => current.label === optionLabel);
+      if (!option) continue;
+      if (seen.size >= max) break;
+      seen.add(optionLabel);
+      selected.push({ groupName: group.name, option: option.label, image: option.image });
+    }
   }
   return selected;
 }
 
+export function variantSelectionError(
+  groups: VariantGroup[],
+  raw: Array<{ groupName?: string; option?: string }> | undefined,
+): string | null {
+  if (groups.length === 0) return null;
+  for (const group of groups) {
+    const max = group.maxSelect > 0 ? group.maxSelect : 1;
+    const labels = new Set<string>();
+    for (const item of raw ?? []) {
+      if (String(item.groupName || "").trim() !== group.name) continue;
+      const label = String(item.option || "").trim();
+      if (group.options.some((option) => option.label === label)) labels.add(label);
+    }
+    if (labels.size < 1) return `Selecione ao menos uma opção em ${group.name}.`;
+    if (labels.size > max) return `Em ${group.name} dá para escolher até ${max}.`;
+  }
+  return null;
+}
+
 export function buildVariantLabel(selectedVariants: SelectedVariant[]): string {
-  return selectedVariants.map((item) => `${item.groupName}: ${item.option}`).join(" / ");
+  const order: string[] = [];
+  const byName = new Map<string, string[]>();
+  for (const item of selectedVariants) {
+    const current = byName.get(item.groupName);
+    if (!current) {
+      byName.set(item.groupName, [item.option]);
+      order.push(item.groupName);
+      continue;
+    }
+    current.push(item.option);
+  }
+  return order.map((groupName) => `${groupName}: ${(byName.get(groupName) ?? []).join(", ")}`).join(" / ");
 }
 
 export function variantImageFromSelection(selectedVariants: SelectedVariant[]): string | null {

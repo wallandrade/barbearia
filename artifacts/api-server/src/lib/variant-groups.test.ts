@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseVariantGroups, resolveLineImage } from "./variant-groups";
+import { acceptSelectedVariants, parseVariantGroups, resolveLineImage } from "./variant-groups";
 
 test("opção antiga em texto continua válida e sem foto", () => {
   const groups = parseVariantGroups([{ name: "Cor", options: ["Preta", "Branca"] }]);
@@ -11,6 +11,7 @@ test("opção antiga em texto continua válida e sem foto", () => {
         { label: "Preta", image: null },
         { label: "Branca", image: null },
       ],
+      maxSelect: 1,
     },
   ]);
 });
@@ -32,6 +33,33 @@ test("opção com foto https fica no cadastro e data URL sai", () => {
 
 test("grupo vazio não entra no catálogo", () => {
   assert.deepEqual(parseVariantGroups([{ name: "", options: [] }, { name: "Cor", options: ["  "] }]), []);
+});
+
+test("seis opções com máximo 4 aceitam até 4", () => {
+  const groups = parseVariantGroups([{
+    name: "Escolha seu kit",
+    maxSelect: 4,
+    options: ["TG", "Tirzec", "Lipoless", "Gluconex", "A", "B"],
+  }]);
+  assert.equal(groups[0]?.maxSelect, 4);
+  assert.equal(groups[0]?.options.length, 6);
+
+  const four = acceptSelectedVariants(groups, [
+    { groupName: "Escolha seu kit", option: "TG" },
+    { groupName: "Escolha seu kit", option: "Tirzec" },
+    { groupName: "Escolha seu kit", option: "Lipoless" },
+    { groupName: "Escolha seu kit", option: "Gluconex" },
+  ]);
+  assert.equal(four.ok, true);
+
+  const five = acceptSelectedVariants(groups, [
+    { groupName: "Escolha seu kit", option: "TG" },
+    { groupName: "Escolha seu kit", option: "Tirzec" },
+    { groupName: "Escolha seu kit", option: "Lipoless" },
+    { groupName: "Escolha seu kit", option: "Gluconex" },
+    { groupName: "Escolha seu kit", option: "A" },
+  ]);
+  assert.equal(five.ok, false);
 });
 
 test("foto do pedido usa a opção escolhida", () => {

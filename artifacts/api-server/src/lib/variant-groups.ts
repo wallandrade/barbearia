@@ -6,6 +6,8 @@ export type ProductVariantOption = {
 export type ProductVariantGroup = {
   name: string;
   options: ProductVariantOption[];
+  /** Quantas opções o cliente pode marcar neste grupo. 1 = escolha única. */
+  maxSelect: number;
 };
 
 export type SelectedVariantRef = {
@@ -29,6 +31,12 @@ export function variantImageUrl(raw: unknown): string | null {
   const value = raw.trim();
   if (!value.startsWith("https://") && !value.startsWith("http://")) return null;
   return value;
+}
+
+export function readMaxSelect(raw: unknown): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) return 1;
+  return Math.min(99, Math.trunc(value));
 }
 
 function parseVariantOption(raw: unknown): ProductVariantOption | null {
@@ -60,9 +68,58 @@ export function parseVariantGroups(raw: unknown): ProductVariantGroup[] {
         options.push(option);
       }
       if (!name || options.length === 0) return null;
-      return { name, options };
+      const maxSelect = Math.min(readMaxSelect(item?.maxSelect), options.length);
+      return { name, options, maxSelect };
     })
     .filter((group): group is ProductVariantGroup => Boolean(group));
+}
+
+export function acceptSelectedVariants(
+  groups: ProductVariantGroup[],
+  raw: SelectedVariantRef[],
+): { ok: true; selected: SelectedVariantRef[] } | { ok: false; message: string } {
+  if (groups.length === 0) return { ok: true, selected: raw };
+
+  const selected: SelectedVariantRef[] = [];
+  for (const group of groups) {
+    const max = group.maxSelect > 0 ? group.maxSelect : 1;
+    const seen = new Set<string>();
+    for (const item of raw) {
+      if (String(item.groupName || "").trim() !== group.name) continue;
+      const optionLabel = String(item.option || "").trim();
+      if (!optionLabel || seen.has(optionLabel)) continue;
+      if (!group.options.some((option) => option.label === optionLabel)) continue;
+      seen.add(optionLabel);
+    }
+    if (seen.size < 1) {
+      return { ok: false, message: `Selecione ao menos uma opção em ${group.name}.` };
+    }
+    if (seen.size > max) {
+      return { ok: false, message: `Em ${group.name} dá para escolher até ${max}.` };
+    }
+    for (const optionLabel of seen) {
+      selected.push({ groupName: group.name, option: optionLabel });
+    }
+  }
+  return { ok: true, selected };
+}
+
+export function buildVariantLabel(variants: SelectedVariantRef[]): string {
+  const order: string[] = [];
+  const byName = new Map<string, string[]>();
+  for (const item of variants) {
+    const groupName = String(item.groupName || "").trim();
+    const option = String(item.option || "").trim();
+    if (!groupName || !option) continue;
+    const current = byName.get(groupName);
+    if (!current) {
+      byName.set(groupName, [option]);
+      order.push(groupName);
+      continue;
+    }
+    current.push(option);
+  }
+  return order.map((groupName) => `${groupName}: ${(byName.get(groupName) ?? []).join(", ")}`).join(" / ");
 }
 
 export function resolveLineImage(

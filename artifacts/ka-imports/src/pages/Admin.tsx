@@ -17860,13 +17860,13 @@ function ProductsPanel({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block">Variantes do Produto</label>
-                        <p className="text-xs text-muted-foreground mt-1">Cada opção tem nome e foto. O cliente escolhe pelo cartão.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Cada opção tem nome e foto. O máximo diz até quantas o cliente marca. Ex.: 6 opções e máximo 4.</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => {
-                          const next: VariantGroup[] = [...currentVariantGroups, { name: "", options: [{ label: "", image: null }] }];
+                          const next: VariantGroup[] = [...currentVariantGroups, { name: "", maxSelect: 1, options: [{ label: "", image: null }] }];
                           setProductForm({ ...(productForm as any), variantGroups: next } as any);
                         }}
                       >
@@ -17898,7 +17898,24 @@ function ProductsPanel({
                                       : item);
                                     setProductForm({ ...(productForm as any), variantGroups: next } as any);
                                   }}
-                                  placeholder="Ex: Cor"
+                                  placeholder="Ex: Escolha seu kit"
+                                  className={inp2}
+                                />
+                              </div>
+                              <div className="w-24 shrink-0">
+                                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Máximo</label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={99}
+                                  value={group.maxSelect ?? 1}
+                                  onChange={(event) => {
+                                    const maxSelect = Math.min(99, Math.max(1, parseInt(event.target.value, 10) || 1));
+                                    const next = currentVariantGroups.map((item, index) => index === groupIndex
+                                      ? { ...item, maxSelect }
+                                      : item);
+                                    setProductForm({ ...(productForm as any), variantGroups: next } as any);
+                                  }}
                                   className={inp2}
                                 />
                               </div>
