@@ -30,6 +30,18 @@ function positionRank(sortOrder: unknown): number {
   return n > 0 ? n : Number.MAX_SAFE_INTEGER;
 }
 
+export function bestManualDisplayRank<T extends { sortOrder?: number | null; isSoldOut?: boolean | null }>(
+  products: T[],
+): number {
+  let best = Number.MAX_SAFE_INTEGER;
+  for (const product of products) {
+    if (product.isSoldOut === true) continue;
+    const rank = positionRank(product.sortOrder);
+    if (rank < best) best = rank;
+  }
+  return best;
+}
+
 function salesRank(soldQty: unknown): number {
   const n = Number(soldQty || 0);
   return Number.isFinite(n) ? n : 0;
@@ -47,11 +59,11 @@ function compareDefaultCatalogOrder(a: CatalogSortable, b: CatalogSortable): num
   const bSold = b.isSoldOut === true;
   if (aSold !== bSold) return aSold ? 1 : -1;
 
-  const salesDiff = salesRank(b.soldQty) - salesRank(a.soldQty);
-  if (salesDiff !== 0) return salesDiff;
-
   const sortDiff = positionRank(a.sortOrder) - positionRank(b.sortOrder);
   if (sortDiff !== 0) return sortDiff;
+
+  const salesDiff = salesRank(b.soldQty) - salesRank(a.soldQty);
+  if (salesDiff !== 0) return salesDiff;
 
   const aLaunch = a.isLaunch === true;
   const bLaunch = b.isLaunch === true;
@@ -66,6 +78,9 @@ export function comparePeptideBrandOrder(a: CatalogSortable, b: CatalogSortable)
   const aSold = a.isSoldOut === true;
   const bSold = b.isSoldOut === true;
   if (aSold !== bSold) return aSold ? 1 : -1;
+
+  const sortDiff = positionRank(a.sortOrder) - positionRank(b.sortOrder);
+  if (sortDiff !== 0) return sortDiff;
 
   const rankDiff = brandGroupRank(a.brand) - brandGroupRank(b.brand);
   if (rankDiff !== 0) return rankDiff;

@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { clearSellerContext } from "@/lib/utils";
-import { sortCategoryProducts, topSoldRanksById } from "@/lib/catalog-sort";
+import { bestManualDisplayRank, sortCategoryProducts, topSoldRanksById } from "@/lib/catalog-sort";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -202,8 +202,27 @@ export default function Home() {
     });
   }, [data, searchQuery, activeCategories, nameFilter, activeBrand]);
 
+  const catalogCategoryOrder = useMemo(() => {
+    const products = data?.products ?? [];
+    const apiOrder = data?.categories ?? [];
+    const groups = new Map<string, typeof products>();
+    for (const product of products) {
+      const category = String(product.category || "Sem categoria");
+      const current = groups.get(category) ?? [];
+      current.push(product);
+      groups.set(category, current);
+    }
+    const ordered = [
+      ...apiOrder.filter((cat) => groups.has(cat)),
+      ...Array.from(groups.keys()).filter((cat) => !apiOrder.includes(cat)),
+    ];
+    return ordered.sort(
+      (a, b) => bestManualDisplayRank(groups.get(a) ?? []) - bestManualDisplayRank(groups.get(b) ?? []),
+    );
+  }, [data]);
+
   const groupedFilteredProducts = useMemo(() => {
-    const order = data?.categories ?? [];
+    const order = catalogCategoryOrder;
     const groups = new Map<string, typeof filteredProducts>();
 
     filteredProducts.forEach((product) => {
@@ -222,7 +241,7 @@ export default function Home() {
       category,
       products: sortCategoryProducts(category, groups.get(category) ?? []),
     }));
-  }, [data?.categories, filteredProducts]);
+  }, [catalogCategoryOrder, filteredProducts]);
 
   const brandOptions = useMemo(() => {
     const rawBrands = ((data as any)?.brands ?? []) as string[];
@@ -240,7 +259,7 @@ export default function Home() {
   }, [data]);
 
   const filterProps: FilterContentProps = {
-    categories: data?.categories ?? [],
+    categories: catalogCategoryOrder,
     activeCategories,
     toggleCategory,
     nameFilter,
@@ -367,7 +386,7 @@ export default function Home() {
               >
                 Todas
               </button>
-              {(data?.categories ?? []).map((cat) => (
+              {catalogCategoryOrder.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => toggleCategory(cat)}
