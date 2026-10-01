@@ -6,6 +6,7 @@ import {
   shipmentStatusRank,
   type StatusHistoryEntry,
 } from "./envioecom";
+import { isSuperfreteDelivered, packageHasSuperfreteBinding } from "./superfrete-status";
 import {
   applyOrderInventoryDelta,
   inventoryPoolLabel,
@@ -76,6 +77,13 @@ export type OrderShipmentPublic = {
   envioecomFreightCost: number | null;
   envioecomExternalOrderNumber: string | null;
   envioecomAccountId: string | null;
+  superfreteOrderId: string | null;
+  superfreteStatus: string | null;
+  superfreteTracking: string | null;
+  superfreteLabelUrl: string | null;
+  superfreteFreightCost: number | null;
+  superfreteServiceId: number | null;
+  superfreteAccountId: string | null;
 };
 
 export function mapOrderShipmentPublic(row: OrderShipment): OrderShipmentPublic {
@@ -103,6 +111,13 @@ export function mapOrderShipmentPublic(row: OrderShipment): OrderShipmentPublic 
     envioecomFreightCost: row.envioecomFreightCost != null ? Number(row.envioecomFreightCost) : null,
     envioecomExternalOrderNumber: row.envioecomExternalOrderNumber || null,
     envioecomAccountId: row.envioecomAccountId || null,
+    superfreteOrderId: row.superfreteOrderId || null,
+    superfreteStatus: row.superfreteStatus || null,
+    superfreteTracking: row.superfreteTracking || null,
+    superfreteLabelUrl: row.superfreteLabelUrl || null,
+    superfreteFreightCost: row.superfreteFreightCost != null ? Number(row.superfreteFreightCost) : null,
+    superfreteServiceId: row.superfreteServiceId != null ? Number(row.superfreteServiceId) : null,
+    superfreteAccountId: row.superfreteAccountId || null,
   };
 }
 
@@ -354,6 +369,13 @@ function inheritOrderEnvioEcom(order: Order): Partial<OrderShipment> {
     envioecomFreightCost: order.envioecomFreightCost,
     envioecomExternalOrderNumber: order.envioecomExternalOrderNumber,
     envioecomAccountId: order.envioecomAccountId,
+    superfreteOrderId: order.superfreteOrderId,
+    superfreteStatus: order.superfreteStatus,
+    superfreteTracking: order.superfreteTracking,
+    superfreteLabelUrl: order.superfreteLabelUrl,
+    superfreteFreightCost: order.superfreteFreightCost,
+    superfreteServiceId: order.superfreteServiceId,
+    superfreteAccountId: order.superfreteAccountId,
   };
 }
 
@@ -371,11 +393,11 @@ export async function saveOrderShipmentAllocation(
 
   if (!Array.isArray(packagesInput) || packagesInput.length === 0) {
     const existing = await listOrderShipments(order.id);
-    if (existing.some(packageHasEnvioEcomBinding)) {
+    if (existing.some((row) => packageHasEnvioEcomBinding(row) || packageHasSuperfreteBinding(row))) {
       throw new OrderShipmentError(
         409,
         "SPLIT_LOCKED",
-        "Há envio EnvioEcom em um pacote. Cancele o EE do pacote antes de desfazer a divisão.",
+        "Há envio em um pacote. Cancele ou desvincule antes de desfazer a divisão.",
       );
     }
     if (existing.length > 0) {
@@ -399,16 +421,16 @@ export async function saveOrderShipmentAllocation(
   for (const row of existing) {
     const pool = parseInventoryPool(row.inventoryPool);
     const stillUsed = pool && validated.packages.some((pack) => pack.inventoryPool === pool);
-    if (!stillUsed && packageHasEnvioEcomBinding(row)) {
+    if (!stillUsed && (packageHasEnvioEcomBinding(row) || packageHasSuperfreteBinding(row))) {
       throw new OrderShipmentError(
         409,
         "SPLIT_LOCKED",
-        `O pacote ${inventoryPoolLabel(pool || "loja")} já tem envio EnvioEcom. Cancele esse EE antes de tirar o estoque da divisão.`,
+        `O pacote ${inventoryPoolLabel(pool || "loja")} já tem etiqueta. Cancele ou desvincule antes de tirar o estoque da divisão.`,
       );
     }
   }
 
-  const orderHasBinding = packageHasEnvioEcomBinding(order);
+  const orderHasBinding = packageHasEnvioEcomBinding(order) || packageHasSuperfreteBinding(order);
   const preferredInheritPool = parseInventoryPool(order.inventoryPool);
   let inheritedPool: InventoryPoolKind | null = null;
   if (orderHasBinding && existing.length === 0) {
@@ -606,9 +628,13 @@ export async function rollupOrderFromPackages(orderId: string): Promise<OrderShi
   const split = packages.length >= 2;
   const allEnviado = packages.every((pkg) => pkg.enviado);
   const allReserved = packages.every((pkg) => pkg.inventoryReserved);
-  const allDelivered = packages.every((pkg) => isDeliveredStatus(String(pkg.envioecomStatus || "")));
+  const allDelivered = packages.every((pkg) =>
+    isDeliveredStatus(String(pkg.envioecomStatus || "")) || isSuperfreteDelivered(pkg.superfreteStatus),
+  );
   const least = leastCompletePackage(packages);
-  const allHaveLabel = packages.every((pkg) => String(pkg.envioecomLabelUrl || "").trim());
+  const allHaveLabel = packages.every((pkg) =>
+    String(pkg.envioecomLabelUrl || "").trim() || String(pkg.superfreteLabelUrl || "").trim(),
+  );
 
   const patch: Record<string, unknown> = {
     inventoryReserved: allReserved,
@@ -630,7 +656,14 @@ export async function rollupOrderFromPackages(orderId: string): Promise<OrderShi
     patch.envioecomAccountId = least.envioecomAccountId;
     patch.envioecomExternalOrderNumber = least.envioecomExternalOrderNumber;
     patch.envioecomFreightCost = least.envioecomFreightCost;
-    patch.trackingCode = least.envioecomBarcode || least.envioecomShipmentId;
+    patch.superfreteOrderId = least.superfreteOrderId;
+    patch.superfreteStatus = least.superfreteStatus;
+    patch.superfreteTracking = least.superfreteTracking;
+    patch.superfreteLabelUrl = (!split || allHaveLabel) ? least.superfreteLabelUrl : null;
+    patch.superfreteFreightCost = least.superfreteFreightCost;
+    patch.superfreteServiceId = least.superfreteServiceId;
+    patch.superfreteAccountId = least.superfreteAccountId;
+    patch.trackingCode = least.envioecomBarcode || least.envioecomShipmentId || least.superfreteTracking;
     if (!split || allHaveLabel) {
       patch.envioecomLabelUrl = least.envioecomLabelUrl;
       patch.trackingLabelUrl = least.envioecomLabelUrl;

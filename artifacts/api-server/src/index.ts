@@ -3,6 +3,7 @@ import { startReconciliationJob } from "./reconciliation";
 import { ensureRuntimeSchema } from "./runtime-schema";
 import { startRaffleExpiryJob } from "./raffle-expiry";
 import { startEnvioEcomStatusSyncJob } from "./envioecom-status-job";
+import { startSuperfreteStatusSyncJob } from "./superfrete-status-job";
 import { closeTrackedOpenReshipments } from "./lib/reshipment-label-tracked-apply";
 import { bootstrapShippingQueue } from "./lib/shipping-queue-allocator";
 
@@ -37,6 +38,7 @@ async function bootstrap(): Promise<void> {
     startReconciliationJob();
     startRaffleExpiryJob();
     startEnvioEcomStatusSyncJob();
+    startSuperfreteStatusSyncJob();
     void bootstrapShippingQueue();
     void closeTrackedOpenReshipments()
       .then((closed) => {

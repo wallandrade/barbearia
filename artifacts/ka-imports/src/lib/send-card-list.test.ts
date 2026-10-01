@@ -181,3 +181,18 @@ test("dividido com os dois pacotes abertos mostra as duas fotos", () => {
   };
   assert.deepEqual(sendCardThumbProducts(order).map((item) => item.id), ["a", "b"]);
 });
+
+test("SuperFrete released fica no card; posted sai", () => {
+  assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "released" }), true);
+  assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "pending" }), true);
+  assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "posted" }), false);
+  assert.equal(isOnSendCard({ id: "1", status: "paid", envioecomStatus: "Aguardando postagem" }), true);
+  assert.equal(isOnSendCard({
+    id: "1",
+    status: "paid",
+    envioecomPackages: [
+      { envioecomLabelUrl: "https://ee/a.pdf" },
+      { superfreteStatus: "released" },
+    ],
+  }), true);
+});

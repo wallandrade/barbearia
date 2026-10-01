@@ -113,6 +113,33 @@ test("EM ROTA sai da cópia; Coleta Solicitada e Aguardando coleta seguem a regr
   }), false);
 });
 
+test("SuperFrete released sai da cópia; pending fica", () => {
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    superfreteStatus: "pending",
+  }), false);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    superfreteStatus: "released",
+  }), true);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    superfreteStatus: "cancelled",
+    superfreteLabelUrl: "https://sf/old.pdf",
+  }), false);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomStatus: "Aguardando coleta",
+  }), true);
+  assert.equal(isExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomPackages: [
+      { envioecomStatus: "Etiqueta emitida", envioecomLabelUrl: "https://ee/a.pdf" },
+      { superfreteStatus: "pending" },
+    ],
+  }), false);
+});
+
 test("Aguardando coleta no pacote conta como pronto (não volta na 48h daquele pacote)", () => {
   assert.equal(isSplitOrderPartiallyShipped([
     { envioecomStatus: "Aguardando coleta" },

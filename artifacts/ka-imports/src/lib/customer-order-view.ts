@@ -1,3 +1,5 @@
+import { superfreteCustomerLabel, superfreteServiceName, isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
+
 export type TrackingHistoryEvent = {
   status: string;
   description?: string | null;
@@ -35,6 +37,10 @@ export type CustomerOrderPackage = {
   envioecomStatusHistory?: TrackingHistoryEvent[];
   envioecomShipmentId?: string | null;
   envioecomTrackingKey?: string | null;
+  superfreteOrderId?: string | null;
+  superfreteStatus?: string | null;
+  superfreteTracking?: string | null;
+  superfreteServiceId?: number | null;
 };
 
 export type CustomerOrder = {
@@ -68,6 +74,10 @@ export type CustomerOrder = {
   envioecomStatusHistory?: TrackingHistoryEvent[];
   envioecomShipmentId?: string | null;
   envioecomTrackingKey?: string | null;
+  superfreteOrderId?: string | null;
+  superfreteStatus?: string | null;
+  superfreteTracking?: string | null;
+  superfreteServiceId?: number | null;
   envioecomPackages?: CustomerOrderPackage[];
   /** Pedido original com ao menos um filho de reenvio (`parent_order_id`). */
   hasReshipmentChild?: boolean;
@@ -145,10 +155,19 @@ export function customerPrimaryTracking(order: CustomerOrder): {
   const primary = facing.find(packageHasEnvioEcomLink) || facing[0];
   const pkgHistory = primary ? getPackageTrackingHistory(primary) : [];
   const orderHistory = Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
+  const pkgStatus = primary ? packageCarrierStatus(primary) : null;
+  const serviceName = superfreteServiceName(primary?.superfreteServiceId ?? order.superfreteServiceId);
   return {
-    barcode: String(primary?.envioecomBarcode || order.envioecomBarcode || order.trackingCode || "").trim() || null,
-    status: normalizeShippingStatus(primary?.envioecomStatus || order.envioecomStatus),
-    deliveryMode: String(primary?.envioecomDeliveryMode || order.envioecomDeliveryMode || "").trim() || null,
+    barcode: String(
+      primary?.envioecomBarcode
+      || primary?.superfreteTracking
+      || order.envioecomBarcode
+      || order.superfreteTracking
+      || order.trackingCode
+      || "",
+    ).trim() || null,
+    status: pkgStatus || orderCarrierStatus(order),
+    deliveryMode: String(primary?.envioecomDeliveryMode || order.envioecomDeliveryMode || serviceName || "").trim() || null,
     history: pkgHistory.length > 0 ? pkgHistory : orderHistory,
   };
 }
@@ -307,12 +326,27 @@ export function isShippingInTransit(status: string): boolean {
   );
 }
 
+function packageCarrierStatus(pkg: CustomerOrderPackage): string | null {
+  const ee = normalizeShippingStatus(pkg.envioecomStatus);
+  if (ee) return ee;
+  return superfreteCustomerLabel(pkg.superfreteStatus) || null;
+}
+
+function orderCarrierStatus(order: CustomerOrder): string | null {
+  const ee = normalizeShippingStatus(order.envioecomStatus);
+  if (ee) return ee;
+  return superfreteCustomerLabel(order.superfreteStatus) || null;
+}
+
 function packageHasEnvioEcomLink(pkg: CustomerOrderPackage): boolean {
   return Boolean(
     pkg.envioecomBarcode ||
       pkg.envioecomStatus ||
       pkg.envioecomShipmentId ||
       pkg.envioecomTrackingKey ||
+      pkg.superfreteOrderId ||
+      pkg.superfreteTracking ||
+      pkg.superfreteStatus ||
       (Array.isArray(pkg.envioecomStatusHistory) && pkg.envioecomStatusHistory.length > 0),
   );
 }
@@ -326,12 +360,16 @@ export function hasEnvioEcomLink(order: CustomerOrder): boolean {
       order.envioecomTrackingKey ||
       order.envioecomBarcode ||
       order.envioecomStatus ||
+      order.superfreteOrderId ||
+      order.superfreteTracking ||
+      order.superfreteStatus ||
       (Array.isArray(order.envioecomStatusHistory) && order.envioecomStatusHistory.length > 0),
   );
 }
 
 function packageIsDelivered(pkg: CustomerOrderPackage): boolean {
-  const current = normalizeShippingStatus(pkg.envioecomStatus);
+  if (isSuperfreteDelivered(pkg.superfreteStatus)) return true;
+  const current = packageCarrierStatus(pkg);
   if (current && isShippingDelivered(current)) return true;
   const history = Array.isArray(pkg.envioecomStatusHistory) ? pkg.envioecomStatusHistory : [];
   return history.some((ev) => isShippingDelivered(String(ev.status || "")));
@@ -339,8 +377,9 @@ function packageIsDelivered(pkg: CustomerOrderPackage): boolean {
 
 export function isCustomerPackageOnTheWay(pkg: CustomerOrderPackage): boolean {
   if (pkg.enviado) return true;
+  if (isSuperfretePosted(pkg.superfreteStatus)) return true;
   if (packageIsDelivered(pkg)) return true;
-  const current = normalizeShippingStatus(pkg.envioecomStatus);
+  const current = packageCarrierStatus(pkg);
   return current ? isShippingInTransit(current) : false;
 }
 
@@ -353,14 +392,14 @@ export function customerPackageSituation(pkg: CustomerOrderPackage): {
     return { label: "Entregue", pending: false };
   }
   if (isCustomerPackageOnTheWay(pkg)) {
-    const current = normalizeShippingStatus(pkg.envioecomStatus);
+    const current = packageCarrierStatus(pkg);
     return {
       label: current ? toCustomerFriendlyShippingLabel(current) : "Enviado",
       pending: false,
       hint: customerShippingHint(current),
     };
   }
-  const current = normalizeShippingStatus(pkg.envioecomStatus);
+  const current = packageCarrierStatus(pkg);
   if (current) {
     return {
       label: toCustomerFriendlyShippingLabel(current) || "Aguardando envio",
@@ -383,7 +422,8 @@ export function isEnvioEcomDelivered(order: CustomerOrder): boolean {
   if (facing.length === 1 && packageHasEnvioEcomLink(facing[0])) {
     return packageIsDelivered(facing[0]);
   }
-  const current = normalizeShippingStatus(order.envioecomStatus);
+  if (isSuperfreteDelivered(order.superfreteStatus)) return true;
+  const current = orderCarrierStatus(order);
   if (current && isShippingDelivered(current)) return true;
   const history = Array.isArray(order.envioecomStatusHistory) ? order.envioecomStatusHistory : [];
   return history.some((ev) => isShippingDelivered(String(ev.status || "")));
@@ -415,7 +455,7 @@ function getSplitCustomerSituation(order: CustomerOrder): CustomerSituation | nu
     };
   }
   if (shipped.length === packages.length) {
-    const current = normalizeShippingStatus(shipped[0]?.envioecomStatus);
+    const current = shipped[0] ? packageCarrierStatus(shipped[0]) : null;
     return {
       label: current ? toCustomerFriendlyShippingLabel(current) : "Enviado",
       kind: "shipping",
@@ -532,6 +572,9 @@ export function hasTrackableShipment(order: CustomerOrder): boolean {
       order.envioecomTrackingKey ||
       order.envioecomBarcode ||
       order.envioecomStatus ||
+      order.superfreteOrderId ||
+      order.superfreteTracking ||
+      order.superfreteStatus ||
       order.trackingCode ||
       order.enviado ||
       order.status === "completed",

@@ -94,6 +94,14 @@ export const ordersTable = mysqlTable("orders", {
   envioecomExternalOrderNumber: varchar("envioecom_external_order_number", { length: 64 }),
   /** Qual conta EnvioEcom criou/sincronizou este envio (`env` = Railway). */
   envioecomAccountId: varchar("envioecom_account_id", { length: 64 }),
+  /** Etiqueta SuperFrete. Não mistura com os campos EnvioEcom. */
+  superfreteOrderId: varchar("superfrete_order_id", { length: 64 }),
+  superfreteStatus: varchar("superfrete_status", { length: 32 }),
+  superfreteTracking: varchar("superfrete_tracking", { length: 64 }),
+  superfreteLabelUrl: mediumtext("superfrete_label_url"),
+  superfreteFreightCost: decimal("superfrete_freight_cost", { precision: 10, scale: 2 }),
+  superfreteServiceId: int("superfrete_service_id"),
+  superfreteAccountId: varchar("superfrete_account_id", { length: 64 }),
   /** Conciliação com extrato OFX: ok | confirmed_100 | not_found | null */
   bankDepositMatchStatus: varchar("bank_deposit_match_status", { length: 32 }),
   bankDepositFitid: varchar("bank_deposit_fitid", { length: 64 }),

@@ -1,9 +1,13 @@
 /** Pacote / pedido na cópia 48h, POSTAR ATÉ, lista de compra e Copiar Resumo. */
 
+import { isSuperfreteExcludedFromCopy } from "./superfrete-status";
+
 export type ShippingCopyPackage = {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
   items?: Array<{
     productId?: string | null;
     productName?: string | null;
@@ -79,6 +83,7 @@ export function isClosedReshipmentStatus(status?: string | null): boolean {
 export function isSplitPackageDoneForCopy(pkg: ShippingCopyPackage | null | undefined): boolean {
   if (!pkg) return false;
   if (pkg.enviado) return true;
+  if (isSuperfreteExcludedFromCopy(pkg)) return true;
   if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;
   if (isEnvioEcomPostedStatus(pkg.envioecomStatus)) return true;
   return Boolean(String(pkg.envioecomLabelUrl || "").trim());
@@ -100,6 +105,8 @@ export function isExcludedFromShippingCopyList(order: {
   aguardandoEstoque?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
   trackingLabelUrl?: string | null;
   reshipmentStatus?: string | null;
   envioecomPackages?: ShippingCopyPackage[];
@@ -111,6 +118,7 @@ export function isExcludedFromShippingCopyList(order: {
     return packages.every(isSplitPackageDoneForCopy);
   }
   if (order.enviado) return true;
+  if (isSuperfreteExcludedFromCopy(order)) return true;
   if (isEnvioEcomLabelReadyStatus(order.envioecomStatus)) return true;
   if (isEnvioEcomPostedStatus(order.envioecomStatus)) return true;
   if (String(order.envioecomLabelUrl || "").trim()) return true;

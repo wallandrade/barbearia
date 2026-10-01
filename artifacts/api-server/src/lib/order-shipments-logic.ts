@@ -4,6 +4,7 @@ import {
   isInTransitStatus,
   isLabelReadyStatus,
 } from "./envioecom";
+import { isSuperfreteExcludedFromCopy, superfreteLeavesSendCard } from "./superfrete-status";
 
 export type InventoryPoolKind = "loja" | "motoboy" | "minas";
 
@@ -56,8 +57,11 @@ export function isPackageExcludedFromShippingCopyList(pkg: {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
 }): boolean {
   if (pkg.enviado) return true;
+  if (isSuperfreteExcludedFromCopy(pkg)) return true;
   const status = String(pkg.envioecomStatus || "").trim();
   if (status && (isLabelReadyStatus(status) || isInTransitStatus(status) || isDeliveredStatus(status))) {
     return true;
@@ -74,11 +78,15 @@ export function orderStillOccupiesShippingQueue(input: {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
   trackingLabelUrl?: string | null;
   packages?: Array<{
     enviado?: boolean | null;
     envioecomStatus?: string | null;
     envioecomLabelUrl?: string | null;
+    superfreteStatus?: string | null;
+    superfreteLabelUrl?: string | null;
   }>;
 }): boolean {
   const packages = Array.isArray(input.packages) ? input.packages : [];
@@ -89,6 +97,7 @@ export function orderStillOccupiesShippingQueue(input: {
     return false;
   }
   if (input.enviado) return false;
+  if (isSuperfreteExcludedFromCopy(input)) return false;
   const status = String(input.envioecomStatus || "").trim();
   if (status && (isLabelReadyStatus(status) || isInTransitStatus(status) || isDeliveredStatus(status))) {
     return false;
@@ -145,9 +154,11 @@ function isSendCardPinPackageReady(pkg: {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
 } | null | undefined): boolean {
   if (!pkg) return false;
   if (pkg.enviado) return true;
+  if (superfreteLeavesSendCard(pkg.superfreteStatus)) return true;
   if (String(pkg.envioecomLabelUrl || "").trim()) return true;
   return isSendCardPinLabelStatus(pkg.envioecomStatus);
 }
@@ -166,11 +177,13 @@ export function isOpenShippingListOrder(input: {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
   reshipmentStatus?: string | null;
   packages?: Array<{
     enviado?: boolean | null;
     envioecomStatus?: string | null;
     envioecomLabelUrl?: string | null;
+    superfreteStatus?: string | null;
   }>;
 }): boolean {
   const reshipmentStatus = String(input.reshipmentStatus || "").trim().toLowerCase();
@@ -182,6 +195,7 @@ export function isOpenShippingListOrder(input: {
   const packages = Array.isArray(input.packages) ? input.packages : [];
   if (packages.length >= 2) return !packages.every(isSendCardPinPackageReady);
   if (input.enviado) return false;
+  if (superfreteLeavesSendCard(input.superfreteStatus)) return false;
   if (String(input.envioecomLabelUrl || "").trim()) return false;
   return !isSendCardPinLabelStatus(input.envioecomStatus);
 }
@@ -192,6 +206,8 @@ export function isSplitOrderExcludedFromShippingCopyList(
     enviado?: boolean | null;
     envioecomStatus?: string | null;
     envioecomLabelUrl?: string | null;
+    superfreteStatus?: string | null;
+    superfreteLabelUrl?: string | null;
   }>,
 ): boolean {
   if (!isSplitShipmentList(packages)) return false;
@@ -204,6 +220,8 @@ export function isSplitOrderPartiallyShipped(
     enviado?: boolean | null;
     envioecomStatus?: string | null;
     envioecomLabelUrl?: string | null;
+    superfreteStatus?: string | null;
+    superfreteLabelUrl?: string | null;
   }>,
 ): boolean {
   if (!isSplitShipmentList(packages)) return false;

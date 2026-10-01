@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-28
+> **Última atualização:** 2026-09-30
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-09-30 | SuperFrete no Admin, ao lado da EnvioEcom | Contas em `superfrete_accounts`. Sem conta, o card segue só EnvioEcom. Com conta, o clique pergunta qual usar. Colunas `superfrete_*` no pedido e no pacote | Checkout, `/frete` e o fluxo EnvioEcom iguais |
 | 2026-09-28 | `GET /api/admin/orders/:id/related-shipments` manda `products[].image` | Miniatura no alerta de CPF (URL do pedido ou do catálogo) | Create, webhook e etiqueta iguais. Base64 não vai na resposta |
 | 2026-09-27 | Página `/frete` chama `GET /api/motoboy-coverage/lookup` depois do ViaCEP | CEP coberto ganha card Motoboy com o preço da cobertura. `consult` (acima de 200 km) só avisa | Checkout, km e faixa de CEP iguais |
 | 2026-09-27 | Página `/frete` usa o mesmo `GET /api/shipping/delivery-estimate` | Mostra só `deliveryTimeDays` no card padrão, com o preço de `shipping_options`. HTTP 429 vira “Muitas consultas…” | Checkout, create e conta Minas iguais |
@@ -86,6 +87,17 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Produtos tipicamente **não** vão na payload PIX (client + amount) no fluxo APPCNPay documentado no código.
 - Confirmação: **webhooks** (`routes/webhooks.ts`) — `/api/webhook/pix`, `/api/webhook`, URLs por pedido/cobrança/rifa.
 - Polling de transação no gateway: tratado como bloqueado; status lido do BD.
+
+## SuperFrete (emissão no Admin)
+
+- Token manual (não OAuth). Contas em `site_settings.superfrete_accounts`: nome, token, CEP de origem, sandbox e segredo do webhook. GET não devolve o token inteiro.
+- Painel **APIs SuperFrete** em Configurações, abaixo das APIs EnvioEcom.
+- Sem conta configurada, o botão do card continua **EnvioEcom**. Com conta, vira **Emitir frete** e pergunta EnvioEcom ou SuperFrete. Pedido ou pacote já vinculado a uma das duas não oferece a outra até desvincular.
+- Rotas: `POST /api/admin/superfrete/orders/:id/quote|create|labels|sync|cancel|unlink`. Create usa a caixa da cotação, declaração de conteúdo (`non_commercial`) e o item genérico da EnvioEcom. Depois tenta `checkout` com saldo. Sem saldo a etiqueta fica `pending`.
+- Webhook `POST /api/webhook/superfrete/:accountId` valida `X-ME-Signature` (HMAC-SHA256). Cadastro: `POST /api/admin/superfrete/accounts/:id/webhook` (`PUBLIC_API_URL`).
+- Status: `pending` fica na cópia 48h e no card Pedidos para Enviar. `released` sai da cópia e **fica** no card (igual Aguardando postagem). `posted` e `delivered` saem dos dois e marcam `enviado`. Não baixa estoque. `isLabelReadyStatus` da EnvioEcom não mudou.
+- Job `superfrete-status-job.ts` consulta envios `pending`/`released`. Desligar: `SUPERFRETE_AUTO_SYNC=0`.
+- Checkout do cliente e a página `/frete` não cotam na SuperFrete.
 
 ## EnvioEcom (frete / etiqueta / rastreio)
 

@@ -35,6 +35,10 @@ export async function closeOpenReshipmentIfLabelTracked(orderId: string): Promis
       envioecomBarcode: ordersTable.envioecomBarcode,
       envioecomTrackingKey: ordersTable.envioecomTrackingKey,
       envioecomStatus: ordersTable.envioecomStatus,
+      superfreteOrderId: ordersTable.superfreteOrderId,
+      superfreteLabelUrl: ordersTable.superfreteLabelUrl,
+      superfreteTracking: ordersTable.superfreteTracking,
+      superfreteStatus: ordersTable.superfreteStatus,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, id))
@@ -47,11 +51,19 @@ export async function closeOpenReshipmentIfLabelTracked(orderId: string): Promis
     envioecomBarcode: order.envioecomBarcode,
     envioecomTrackingKey: order.envioecomTrackingKey,
     envioecomStatus: order.envioecomStatus,
+    superfreteOrderId: order.superfreteOrderId,
+    superfreteLabelUrl: order.superfreteLabelUrl,
+    superfreteTracking: order.superfreteTracking,
+    superfreteStatus: order.superfreteStatus,
     packages: packages.map((pkg) => ({
       envioecomLabelUrl: pkg.envioecomLabelUrl,
       envioecomBarcode: pkg.envioecomBarcode,
       envioecomTrackingKey: pkg.envioecomTrackingKey,
       envioecomStatus: pkg.envioecomStatus,
+      superfreteOrderId: pkg.superfreteOrderId,
+      superfreteLabelUrl: pkg.superfreteLabelUrl,
+      superfreteTracking: pkg.superfreteTracking,
+      superfreteStatus: pkg.superfreteStatus,
     })),
   });
   if (!ready) return false;

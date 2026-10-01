@@ -29,6 +29,7 @@ import {
   type TrackingHistoryEvent,
   type TrackingInfo,
 } from "@/lib/customer-order-view";
+import { superfreteServiceName } from "@/lib/superfrete-status";
 import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
@@ -852,11 +853,11 @@ export default function CustomerOrders() {
                                           <p className="text-xs text-blue-900/80 mt-1">{pkgSituation.hint}</p>
                                         ) : null}
                                         <PackageProductRows order={order} pkg={pkg} />
-                                        {pkg.envioecomBarcode ? (
-                                          <p className="text-xs font-mono text-blue-950 break-all mt-1.5">Código: {pkg.envioecomBarcode}</p>
+                                        {(pkg.envioecomBarcode || pkg.superfreteTracking) ? (
+                                          <p className="text-xs font-mono text-blue-950 break-all mt-1.5">Código: {pkg.envioecomBarcode || pkg.superfreteTracking}</p>
                                         ) : null}
-                                        {pkg.envioecomDeliveryMode ? (
-                                          <p className="text-xs text-blue-900/80 mt-1">{pkg.envioecomDeliveryMode}</p>
+                                        {(pkg.envioecomDeliveryMode || superfreteServiceName(pkg.superfreteServiceId)) ? (
+                                          <p className="text-xs text-blue-900/80 mt-1">{pkg.envioecomDeliveryMode || superfreteServiceName(pkg.superfreteServiceId)}</p>
                                         ) : null}
                                         {history.length > 0 ? (
                                           <TrackingTimeline events={history} eventKeyPrefix={`${order.id}-${pkg.id}`} />

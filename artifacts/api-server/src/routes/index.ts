@@ -38,6 +38,7 @@ import shippingDeliveryEstimateRouter from "./shipping-delivery-estimate";
 
 import brevoRouter from "./brevo";
 import envioecomRouter from "./envioecom";
+import superfreteRouter from "./superfrete";
 import bankStatementRouter from "./bank-statement";
 import peptideChatRouter from "./peptide-chat";
 import insuranceRouter from "./insurance";
@@ -82,6 +83,7 @@ router.use(shippingQueueRouter);
 router.use(shippingDeliveryEstimateRouter);
 router.use(brevoRouter);
 router.use(envioecomRouter);
+router.use(superfreteRouter);
 router.use(bankStatementRouter);
 router.use(peptideChatRouter);
 router.use(insuranceRouter);

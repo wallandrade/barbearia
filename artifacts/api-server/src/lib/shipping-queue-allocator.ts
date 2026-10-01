@@ -63,6 +63,8 @@ type QueuePackageFact = {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
 };
 
 async function loadPackagesByOrderId(orderIds: string[]): Promise<Map<string, QueuePackageFact[]>> {
@@ -75,6 +77,8 @@ async function loadPackagesByOrderId(orderIds: string[]): Promise<Map<string, Qu
         enviado: orderShipmentsTable.enviado,
         envioecomStatus: orderShipmentsTable.envioecomStatus,
         envioecomLabelUrl: orderShipmentsTable.envioecomLabelUrl,
+        superfreteStatus: orderShipmentsTable.superfreteStatus,
+        superfreteLabelUrl: orderShipmentsTable.superfreteLabelUrl,
       })
       .from(orderShipmentsTable)
       .where(inArray(orderShipmentsTable.orderId, chunk));
@@ -93,6 +97,8 @@ async function orderNeedsShippingSlot(orderId: string): Promise<boolean> {
       enviado: ordersTable.enviado,
       envioecomStatus: ordersTable.envioecomStatus,
       envioecomLabelUrl: ordersTable.envioecomLabelUrl,
+      superfreteStatus: ordersTable.superfreteStatus,
+      superfreteLabelUrl: ordersTable.superfreteLabelUrl,
       trackingLabelUrl: ordersTable.trackingLabelUrl,
     })
     .from(ordersTable)
@@ -116,6 +122,8 @@ export async function releaseLabeledShippingSlots(): Promise<Map<string, number>
       enviado: ordersTable.enviado,
       envioecomStatus: ordersTable.envioecomStatus,
       envioecomLabelUrl: ordersTable.envioecomLabelUrl,
+      superfreteStatus: ordersTable.superfreteStatus,
+      superfreteLabelUrl: ordersTable.superfreteLabelUrl,
       trackingLabelUrl: ordersTable.trackingLabelUrl,
     })
     .from(shippingQueueTable)
@@ -131,6 +139,8 @@ export async function releaseLabeledShippingSlots(): Promise<Map<string, number>
       enviado: row.enviado,
       envioecomStatus: row.envioecomStatus,
       envioecomLabelUrl: row.envioecomLabelUrl,
+      superfreteStatus: row.superfreteStatus,
+      superfreteLabelUrl: row.superfreteLabelUrl,
       trackingLabelUrl: row.trackingLabelUrl,
       packages: packagesByOrder.get(row.orderId) ?? [],
     });

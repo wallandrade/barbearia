@@ -1,10 +1,15 @@
 import { isProvisionalEnvioEcomBarcode } from "./envioecom";
+import { isSuperfreteCancelled, isSuperfreteLabelReady, isSuperfretePosted } from "./superfrete-status";
 
 export type LabelTrackedUnit = {
   envioecomLabelUrl?: string | null;
   envioecomBarcode?: string | null;
   envioecomTrackingKey?: string | null;
   envioecomStatus?: string | null;
+  superfreteOrderId?: string | null;
+  superfreteLabelUrl?: string | null;
+  superfreteTracking?: string | null;
+  superfreteStatus?: string | null;
 };
 
 function isCancelledCarrierStatus(status: string | null | undefined): boolean {
@@ -22,7 +27,16 @@ export function hasRealCarrierTracking(unit: {
   return Boolean(String(unit.envioecomTrackingKey || "").trim());
 }
 
+function superfreteUnitReady(unit: LabelTrackedUnit): boolean {
+  if (!String(unit.superfreteOrderId || "").trim()) return false;
+  if (isSuperfreteCancelled(unit.superfreteStatus)) return false;
+  if (!String(unit.superfreteLabelUrl || "").trim()) return false;
+  if (!String(unit.superfreteTracking || "").trim()) return false;
+  return isSuperfreteLabelReady(unit.superfreteStatus) || isSuperfretePosted(unit.superfreteStatus);
+}
+
 export function unitHasLabelAndRealTracking(unit: LabelTrackedUnit): boolean {
+  if (String(unit.superfreteOrderId || "").trim()) return superfreteUnitReady(unit);
   if (isCancelledCarrierStatus(unit.envioecomStatus)) return false;
   if (!String(unit.envioecomLabelUrl || "").trim()) return false;
   return hasRealCarrierTracking(unit);

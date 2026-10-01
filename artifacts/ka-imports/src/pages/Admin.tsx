@@ -741,6 +741,8 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
+import AdminSuperfreteAccountsPanel, { type SuperfreteAccountPublic } from "@/pages/AdminSuperfreteAccountsPanel";
+import { superfreteServiceName } from "@/lib/superfrete-status";
 import AdminInventoryExitAccessPanel from "@/pages/AdminInventoryExitAccessPanel";
 import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
 import { CpfQuoteWarningModal, CpfRelatedShipmentsBlock } from "@/pages/AdminCpfRelatedShipments";
@@ -10926,6 +10928,22 @@ function OrdersPanel({
   }>(null);
   const [envioecomLinkDraft, setEnvioecomLinkDraft] = useState("");
   const [envioecomAccounts, setEnvioecomAccounts] = useState<EnvioEcomAccountPublic[]>([]);
+  const [superfreteAccounts, setSuperfreteAccounts] = useState<SuperfreteAccountPublic[]>([]);
+  const [freightChoice, setFreightChoice] = useState<null | { order: AdminOrder; packageId?: string | null }>(null);
+  const [superfreteAccountPicker, setSuperfreteAccountPicker] = useState<null | { order: AdminOrder; packageId?: string | null }>(null);
+  const [superfreteQuoteModal, setSuperfreteQuoteModal] = useState<null | {
+    order: AdminOrder;
+    packageId?: string | null;
+    accountId: string;
+    accountName: string;
+    quotes: Array<{
+      service: number;
+      name: string;
+      price: number | null;
+      deliveryTime: number | null;
+      volume: { height: number; width: number; length: number; weight: number } | null;
+    }>;
+  }>(null);
   const [envioecomAccountPicker, setEnvioecomAccountPicker] = useState<null | {
     order: AdminOrder;
     purpose: "quote" | "link";
@@ -10997,6 +11015,9 @@ function OrdersPanel({
         const res = await fetch(`${BASE}/api/admin/envioecom/accounts`, { headers: authHeaders() });
         const data = await res.json() as { accounts?: EnvioEcomAccountPublic[] };
         if (!cancelled && res.ok) setEnvioecomAccounts(data.accounts || []);
+        const sf = await fetch(`${BASE}/api/admin/superfrete/accounts`, { headers: authHeaders() });
+        const sfData = await sf.json() as { accounts?: SuperfreteAccountPublic[] };
+        if (!cancelled && sf.ok) setSuperfreteAccounts(sfData.accounts || []);
       } catch {
         // silencioso: o clique no botão tenta de novo
       }
@@ -11105,6 +11126,191 @@ function OrdersPanel({
       return;
     }
     continueEnvioEcomQuote(order, packageId, ready, false);
+  };
+
+  const selectableSuperfreteAccounts = superfreteAccounts.filter((account) => account.configured);
+
+  const carrierTarget = (order: AdminOrder, packageId?: string | null) => {
+    if (!packageId) return order as AdminOrder & {
+      superfreteOrderId?: string | null;
+      superfreteStatus?: string | null;
+      envioecomBarcode?: string | null;
+      envioecomShipmentId?: string | null;
+    };
+    const packages = (order as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages || [];
+    return packages.find((pkg) => pkg.id === packageId) || null;
+  };
+
+  const targetHasEnvioEcom = (order: AdminOrder, packageId?: string | null) => {
+    const target = carrierTarget(order, packageId);
+    if (!target) return false;
+    return Boolean(target.envioecomBarcode || target.envioecomShipmentId);
+  };
+
+  const targetHasSuperfrete = (order: AdminOrder, packageId?: string | null) => {
+    const target = carrierTarget(order, packageId);
+    if (!target) return false;
+    const id = String(target.superfreteOrderId || "").trim();
+    const status = String(target.superfreteStatus || "").toLowerCase();
+    if (!id) return false;
+    return status !== "cancelled" && status !== "canceled";
+  };
+
+  const startFreightEmit = (order: AdminOrder, packageId?: string | null) => {
+    if (targetHasEnvioEcom(order, packageId) || selectableSuperfreteAccounts.length === 0) {
+      void startEnvioEcomQuote(order, packageId);
+      return;
+    }
+    if (targetHasSuperfrete(order, packageId)) return;
+    setFreightChoice({ order, packageId: packageId || null });
+  };
+
+  const quoteSuperfrete = async (order: AdminOrder, accountId: string, packageId?: string | null) => {
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/superfrete/orders/${order.id}/quote`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId, ...(packageId ? { packageId } : {}) }),
+      });
+      const data = await res.json() as {
+        quotes?: Array<{
+          service: number;
+          name: string;
+          price: number | null;
+          deliveryTime: number | null;
+          volume: { height: number; width: number; length: number; weight: number } | null;
+        }>;
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao cotar SuperFrete.");
+        return;
+      }
+      if (!data.quotes?.length) {
+        toast.error("Nenhuma opção de frete na SuperFrete.");
+        return;
+      }
+      const account = selectableSuperfreteAccounts.find((row) => row.id === accountId);
+      setSuperfreteQuoteModal({
+        order,
+        packageId: packageId || null,
+        accountId,
+        accountName: account?.name || "SuperFrete",
+        quotes: data.quotes,
+      });
+    } catch {
+      toast.error("Erro ao cotar SuperFrete.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const createSuperfreteShipment = async (
+    order: AdminOrder,
+    quote: {
+      service: number;
+      name: string;
+      price: number | null;
+      volume: { height: number; width: number; length: number; weight: number } | null;
+    },
+  ) => {
+    if (!superfreteQuoteModal) return;
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/superfrete/orders/${order.id}/create`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: superfreteQuoteModal.accountId,
+          service: quote.service,
+          price: quote.price,
+          ...(quote.volume ? { volume: quote.volume } : {}),
+          ...(superfreteQuoteModal.packageId ? { packageId: superfreteQuoteModal.packageId } : {}),
+        }),
+      });
+      const data = await res.json() as {
+        ok?: boolean;
+        status?: string;
+        tracking?: string | null;
+        labelUrl?: string | null;
+        message?: string;
+        paymentPending?: boolean;
+        packages?: unknown[];
+        enviado?: boolean;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao criar etiqueta SuperFrete.");
+        return;
+      }
+      patchOrderLocal(order.id, {
+        superfreteOrderId: (data as { id?: string }).id,
+        superfreteStatus: data.status,
+        superfreteTracking: data.tracking,
+        superfreteLabelUrl: data.labelUrl,
+        superfreteServiceId: quote.service,
+        superfreteAccountId: superfreteQuoteModal.accountId,
+        ...(data.enviado ? { enviado: true } : {}),
+        ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
+      });
+      setSuperfreteQuoteModal(null);
+      toast.success(data.message || "Etiqueta SuperFrete criada.");
+    } catch {
+      toast.error("Erro ao criar etiqueta SuperFrete.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const runSuperfreteAction = async (
+    order: AdminOrder,
+    action: "labels" | "sync" | "cancel" | "unlink",
+    packageId?: string | null,
+  ) => {
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/superfrete/orders/${order.id}/${action}`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(packageId ? { packageId } : {}),
+      });
+      const data = await res.json() as {
+        message?: string;
+        labelUrl?: string | null;
+        status?: string;
+        tracking?: string | null;
+        packages?: unknown[];
+        enviado?: boolean;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Falha na SuperFrete.");
+        return;
+      }
+      if (action === "labels" && data.labelUrl) {
+        window.open(data.labelUrl, "_blank", "noopener,noreferrer");
+      }
+      const cleared = action === "cancel" || action === "unlink";
+      patchOrderLocal(order.id, cleared
+        ? {
+            superfreteOrderId: null,
+            superfreteStatus: null,
+            superfreteTracking: null,
+            superfreteLabelUrl: null,
+            ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
+          }
+        : {
+            superfreteStatus: data.status,
+            superfreteTracking: data.tracking,
+            superfreteLabelUrl: data.labelUrl,
+            ...(data.enviado ? { enviado: true } : {}),
+            ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
+          });
+      if (action !== "labels") toast.success(data.message || "SuperFrete atualizada.");
+    } catch {
+      toast.error("Erro na SuperFrete.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
   };
 
   const createEnvioEcomShipment = async (
@@ -13333,20 +13539,20 @@ function OrdersPanel({
                   )}
                   {!isSplitShipment && (!isCancelledCard || hasLinkedEnvioEcom || Boolean((order as { envioecomStatus?: string | null }).envioecomStatus)) && (
                   <div className="flex gap-2 flex-wrap items-center">
-                  {!isCancelledCard && (
+                  {!isCancelledCard && !targetHasSuperfrete(order) && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50"
                     disabled={!!envioecomBusy[order.id]}
-                    onClick={() => { void startEnvioEcomQuote(order); }}
-                    title="Cotar e criar envio via EnvioEcom (escolhe a API se houver mais de uma)"
+                    onClick={() => { startFreightEmit(order); }}
+                    title={selectableSuperfreteAccounts.length && !targetHasEnvioEcom(order) ? "Escolher EnvioEcom ou SuperFrete" : "Cotar e criar envio via EnvioEcom (escolhe a API se houver mais de uma)"}
                   >
                     {envioecomBusy[order.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
-                    EnvioEcom
+                    {selectableSuperfreteAccounts.length && !targetHasEnvioEcom(order) && !targetHasSuperfrete(order) ? "Emitir frete" : "EnvioEcom"}
                   </Button>
                   )}
-                  {!isCancelledCard && (
+                  {!isCancelledCard && !targetHasSuperfrete(order) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -13385,6 +13591,23 @@ function OrdersPanel({
                         : ""}
                       {(order as { envioecomBarcode?: string | null }).envioecomBarcode ? ` · ${(order as { envioecomBarcode?: string | null }).envioecomBarcode}` : ""}
                     </span>
+                  )}
+                  {targetHasSuperfrete(order) && (
+                    <>
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-900">
+                        SF: {(order as { superfreteStatus?: string | null }).superfreteStatus}
+                        {superfreteServiceName((order as { superfreteServiceId?: number | null }).superfreteServiceId)
+                          ? ` · ${superfreteServiceName((order as { superfreteServiceId?: number | null }).superfreteServiceId)}`
+                          : ""}
+                        {(order as { superfreteTracking?: string | null }).superfreteTracking
+                          ? ` · ${(order as { superfreteTracking?: string | null }).superfreteTracking}`
+                          : ""}
+                      </span>
+                      <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "labels"); }}>PDF</Button>
+                      <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "sync"); }}>Sync</Button>
+                      <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "unlink"); }}>Desvincular</Button>
+                      <Button size="sm" variant="outline" className="h-7 text-red-700" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "cancel"); }}>Cancelar SF</Button>
+                    </>
                   )}
                   </div>
                   )}
@@ -13480,12 +13703,12 @@ function OrdersPanel({
                           Baixa OK
                         </span>
                       )}
-                      {!isCancelledCard && (
-                      <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomQuote(order, pkg.id); }}>
-                        EnvioEcom
+                      {!isCancelledCard && !targetHasSuperfrete(order, pkg.id) && (
+                      <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { startFreightEmit(order, pkg.id); }}>
+                        {selectableSuperfreteAccounts.length && !targetHasEnvioEcom(order, pkg.id) && !targetHasSuperfrete(order, pkg.id) ? "Emitir frete" : "EnvioEcom"}
                       </Button>
                       )}
-                      {!isCancelledCard && (
+                      {!isCancelledCard && !targetHasSuperfrete(order, pkg.id) && (
                       <Button size="sm" variant="outline" className="h-7 text-teal-800 border-teal-300" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomLink(order, { packageId: pkg.id }); }}>
                         Vincular
                       </Button>
@@ -13511,6 +13734,17 @@ function OrdersPanel({
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>
                           {pkg.envioecomStatus}{pkg.envioecomBarcode ? ` · ${pkg.envioecomBarcode}` : ""}
                         </span>
+                      )}
+                      {pkg.superfreteOrderId && String(pkg.superfreteStatus || "").toLowerCase() !== "cancelled" && String(pkg.superfreteStatus || "").toLowerCase() !== "canceled" && (
+                        <>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-900">
+                            SF: {pkg.superfreteStatus}{pkg.superfreteTracking ? ` · ${pkg.superfreteTracking}` : ""}
+                          </span>
+                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "labels", pkg.id); }}>PDF</Button>
+                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "sync", pkg.id); }}>Sync</Button>
+                          <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "unlink", pkg.id); }}>Desvincular</Button>
+                          <Button size="sm" variant="outline" className="h-7 text-red-700" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "cancel", pkg.id); }}>Cancelar</Button>
+                        </>
                       )}
                     </div>
                   ))}
@@ -14258,6 +14492,125 @@ function OrdersPanel({
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {account.fromEnv ? "Conta do servidor" : "Conta cadastrada"}
                       {account.originCep ? ` · CEP ${account.originCep}` : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {freightChoice && (
+          <div className="fixed inset-0 z-[126] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Qual frete usar?</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pedido #{getOrderReference(freightChoice.order)} · {freightChoice.order.clientName}
+                  </p>
+                </div>
+                <button type="button" className="p-1.5 rounded-lg hover:bg-muted" onClick={() => setFreightChoice(null)}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2">
+                <button
+                  type="button"
+                  className="w-full text-left rounded-xl border border-border hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3"
+                  onClick={() => {
+                    const picked = freightChoice;
+                    setFreightChoice(null);
+                    void startEnvioEcomQuote(picked.order, picked.packageId);
+                  }}
+                >
+                  <p className="font-semibold text-foreground">EnvioEcom</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Fluxo atual de cotação e etiqueta.</p>
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left rounded-xl border border-border hover:border-sky-300 hover:bg-sky-50/50 px-4 py-3"
+                  onClick={() => {
+                    const picked = freightChoice;
+                    setFreightChoice(null);
+                    if (selectableSuperfreteAccounts.length === 1) {
+                      void quoteSuperfrete(picked.order, selectableSuperfreteAccounts[0].id, picked.packageId);
+                      return;
+                    }
+                    setSuperfreteAccountPicker({ order: picked.order, packageId: picked.packageId });
+                  }}
+                >
+                  <p className="font-semibold text-foreground">SuperFrete</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Cotar, pagar com o saldo da carteira e gerar o PDF.</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {superfreteAccountPicker && (
+          <div className="fixed inset-0 z-[127] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Conta SuperFrete</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">{superfreteAccountPicker.order.clientName}</p>
+                </div>
+                <button type="button" className="p-1.5 rounded-lg hover:bg-muted" onClick={() => setSuperfreteAccountPicker(null)}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2">
+                {selectableSuperfreteAccounts.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    className="w-full text-left rounded-xl border border-border hover:border-sky-300 hover:bg-sky-50/50 px-4 py-3"
+                    onClick={() => {
+                      const picked = superfreteAccountPicker;
+                      setSuperfreteAccountPicker(null);
+                      void quoteSuperfrete(picked.order, account.id, picked.packageId);
+                    }}
+                  >
+                    <p className="font-semibold text-foreground">{account.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {account.sandbox ? "Sandbox" : "Produção"}
+                      {account.originCep ? ` · CEP ${account.originCep}` : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {superfreteQuoteModal && (
+          <div className="fixed inset-0 z-[124] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Cotação SuperFrete</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pedido #{getOrderReference(superfreteQuoteModal.order)} · {superfreteQuoteModal.accountName}
+                  </p>
+                </div>
+                <button type="button" className="p-1.5 rounded-lg hover:bg-muted" onClick={() => setSuperfreteQuoteModal(null)}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                {superfreteQuoteModal.quotes.map((quote) => (
+                  <button
+                    key={quote.service}
+                    type="button"
+                    disabled={!!envioecomBusy[superfreteQuoteModal.order.id]}
+                    onClick={() => { void createSuperfreteShipment(superfreteQuoteModal.order, quote); }}
+                    className="w-full text-left rounded-xl border border-border hover:border-sky-300 hover:bg-sky-50/50 px-4 py-3 disabled:opacity-60"
+                  >
+                    <p className="font-semibold text-foreground">{quote.name}</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {quote.price != null ? `R$ ${quote.price}` : "Preço n/d"}
+                      {quote.deliveryTime != null ? ` · ${quote.deliveryTime} dia(s)` : ""}
                     </p>
                   </button>
                 ))}
@@ -18663,6 +19016,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     <div className="space-y-8">
       {/* ── APIs EnvioEcom ──────────────────────────────────────────────── */}
       <AdminEnvioEcomAccountsPanel />
+      <AdminSuperfreteAccountsPanel />
       <AdminInventoryExitAccessPanel />
 
       <div className="max-w-3xl">

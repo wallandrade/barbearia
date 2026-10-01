@@ -22,6 +22,12 @@ export type SplitShipmentPackage = {
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
   envioecomAccountId?: string | null;
+  superfreteOrderId?: string | null;
+  superfreteStatus?: string | null;
+  superfreteTracking?: string | null;
+  superfreteLabelUrl?: string | null;
+  superfreteServiceId?: number | null;
+  superfreteAccountId?: string | null;
 };
 
 const POOLS: Array<{ id: SplitPoolKind; label: string }> = [

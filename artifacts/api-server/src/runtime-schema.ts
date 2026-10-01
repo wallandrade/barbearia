@@ -168,6 +168,13 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
     { name: "envioecom_freight_cost", sql: "ALTER TABLE orders ADD COLUMN envioecom_freight_cost DECIMAL(10,2) NULL" },
     { name: "envioecom_external_order_number", sql: "ALTER TABLE orders ADD COLUMN envioecom_external_order_number VARCHAR(64) NULL" },
     { name: "envioecom_account_id", sql: "ALTER TABLE orders ADD COLUMN envioecom_account_id VARCHAR(64) NULL" },
+    { name: "superfrete_order_id", sql: "ALTER TABLE orders ADD COLUMN superfrete_order_id VARCHAR(64) NULL" },
+    { name: "superfrete_status", sql: "ALTER TABLE orders ADD COLUMN superfrete_status VARCHAR(32) NULL" },
+    { name: "superfrete_tracking", sql: "ALTER TABLE orders ADD COLUMN superfrete_tracking VARCHAR(64) NULL" },
+    { name: "superfrete_label_url", sql: "ALTER TABLE orders ADD COLUMN superfrete_label_url MEDIUMTEXT NULL" },
+    { name: "superfrete_freight_cost", sql: "ALTER TABLE orders ADD COLUMN superfrete_freight_cost DECIMAL(10,2) NULL" },
+    { name: "superfrete_service_id", sql: "ALTER TABLE orders ADD COLUMN superfrete_service_id INT NULL" },
+    { name: "superfrete_account_id", sql: "ALTER TABLE orders ADD COLUMN superfrete_account_id VARCHAR(64) NULL" },
     { name: "bank_deposit_match_status", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_match_status VARCHAR(32) NULL" },
     { name: "bank_deposit_fitid", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_fitid VARCHAR(64) NULL" },
     { name: "bank_deposit_amount", sql: "ALTER TABLE orders ADD COLUMN bank_deposit_amount DECIMAL(10,2) NULL" },
@@ -967,6 +974,13 @@ async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
       envioecom_freight_cost DECIMAL(10,2) NULL,
       envioecom_external_order_number VARCHAR(64) NULL,
       envioecom_account_id VARCHAR(64) NULL,
+      superfrete_order_id VARCHAR(64) NULL,
+      superfrete_status VARCHAR(32) NULL,
+      superfrete_tracking VARCHAR(64) NULL,
+      superfrete_label_url MEDIUMTEXT NULL,
+      superfrete_freight_cost DECIMAL(10,2) NULL,
+      superfrete_service_id INT NULL,
+      superfrete_account_id VARCHAR(64) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY order_shipments_order_id_idx (order_id),
@@ -975,6 +989,24 @@ async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
       KEY order_shipments_external_order_idx (envioecom_external_order_number)
     )
   `);
+}
+
+async function ensureOrderShipmentSuperfreteColumns(databaseName: string): Promise<void> {
+  if (!(await tableExists("order_shipments", databaseName))) return;
+  const definitions = [
+    { name: "superfrete_order_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_order_id VARCHAR(64) NULL" },
+    { name: "superfrete_status", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_status VARCHAR(32) NULL" },
+    { name: "superfrete_tracking", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_tracking VARCHAR(64) NULL" },
+    { name: "superfrete_label_url", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_label_url MEDIUMTEXT NULL" },
+    { name: "superfrete_freight_cost", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_freight_cost DECIMAL(10,2) NULL" },
+    { name: "superfrete_service_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_service_id INT NULL" },
+    { name: "superfrete_account_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_account_id VARCHAR(64) NULL" },
+  ];
+  for (const definition of definitions) {
+    if (!(await columnExists("order_shipments", definition.name, databaseName))) {
+      await pool.query(definition.sql);
+    }
+  }
 }
 
 async function ensureOrderActivityTable(databaseName: string): Promise<void> {
@@ -1214,6 +1246,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureProductCostHistoryTable(databaseName);
     await ensureOrderActivityTable(databaseName);
     await ensureOrderShipmentsTable(databaseName);
+    await ensureOrderShipmentSuperfreteColumns(databaseName);
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);
     await ensureSupplierPurchaseTables(databaseName);

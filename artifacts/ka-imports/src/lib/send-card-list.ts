@@ -1,5 +1,7 @@
 /** Fila do card Pedidos para Enviar. Não altera a cópia 48h. */
 
+import { superfreteLeavesSendCard } from "./superfrete-status";
+
 export type SendCardPackageItem = {
   productId?: string | null;
   productName?: string | null;
@@ -10,6 +12,7 @@ export type SendCardPackage = {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
   items?: SendCardPackageItem[] | null;
 };
 
@@ -25,6 +28,7 @@ export type SendCardOrder = {
   enviado?: boolean | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
+  superfreteStatus?: string | null;
   createdAt?: string | null;
   parentOrderId?: string | null;
   reshipment?: { id?: string | null; status?: string | null } | null;
@@ -136,6 +140,7 @@ export function sendCardThumbProducts(order: SendCardOrder & { products?: unknow
 function isSendCardPackageReady(pkg: SendCardPackage | null | undefined): boolean {
   if (!pkg) return false;
   if (pkg.enviado) return true;
+  if (superfreteLeavesSendCard(pkg.superfreteStatus)) return true;
   if (String(pkg.envioecomLabelUrl || "").trim()) return true;
   return isSendCardLabelReadyStatus(pkg.envioecomStatus);
 }
@@ -145,6 +150,7 @@ export function isSendCardLabelReady(order: SendCardOrder): boolean {
   const packages = Array.isArray(order.envioecomPackages) ? order.envioecomPackages : [];
   if (packages.length >= 2) return packages.every(isSendCardPackageReady);
   if (order.enviado) return true;
+  if (superfreteLeavesSendCard(order.superfreteStatus)) return true;
   if (String(order.envioecomLabelUrl || "").trim()) return true;
   return isSendCardLabelReadyStatus(order.envioecomStatus);
 }

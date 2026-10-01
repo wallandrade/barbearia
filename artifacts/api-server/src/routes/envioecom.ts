@@ -345,15 +345,18 @@ function publicTrackingPayload(order: typeof ordersTable.$inferSelect, packages?
     orderId: order.id,
     orderNumber: order.orderNumber ?? null,
     enviado: !!order.enviado,
-    trackingCode: order.trackingCode || order.envioecomBarcode || null,
-    barcode: order.envioecomBarcode || null,
+    trackingCode: order.trackingCode || order.envioecomBarcode || order.superfreteTracking || null,
+    barcode: order.envioecomBarcode || order.superfreteTracking || null,
     deliveryMode: order.envioecomDeliveryMode || null,
     status: order.envioecomStatus || null,
+    superfreteStatus: order.superfreteStatus || null,
+    superfreteTracking: order.superfreteTracking || null,
+    superfreteServiceId: order.superfreteServiceId ?? null,
     statusUpdatedAt: order.envioecomStatusUpdatedAt?.toISOString?.() ?? null,
     history,
     labelUrl: order.envioecomLabelUrl || null,
-    hasShipment: Boolean(order.envioecomBarcode || order.envioecomShipmentId)
-      || Boolean(packages?.some((pkg) => pkg.envioecomBarcode || pkg.envioecomShipmentId)),
+    hasShipment: Boolean(order.envioecomBarcode || order.envioecomShipmentId || order.superfreteOrderId)
+      || Boolean(packages?.some((pkg) => pkg.envioecomBarcode || pkg.envioecomShipmentId || pkg.superfreteOrderId)),
     packages: Array.isArray(packages) ? packages.map(mapOrderShipmentPublic) : undefined,
   };
 }

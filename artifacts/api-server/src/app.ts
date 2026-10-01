@@ -355,7 +355,14 @@ app.use((req, res, next) => {
 });
 
 app.use(cookieParser());
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({
+  limit: "15mb",
+  verify: (req, _res, buf) => {
+    if (String(req.url || "").includes("/webhook/superfrete")) {
+      (req as { rawBody?: Buffer }).rawBody = buf;
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.get("/api/security/checkout-token", (req, res) => {

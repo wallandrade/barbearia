@@ -21,6 +21,13 @@ export const orderShipmentsTable = mysqlTable("order_shipments", {
   envioecomFreightCost: decimal("envioecom_freight_cost", { precision: 10, scale: 2 }),
   envioecomExternalOrderNumber: varchar("envioecom_external_order_number", { length: 64 }),
   envioecomAccountId: varchar("envioecom_account_id", { length: 64 }),
+  superfreteOrderId: varchar("superfrete_order_id", { length: 64 }),
+  superfreteStatus: varchar("superfrete_status", { length: 32 }),
+  superfreteTracking: varchar("superfrete_tracking", { length: 64 }),
+  superfreteLabelUrl: mediumtext("superfrete_label_url"),
+  superfreteFreightCost: decimal("superfrete_freight_cost", { precision: 10, scale: 2 }),
+  superfreteServiceId: int("superfrete_service_id"),
+  superfreteAccountId: varchar("superfrete_account_id", { length: 64 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -309,6 +309,48 @@ test("mesmo barcode em pai e filho: lookup prefere o pedido de reenvio", () => {
   );
 });
 
+test("SuperFrete released sai da cópia e fica no card; posted sai do card", () => {
+  assert.equal(isPackageExcludedFromShippingCopyList({
+    enviado: false,
+    superfreteStatus: "pending",
+  }), false);
+  assert.equal(isPackageExcludedFromShippingCopyList({
+    enviado: false,
+    superfreteStatus: "released",
+    superfreteLabelUrl: "https://sf/a.pdf",
+  }), true);
+  assert.equal(isPackageExcludedFromShippingCopyList({
+    enviado: false,
+    envioecomStatus: "Aguardando coleta",
+  }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    superfreteStatus: "released",
+  }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    superfreteStatus: "posted",
+  }), false);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    superfreteStatus: "released",
+  }), false);
+  assert.equal(orderStillOccupiesShippingQueue({
+    enviado: false,
+    superfreteStatus: "pending",
+  }), true);
+  assert.equal(isSplitOrderExcludedFromShippingCopyList([
+    { envioecomStatus: "Etiqueta emitida", envioecomLabelUrl: "https://ee/a.pdf" },
+    { superfreteStatus: "pending" },
+  ]), false);
+  assert.equal(isSplitOrderExcludedFromShippingCopyList([
+    { envioecomLabelUrl: "https://ee/a.pdf" },
+    { superfreteStatus: "released" },
+  ]), true);
+});
+
 test("webhook não cola no pai só pelo número do pedido sem vínculo EE", () => {
   const parent = {
     envioecomBarcode: null,

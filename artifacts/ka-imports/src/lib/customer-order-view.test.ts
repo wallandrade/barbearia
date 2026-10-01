@@ -317,3 +317,21 @@ test("sync de rastreio no split preserva itens do pacote se a API não mandar", 
   assert.equal(merged.envioecomPackages?.[0].items?.[0].productName, "Landerlan");
   assert.equal(merged.envioecomPackages?.[1].envioecomStatus, "Coletado");
 });
+
+test("rastreio SuperFrete aparece sem apagar o status da EnvioEcom de outro pacote", () => {
+  const row = order({
+    superfreteOrderId: "sf-1",
+    superfreteStatus: "released",
+    superfreteTracking: "AA923452383BR",
+    superfreteServiceId: 1,
+  });
+  const tracking = customerPrimaryTracking(row);
+  assert.equal(tracking.barcode, "AA923452383BR");
+  assert.equal(tracking.status, "Aguardando postagem");
+  assert.equal(tracking.deliveryMode, "PAC");
+  assert.equal(getCustomerSituation(row).label, "Estamos embalando seu pedido");
+  assert.equal(hasTrackableShipment(row), true);
+  assert.equal(shouldShowShipmentSection(row), true);
+  const posted = order({ superfreteStatus: "posted", superfreteTracking: "AA1", superfreteOrderId: "sf-2" });
+  assert.equal(getCustomerSituation(posted).kind, "shipping");
+});
