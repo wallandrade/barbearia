@@ -708,7 +708,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -1817,6 +1817,7 @@ export default function Admin() {
   const [rafflesLoading, setRafflesLoading] = useState(false);
   const [raffleForm, setRaffleForm] = useState({ title: "", description: "", imageUrl: "", totalNumbers: "100", pricePerNumber: "10", reservationHours: "24", status: "active" });
   const [raffleCreating, setRaffleCreating] = useState(false);
+  const [raffleCloningId, setRaffleCloningId] = useState<string | null>(null);
   const [raffleEditingId, setRaffleEditingId] = useState<string | null>(null);
   const [raffleViewId, setRaffleViewId] = useState<string | null>(null);
   const [raffleReservations, setRaffleReservations] = useState<AdminRaffleReservation[]>([]);
@@ -7874,6 +7875,42 @@ export default function Admin() {
                               title="Ver reservas"
                               onClick={() => { setRaffleViewId(raffle.id); fetchRaffleReservations(raffle.id); fetchRaffleRanking(raffle.id); fetchRaffleResult(raffle.id); fetchRafflePromotions(raffle.id); }}>
                               <Eye className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button size="icon" variant="outline" className="w-8 h-8"
+                              title="Clonar rifa"
+                              disabled={raffleCloningId === raffle.id}
+                              onClick={async () => {
+                                setRaffleCloningId(raffle.id);
+                                try {
+                                  const res = await fetch(`${BASE}/api/admin/raffles`, {
+                                    method: "POST",
+                                    headers: { ...authHeaders(), "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      title: raffle.title,
+                                      description: raffle.description ?? null,
+                                      imageUrl: raffle.imageUrl ?? null,
+                                      totalNumbers: Number(raffle.totalNumbers),
+                                      pricePerNumber: Number(raffle.pricePerNumber),
+                                      reservationHours: Number(raffle.reservationHours),
+                                      status: "active",
+                                    }),
+                                  });
+                                  if (!res.ok) {
+                                    const text = await res.text();
+                                    let msg = "Erro ao clonar rifa.";
+                                    try { msg = (JSON.parse(text) as { message?: string }).message ?? msg; } catch { msg = text.slice(0, 120) || msg; }
+                                    toast.error(msg);
+                                    return;
+                                  }
+                                  toast.success("Rifa clonada. A nova está Ativa, sem reservas.");
+                                  fetchRaffles();
+                                } catch {
+                                  toast.error("Erro de conexão.");
+                                } finally {
+                                  setRaffleCloningId(null);
+                                }
+                              }}>
+                              {raffleCloningId === raffle.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CopyPlus className="w-3.5 h-3.5" />}
                             </Button>
                             <Button size="icon" variant="outline" className="w-8 h-8"
                               title="Editar"

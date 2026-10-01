@@ -43,6 +43,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
 | 2026-10-01 | Promoção pode acabar quando o estoque da promoção zera | Interruptor **Até durar o estoque** copia Motoboy + Minas. Cada pedido que fica pago desconta a quantidade. Em zero o preço promocional sai | A baixa do depósito continua só em **Dar baixa agora**. Reenvio não desconta. Sem o interruptor, vale a data e a hora |
+| 2026-10-01 | Admin: botão Clonar no card da rifa | Cria outra rifa Ativa com o mesmo título, descrição, foto, quantidade, preço e tempo de reserva | Reservas, promoções, resultado e total pago não vão junto. A rifa original permanece |
 | 2026-10-01 | Dividir envio abre as opções de um kit | Um produto com 2+ variantes (qty 1) ganha **Dividir envio**. Cada opção vai para Minas, Motoboy ou Foz. A baixa do pacote desconta o produto do catálogo com o nome da opção (ou o único produto que começa com ela), não o kit de novo | Pedido sem variante continua por quantidade. Uma opção só não vira linha. Cópia 48h no split parcial lista só a opção que falta |
 | 2026-10-01 | Página do produto mostra o tempo que falta da promoção | Relógio em dias, horas, minutos e segundos, atualizado a cada segundo. Em zero, o preço promocional sai | Sem data de fim, não há relógio. Banner geral do topo continua outro cronômetro |
 | 2026-10-01 | Promoção do produto expira com data e hora | No Admin, data e hora de Brasília vão para `promoEndsAt`. A lista mostra os dois. Só um dos campos não salva | Os dois em branco continuam sem expiração. Checkout e API já cortam o preço nesse instante |
@@ -333,6 +334,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 ## Rifas
 
 - `raffles`, reservas, resultados, promoções — `routes/raffles.ts` (PIX de reserva, ranking, etc.).
+- Admin, card da rifa: **Clonar** (`POST /api/admin/raffles`) cria outra do zero. Copia título, descrição, foto, quantidade de números, preço por número e tempo de reserva. A nova nasce **Ativa**. Reservas, ranking, promoções, resultado e total pago ficam na original.
 
 ## Suporte, reenvios, estoque
 
