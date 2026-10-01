@@ -12,6 +12,7 @@ import {
   isPaymentConfirmed,
 } from "../gateway";
 import { ensureOrderCommission } from "../lib/affiliates";
+import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { recordOrderActivity } from "../lib/order-activity";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
@@ -167,6 +168,7 @@ router.get("/pix/status/:transactionId", async (req, res) => {
 
           if (nextOrderStatus === "paid") {
             await ensureOrderCommission(row.id);
+            await consumePromoStockForPaidOrder(row.id);
             if (isStandardShipping(row.shippingType)) void allocateShippingSlot(row.id);
           }
         }
@@ -242,6 +244,7 @@ router.post("/pix/callback/:token", async (req, res) => {
 
       if (existing[0] && existing[0].status !== "paid" && existing[0].status !== "completed") {
         await ensureOrderCommission(existing[0].id);
+        await consumePromoStockForPaidOrder(existing[0].id);
         if (isStandardShipping(existing[0].shippingType)) void allocateShippingSlot(existing[0].id);
       }
 

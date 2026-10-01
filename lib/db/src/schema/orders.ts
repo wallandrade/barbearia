@@ -76,6 +76,8 @@ export const ordersTable = mysqlTable("orders", {
   aguardandoEstoque: boolean("aguardando_estoque").notNull().default(false),
   inventoryPool: varchar("inventory_pool", { length: 16 }),
   inventoryReserved: boolean("inventory_reserved").notNull().default(false),
+  /** Saldo da promoção já foi descontado neste pedido. Evita descontar de novo no webhook. */
+  promoStockConsumed: boolean("promo_stock_consumed").notNull().default(false),
   trackingCode: varchar("tracking_code", { length: 255 }),
   trackingLabelUrl: mediumtext("tracking_label_url"),
   trackingLabelText: mediumtext("tracking_label_text"),

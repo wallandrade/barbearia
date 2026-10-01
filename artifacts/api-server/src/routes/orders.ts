@@ -72,6 +72,7 @@ import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
 import { claimGuestOrdersForCustomer } from "../lib/claim-guest-orders";
+import { consumePromoStockForPaidOrder, promoPriceStillApplies } from "../lib/promo-stock";
 import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan, parseInsurancePlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 import { creditOrderEditSurplus } from "../lib/order-edit-surplus";
@@ -805,12 +806,12 @@ function resolveBaseUnitPrice(product: {
   price: string;
   promoPrice: string | null;
   promoEndsAt: Date | null;
+  promoUntilStock?: boolean | null;
+  promoStockLeft?: number | null;
 }): number {
   const regularPrice = Number(product.price || 0);
-  const promoPrice = product.promoPrice == null ? null : Number(product.promoPrice);
-  if (!Number.isFinite(promoPrice) || promoPrice == null || promoPrice <= 0) return regularPrice;
-  if (product.promoEndsAt && new Date() > product.promoEndsAt) return regularPrice;
-  return promoPrice;
+  if (!promoPriceStillApplies(product)) return regularPrice;
+  return Number(product.promoPrice);
 }
 
 function resolveUnitPriceForQuantity(product: {
@@ -1867,6 +1868,7 @@ router.post("/admin/orders/:id/apply-store-credit", requireAdminAuth, async (req
 
     if (next.fullyCovered && !wasAlreadyPaid) {
       await ensureOrderCommission(id);
+      await consumePromoStockForPaidOrder(id);
       if (isStandardShipping(String(order.shippingType || ""))) {
         void allocateShippingSlot(id);
       }
@@ -2039,6 +2041,7 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
 
     if (isBeingPaid) {
       await ensureOrderCommission(id);
+      if (!wasAlreadyPaid) await consumePromoStockForPaidOrder(id);
       // Allocate shipping queue slot for standard freight orders
       const orderShippingType = String(existing[0]?.shippingType ?? "");
       if (!wasAlreadyPaid && isStandardShipping(orderShippingType)) {
@@ -2238,6 +2241,7 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
     broadcastNotification({ type: "order_status_updated", data: { id, status: "completed" } });
     const previousStatus = String(existing[0]?.status || "").trim().toLowerCase();
     const wasAlreadyPaid = previousStatus === "paid" || previousStatus === "completed";
+    if (!wasAlreadyPaid) await consumePromoStockForPaidOrder(id);
     if (!wasAlreadyPaid) {
       void sendOutboundWebhook("order_paid", {
         id,

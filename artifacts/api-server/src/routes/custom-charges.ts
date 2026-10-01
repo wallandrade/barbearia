@@ -12,6 +12,7 @@ import {
   isPaymentConfirmed,
 } from "../gateway";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
+import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
 
 const router: IRouter = Router();
 
@@ -274,6 +275,8 @@ router.post("/custom-charges/callback/:token/:chargeId", async (req, res) => {
               .update(ordersTable)
               .set({ status: newOrderStatus, paidAmount: String(totalPaid), updatedAt: new Date() })
               .where(eq(ordersTable.id, existing[0].orderId));
+
+            if (newOrderStatus === "paid") await consumePromoStockForPaidOrder(existing[0].orderId);
 
             broadcastNotification({ type: "order_paid", data: { id: existing[0].orderId, status: newOrderStatus } });
           }

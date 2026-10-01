@@ -142,6 +142,10 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
       sql: "ALTER TABLE orders ADD COLUMN inventory_reserved TINYINT(1) NOT NULL DEFAULT 0",
     },
     {
+      name: "promo_stock_consumed",
+      sql: "ALTER TABLE orders ADD COLUMN promo_stock_consumed TINYINT(1) NOT NULL DEFAULT 0",
+    },
+    {
       name: "is_prioridade",
       sql: "ALTER TABLE orders ADD COLUMN is_prioridade TINYINT(1) NOT NULL DEFAULT 0",
     },
@@ -364,6 +368,14 @@ async function ensureProductsColumns(databaseName: string): Promise<void> {
     {
       name: "show_stock_quantity",
       sql: "ALTER TABLE products ADD COLUMN show_stock_quantity TINYINT(1) NOT NULL DEFAULT 0",
+    },
+    {
+      name: "promo_until_stock",
+      sql: "ALTER TABLE products ADD COLUMN promo_until_stock TINYINT(1) NOT NULL DEFAULT 0",
+    },
+    {
+      name: "promo_stock_left",
+      sql: "ALTER TABLE products ADD COLUMN promo_stock_left INT NULL",
     },
   ];
 

@@ -24,6 +24,7 @@ import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
 import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 import { applyStoreCreditToOrder } from "../lib/store-credits";
+import { consumePromoStockForPaidOrder, promoPriceStillApplies } from "../lib/promo-stock";
 
 const router: IRouter = Router();
 
@@ -99,12 +100,12 @@ function resolveBaseUnitPrice(product: {
   price: string;
   promoPrice: string | null;
   promoEndsAt: Date | null;
+  promoUntilStock?: boolean | null;
+  promoStockLeft?: number | null;
 }): number {
   const regularPrice = Number(product.price || 0);
-  const promoPrice = product.promoPrice == null ? null : Number(product.promoPrice);
-  if (!Number.isFinite(promoPrice) || promoPrice == null || promoPrice <= 0) return regularPrice;
-  if (product.promoEndsAt && new Date() > product.promoEndsAt) return regularPrice;
-  return promoPrice;
+  if (!promoPriceStillApplies(product)) return regularPrice;
+  return Number(product.promoPrice);
 }
 
 function resolveUnitPriceForQuantity(product: {
@@ -602,6 +603,7 @@ router.post("/checkout/pix", async (req, res) => {
     const payableAmount = Math.max(0, amount - affiliateCreditUsed - storeCreditUsed);
     if (payableAmount <= 0) {
       await ensureOrderCommission(orderId);
+      await consumePromoStockForPaidOrder(orderId);
       broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
       void sendOutboundWebhook("order_paid", {
         id: orderId,

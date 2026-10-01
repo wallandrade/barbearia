@@ -7,6 +7,7 @@ import { getR2MissingConfig, isR2Configured, uploadProductImageToR2 } from "../l
 import { loadPaidProductSoldMaps } from "../lib/product-sales-db";
 import { emptyProductSoldMaps, soldQtyForProduct } from "../lib/product-sales";
 import { customerStockQtyForProduct, customerStockTotals } from "../lib/customer-visible-stock";
+import { promoPriceStillApplies } from "../lib/promo-stock";
 import { parseVariantGroups, type ProductVariantGroup as ProductVariantGroupInput } from "../lib/variant-groups";
 
 const router: IRouter = Router();
@@ -30,6 +31,8 @@ type ProductBackupRecord = {
   costPrice?: number | null;
   promoPrice?: number | null;
   promoEndsAt?: string | null;
+  promoUntilStock?: boolean;
+  promoStockLeft?: number | null;
   bulkDiscountEnabled?: boolean;
   bulkDiscountTiers?: unknown;
   variantGroups?: unknown;
@@ -55,11 +58,9 @@ type ProductBackupPayload = {
 
 /** Resolve effective price respecting promo expiry */
 function resolvePrice(p: typeof productsTable.$inferSelect) {
-  if (!p.promoPrice) return { price: Number(p.price), promoPrice: null };
-  if (p.promoEndsAt && new Date() > p.promoEndsAt) {
-    return { price: Number(p.price), promoPrice: null };
-  }
-  return { price: Number(p.price), promoPrice: Number(p.promoPrice) };
+  const price = Number(p.price);
+  if (!promoPriceStillApplies(p)) return { price, promoPrice: null };
+  return { price, promoPrice: Number(p.promoPrice) };
 }
 
 function parseBulkDiscountTiers(raw: unknown): BulkDiscountTierInput[] {
@@ -151,7 +152,11 @@ function normalizeBackupProduct(raw: ProductBackupRecord): typeof productsTable.
     price: String(price),
     costPrice: String(Number.isFinite(costPrice) ? costPrice : 0),
     promoPrice: promoPrice != null && Number.isFinite(promoPrice) ? String(promoPrice) : null,
-    promoEndsAt: raw.promoEndsAt ? parseBackupDate(raw.promoEndsAt) : null,
+    promoEndsAt: raw.promoUntilStock === true ? null : (raw.promoEndsAt ? parseBackupDate(raw.promoEndsAt) : null),
+    promoUntilStock: raw.promoUntilStock === true,
+    promoStockLeft: raw.promoUntilStock === true && raw.promoStockLeft != null && Number.isFinite(Number(raw.promoStockLeft))
+      ? Math.max(0, Math.trunc(Number(raw.promoStockLeft)))
+      : null,
     bulkDiscountEnabled: raw.bulkDiscountEnabled === true,
     bulkDiscountTiers: normalizedTiers.length > 0 ? JSON.stringify(normalizedTiers) : null,
     variantGroups: normalizedVariantGroups.length > 0 ? JSON.stringify(normalizedVariantGroups) : null,
@@ -204,6 +209,8 @@ function serializeProductBackup(p: typeof productsTable.$inferSelect): ProductBa
     costPrice: Number(p.costPrice ?? 0),
     promoPrice: p.promoPrice == null ? null : Number(p.promoPrice),
     promoEndsAt: p.promoEndsAt?.toISOString() ?? null,
+    promoUntilStock: Boolean(p.promoUntilStock),
+    promoStockLeft: p.promoStockLeft == null ? null : Number(p.promoStockLeft),
     bulkDiscountEnabled: Boolean(p.bulkDiscountEnabled),
     bulkDiscountTiers,
     variantGroups,
@@ -219,7 +226,11 @@ function serializeProductBackup(p: typeof productsTable.$inferSelect): ProductBa
 }
 
 function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = false) {
-  const { price, promoPrice } = resolvePrice(p);
+  const resolved = resolvePrice(p);
+  const price = includeCostPrice ? Number(p.price) : resolved.price;
+  const promoPrice = includeCostPrice
+    ? (p.promoPrice == null ? null : Number(p.promoPrice))
+    : resolved.promoPrice;
   const bulkDiscountTiers = parseBulkDiscountTiers(p.bulkDiscountTiers);
   const variantGroups = parseVariantGroups(p.variantGroups);
   const product = {
@@ -232,6 +243,8 @@ function mapProduct(p: typeof productsTable.$inferSelect, includeCostPrice = fal
     price,
     promoPrice,
     promoEndsAt: p.promoEndsAt?.toISOString() ?? null,
+    promoUntilStock: Boolean(p.promoUntilStock),
+    promoStockLeft: p.promoStockLeft == null ? null : Number(p.promoStockLeft),
     bulkDiscountEnabled: Boolean(p.bulkDiscountEnabled),
     bulkDiscountTiers,
     variantGroups,
@@ -261,6 +274,11 @@ async function loadMotoboyMinasStockTotals(): Promise<Map<string, number>> {
     }).from(inventoryMinasBalancesTable),
   ]);
   return customerStockTotals([...motoboyRows, ...minasRows]);
+}
+
+async function snapshotPromoStock(productId: string): Promise<number> {
+  const totals = await loadMotoboyMinasStockTotals();
+  return customerStockQtyForProduct(totals, productId);
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────────
@@ -399,10 +417,11 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
   try {
     const {
       name, description, category, brand, unit, price,
-      costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, showStockQuantity, sortOrder,
+      costPrice, promoPrice, promoEndsAt, promoUntilStock, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, showStockQuantity, sortOrder,
     } = req.body as {
       name: string; description?: string; category: string; brand?: string | null; unit: string;
       price: number; costPrice?: number | null; promoPrice?: number | null; promoEndsAt?: string | null;
+      promoUntilStock?: boolean;
       bulkDiscountEnabled?: boolean;
       bulkDiscountTiers?: BulkDiscountTierInput[] | null;
       variantGroups?: ProductVariantGroupInput[] | null;
@@ -433,7 +452,9 @@ router.post("/admin/products", requirePrimaryAdmin, async (req, res) => {
       price:       String(price),
       costPrice:   String(Number(costPrice ?? 0)),
       promoPrice:  promoPrice ? String(promoPrice) : null,
-      promoEndsAt: promoEndsAt ? new Date(promoEndsAt) : null,
+      promoEndsAt: promoUntilStock === true ? null : (promoEndsAt ? new Date(promoEndsAt) : null),
+      promoUntilStock: promoUntilStock === true,
+      promoStockLeft: promoUntilStock === true ? await snapshotPromoStock(id) : null,
       bulkDiscountEnabled: bulkDiscountEnabled === true,
       bulkDiscountTiers: normalizedTiers.length > 0 ? JSON.stringify(normalizedTiers) : null,
       variantGroups: normalizedVariantGroups.length > 0 ? JSON.stringify(normalizedVariantGroups) : null,
@@ -604,10 +625,11 @@ router.patch("/admin/products/:id", requirePrimaryAdmin, async (req, res) => {
     if (Array.isArray(id)) id = id[0];
       const {
         name, description, category, brand, unit, price,
-        costPrice, promoPrice, promoEndsAt, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, showStockQuantity, sortOrder,
+        costPrice, promoPrice, promoEndsAt, promoUntilStock, bulkDiscountEnabled, bulkDiscountTiers, variantGroups, image, isActive, isSoldOut, isLaunch, showStockQuantity, sortOrder,
       } = req.body as Partial<{
         name: string; description: string | null; category: string; brand: string | null; unit: string;
         price: number; costPrice: number | null; promoPrice: number | null; promoEndsAt: string | null;
+        promoUntilStock: boolean;
         bulkDiscountEnabled: boolean;
         bulkDiscountTiers: BulkDiscountTierInput[] | null;
         variantGroups: ProductVariantGroupInput[] | null;
@@ -623,7 +645,24 @@ router.patch("/admin/products/:id", requirePrimaryAdmin, async (req, res) => {
     if (price      !== undefined) updates.price       = String(price);
     if (costPrice  !== undefined) updates.costPrice   = String(Number(costPrice ?? 0));
     if (promoPrice !== undefined) updates.promoPrice  = promoPrice ? String(promoPrice) : null;
-    if (promoEndsAt !== undefined) updates.promoEndsAt = promoEndsAt ? new Date(promoEndsAt) : null;
+    if (promoUntilStock === true) {
+      updates.promoUntilStock = true;
+      updates.promoEndsAt = null;
+      const [current] = await db
+        .select({ promoUntilStock: productsTable.promoUntilStock })
+        .from(productsTable)
+        .where(eq(productsTable.id, id))
+        .limit(1);
+      if (!current?.promoUntilStock) {
+        updates.promoStockLeft = await snapshotPromoStock(id);
+      }
+    } else if (promoUntilStock === false) {
+      updates.promoUntilStock = false;
+      updates.promoStockLeft = null;
+      if (promoEndsAt !== undefined) updates.promoEndsAt = promoEndsAt ? new Date(promoEndsAt) : null;
+    } else if (promoEndsAt !== undefined) {
+      updates.promoEndsAt = promoEndsAt ? new Date(promoEndsAt) : null;
+    }
     if (bulkDiscountEnabled !== undefined) updates.bulkDiscountEnabled = bulkDiscountEnabled;
     if (bulkDiscountTiers !== undefined) {
       const normalizedTiers = parseBulkDiscountTiers(bulkDiscountTiers);

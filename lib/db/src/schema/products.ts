@@ -17,6 +17,9 @@ export const productsTable = mysqlTable("products", {
   costPrice: decimal("cost_price", { precision: 10, scale: 2 }).notNull().default("0.00"),
   promoPrice: decimal("promo_price", { precision: 10, scale: 2 }),
   promoEndsAt: datetime("promo_ends_at", { mode: 'date' }),
+  /** Promoção acaba quando o saldo próprio chega a zero. Não mexe no estoque do depósito. */
+  promoUntilStock: boolean("promo_until_stock").notNull().default(false),
+  promoStockLeft: int("promo_stock_left"),
   bulkDiscountEnabled: boolean("bulk_discount_enabled").notNull().default(false),
   bulkDiscountTiers: mediumtext("bulk_discount_tiers"),
   variantGroups: mediumtext("variant_groups"),

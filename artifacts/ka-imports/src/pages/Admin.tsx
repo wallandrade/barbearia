@@ -9343,10 +9343,14 @@ function getCatalogSalePrice(product: InventoryCatalogLite | undefined): number 
   const price = Number(product.price || 0);
   const promoRaw = product.promoPrice == null || product.promoPrice === "" ? null : Number(product.promoPrice);
   const ends = product.promoEndsAt ? new Date(product.promoEndsAt) : null;
+  const untilStock = (product as { promoUntilStock?: boolean }).promoUntilStock === true;
+  const stockLeft = Number((product as { promoStockLeft?: number | null }).promoStockLeft ?? 0);
   const promoOn = promoRaw != null
     && Number.isFinite(promoRaw)
     && promoRaw > 0
-    && (!ends || !Number.isFinite(ends.getTime()) || Date.now() <= ends.getTime());
+    && (untilStock
+      ? stockLeft > 0
+      : (!ends || !Number.isFinite(ends.getTime()) || Date.now() <= ends.getTime()));
   if (promoOn) return promoRaw;
   return Number.isFinite(price) ? price : 0;
 }
@@ -18158,6 +18162,38 @@ function ProductsPanel({
 
                   {/* Promo ends */}
                   <div className="sm:col-span-2">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block">Até durar o estoque</label>
+                        <p className="text-xs text-muted-foreground mt-1">Ligado, a promoção usa o saldo Motoboy + Minas e baixa a cada pedido pago. Desligado, vale a data e a hora.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = (productForm as { promoUntilStock?: boolean }).promoUntilStock !== true;
+                          if (next) {
+                            setPromoEndDate("");
+                            setPromoEndTime("");
+                            setProductForm({ ...productFormRef.current, promoUntilStock: true, promoEndsAt: null } as typeof productForm);
+                            return;
+                          }
+                          setProductForm({ ...productFormRef.current, promoUntilStock: false, promoStockLeft: null } as typeof productForm);
+                        }}
+                        className="text-muted-foreground hover:text-emerald-600 transition-colors shrink-0"
+                      >
+                        {(productForm as { promoUntilStock?: boolean }).promoUntilStock === true
+                          ? <IconLucide name="ToggleRight" className="w-7 h-7 text-emerald-600" />
+                          : <ToggleLeft className="w-7 h-7" />}
+                      </button>
+                    </div>
+                    {(productForm as { promoUntilStock?: boolean }).promoUntilStock === true ? (
+                      <p className="text-xs font-medium text-emerald-800">
+                        {(productForm as { promoStockLeft?: number | null }).promoStockLeft == null
+                          ? "Ao salvar, o saldo copia o estoque Motoboy + Minas."
+                          : `Restam ${(productForm as { promoStockLeft?: number | null }).promoStockLeft} nesta promoção. A baixa do depósito continua no botão Dar baixa agora.`}
+                      </p>
+                    ) : (
+                    <>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5" />Promoção expira em <span className="font-normal normal-case text-muted-foreground">— deixe data e hora em branco para não expirar</span>
                     </label>
@@ -18190,6 +18226,8 @@ function ProductsPanel({
                       <p className="mt-1 text-xs text-muted-foreground">
                         Termina em {formatDateBR(productForm.promoEndsAt)} às {formatTimeBR(productForm.promoEndsAt)}.
                       </p>
+                    )}
+                    </>
                     )}
                   </div>
 
@@ -18531,7 +18569,7 @@ function ProductsPanel({
               <div className="flex flex-col-reverse sm:flex-row gap-3 px-4 sm:px-8 pb-4 sm:pb-8 pt-3 border-t shrink-0 bg-white">
                 <Button variant="outline" className="flex-1" onClick={() => { setProductFormOpen(false); setProductForm({}); }}>Cancelar</Button>
                 <Button className="flex-1 gap-2" disabled={productSaving || productImageUploading || !productForm.name?.trim() || !productForm.category?.trim() || !productForm.price} onClick={() => {
-                  if (!canSavePromoEnd(promoEndDate, promoEndTime)) {
+                  if ((productForm as { promoUntilStock?: boolean }).promoUntilStock !== true && !canSavePromoEnd(promoEndDate, promoEndTime)) {
                     toast.error("Informe a data e a hora em que a promoção expira.");
                     return;
                   }
@@ -18567,7 +18605,12 @@ function ProductsPanel({
       ) : (
         <div className="space-y-3">
           {visibleProducts.map((p) => {
-            const effectivePrice = (p.promoPrice && (!p.promoEndsAt || new Date() < new Date(p.promoEndsAt))) ? p.promoPrice : p.price;
+            const untilStock = (p as { promoUntilStock?: boolean }).promoUntilStock === true;
+            const promoStockLeft = Number((p as { promoStockLeft?: number | null }).promoStockLeft ?? 0);
+            const promoOn = untilStock
+              ? Boolean(p.promoPrice) && promoStockLeft > 0
+              : Boolean(p.promoPrice && (!p.promoEndsAt || new Date() < new Date(p.promoEndsAt)));
+            const effectivePrice = promoOn ? p.promoPrice : p.price;
             const isSelectedForBackup = selectedBackupProductIds.includes(p.id);
             return (
               <div key={p.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${!p.isActive ? "opacity-60" : ""} ${isSelectedForBackup ? "border-primary/50 ring-1 ring-primary/30" : ""}`}>
@@ -18609,7 +18652,10 @@ function ProductsPanel({
                       {p.promoPrice && effectivePrice === p.promoPrice && (
                         <span className="text-xs line-through text-muted-foreground">{formatCurrency(p.price)}</span>
                       )}
-                      {p.promoEndsAt && new Date() < new Date(p.promoEndsAt) && (
+                      {untilStock && p.promoPrice != null && (
+                        <span className="text-xs text-emerald-700">até o estoque · restam {Math.max(0, promoStockLeft)}</span>
+                      )}
+                      {!untilStock && p.promoEndsAt && new Date() < new Date(p.promoEndsAt) && (
                         <span className="text-xs text-orange-600 flex items-center gap-0.5">
                           <Calendar className="w-3 h-3" />
                           até {formatDateBR(p.promoEndsAt)} às {formatTimeBR(p.promoEndsAt)}

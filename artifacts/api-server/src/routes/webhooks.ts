@@ -19,6 +19,7 @@ import { broadcastNotification } from "./notifications";
 import { fetchTransactionStatus, isPaymentConfirmed } from "../gateway";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
+import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { recordOrderActivity } from "../lib/order-activity";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
@@ -120,6 +121,7 @@ async function handleCallback(body: GatewayCallback) {
 
           if (confirmed && newStatus === "paid") {
             await ensureOrderCommission(row.id);
+            await consumePromoStockForPaidOrder(row.id);
           }
 
           broadcastNotification({
@@ -225,6 +227,8 @@ async function handleCallback(body: GatewayCallback) {
 
               if (newOrderStatus === "paid" || newOrderStatus === "completed") {
                 await ensureOrderCommission(row.orderId);
+                const parentWasPaid = parentOrder[0].status === "paid" || parentOrder[0].status === "completed";
+                if (!parentWasPaid) await consumePromoStockForPaidOrder(row.orderId);
               }
 
               console.log(`[WEBHOOK] Order ${row.orderId} auto-updated to ${newOrderStatus} after diff charge paid (paid=${totalPaid}, total=${orderTotal})`);
@@ -428,7 +432,10 @@ router.post("/webhook", async (req, res) => {
         if (isConfirmed && !rows[0]!.paidAmount && rows[0]!.total) setFields.paidAmount = rows[0]!.total;
         await db.update(ordersTable).set(setFields).where(eq(ordersTable.id, rawOrderId));
         if (isConfirmed && rows[0]!.couponCode) await incrementCouponUse(rows[0]!.couponCode);
-        if (isConfirmed && newStatus === "paid") await ensureOrderCommission(rawOrderId);
+        if (isConfirmed && newStatus === "paid") {
+          await ensureOrderCommission(rawOrderId);
+          await consumePromoStockForPaidOrder(rawOrderId);
+        }
         broadcastNotification({ type: isConfirmed ? "order_paid" : "order_status_updated", data: { id: rawOrderId, status: newStatus } });
         if (isConfirmed && newStatus === "paid") {
           void sendOutboundWebhook("order_paid", {
@@ -488,6 +495,7 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
         if (rows[0]!.couponCode) await incrementCouponUse(rows[0]!.couponCode);
 
         await ensureOrderCommission(orderId);
+        await consumePromoStockForPaidOrder(orderId);
 
         broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
         void sendOutboundWebhook("order_paid", {
@@ -581,6 +589,8 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
 
             if (newOrderStatus === "paid" || newOrderStatus === "completed") {
               await ensureOrderCommission(rows[0]!.orderId);
+              const parentWasPaid = parentOrder[0].status === "paid" || parentOrder[0].status === "completed";
+              if (!parentWasPaid) await consumePromoStockForPaidOrder(rows[0]!.orderId);
             }
           }
         }

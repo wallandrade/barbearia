@@ -72,6 +72,9 @@ export default function ProductDetail() {
   );
 
   const promoEndsAt = (product as { promoEndsAt?: string | null } | null)?.promoEndsAt ?? null;
+  const promoUntilStock = (product as { promoUntilStock?: boolean } | null)?.promoUntilStock === true;
+  const promoStockLeftRaw = (product as { promoStockLeft?: number | null } | null)?.promoStockLeft;
+  const promoStockLeft = promoStockLeftRaw == null ? null : Number(promoStockLeftRaw);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (!promoEndsAt) return;
@@ -207,7 +210,10 @@ export default function ProductDetail() {
                 ) : (
                   <span className="text-3xl font-bold text-primary">{formatCurrency(displayUnitPrice)}</span>
                 )}
-                {hasPromo && promoEndsAt && <PromoCountdown endsAt={promoEndsAt} />}
+                {hasPromo && !promoUntilStock && promoEndsAt && <PromoCountdown endsAt={promoEndsAt} />}
+                {hasPromo && promoUntilStock && promoStockLeft != null && (
+                  <p className="mt-3 text-sm font-semibold text-primary">Restam {Math.max(0, Math.trunc(promoStockLeft))} nesta promoção</p>
+                )}
                 {visibleStockQty != null && (
                   <p className="mt-2 text-sm font-semibold text-foreground">{visibleStockQty} em estoque</p>
                 )}
