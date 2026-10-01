@@ -3,6 +3,8 @@ import { Link, useRoute } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { PromoCountdown } from "@/components/product/PromoCountdown";
+import { isPromoStillActive } from "@/lib/promo-ends-at";
 import { normalizeSelectedVariants, parseVariantGroups, variantGalleryImages, variantImageFromSelection, variantSelectionError } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
@@ -69,7 +71,14 @@ export default function ProductDetail() {
     [data?.products, productId],
   );
 
-  const hasPromo = !!(product && product.promoPrice != null && product.promoPrice < product.price);
+  const promoEndsAt = (product as { promoEndsAt?: string | null } | null)?.promoEndsAt ?? null;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!promoEndsAt) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [promoEndsAt]);
+  const hasPromo = product ? isPromoStillActive(product.promoPrice, product.price, promoEndsAt, nowMs) : false;
   const isBulkDiscountEnabled = Boolean((product as { bulkDiscountEnabled?: boolean } | null)?.bulkDiscountEnabled);
   const bulkDiscountTiers = useMemo(
     () => parseBulkDiscountTiers((product as { bulkDiscountTiers?: unknown } | null)?.bulkDiscountTiers),
@@ -198,6 +207,7 @@ export default function ProductDetail() {
                 ) : (
                   <span className="text-3xl font-bold text-primary">{formatCurrency(displayUnitPrice)}</span>
                 )}
+                {hasPromo && promoEndsAt && <PromoCountdown endsAt={promoEndsAt} />}
                 {visibleStockQty != null && (
                   <p className="mt-2 text-sm font-semibold text-foreground">{visibleStockQty} em estoque</p>
                 )}

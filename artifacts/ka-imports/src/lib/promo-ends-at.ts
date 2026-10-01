@@ -42,6 +42,45 @@ export function canSavePromoEnd(date: string, time: string): boolean {
   return promoEndsAtFromParts(day, clock) != null;
 }
 
+export type PromoTimeLeft = {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
+
+/** Tempo que falta até `endsAt`. Sem data, data inválida ou já vencida devolve null. */
+export function promoTimeLeft(endsAt: string | Date | null | undefined, nowMs: number): PromoTimeLeft | null {
+  if (endsAt == null || endsAt === "") return null;
+  const endMs = endsAt instanceof Date ? endsAt.getTime() : new Date(endsAt).getTime();
+  if (!Number.isFinite(endMs)) return null;
+  const diff = endMs - nowMs;
+  if (diff <= 0) return null;
+  const totalSeconds = Math.floor(diff / 1000);
+  return {
+    days: Math.floor(totalSeconds / 86400),
+    hours: Math.floor((totalSeconds % 86400) / 3600),
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60,
+  };
+}
+
+/** Preço promocional ainda vale. Sem horário de fim, continua até o admin tirar. */
+export function isPromoStillActive(
+  promoPrice: number | null | undefined,
+  regularPrice: number,
+  endsAt: string | Date | null | undefined,
+  nowMs: number,
+): boolean {
+  const promo = Number(promoPrice);
+  const regular = Number(regularPrice);
+  if (!Number.isFinite(promo) || promo <= 0 || !Number.isFinite(regular) || promo >= regular) return false;
+  if (endsAt == null || endsAt === "") return true;
+  const endMs = endsAt instanceof Date ? endsAt.getTime() : new Date(endsAt).getTime();
+  if (!Number.isFinite(endMs)) return true;
+  return nowMs < endMs;
+}
+
 /** Instante UTC. Os dois campos precisam estar preenchidos. Data inválida devolve null. */
 export function promoEndsAtFromParts(date: string, time: string): string | null {
   const day = date.trim();
