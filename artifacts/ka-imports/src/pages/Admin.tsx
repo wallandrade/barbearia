@@ -716,6 +716,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
+import { canSavePromoEnd, isPromoEndScheduleIncomplete, promoEndsAtFromParts, splitPromoEndsAt } from "@/lib/promo-ends-at";
 import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
 import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
 import { orderCopyItemName, parseVariantGroups, readEditorVariantGroups, type VariantGroup } from "@/lib/product-variants";
@@ -17284,6 +17285,30 @@ function ProductsPanel({
     .filter((item) => Number.isFinite(item.profitTotal))
     .sort((a, b) => b.profitTotal - a.profitTotal)[0] ?? null;
 
+  const [promoEndDate, setPromoEndDate] = useState("");
+  const [promoEndTime, setPromoEndTime] = useState("");
+  const promoEndSyncKey = productFormOpen
+    ? String(productForm._editing ? productForm.id || "edit" : "new")
+    : "";
+
+  useEffect(() => {
+    if (!promoEndSyncKey) {
+      setPromoEndDate("");
+      setPromoEndTime("");
+      return;
+    }
+    const parts = splitPromoEndsAt(productFormRef.current.promoEndsAt);
+    setPromoEndDate(parts.date);
+    setPromoEndTime(parts.time);
+  }, [promoEndSyncKey]);
+
+  const applyPromoEnd = (date: string, time: string) => {
+    setPromoEndDate(date);
+    setPromoEndTime(time);
+    const iso = date.trim() && time.trim() ? promoEndsAtFromParts(date, time) : null;
+    setProductForm({ ...productFormRef.current, promoEndsAt: iso });
+  };
+
   const fileRef = useRef<HTMLInputElement>(null);
   const variantFileRef = useRef<HTMLInputElement>(null);
   const variantUploadTarget = useRef<{ groupIndex: number; optionIndex: number } | null>(null);
@@ -18133,15 +18158,39 @@ function ProductsPanel({
 
                   {/* Promo ends */}
                   <div className="sm:col-span-2">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1.5 block">
-                      <Calendar className="w-3.5 h-3.5" />Promoção expira em <span className="font-normal normal-case text-muted-foreground">— deixe em branco para não expirar</span>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />Promoção expira em <span className="font-normal normal-case text-muted-foreground">— deixe data e hora em branco para não expirar</span>
                     </label>
-                    <input type="datetime-local" value={productForm.promoEndsAt ? (() => { const d = new Date(productForm.promoEndsAt!); d.setTime(d.getTime() - 3 * 60 * 60 * 1000); return d.toISOString().slice(0, 16); })() : ""} onChange={(e) => {
-                          if (!e.target.value) { setProductForm({ ...productForm, promoEndsAt: null }); return; }
-                          // Interpret input as São Paulo time (UTC-3) to get correct UTC timestamp
-                          const utc = new Date(e.target.value + ":00-03:00").toISOString();
-                          setProductForm({ ...productForm, promoEndsAt: utc });
-                        }} className={`${inp2} cursor-pointer`} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Data</label>
+                        <input
+                          type="date"
+                          value={promoEndDate}
+                          onChange={(e) => applyPromoEnd(e.target.value, promoEndTime)}
+                          className={`${inp2} cursor-pointer`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />Hora (Brasília)
+                        </label>
+                        <input
+                          type="time"
+                          value={promoEndTime}
+                          onChange={(e) => applyPromoEnd(promoEndDate, e.target.value)}
+                          className={`${inp2} cursor-pointer`}
+                        />
+                      </div>
+                    </div>
+                    {isPromoEndScheduleIncomplete(promoEndDate, promoEndTime) && (
+                      <p className="mt-1 text-xs font-medium text-amber-700">Informe a data e a hora para programar a expiração.</p>
+                    )}
+                    {promoEndDate && promoEndTime && productForm.promoEndsAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Termina em {formatDateBR(productForm.promoEndsAt)} às {formatTimeBR(productForm.promoEndsAt)}.
+                      </p>
+                    )}
                   </div>
 
                   <div className="sm:col-span-2 rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
@@ -18481,7 +18530,13 @@ function ProductsPanel({
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 px-4 sm:px-8 pb-4 sm:pb-8 pt-3 border-t shrink-0 bg-white">
                 <Button variant="outline" className="flex-1" onClick={() => { setProductFormOpen(false); setProductForm({}); }}>Cancelar</Button>
-                <Button className="flex-1 gap-2" disabled={productSaving || productImageUploading || !productForm.name?.trim() || !productForm.category?.trim() || !productForm.price} onClick={onSave}>
+                <Button className="flex-1 gap-2" disabled={productSaving || productImageUploading || !productForm.name?.trim() || !productForm.category?.trim() || !productForm.price} onClick={() => {
+                  if (!canSavePromoEnd(promoEndDate, promoEndTime)) {
+                    toast.error("Informe a data e a hora em que a promoção expira.");
+                    return;
+                  }
+                  onSave();
+                }}>
                   {productSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                   {productForm._editing ? "Salvar alterações" : "Criar produto"}
                 </Button>
@@ -18557,7 +18612,7 @@ function ProductsPanel({
                       {p.promoEndsAt && new Date() < new Date(p.promoEndsAt) && (
                         <span className="text-xs text-orange-600 flex items-center gap-0.5">
                           <Calendar className="w-3 h-3" />
-                          até {formatDateOnlyBR(p.promoEndsAt)}
+                          até {formatDateBR(p.promoEndsAt)} às {formatTimeBR(p.promoEndsAt)}
                         </span>
                       )}
                     </div>
