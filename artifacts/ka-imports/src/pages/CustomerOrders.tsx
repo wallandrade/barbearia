@@ -988,10 +988,12 @@ export default function CustomerOrders() {
                                           </div>
                                           {items.map((item, idx) => {
                                             const image = findOrderProductImage(order, item);
-                                            const catalog = (order.products || []).find((product) =>
-                                              (item.productId && String(product.id || "") === item.productId)
-                                              || String(product.name || "").trim().toLowerCase() === item.name.toLowerCase(),
-                                            );
+                                            const catalog = item.variantOption
+                                              ? undefined
+                                              : (order.products || []).find((product) =>
+                                                (item.productId && String(product.id || "") === item.productId)
+                                                || String(product.name || "").trim().toLowerCase() === item.name.toLowerCase(),
+                                              );
                                             const unitPrice = catalog ? Number(catalog.price || 0) : 0;
                                             return (
                                               <div
@@ -1010,7 +1012,7 @@ export default function CustomerOrders() {
                                                     <p className="font-medium text-foreground text-sm break-words">
                                                       {item.quantity}x {item.name}
                                                     </p>
-                                                    <OrderVariantChoices raw={catalog?.selectedVariants} />
+                                                    <OrderVariantChoices raw={item.variantOption ? undefined : catalog?.selectedVariants} />
                                                   </div>
                                                 </div>
                                                 {unitPrice > 0 ? (

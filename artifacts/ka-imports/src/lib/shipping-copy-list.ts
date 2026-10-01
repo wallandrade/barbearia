@@ -13,6 +13,8 @@ export type ShippingCopyPackage = {
     productName?: string | null;
     name?: string | null;
     quantity?: number | null;
+    variantOption?: string | null;
+    image?: string | null;
   }> | null;
 };
 
@@ -165,17 +167,19 @@ export function productsForShippingCopy(order: {
   for (const pkg of pending) {
     for (const item of pkg.items || []) {
       const productId = String(item.productId || "").trim();
-      const name = String(item.productName || item.name || "Produto").trim() || "Produto";
+      const variantOption = String(item.variantOption || "").trim();
+      const name = variantOption || String(item.productName || item.name || "Produto").trim() || "Produto";
       const qty = Number(item.quantity) || 0;
       const fromOrder = findOrderProductForShipmentItem(all, item);
+      const optionImage = typeof item.image === "string" && /^https?:\/\//.test(item.image.trim()) ? item.image.trim() : null;
       rows.push({
         id: productId || fromOrder?.id || "",
         name: name || fromOrder?.name || "Produto",
         quantity: qty,
-        price: Number(fromOrder?.price) || 0,
-        costPrice: fromOrder?.costPrice,
-        image: fromOrder?.image,
-        selectedVariants: fromOrder?.selectedVariants,
+        price: variantOption ? 0 : (Number(fromOrder?.price) || 0),
+        costPrice: variantOption ? undefined : fromOrder?.costPrice,
+        image: optionImage || fromOrder?.image,
+        selectedVariants: variantOption ? undefined : fromOrder?.selectedVariants,
       });
     }
   }

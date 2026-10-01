@@ -23,6 +23,9 @@ export type CustomerShipmentItem = {
   productName?: string;
   name?: string;
   quantity: number;
+  variantGroup?: string;
+  variantOption?: string;
+  image?: string | null;
 };
 
 export type CustomerOrderPackage = {
@@ -206,22 +209,32 @@ export function customerPackageLabel(pkg: CustomerOrderPackage, index: number): 
   return `Envio ${Number.isFinite(n) && n > 0 ? n : index + 1}`;
 }
 
-export function packageShipmentItems(pkg: CustomerOrderPackage): Array<{ name: string; quantity: number; productId?: string }> {
+export function packageShipmentItems(pkg: CustomerOrderPackage): Array<{
+  name: string;
+  quantity: number;
+  productId?: string;
+  variantOption?: string;
+  image?: string | null;
+}> {
   const items = Array.isArray(pkg.items) ? pkg.items : [];
   return items
     .map((item) => {
       const quantity = Number(item.quantity || 0);
-      const name = String(item.productName || item.name || "").trim();
+      const variantOption = String(item.variantOption || "").trim() || undefined;
+      const name = variantOption || String(item.productName || item.name || "").trim();
       const productId = String(item.productId || "").trim() || undefined;
-      return { name, quantity, productId };
+      const image = typeof item.image === "string" && /^https?:\/\//.test(item.image.trim()) ? item.image.trim() : null;
+      return { name, quantity, productId, variantOption, image };
     })
     .filter((item) => item.quantity > 0 && item.name);
 }
 
 export function findOrderProductImage(
   order: CustomerOrder,
-  item: { productId?: string; name: string },
+  item: { productId?: string; name: string; image?: string | null },
 ): string | null {
+  const direct = typeof item.image === "string" && /^https?:\/\//.test(item.image.trim()) ? item.image.trim() : "";
+  if (direct) return direct;
   const products = Array.isArray(order.products) ? order.products : [];
   const id = String(item.productId || "").trim();
   if (id) {
@@ -236,8 +249,9 @@ export function findOrderProductImage(
 
 export function findOrderVariantChoices(
   order: CustomerOrder,
-  item: { productId?: string; name: string },
+  item: { productId?: string; name: string; variantOption?: string },
 ): unknown {
+  if (String(item.variantOption || "").trim()) return undefined;
   const products = Array.isArray(order.products) ? order.products : [];
   const id = String(item.productId || "").trim();
   if (id) {

@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  expandProductsForSplit,
+  splitLineKey,
+  type SplitPoolKind,
+  type SplitShipmentDraftItem,
+} from "@/lib/split-shipment-lines";
 
-export type SplitPoolKind = "loja" | "motoboy" | "minas";
+export type { SplitPoolKind } from "@/lib/split-shipment-lines";
 
-export type SplitShipmentItem = {
-  productId: string;
-  productName: string;
-  quantity: number;
-};
+export type SplitShipmentItem = SplitShipmentDraftItem;
 
 export type SplitShipmentPackage = {
   id?: string;
@@ -45,6 +47,9 @@ type Line = {
   productId: string;
   productName: string;
   quantity: number;
+  variantGroup?: string;
+  variantOption?: string;
+  image?: string | null;
   qty: Record<SplitPoolKind, number>;
 };
 
@@ -64,7 +69,7 @@ export function AdminSplitShipmentModal({
 }: {
   orderRef: string;
   clientName: string;
-  products: Array<{ id?: string; name?: string; quantity?: number }>;
+  products: Array<{ id?: string; name?: string; quantity?: number; selectedVariants?: unknown }>;
   packages: SplitShipmentPackage[];
   saving: boolean;
   onClose: () => void;
@@ -72,30 +77,15 @@ export function AdminSplitShipmentModal({
   onClear: () => void;
 }) {
   const initialLines = useMemo<Line[]>(() => {
-    const grouped = new Map<string, Line>();
-    for (const product of products) {
-      const quantity = Number(product.quantity || 0);
-      if (!Number.isFinite(quantity) || quantity <= 0) continue;
-      const productId = String(product.id || "").trim();
-      const productName = String(product.name || "Produto").trim() || "Produto";
-      const key = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
-      const prev = grouped.get(key);
-      grouped.set(key, {
-        key,
-        productId: prev?.productId || productId,
-        productName: prev?.productName || productName,
-        quantity: (prev?.quantity || 0) + quantity,
-        qty: emptyQty(),
-      });
-    }
-    const lines = [...grouped.values()];
+    const lines: Line[] = expandProductsForSplit(products).map((line) => ({
+      ...line,
+      qty: emptyQty(),
+    }));
     for (const pack of packages) {
       const pool = pack.inventoryPool;
       if (pool !== "loja" && pool !== "motoboy" && pool !== "minas") continue;
       for (const item of pack.items || []) {
-        const productId = String(item.productId || "").trim();
-        const productName = String(item.productName || "Produto").trim() || "Produto";
-        const key = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
+        const key = splitLineKey(item);
         const line = lines.find((row) => row.key === key);
         if (!line) continue;
         line.qty[pool] += Number(item.quantity || 0);
@@ -140,6 +130,9 @@ export function AdminSplitShipmentModal({
           productId: line.productId,
           productName: line.productName,
           quantity: line.qty[pool.id],
+          ...(line.variantGroup ? { variantGroup: line.variantGroup } : {}),
+          ...(line.variantOption ? { variantOption: line.variantOption } : {}),
+          ...(line.image ? { image: line.image } : {}),
         })),
     })).filter((pack) => pack.items.length > 0);
     if (built.length < 2) {
@@ -159,7 +152,7 @@ export function AdminSplitShipmentModal({
               Pedido #{orderRef} · {clientName}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Cada estoque gera uma etiqueta (CEP de origem da API EnvioEcom daquela origem).
+              Cada estoque gera uma etiqueta. Kit com várias opções: cada opção vai para um estoque.
             </p>
           </div>
           <button type="button" className="p-1.5 rounded-lg hover:bg-muted" onClick={onClose}>

@@ -14,6 +14,7 @@ import {
   isSplitCustomerOrder,
   listCustomerFacingPackages,
   mergeTrackingIntoOrder,
+  findOrderVariantChoices,
   packageShipmentItems,
   shouldHideParentReshipmentTracking,
   shouldShowShipmentSection,
@@ -145,6 +146,35 @@ test("pedido já Enviado com split de estoque continua Envio 1/2 na conta", () =
   assert.equal(customerPackageSituation(facing[0]).label, "Aguardando envio");
   assert.equal(customerPrimaryTracking(row).barcode, "888030925010467");
   assert.equal(customerPrimaryTracking(row).history.length, 2);
+});
+
+test("pacote de variante mostra a opção e não repete as outras escolhas", () => {
+  const row = order({
+    products: [{
+      id: "kit",
+      name: "Kit Degustação",
+      quantity: 1,
+      price: 790,
+      image: "https://cdn.example/kit.jpg",
+      selectedVariants: [
+        { groupName: "Escolha seu kit", option: "Lipoland" },
+        { groupName: "Escolha seu kit", option: "Slimex" },
+      ],
+    }],
+  });
+  const items = packageShipmentItems({
+    id: "pkg",
+    items: [{
+      productId: "kit",
+      productName: "Lipoland",
+      variantOption: "Lipoland",
+      quantity: 1,
+      image: "https://cdn.example/lipoland.jpg",
+    }],
+  });
+  assert.equal(items[0]?.name, "Lipoland");
+  assert.equal(items[0]?.variantOption, "Lipoland");
+  assert.equal(findOrderVariantChoices(row, items[0]!), undefined);
 });
 
 test("pai enviado com filho de reenvio esconde o rastreio EnvioEcom do reenvio", () => {

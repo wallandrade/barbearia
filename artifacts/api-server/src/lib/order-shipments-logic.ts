@@ -12,11 +12,22 @@ export type OrderShipmentItem = {
   productId: string;
   productName: string;
   quantity: number;
+  /** Presentes quando a linha do pedido foi aberta em opções (2+ variantes). */
+  variantGroup?: string;
+  variantOption?: string;
+  image?: string | null;
 };
 
 export type OrderShipmentAllocationInput = {
   inventoryPool: InventoryPoolKind | string;
-  items: Array<{ productId?: string | null; productName?: string; quantity?: number }>;
+  items: Array<{
+    productId?: string | null;
+    productName?: string;
+    quantity?: number;
+    variantGroup?: string | null;
+    variantOption?: string | null;
+    image?: string | null;
+  }>;
 };
 
 export function parseShipmentPool(raw: unknown): InventoryPoolKind | null {
@@ -264,33 +275,151 @@ export function nextPackageEnvioEcomExternalOrderNumber(
   return `${base}-${now.toString(36)}`.slice(0, 64);
 }
 
-export function parseShipmentItems(raw: unknown): OrderShipmentItem[] {
-  const parsed = Array.isArray(raw)
-    ? raw
-    : typeof raw === "string"
-      ? (() => {
-          try {
-            const value = JSON.parse(raw);
-            return Array.isArray(value) ? value : [];
-          } catch {
-            return [];
-          }
-        })()
-      : [];
+function unwrapJsonArray(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== "string") return [];
+  const text = raw.trim();
+  if (!text) return [];
+  try {
+    const value = JSON.parse(text) as unknown;
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
 
+function shipmentImageUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value.startsWith("https://") && !value.startsWith("http://")) return null;
+  return value;
+}
+
+export function readShipmentVariantChoices(raw: unknown): Array<{ groupName: string; option: string; image: string | null }> {
+  const choices: Array<{ groupName: string; option: string; image: string | null }> = [];
+  const seen = new Set<string>();
+  for (const row of unwrapJsonArray(raw)) {
+    if (!row || typeof row !== "object") continue;
+    const value = row as { groupName?: unknown; option?: unknown; image?: unknown };
+    const groupName = String(value.groupName ?? "").trim();
+    const option = String(value.option ?? "").trim();
+    if (!groupName || !option) continue;
+    const dedupe = `${groupName.toLowerCase()}|${option.toLowerCase()}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    choices.push({ groupName, option, image: shipmentImageUrl(value.image) });
+  }
+  return choices;
+}
+
+export function shipmentItemKey(item: {
+  productId?: string | null;
+  productName?: string | null;
+  variantGroup?: string | null;
+  variantOption?: string | null;
+}): string {
+  const productId = String(item.productId || "").trim();
+  const productName = String(item.productName || "").trim();
+  const base = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
+  const option = String(item.variantOption || "").trim();
+  if (!option) return base;
+  const group = String(item.variantGroup || "").trim().toLowerCase();
+  return `${base}|var:${group}|${option.toLowerCase()}`;
+}
+
+/**
+ * 2+ opções marcadas viram uma linha por opção (qty da linha do pedido).
+ * 0 ou 1 opção continua a linha do produto, para a divisão por quantidade.
+ */
+export function expandOrderProductsForShipment(raw: unknown): OrderShipmentItem[] {
   const grouped = new Map<string, OrderShipmentItem>();
-  for (const row of parsed) {
-    const item = row as { productId?: unknown; id?: unknown; productName?: unknown; name?: unknown; quantity?: unknown };
+  for (const row of unwrapJsonArray(raw)) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as {
+      id?: unknown;
+      productId?: unknown;
+      name?: unknown;
+      productName?: unknown;
+      quantity?: unknown;
+      selectedVariants?: unknown;
+    };
     const quantity = Number(item.quantity || 0);
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
     const productId = String(item.productId || item.id || "").trim();
     const productName = String(item.productName || item.name || "Produto").trim() || "Produto";
-    const key = productId ? `id:${productId}` : `name:${productName.toLowerCase()}`;
+    const choices = readShipmentVariantChoices(item.selectedVariants);
+    const units: OrderShipmentItem[] = choices.length >= 2
+      ? choices.map((choice) => ({
+          productId,
+          productName: choice.option,
+          quantity,
+          variantGroup: choice.groupName,
+          variantOption: choice.option,
+          image: choice.image,
+        }))
+      : [{ productId, productName, quantity }];
+    for (const unit of units) {
+      const key = shipmentItemKey(unit);
+      const prev = grouped.get(key);
+      grouped.set(key, {
+        productId: prev?.productId || unit.productId,
+        productName: prev?.productName || unit.productName,
+        quantity: (prev?.quantity || 0) + unit.quantity,
+        variantGroup: prev?.variantGroup || unit.variantGroup,
+        variantOption: prev?.variantOption || unit.variantOption,
+        image: prev?.image || unit.image || null,
+      });
+    }
+  }
+  return [...grouped.values()];
+}
+
+/** Variante dividida baixa o produto do catálogo com o nome da opção, não o kit. */
+export function shipmentItemsForInventory(items: OrderShipmentItem[]): Array<{ id: string; name: string; quantity: number }> {
+  return items.map((item) => {
+    const option = String(item.variantOption || "").trim();
+    if (option) return { id: "", name: option, quantity: item.quantity };
+    return { id: item.productId, name: item.productName, quantity: item.quantity };
+  });
+}
+
+export function parseShipmentItems(raw: unknown): OrderShipmentItem[] {
+  const grouped = new Map<string, OrderShipmentItem>();
+  for (const row of unwrapJsonArray(raw)) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as {
+      productId?: unknown;
+      id?: unknown;
+      productName?: unknown;
+      name?: unknown;
+      quantity?: unknown;
+      variantGroup?: unknown;
+      variantOption?: unknown;
+      image?: unknown;
+    };
+    const quantity = Number(item.quantity || 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    const productId = String(item.productId || item.id || "").trim();
+    const productName = String(item.productName || item.name || "Produto").trim() || "Produto";
+    const variantGroup = String(item.variantGroup || "").trim();
+    const variantOption = String(item.variantOption || "").trim();
+    const next: OrderShipmentItem = {
+      productId,
+      productName: variantOption || productName,
+      quantity,
+      ...(variantGroup ? { variantGroup } : {}),
+      ...(variantOption ? { variantOption } : {}),
+      image: shipmentImageUrl(item.image),
+    };
+    const key = shipmentItemKey(next);
     const prev = grouped.get(key);
     grouped.set(key, {
-      productId: prev?.productId || productId,
-      productName: prev?.productName || productName,
-      quantity: (prev?.quantity || 0) + quantity,
+      productId: prev?.productId || next.productId,
+      productName: prev?.productName || next.productName,
+      quantity: (prev?.quantity || 0) + next.quantity,
+      variantGroup: prev?.variantGroup || next.variantGroup,
+      variantOption: prev?.variantOption || next.variantOption,
+      image: prev?.image || next.image || null,
     });
   }
   return [...grouped.values()];
@@ -327,24 +456,31 @@ export function validateShipmentAllocation(
   }
 
   const orderQty = new Map<string, OrderShipmentItem>();
-  for (const item of parseShipmentItems(orderProducts)) {
-    const key = item.productId ? `id:${item.productId}` : `name:${item.productName.toLowerCase()}`;
-    orderQty.set(key, item);
+  for (const item of expandOrderProductsForShipment(orderProducts)) {
+    orderQty.set(shipmentItemKey(item), item);
   }
 
   const allocated = new Map<string, number>();
   for (const pack of built) {
     for (const item of pack.items) {
-      const key = item.productId ? `id:${item.productId}` : `name:${item.productName.toLowerCase()}`;
-      allocated.set(key, (allocated.get(key) || 0) + item.quantity);
+      allocated.set(shipmentItemKey(item), (allocated.get(shipmentItemKey(item)) || 0) + item.quantity);
     }
   }
 
   if (allocated.size !== orderQty.size) {
+    const missing = [...orderQty.entries()]
+      .filter(([key]) => !allocated.has(key))
+      .map(([, item]) => item.productName);
+    const extra = [...allocated.keys()].filter((key) => !orderQty.has(key)).length;
+    const detail = missing.length > 0
+      ? `Faltou: ${missing.join(", ")}.`
+      : extra > 0
+        ? "A divisão tem item que não está no pedido."
+        : "A divisão tem de cobrir todos os itens do pedido, sem sobrar nem faltar.";
     return {
       ok: false,
       code: "ALLOCATION_MISMATCH",
-      message: "A divisão tem de cobrir todos os produtos do pedido, sem sobrar nem faltar item.",
+      message: detail,
     };
   }
   for (const [key, expected] of orderQty) {
@@ -356,6 +492,20 @@ export function validateShipmentAllocation(
         message: `${expected.productName}: o pedido tem ${expected.quantity} un, a divisão somou ${got}.`,
       };
     }
+  }
+
+  for (const pack of built) {
+    pack.items = pack.items.map((item) => {
+      const expected = orderQty.get(shipmentItemKey(item));
+      if (!expected) return item;
+      return {
+        ...item,
+        productName: expected.variantOption || expected.productName || item.productName,
+        variantGroup: item.variantGroup || expected.variantGroup,
+        variantOption: item.variantOption || expected.variantOption,
+        image: item.image || expected.image || null,
+      };
+    });
   }
 
   return { ok: true, packages: built };

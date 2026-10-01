@@ -22,6 +22,7 @@ import {
   packageInventoryReferenceId,
   parseShipmentItems,
   pickPreferredEnvioEcomShipmentRow,
+  shipmentItemsForInventory,
   validateShipmentAllocation,
   type OrderShipmentAllocationInput,
   type OrderShipmentItem,
@@ -543,14 +544,10 @@ export async function ensurePackageInventoryDebited(
     return { ok: true, alreadyReserved: true, reserved: true, pool };
   }
 
-  const items = parseShipmentItems(pkg.items);
+  const items = shipmentItemsForInventory(parseShipmentItems(pkg.items));
   let resolved;
   try {
-    resolved = await resolveOrderInventoryItems(items.map((item) => ({
-      id: item.productId,
-      name: item.productName,
-      quantity: item.quantity,
-    })));
+    resolved = await resolveOrderInventoryItems(items);
   } catch (err) {
     const details = err instanceof Error ? err.message : "Erro ao mapear produtos do pacote.";
     return { ok: false, alreadyReserved: false, reserved: false, pool, details };
@@ -583,16 +580,12 @@ export async function releasePackageInventoryIfReserved(
 ): Promise<void> {
   if (!pkg.inventoryReserved) return;
   const pool = parseInventoryPool(pkg.inventoryPool) || "loja";
-  const items = parseShipmentItems(pkg.items);
+  const items = shipmentItemsForInventory(parseShipmentItems(pkg.items));
   if (items.length === 0) {
     await updateOrderShipment(pkg.id, { inventoryReserved: false, enviado: false, enviadoAt: null });
     return;
   }
-  const resolved = await resolveOrderInventoryItems(items.map((item) => ({
-    id: item.productId,
-    name: item.productName,
-    quantity: item.quantity,
-  })));
+  const resolved = await resolveOrderInventoryItems(items);
   const pick = await pickOrderInventoryDebit(pool, resolved);
   await applyOrderInventoryDelta({
     pool,

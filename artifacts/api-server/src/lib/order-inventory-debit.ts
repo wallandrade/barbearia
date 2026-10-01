@@ -11,6 +11,7 @@ import {
   mapInventoryBalanceRows,
   pickDebitWithOrphanSameName,
   remapInventoryItem,
+  resolveCatalogByOptionName,
   type CatalogIndex,
   type NamedStockRow,
 } from "./inventory-catalog";
@@ -108,6 +109,17 @@ export async function resolveOrderInventoryItems(products: unknown): Promise<Res
   const index = await fetchCatalogIndex();
   const resolvedItems = orderItems.map((item) => {
     const remapped = remapInventoryItem(index, item.productId, item.productName);
+    if (!remapped.productId) {
+      const byOption = resolveCatalogByOptionName(index, item.productName);
+      if (byOption) {
+        return {
+          productId: byOption.id,
+          productName: byOption.name,
+          quantity: item.quantity,
+          fallbackProductId: null,
+        };
+      }
+    }
     return {
       productId: remapped.productId,
       productName: remapped.productName,

@@ -167,6 +167,37 @@ test("envio parcial: miniatura só do produto que ainda falta", () => {
   assert.equal(sendCardThumbProducts(order)[0]?.image, "https://cat/lipo.jpg");
 });
 
+test("envio parcial de variante usa o nome e a foto da opção", () => {
+  const order = {
+    id: "1",
+    products: [{
+      id: "kit",
+      name: "Kit Degustação",
+      image: "https://cat/kit.jpg",
+    }],
+    envioecomPackages: [
+      {
+        enviado: true,
+        envioecomStatus: "Coletado",
+        items: [{ productId: "kit", productName: "Slimex", variantOption: "Slimex" }],
+      },
+      {
+        envioecomStatus: "Envio criado",
+        items: [{
+          productId: "kit",
+          productName: "Lipoland",
+          variantOption: "Lipoland",
+          image: "https://cdn.example/lipoland.jpg",
+        }],
+      },
+    ],
+  };
+  const thumbs = sendCardThumbProducts(order);
+  assert.equal(thumbs.length, 1);
+  assert.equal(thumbs[0]?.name, "Lipoland");
+  assert.equal(thumbs[0]?.image, "https://cdn.example/lipoland.jpg");
+});
+
 test("dividido com os dois pacotes abertos mostra as duas fotos", () => {
   const order = {
     id: "1",

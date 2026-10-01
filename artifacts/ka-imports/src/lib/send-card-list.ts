@@ -6,6 +6,8 @@ export type SendCardPackageItem = {
   productId?: string | null;
   productName?: string | null;
   name?: string | null;
+  variantOption?: string | null;
+  image?: string | null;
 };
 
 export type SendCardPackage = {
@@ -126,11 +128,13 @@ export function sendCardThumbProducts(order: SendCardOrder & { products?: unknow
     for (const item of pkg.items || []) {
       const fromOrder = matchSendCardProduct(all, item);
       const productId = String(item.productId || "").trim();
-      const name = String(item.productName || item.name || fromOrder?.name || "").trim();
+      const variantOption = String(item.variantOption || "").trim();
+      const name = variantOption || String(item.productName || item.name || fromOrder?.name || "").trim();
+      const optionImage = typeof item.image === "string" && /^https?:\/\//.test(item.image.trim()) ? item.image.trim() : null;
       rows.push({
         id: productId || fromOrder?.id || "",
         name: name || fromOrder?.name || "",
-        image: fromOrder?.image ?? null,
+        image: optionImage || fromOrder?.image || null,
       });
     }
   }

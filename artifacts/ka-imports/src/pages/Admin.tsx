@@ -745,7 +745,8 @@ import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/page
 import AdminSuperfreteAccountsPanel, { type SuperfreteAccountPublic } from "@/pages/AdminSuperfreteAccountsPanel";
 import { superfreteServiceName } from "@/lib/superfrete-status";
 import AdminInventoryExitAccessPanel from "@/pages/AdminInventoryExitAccessPanel";
-import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
+import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentItem, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
+import { orderCanSplitShipment } from "@/lib/split-shipment-lines";
 import { CpfQuoteWarningModal, CpfRelatedShipmentsBlock } from "@/pages/AdminCpfRelatedShipments";
 import { fetchRelatedShipments, type RelatedShipmentsResponse } from "@/lib/related-shipments-client";
 import AdminBankStatementPanel from "@/pages/AdminBankStatementPanel";
@@ -11803,7 +11804,7 @@ function OrdersPanel({
 
   const saveSplitShipments = async (
     order: AdminOrder,
-    packages: Array<{ inventoryPool: SplitPoolKind; items: Array<{ productId: string; productName: string; quantity: number }> }>,
+    packages: Array<{ inventoryPool: SplitPoolKind; items: SplitShipmentItem[] }>,
   ) => {
     setSplitShipmentSaving(true);
     try {
@@ -13099,8 +13100,7 @@ function OrdersPanel({
           const hasLinkedEnvioEcom = Boolean((order as { envioecomBarcode?: string | null; envioecomShipmentId?: string | null }).envioecomBarcode
             || (order as { envioecomBarcode?: string | null; envioecomShipmentId?: string | null }).envioecomShipmentId);
           const hasProofs = Boolean((order.proofUrls && order.proofUrls.length > 0) || order.proofUrl);
-          const canSplitShipment = orderProducts.length >= 2
-            || orderProducts.reduce((sum, product) => sum + (Number(product.quantity) || 0), 0) >= 2;
+          const canSplitShipment = orderCanSplitShipment(orderProducts);
           const envioecomLabelReady = isSplitShipment
             ? envioecomPackages.every((pkg) => isEnvioEcomLabelReadyStatus(pkg?.envioecomStatus) || Boolean(String(pkg?.envioecomLabelUrl || "").trim()) || isEnvioEcomPostedStatus(pkg?.envioecomStatus))
             : isEnvioEcomLabelReadyStatus(envioecomStatus);
@@ -13531,7 +13531,7 @@ function OrdersPanel({
                       className="gap-1.5 text-indigo-800 border-indigo-200 hover:bg-indigo-50"
                       disabled={!!envioecomBusy[order.id] || splitShipmentSaving}
                       onClick={() => setSplitShipmentModal(order)}
-                      title="Gerar uma etiqueta EnvioEcom por estoque (Minas, Motoboy, Foz)"
+                      title="Gerar uma etiqueta por estoque. Kit com várias opções: cada opção pode sair de um lugar."
                     >
                       Dividir envio
                     </Button>
@@ -13627,7 +13627,7 @@ function OrdersPanel({
                             name,
                             quantity: qty,
                             price: Number(fromOrder?.price) || 0,
-                            image: fromOrder?.image,
+                            image: item.image || fromOrder?.image,
                           });
                           return (
                             <div

@@ -10,6 +10,7 @@ import {
   nextPackageEnvioEcomExternalOrderNumber,
   parseShipmentItems,
   pendingCopyItemsFromSplitPackages,
+  shipmentItemsForInventory,
   validateShipmentAllocation,
   packageInventoryReferenceId,
   parsePackageInventoryReferenceId,
@@ -275,6 +276,77 @@ test("envio parcial: cópia lista só o pacote sem etiqueta", () => {
   assert.equal(pending[0]?.quantity, 1);
   assert.equal(isSplitOrderPartiallyShipped([minas, { ...motoboy, envioecomStatus: null }]), false);
   assert.equal(pendingCopyItemsFromSplitPackages([minas, { ...motoboy, envioecomStatus: null }]).length, 0);
+});
+
+test("kit com variantes divide cada opção; sem opção continua a quantidade", () => {
+  const kit = [{
+    id: "kit",
+    name: "Kit Degustação",
+    quantity: 1,
+    selectedVariants: [
+      { groupName: "Escolha seu kit", option: "Lipoland", image: "https://cdn.example/lipoland.jpg" },
+      { groupName: "Escolha seu kit", option: "Lipoless" },
+      { groupName: "Escolha seu kit", option: "Tirzedral" },
+      { groupName: "Escolha seu kit", option: "Slimex" },
+    ],
+  }];
+  const rejected = validateShipmentAllocation(kit, [
+    { inventoryPool: "minas", items: [{ productId: "kit", productName: "Kit Degustação", quantity: 1 }] },
+    { inventoryPool: "motoboy", items: [{ productId: "kit", productName: "Kit Degustação", quantity: 1 }] },
+  ]);
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.equal(rejected.code, "ALLOCATION_MISMATCH");
+
+  const result = validateShipmentAllocation(kit, [
+    {
+      inventoryPool: "minas",
+      items: [
+        { productId: "kit", variantGroup: "Escolha seu kit", variantOption: "Lipoland", quantity: 1 },
+        { productId: "kit", variantGroup: "Escolha seu kit", variantOption: "Lipoless", quantity: 1 },
+      ],
+    },
+    {
+      inventoryPool: "motoboy",
+      items: [{ productId: "kit", variantGroup: "Escolha seu kit", variantOption: "Tirzedral", quantity: 1 }],
+    },
+    {
+      inventoryPool: "loja",
+      items: [{ productId: "kit", variantGroup: "Escolha seu kit", variantOption: "Slimex", quantity: 1 }],
+    },
+  ]);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const minas = result.packages.find((pack) => pack.inventoryPool === "minas");
+    assert.equal(minas?.items.length, 2);
+    assert.equal(minas?.items[0]?.productName, "Lipoland");
+    assert.equal(minas?.items[0]?.image, "https://cdn.example/lipoland.jpg");
+    assert.equal(minas?.items[0]?.variantOption, "Lipoland");
+  }
+
+  const oneOption = validateShipmentAllocation(
+    [{ id: "kit", name: "Kit", quantity: 2, selectedVariants: [{ groupName: "Cor", option: "Preta" }] }],
+    [
+      { inventoryPool: "minas", items: [{ productId: "kit", quantity: 1 }] },
+      { inventoryPool: "motoboy", items: [{ productId: "kit", quantity: 1 }] },
+    ],
+  );
+  assert.equal(oneOption.ok, true);
+});
+
+test("parseShipmentItems não junta opções diferentes do mesmo produto", () => {
+  const items = parseShipmentItems([
+    { productId: "kit", variantGroup: "Escolha seu kit", variantOption: "Lipoland", quantity: 1 },
+    { productId: "kit", variantGroup: "Escolha seu kit", variantOption: "Slimex", quantity: 1 },
+  ]);
+  assert.equal(items.length, 2);
+  assert.deepEqual(
+    shipmentItemsForInventory(items).map((item) => item.id),
+    ["", ""],
+  );
+  assert.deepEqual(
+    shipmentItemsForInventory(items).map((item) => item.name),
+    ["Lipoland", "Slimex"],
+  );
 });
 
 test("parseShipmentItems agrupa o mesmo produto", () => {

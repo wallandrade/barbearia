@@ -74,6 +74,50 @@ test("pacote nulo no split não derruba a cópia 48h", () => {
   }), false);
 });
 
+test("envio parcial de variantes copia só a opção que falta, sem repetir o kit", () => {
+  const pending = productsForShippingCopy({
+    products: [{
+      id: "kit",
+      name: "Kit Degustação",
+      quantity: 1,
+      price: 790,
+      image: "https://cdn.example/kit.jpg",
+      selectedVariants: [
+        { groupName: "Escolha seu kit", option: "Lipoland" },
+        { groupName: "Escolha seu kit", option: "Slimex" },
+      ],
+    }],
+    envioecomPackages: [
+      {
+        enviado: false,
+        envioecomStatus: null,
+        items: [{
+          productId: "kit",
+          productName: "Lipoland",
+          variantOption: "Lipoland",
+          quantity: 1,
+          image: "https://cdn.example/lipoland.jpg",
+        }],
+      },
+      {
+        enviado: true,
+        envioecomStatus: "Coletado",
+        items: [{
+          productId: "kit",
+          productName: "Slimex",
+          variantOption: "Slimex",
+          quantity: 1,
+        }],
+      },
+    ],
+  });
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0]?.name, "Lipoland");
+  assert.equal(pending[0]?.price, 0);
+  assert.equal(pending[0]?.selectedVariants, undefined);
+  assert.equal(pending[0]?.image, "https://cdn.example/lipoland.jpg");
+});
+
 test("findOrderProductForShipmentItem casa por id ou nome", () => {
   const products = [
     { id: "g", name: "Gluconex 15mg 4 Frasco", quantity: 1, price: 1 },

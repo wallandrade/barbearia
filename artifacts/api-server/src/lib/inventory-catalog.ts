@@ -70,6 +70,33 @@ export function buildCatalogIndex(rows: InventoryCatalogNameRow[]): CatalogIndex
   return { byId, uniqueByName };
 }
 
+/**
+ * Nome da opção do kit → produto do catálogo.
+ * Casa o nome inteiro, ou um único produto que começa com a opção
+ * (“Lipoland” → “Lipoland 15mg …”). Dois produtos no mesmo prefixo não casam.
+ */
+export function resolveCatalogByOptionName(
+  index: CatalogIndex,
+  optionName: string,
+): CatalogProductRef | undefined {
+  const folded = foldInventoryName(optionName);
+  if (!folded) return undefined;
+  const exact = index.uniqueByName.get(folded);
+  if (exact) return exact;
+
+  const seen = new Set<string>();
+  const matches: CatalogProductRef[] = [];
+  for (const ref of index.byId.values()) {
+    if (seen.has(ref.id)) continue;
+    seen.add(ref.id);
+    const name = foldInventoryName(ref.name);
+    if (!name.startsWith(folded) || name.length === folded.length) continue;
+    if (!/^[\s(\-–—]/.test(name.slice(folded.length))) continue;
+    matches.push(ref);
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 export function resolveProductName(map: Map<string, string>, productId: unknown): string {
   const id = normalizeProductId(productId);
   if (!id) return "";
