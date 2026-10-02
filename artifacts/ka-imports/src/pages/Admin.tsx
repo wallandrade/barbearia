@@ -717,7 +717,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { canSavePromoEnd, isPromoEndScheduleIncomplete, promoEndsAtFromParts, splitPromoEndsAt } from "@/lib/promo-ends-at";
-import { formatCurrency, formatDateOnlyBR } from "@/lib/utils";
+import { formatCurrency, formatDateOnlyBR, sellerListTitle, type SavedSellerItem } from "@/lib/utils";
 import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
 import { orderCopyItemName, parseVariantGroups, readEditorVariantGroups, type VariantGroup } from "@/lib/product-variants";
 import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
@@ -1755,6 +1755,7 @@ export default function Admin() {
   const [userPasswordUpdating, setUserPasswordUpdating] = useState<string | null>(null);
   // Seller links
   const [sellerInput, setSellerInput] = useState("");
+  const [sellerManualCodeInput, setSellerManualCodeInput] = useState("");
   const [sellerWhatsappInput, setSellerWhatsappInput] = useState("");
   const [sellerHasCommissionInput, setSellerHasCommissionInput] = useState(true);
   const [sellerCommissionRateInput, setSellerCommissionRateInput] = useState("5");
@@ -4267,27 +4268,33 @@ export default function Admin() {
   // Seller links — use root domain only (no path prefix) so links work on any custom domain
   const siteOrigin = window.location.origin;
 
-  const saveSeller = async (slug: string, whatsapp: string, hasCommission: boolean, commissionRate: number) => {
-    if (!slug.trim()) return;
-    const clean = slug.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    if (!clean) return;
+  const saveSeller = async (name: string, whatsapp: string, hasCommission: boolean, commissionRate: number, manualCode: string) => {
+    if (!name.trim()) return;
     try {
       const res = await fetch(`${BASE}/api/admin/sellers`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ slug: clean, whatsapp, hasCommission, commissionRate }),
+        body: JSON.stringify({ name, manualCode, whatsapp, hasCommission, commissionRate }),
       });
-      if (!res.ok) { toast.error("Erro ao salvar vendedor."); return; }
-      const data = await res.json() as { seller: SavedSellerItem };
+      const data = await res.json().catch(() => ({} as { error?: string; seller?: SavedSellerItem }));
+      if (!res.ok || !data.seller) {
+        if (data.error === "SLUG_TAKEN") toast.error("Já existe um link com esse nome ou código.");
+        else if (data.error === "INVALID_CODE") toast.error("Código inválido. Use letras e números.");
+        else if (data.error === "INVALID_SLUG") toast.error("Informe um nome válido para o link.");
+        else toast.error("Erro ao salvar vendedor.");
+        return;
+      }
+      const seller = data.seller;
       setSellers((prev) => {
-        const exists = prev.some((s) => s.slug === data.seller.slug);
-        return exists ? prev.map((s) => (s.slug === data.seller.slug ? data.seller : s)) : [...prev, data.seller];
+        const exists = prev.some((s) => s.slug === seller.slug);
+        return exists ? prev.map((s) => (s.slug === seller.slug ? seller : s)) : [...prev, seller];
       });
       setSellerInput("");
+      setSellerManualCodeInput("");
       setSellerWhatsappInput("");
       setSellerHasCommissionInput(true);
       setSellerCommissionRateInput("5");
-      toast.success(`Vendedor salvo: ${siteOrigin}/${clean}`);
+      toast.success(`Vendedor salvo: ${siteOrigin}/${seller.slug}`);
     } catch { toast.error("Erro ao salvar vendedor."); }
   };
 
@@ -5975,6 +5982,8 @@ export default function Admin() {
             savedSellersList={sellers}
             sellerInput={sellerInput}
             setSellerInput={setSellerInput}
+            sellerManualCodeInput={sellerManualCodeInput}
+            setSellerManualCodeInput={setSellerManualCodeInput}
             sellerWhatsappInput={sellerWhatsappInput}
             setSellerWhatsappInput={setSellerWhatsappInput}
             sellerHasCommissionInput={sellerHasCommissionInput}
@@ -15384,10 +15393,11 @@ function SellerAnalyticsCard({ seller, orders, charges }: { seller: SavedSellerI
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 text-primary flex items-center justify-center font-bold text-xl shrink-0">
-          {seller.slug[0]?.toUpperCase()}
+          {sellerListTitle(seller)[0]?.toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-bold capitalize text-base">{seller.slug}</p>
+          <p className={`font-bold text-base ${seller.displayName ? "" : "capitalize"}`}>{sellerListTitle(seller)}</p>
+          {seller.manualCode ? <p className="text-xs text-muted-foreground">Código: {seller.manualCode}</p> : null}
           {seller.whatsapp && (
             <a
               href={`https://wa.me/${seller.whatsapp}`}
@@ -15462,14 +15472,15 @@ function SellerAnalyticsCard({ seller, orders, charges }: { seller: SavedSellerI
   );
 }
 
-function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInput, sellerWhatsappInput, setSellerWhatsappInput, sellerHasCommissionInput, setSellerHasCommissionInput, sellerCommissionRateInput, setSellerCommissionRateInput, saveSeller, updateSellerCommission, sellerCommissionUpdatingSlug, removeSeller, copySeller, copiedSeller, orders, charges, isPrimary, currentUsername }: {
+function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInput, sellerManualCodeInput, setSellerManualCodeInput, sellerWhatsappInput, setSellerWhatsappInput, sellerHasCommissionInput, setSellerHasCommissionInput, sellerCommissionRateInput, setSellerCommissionRateInput, saveSeller, updateSellerCommission, sellerCommissionUpdatingSlug, removeSeller, copySeller, copiedSeller, orders, charges, isPrimary, currentUsername }: {
   siteOrigin: string;
   savedSellersList: SavedSellerItem[];
   sellerInput: string; setSellerInput: (v: string) => void;
+  sellerManualCodeInput: string; setSellerManualCodeInput: (v: string) => void;
   sellerWhatsappInput: string; setSellerWhatsappInput: (v: string) => void;
   sellerHasCommissionInput: boolean; setSellerHasCommissionInput: (v: boolean) => void;
   sellerCommissionRateInput: string; setSellerCommissionRateInput: (v: string) => void;
-  saveSeller: (s: string, w: string, hasCommission: boolean, commissionRate: number) => void; removeSeller: (s: string) => void;
+  saveSeller: (name: string, w: string, hasCommission: boolean, commissionRate: number, manualCode: string) => void; removeSeller: (s: string) => void;
   updateSellerCommission: (slug: string, whatsapp: string, hasCommission: boolean, commissionRate: number) => Promise<boolean>;
   sellerCommissionUpdatingSlug: string | null;
   copySeller: (s: string) => void; copiedSeller: string | null;
@@ -15518,11 +15529,18 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
     ? savedSellersList
     : savedSellersList.filter((s) => {
         const slug = s.slug.toLowerCase();
+        const nameKey = String(s.displayName || "").toLowerCase().replace(/[^a-z]/g, "");
         return slug === currentUsername.toLowerCase()
           || slug === cleanUsername
           || cleanUsername.startsWith(slug)
-          || slug.startsWith(cleanUsername);
+          || slug.startsWith(cleanUsername)
+          || (nameKey.length > 0 && (nameKey === cleanUsername || cleanUsername.startsWith(nameKey) || nameKey.startsWith(cleanUsername)));
       });
+  const linkPreview = (() => {
+    const code = sellerManualCodeInput.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const fromName = sellerInput.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    return code || fromName;
+  })();
 
   return (
     <div className="space-y-8">
@@ -15542,9 +15560,23 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
               <input
                 value={sellerInput}
                 onChange={(e) => setSellerInput(e.target.value)}
-                placeholder="Nome do vendedor (ex: beatriz)"
+                placeholder="Nome do vendedor (ex: Bruna)"
                 className="flex-1 h-11 px-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
               />
+            </div>
+            <div className="space-y-1">
+              <input
+                value={sellerManualCodeInput}
+                onChange={(e) => setSellerManualCodeInput(e.target.value)}
+                placeholder="Código do link (opcional, ex: vd12)"
+                className="w-full h-11 px-4 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Se preencher o código, o link de divulgação usa o código. Se deixar vazio, o link usa o nome.
+              </p>
+              {linkPreview && (
+                <p className="text-xs font-mono text-muted-foreground truncate">{siteOrigin}/{linkPreview}</p>
+              )}
             </div>
             <div className="flex gap-2">
               <input
@@ -15555,7 +15587,7 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
                 inputMode="tel"
               />
               <Button
-                onClick={() => saveSeller(sellerInput, sellerWhatsappInput, sellerHasCommissionInput, Number(sellerCommissionRateInput || 0))}
+                onClick={() => saveSeller(sellerInput, sellerWhatsappInput, sellerHasCommissionInput, Number(sellerCommissionRateInput || 0), sellerManualCodeInput)}
                 className="gap-2 shrink-0"
                 disabled={!sellerInput.trim() || (sellerHasCommissionInput && Number(sellerCommissionRateInput || 0) < 0)}
               >
@@ -15591,16 +15623,19 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 
         {visibleSellers.length > 0 ? (
           <div className="space-y-2">
-            {visibleSellers.map(({ slug, whatsapp, hasCommission, commissionRate }) => {
+            {visibleSellers.map((seller) => {
+              const { slug, whatsapp, hasCommission, commissionRate } = seller;
+              const title = sellerListTitle(seller);
               const storeUrl      = `${siteOrigin}/${slug}`;
               const paymentUrl    = `${siteOrigin}/pagamento?seller=${slug}`;
               return (
                 <div key={slug} className="flex items-center gap-3 bg-muted/30 rounded-xl px-4 py-2.5">
                   <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
-                    {slug[0]?.toUpperCase()}
+                    {title[0]?.toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm capitalize">{slug}</p>
+                    <p className={`font-semibold text-sm ${seller.displayName ? "" : "capitalize"}`}>{title}</p>
+                    {seller.manualCode ? <p className="text-xs text-muted-foreground">Código: {seller.manualCode}</p> : null}
                     <p className="text-xs font-mono text-muted-foreground truncate">{storeUrl}</p>
                     <p className="text-xs font-mono text-violet-600 truncate">{paymentUrl}</p>
                     {whatsapp && <p className="text-xs text-green-600">WA: +{whatsapp}</p>}

@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-10-01
+> **Última atualização:** 2026-10-02
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -42,6 +42,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-02 | Link de vendedor pode usar código manual | Nome continua na lista. Com código, loja, pagamento e `sellerCode` da venda usam o código. Sem código, o link segue o nome | Vendedor já cadastrado continua no slug atual. Comissão e rodízio iguais |
 | 2026-10-01 | Promoção pode acabar quando o estoque da promoção zera | Interruptor **Até durar o estoque** copia Motoboy + Minas. Cada pedido que fica pago desconta a quantidade. Em zero o preço promocional sai | A baixa do depósito continua só em **Dar baixa agora**. Reenvio não desconta. Sem o interruptor, vale a data e a hora |
 | 2026-10-01 | Admin: botão Clonar no card da rifa | Cria outra rifa Ativa com o mesmo título, descrição, foto, quantidade, preço e tempo de reserva | Reservas, promoções, resultado e total pago não vão junto. A rifa original permanece |
 | 2026-10-01 | Dividir envio abre as opções de um kit | Um produto com 2+ variantes (qty 1) ganha **Dividir envio**. Cada opção vai para Minas, Motoboy ou Foz. A baixa do pacote desconta o produto do catálogo com o nome da opção (ou o único produto que começa com ela), não o kit de novo | Pedido sem variante continua por quantidade. Uma opção só não vira linha. Cópia 48h no split parcial lista só a opção que falta |
@@ -318,7 +319,8 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 ## Vendedores e comissões
 
-- Tabela `sellers`; pedidos carregam `sellerCode` e snapshot de comissão.
+- Tabela `sellers` (`slug` + `display_name`); pedidos carregam `sellerCode` e snapshot de comissão.
+- **Link de divulgação:** no Admin, o nome continua obrigatório. Código manual é opcional. Preenchido, o link (`/{código}` e `/pagamento?seller={código}`) e a venda usam o código. Vazio, o link segue o nome normalizado, como antes. Vendedor antigo sem `display_name` continua no slug atual.
 - Lotes de comissão: `seller_commission_batches` + rotas `commissions.ts`.
 - Admin não-primário escopado por seller via `ADMIN_SELLER_SCOPE_MAP` (não há `tenant_id`).
 - **Atribuição no checkout:** URL `/{seller}` (ex. `/poly`, `/yuri`) grava e envia aquele `sellerCode`. Compra em `/` ou `/checkout` **sem** vendedor na URL: API (`resolveCheckoutSeller`) alterna poly/yuri (contador `home_seller_rotation_index` em `site_settings`); WhatsApp do PIX usa o número desse vendedor. Carrinho usa o slug da URL, não o localStorage antigo.

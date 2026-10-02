@@ -3,6 +3,7 @@ import { db, sellersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { peekHomeRotationSeller } from "../lib/assign-checkout-seller";
+import { resolveSellerLinkSlug, sellerManualCode } from "../lib/seller-link-slug";
 
 const router: IRouter = Router();
 
@@ -47,45 +48,103 @@ router.get("/sellers/:slug", async (req, res) => {
   }
 });
 
+function toAdminSeller(row: {
+  slug: string;
+  displayName?: string | null;
+  whatsapp: string;
+  hasCommission: boolean | null;
+  commissionRate: string | number | null;
+}) {
+  const displayName = String(row.displayName ?? "");
+  return {
+    slug: row.slug,
+    displayName,
+    manualCode: sellerManualCode(row.slug, displayName),
+    whatsapp: row.whatsapp,
+    hasCommission: row.hasCommission,
+    commissionRate: Number(row.commissionRate ?? 0),
+  };
+}
+
 /** GET /api/admin/sellers — admin only, returns full seller settings */
 router.get("/admin/sellers", requirePrimaryAdmin, async (_req, res) => {
   try {
     const rows = await db.select({
       slug: sellersTable.slug,
+      displayName: sellersTable.displayName,
       whatsapp: sellersTable.whatsapp,
       hasCommission: sellersTable.hasCommission,
       commissionRate: sellersTable.commissionRate,
     }).from(sellersTable);
     res.json({
-      sellers: rows.map((s) => ({
-        ...s,
-        commissionRate: Number(s.commissionRate ?? 0),
-      })),
+      sellers: rows.map((s) => toAdminSeller(s)),
     });
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR" });
   }
 });
 
-/** POST /api/admin/sellers — admin only, upsert seller */
+/** POST /api/admin/sellers — admin only, cria link ou atualiza comissão/WhatsApp */
 router.post("/admin/sellers", requirePrimaryAdmin, async (req, res) => {
   try {
-    const { slug, whatsapp, hasCommission, commissionRate } = req.body as {
+    const { slug, name, manualCode, whatsapp, hasCommission, commissionRate } = req.body as {
       slug?: string;
+      name?: string;
+      manualCode?: string;
       whatsapp?: string;
       hasCommission?: boolean;
       commissionRate?: number;
     };
-    if (!slug?.trim()) { res.status(400).json({ error: "MISSING_SLUG" }); return; }
-    const clean = slug.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    if (!clean) { res.status(400).json({ error: "INVALID_SLUG" }); return; }
     const wNum = (whatsapp || "").replace(/\D/g, "");
     const hasCommissionValue = hasCommission !== false;
     const normalizedRate = hasCommissionValue ? Math.max(0, Number(commissionRate ?? 5)) : 0;
+    const creatingWithName = typeof name === "string" && name.trim().length > 0;
+
+    if (creatingWithName) {
+      const resolved = resolveSellerLinkSlug(name, manualCode);
+      if (!resolved.ok) {
+        res.status(400).json({ error: resolved.error });
+        return;
+      }
+      const [existing] = await db.select({
+        slug: sellersTable.slug,
+      }).from(sellersTable).where(eq(sellersTable.slug, resolved.slug)).limit(1);
+      if (existing) {
+        res.status(409).json({ error: "SLUG_TAKEN" });
+        return;
+      }
+      await db.insert(sellersTable).values({
+        slug: resolved.slug,
+        displayName: resolved.displayName,
+        whatsapp: wNum,
+        hasCommission: hasCommissionValue,
+        commissionRate: String(normalizedRate),
+        updatedAt: new Date(),
+      });
+      res.json({
+        ok: true,
+        seller: toAdminSeller({
+          slug: resolved.slug,
+          displayName: resolved.displayName,
+          whatsapp: wNum,
+          hasCommission: hasCommissionValue,
+          commissionRate: normalizedRate,
+        }),
+      });
+      return;
+    }
+
+    if (!slug?.trim()) { res.status(400).json({ error: "MISSING_SLUG" }); return; }
+    const clean = slug.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    if (!clean) { res.status(400).json({ error: "INVALID_SLUG" }); return; }
+    const [current] = await db.select({
+      displayName: sellersTable.displayName,
+    }).from(sellersTable).where(eq(sellersTable.slug, clean)).limit(1);
     await db
       .insert(sellersTable)
       .values({
         slug: clean,
+        displayName: current?.displayName ?? "",
         whatsapp: wNum,
         hasCommission: hasCommissionValue,
         commissionRate: String(normalizedRate),
@@ -101,14 +160,20 @@ router.post("/admin/sellers", requirePrimaryAdmin, async (req, res) => {
       });
     res.json({
       ok: true,
-      seller: {
+      seller: toAdminSeller({
         slug: clean,
+        displayName: current?.displayName ?? "",
         whatsapp: wNum,
         hasCommission: hasCommissionValue,
         commissionRate: normalizedRate,
-      },
+      }),
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Duplicate") || message.includes("ER_DUP_ENTRY")) {
+      res.status(409).json({ error: "SLUG_TAKEN" });
+      return;
+    }
     console.error("[Sellers] POST error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
   }

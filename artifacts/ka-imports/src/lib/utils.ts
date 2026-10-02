@@ -16,10 +16,17 @@ export const DEFAULT_WHATSAPP = "5535999768759";
 
 export type SavedSellerItem = {
   slug: string;
+  displayName?: string;
+  manualCode?: string | null;
   whatsapp: string;
   hasCommission?: boolean;
   commissionRate?: number;
 };
+
+export function sellerListTitle(seller: { slug: string; displayName?: string | null }): string {
+  const name = String(seller.displayName || "").trim();
+  return name || seller.slug;
+}
 
 const _BASE = () => (import.meta.env?.BASE_URL ?? "/").replace(/\/$/, "");
 const SELLER_CODE_KEY = "sellerCode";

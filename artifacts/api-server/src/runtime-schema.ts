@@ -398,6 +398,10 @@ async function ensureSellersColumns(databaseName: string): Promise<void> {
       name: "commission_rate",
       sql: "ALTER TABLE sellers ADD COLUMN commission_rate DECIMAL(5,2) NOT NULL DEFAULT 5.00",
     },
+    {
+      name: "display_name",
+      sql: "ALTER TABLE sellers ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''",
+    },
   ];
 
   for (const definition of definitions) {
