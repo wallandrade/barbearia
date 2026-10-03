@@ -38,6 +38,15 @@
   --radius-2xl: 1.5rem;
 }
 
+:root {
+  --pharma-green: #22c55e;
+  --pharma-green-strong: #16a34a;
+  --pharma-green-soft: #e8f8ee;
+  --pharma-green-ink: #166534;
+  --pharma-cart: #111111;
+  --pharma-off: #ef4444;
+}
+
 @layer base {
   body {
     @apply bg-background text-foreground antialiased font-sans;

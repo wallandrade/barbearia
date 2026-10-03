@@ -32,7 +32,8 @@ const PUBLIC_KEYS  = [
   "checkout_insurance_full_enabled", "checkout_insurance_reduced_enabled", "checkout_insurance_reduced_percent",
   "checkout_insurance_full_label", "checkout_insurance_full_description",
   "checkout_insurance_reduced_label", "checkout_insurance_reduced_description",
-  "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text"
+  "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text",
+  "store_theme_preset",
 ];
 const ALLOWED_KEYS = [
   ...PUBLIC_KEYS,
@@ -116,7 +117,14 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
       return;
     }
     const { value } = req.body as { value?: string };
-    if (!value) {
+    if (key === "store_theme_preset" && value) {
+      const normalized = String(value).trim();
+      if (normalized !== "pharma_compact" && normalized !== "default") {
+        res.status(400).json({ error: "INVALID_VALUE", message: "Tema inválido." });
+        return;
+      }
+    }
+    if (!value || (key === "store_theme_preset" && String(value).trim() === "default")) {
       await db.delete(siteSettingsTable).where(eq(siteSettingsTable.key, key));
     } else {
       let storedValue = value;

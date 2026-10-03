@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { clearSellerContext } from "@/lib/utils";
 import { bestManualDisplayRank, sortCategoryProducts, topSoldRanksById } from "@/lib/catalog-sort";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
+import { PharmaCatalog } from "@/components/pharma/PharmaCatalog";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -146,6 +148,7 @@ export default function Home() {
   const searchString = useSearch();
   const searchQuery = new URLSearchParams(searchString).get("q") || "";
   const { banners, isLoaded: bannersLoaded } = useSiteBanners();
+  const storeTheme = useStoreTheme();
 
   useLiveTracking("catalog");
 
@@ -331,8 +334,15 @@ export default function Home() {
         </section>
       )}
 
+      {storeTheme === PHARMA_COMPACT_THEME ? (
+          <PharmaCatalog
+            products={data?.products ?? []}
+            isLoading={isLoading}
+            isError={isError}
+            sellerSlug={sellerSlug}
+          />
+        ) : (
       <section className="py-6 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full flex-1">
-        
         {/* Mobile: título + busca + chips de categoria */}
         <div className="flex flex-col gap-3 mb-6 lg:mb-8">
           <h2 className="text-2xl font-bold text-foreground lg:hidden">Catálogo</h2>
@@ -517,6 +527,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+        )}
 
     </AppLayout>
   );

@@ -9,6 +9,7 @@ import { SitePasswordGate } from "@/components/SitePasswordGate";
 import SocialProofWidget from "@/components/SocialProofWidget";
 import PeptideChatWidget from "@/components/PeptideChatWidget";
 import { captureReferralFromCurrentUrl } from "@/lib/affiliate";
+import { applyStoreThemeAttribute, useStoreTheme } from "@/lib/store-theme";
 import { reportClientError } from "@/lib/client-error-reporting";
 import Home from "@/pages/Home";
 import CategoryPage from "@/pages/CategoryPage";
@@ -219,6 +220,7 @@ function Router() {
 
 function AppInner() {
   const [location] = useLocation();
+  const storeTheme = useStoreTheme();
   const isAdmin = location.startsWith("/admin");
   const isMotoboy = location.startsWith("/motoboy");
   const showPeptideChat = location === "/login" || location.startsWith("/minha-conta");
@@ -226,6 +228,10 @@ function AppInner() {
   useEffect(() => {
     captureReferralFromCurrentUrl();
   }, [location]);
+
+  useEffect(() => {
+    applyStoreThemeAttribute(storeTheme);
+  }, [storeTheme]);
 
   return (
     <AppErrorBoundary locationKey={location}>

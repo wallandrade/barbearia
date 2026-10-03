@@ -5,6 +5,8 @@ import { getCustomerToken } from "@/lib/customer-auth";
 import { useCart } from "@/store/use-cart";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, getActiveWhatsApp } from "@/lib/utils";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
+import { PharmaStoreChrome } from "@/components/pharma/PharmaStoreChrome";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -145,6 +147,7 @@ function SearchBar({
 
 export function Header({ minimal = false }: { minimal?: boolean }) {
   const { items, setIsOpen } = useCart();
+  const storeTheme = useStoreTheme();
   const [location, setLocation] = useLocation();
   const [searchValue, setSearchValue]         = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -297,6 +300,10 @@ export function Header({ minimal = false }: { minimal?: boolean }) {
     setMenuOpen(false);
     setMobileSearchOpen(false);
   }, []);
+
+  if (!minimal && storeTheme === PHARMA_COMPACT_THEME) {
+    return <PharmaStoreChrome />;
+  }
 
   return (
     <>

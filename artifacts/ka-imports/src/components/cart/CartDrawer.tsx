@@ -1,14 +1,16 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Plus, Minus, ShoppingBag, ArrowRight } from "lucide-react";
+import { X, Plus, Minus, ShoppingBag, ArrowRight, Trash2 } from "lucide-react";
 import { cartLineId } from "@/lib/product-variants";
 import { useCart } from "@/store/use-cart";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, getSellerSlugFromPath } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
 
 export function CartDrawer() {
   const { items, isOpen, setIsOpen, updateQuantity, removeItem, getSubtotal } = useCart();
   const [location, setLocation] = useLocation();
+  const pharma = useStoreTheme() === PHARMA_COMPACT_THEME;
 
   const handleCheckout = () => {
     setIsOpen(false);
@@ -16,6 +18,65 @@ export function CartDrawer() {
     const checkoutHref = sellerCode ? `/${encodeURIComponent(sellerCode)}/checkout` : "/checkout";
     setLocation(checkoutHref);
   };
+
+  if (pharma) {
+    if (!isOpen) return null;
+    const lines = items.filter((item) => !(item as { isBump?: boolean }).isBump);
+    return (
+      <>
+        <button type="button" aria-label="Fechar carrinho" className="fixed inset-0 z-50 bg-black/35" onClick={() => setIsOpen(false)} />
+        <div className="fixed inset-y-0 right-0 z-50 flex w-[calc(100%-3.5rem)] max-w-96 flex-col rounded-l-3xl bg-white shadow-2xl">
+          <div className="flex items-center gap-2 border-b px-4 py-4">
+            <ShoppingBag className="h-5 w-5 text-[var(--pharma-green)]" />
+            <h2 className="text-lg font-bold">Meu Carrinho</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {lines.length === 0 ? (
+              <p className="py-10 text-center text-sm text-neutral-500">Seu carrinho está vazio.</p>
+            ) : (
+              <div className="space-y-3">
+                {lines.map((item) => {
+                  const bump = items.find((candidate) =>
+                    Boolean((candidate as { isBump?: boolean }).isBump) &&
+                    (candidate as { bumpForProductId?: string }).bumpForProductId === item.id,
+                  );
+                  const lineTotal = item.price * item.quantity + (bump ? bump.price * bump.quantity : 0);
+                  return (
+                    <div key={cartLineId(item)} className="flex gap-3">
+                      <img
+                        src={item.image || "https://placehold.co/112x112/f3f4f6/9ca3af?text=+"}
+                        alt=""
+                        className="h-14 w-14 shrink-0 rounded-xl border border-neutral-200 object-contain bg-white"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-xs font-semibold uppercase text-neutral-900">{item.name}</p>
+                        <p className="mt-1 text-xs text-neutral-500">{item.quantity} un · {formatCurrency(item.price)}</p>
+                        <p className="text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(lineTotal)}</p>
+                      </div>
+                      <button type="button" aria-label="Remover" className="text-neutral-400" onClick={() => removeItem(cartLineId(item))}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {lines.length > 0 && (
+            <div className="space-y-2 border-t px-4 py-4">
+              <p className="text-base font-bold text-[var(--pharma-green-ink)]">Total: {formatCurrency(getSubtotal())}</p>
+              <button type="button" className="h-11 w-full rounded-xl bg-[var(--pharma-green)] text-sm font-semibold text-white" onClick={handleCheckout}>
+                Finalizar Pedido
+              </button>
+              <button type="button" className="h-11 w-full rounded-xl text-sm font-semibold text-neutral-700" onClick={() => setIsOpen(false)}>
+                Continuar comprando
+              </button>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <AnimatePresence>

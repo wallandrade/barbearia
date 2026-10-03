@@ -5,12 +5,15 @@ import type { Product } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { parseVariantGroups } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
+import { pharmaOffPercent, pharmaSalePrice } from "@/lib/pharma-catalog-query";
+import { usePharmaAddedNotice } from "@/components/pharma/PharmaAddedNotice";
 
 interface ProductCardProps {
   product: Product;
   sellerSlug?: string;
   priority?: boolean;
   salesRank?: 1 | 2 | 3;
+  layout?: "default" | "pharma";
 }
 
 type BulkDiscountTier = {
@@ -50,7 +53,7 @@ function hasVariantGroups(product: Product): boolean {
   return parseVariantGroups(raw).length > 0;
 }
 
-export function ProductCard({ product, sellerSlug, priority = false, salesRank }: ProductCardProps) {
+export function ProductCard({ product, sellerSlug, priority = false, salesRank, layout = "default" }: ProductCardProps) {
   const hasPromo = product.promoPrice != null && product.promoPrice < product.price;
   const isSoldOut = isProductUnavailable(product);
   const isLaunch = (product as Product & { isLaunch?: boolean }).isLaunch === true;
@@ -67,8 +70,71 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank }
     : null;
   const href = sellerSlug ? `/${sellerSlug}/produto/${product.id}` : `/produto/${product.id}`;
   const { addItem, setIsOpen } = useCart();
+  const showAdded = usePharmaAddedNotice((state) => state.show);
   const [, setLocation] = useLocation();
   const requiresVariantSelection = hasVariantGroups(product);
+  const pharmaSale = pharmaSalePrice(product as never);
+  const pharmaOff = pharmaOffPercent(product.price, pharmaSale);
+  const brand = String((product as Product & { brand?: string | null }).brand || "").trim();
+
+  function handlePharmaAdd(event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isSoldOut) return;
+    if (requiresVariantSelection) {
+      setLocation(href);
+      return;
+    }
+    addItem(product);
+    showAdded({ name: product.name, image: product.image, addedQty: 1 });
+  }
+
+  if (layout === "pharma") {
+    return (
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+        <div className="relative aspect-square bg-white">
+          {product.image ? (
+            <img src={product.image} alt={product.name} loading={priority ? "eager" : "lazy"} className="h-full w-full object-contain p-3" />
+          ) : (
+            <div className="h-full w-full bg-neutral-100" />
+          )}
+          {pharmaOff != null && (
+            <span className="absolute left-2 top-2 rounded-full bg-[var(--pharma-off)] px-2 py-1 text-[11px] font-bold text-white">
+              Até {pharmaOff}% OFF
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label={isSoldOut ? "Produto esgotado" : "Adicionar ao carrinho"}
+            disabled={isSoldOut}
+            onClick={handlePharmaAdd}
+            className="absolute bottom-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--pharma-green)] text-white disabled:bg-neutral-300"
+          >
+            <ShoppingCart className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex flex-1 flex-col p-3">
+          {brand ? <p className="text-xs text-neutral-400">{brand}</p> : null}
+          <h3 className="line-clamp-2 text-sm font-bold leading-tight text-neutral-900">{product.name}</h3>
+          <div className="mt-2">
+            {pharmaOff != null && (
+              <>
+                <p className="text-[10px] font-semibold tracking-wide text-neutral-400">A PARTIR DE</p>
+                <p className="text-xs text-neutral-400 line-through">{formatCurrency(product.price)}</p>
+              </>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold text-[var(--pharma-green-ink)]">{formatCurrency(pharmaSale)}</span>
+              <span className="rounded-full bg-[var(--pharma-green-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--pharma-green-ink)]">PIX</span>
+            </div>
+          </div>
+          <Link href={href} className="mt-auto inline-flex h-10 w-full items-center justify-center rounded-xl bg-[var(--pharma-green)] text-sm font-semibold text-white">
+            Ver
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault();

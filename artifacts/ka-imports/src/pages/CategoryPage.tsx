@@ -7,6 +7,7 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { sortCategoryProducts, topSoldRanksById } from "@/lib/catalog-sort";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
 
 export default function CategoryPage() {
   const [, setLocation] = useLocation();
@@ -33,6 +34,7 @@ export default function CategoryPage() {
     return sortCategoryProducts(categoryName, matches);
   }, [data, categoryName]);
   const salesRanks = useMemo(() => topSoldRanksById(filteredProducts), [filteredProducts]);
+  const pharma = useStoreTheme() === PHARMA_COMPACT_THEME;
 
   if (isLoading) {
     return (
@@ -79,14 +81,17 @@ export default function CategoryPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 items-stretch">
+          <div className={pharma
+            ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 items-stretch"
+            : "grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 items-stretch"}>
             {filteredProducts.map((product) => (
               <div key={product.id} className="flex">
                 <ProductCard
                   product={product}
                   sellerSlug={sellerSlug}
                   priority={false}
-                  salesRank={salesRanks.get(product.id)}
+                  salesRank={pharma ? undefined : salesRanks.get(product.id)}
+                  layout={pharma ? "pharma" : "default"}
                 />
               </div>
             ))}

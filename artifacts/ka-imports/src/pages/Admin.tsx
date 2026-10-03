@@ -19519,6 +19519,27 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         <p className="text-muted-foreground text-sm mb-5">
           Personalize o logo e os banners exibidos na loja. As imagens são aplicadas imediatamente após o upload.
         </p>
+        <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            ["default", "Tema atual", "A vitrine de hoje: cabeçalho, cards e carrinho em tela cheia."],
+            ["pharma_compact", "Farmácia Compacta", "Cabeçalho em duas linhas, grade de produtos, card verde e carrinho lateral."],
+          ] as const).map(([value, title, description]) => {
+            const selected = (settings["store_theme_preset"] === "pharma_compact" ? "pharma_compact" : "default") === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                disabled={!!loading["store_theme_preset"]}
+                onClick={() => { if (!selected) onSave("store_theme_preset", value); }}
+                className={`rounded-2xl border p-4 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}
+              >
+                <p className="text-sm font-bold">{title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+                {selected && <p className="mt-2 text-xs font-semibold text-primary">Em uso</p>}
+              </button>
+            );
+          })}
+        </div>
         <div className="mb-5 bg-card border border-border/60 rounded-2xl p-4 shadow-sm">
           <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
             Nome exibido ao lado da logo

@@ -10,6 +10,8 @@ import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
+import { PharmaProductPurchase } from "@/components/pharma/PharmaProductPurchase";
 
 type BulkDiscountTier = {
   minQty: number;
@@ -147,6 +149,7 @@ export default function ProductDetail() {
   const hasRequiredVariants = variantError == null;
   const isSoldOut = product ? isProductUnavailable(product) : false;
   const backHref = sellerSlug ? `/${sellerSlug}` : "/";
+  const pharma = useStoreTheme() === PHARMA_COMPACT_THEME;
 
   return (
     <AppLayout>
@@ -197,8 +200,12 @@ export default function ProductDetail() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-secondary">{product.category}</p>
                 <h1 className="text-3xl font-bold text-foreground mt-2 leading-tight">{product.name}</h1>
+                {pharma && visibleStockQty != null && (
+                  <p className="mt-2 text-sm font-semibold text-foreground">{visibleStockQty} em estoque</p>
+                )}
               </div>
 
+              {!pharma && (
               <div className="rounded-2xl border border-border bg-card p-4">
                 {shouldUseProgressiveUnitPrice ? (
                   <span className="text-3xl font-bold text-primary">{formatCurrency(displayUnitPrice)}</span>
@@ -221,6 +228,7 @@ export default function ProductDetail() {
                   <p className="mt-2 text-sm font-semibold text-destructive">Produto esgotado no momento.</p>
                 )}
               </div>
+              )}
 
               {variantGroups.length > 0 && (
                 <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
@@ -274,7 +282,16 @@ export default function ProductDetail() {
                 </div>
               )}
 
-              {progressiveOptions.length > 0 ? (
+              {pharma ? (
+                <PharmaProductPurchase
+                  product={product}
+                  sellerSlug={sellerSlug}
+                  image={selectedVariantImage || product.image}
+                  selectedVariants={selectedVariants}
+                  variantError={variantError}
+                  hasRequiredVariants={hasRequiredVariants}
+                />
+              ) : progressiveOptions.length > 0 ? (
                 <div className="space-y-3">
                   {progressiveOptions.map((option) => (
                     <div key={option.quantity} className="rounded-2xl border border-border bg-card p-3 sm:p-4">
