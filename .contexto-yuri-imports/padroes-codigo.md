@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-09-26
+> **Última atualização:** 2026-10-03
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-03 | Página do produto em duas colunas a partir de `md` (768px) | Foto inteira (`object-contain`) à esquerda; compra à direita; descrição embaixo | Preço, variantes e carrinho iguais. Celular continua uma coluna |
 | 2026-09-26 | Lupa na miniatura do painel (enviar e mais vendidos) | Prévia 128 px é `fixed` ao lado, medida no `mouseenter`; a lista de 320 px não corta. Lupa não recebe clique | Zoom grande e o hover da aba Pedidos iguais |
 | 2026-09-26 | Foto do painel (enviar e mais vendidos) abre o mesmo zoom do pedido | Clique na miniatura amplia; no card de enviar não troca de aba. Sem foto, o quadrado cinza não abre | Zoom da lista de pedidos igual |
 | 2026-09-26 | Card **Produtos mais vendidos** mostra a foto 32px | Casa o nome no catálogo (e na imagem gravada no item, se o cadastro não achar) | Ranking, faturamento e quantidade iguais |
@@ -40,6 +41,7 @@ Se memória ≠ código → seguir o código e **atualizar a memória na mesma t
 - Dados remotos: **TanStack Query** (client gerado em `lib/api-client-react` quando aplicável).
 - UI: Tailwind 4 + componentes estilo Radix/shadcn em `src/components`.
 - Páginas em `src/pages`; store em `src/store`; hooks/lib em `src/hooks`, `src/lib`.
+- Detalhe do produto (`ProductDetail.tsx`): duas colunas a partir de `md` (768px), no tema padrão e na Farmácia Compacta. Foto com `object-contain` na esquerda; título, preço, variantes e botão na direita; descrição abaixo da grade. No tema compacto, não voltar a `max-w-lg` numa coluna só no computador. Não voltar o corte para `lg` (1024px).
 - Busca Admin pedidos/cobranças: estado no filho (`AdminOrdersChargesSearchShell` + `AdminDebouncedSearchInput`); pai só manda `seedSearch` (`goToOrder`). Sub-abas + barra de copiar (`copyActions` / `AdminOrdersCopyBar`) no shell. Visitantes ao vivo: `AdminLiveVisitorStats` (poll 5 s fora do pai). Clientes/recorrentes: busca interna do painel.
 - Card da aba Pedidos: `OrdersPanel` é componente **separado** — state/handlers do pai (`storeCreditApplying`, `applyCustomerStoreCredit`, etc.) entram por **props**. Referência solta no filho vira `ReferenceError` e tela `Algo deu errado`. Helpers extraídos para `shipping-copy-list.ts` precisam **continuar exportados** se o card split ainda os chama (`findOrderProductForShipmentItem`). Menus do card (`Gerenciar EE`, `Copiar`) ficam em `AdminOrderCardActionMenus.tsx` — não reespalhar Etiqueta EE / Sync / Desvincular / Cancelar EE nem os três Copiar no wrap. **Copiar** no celular abre folha branca embaixo (`Sheet`); no desktop é dropdown opaco. Pedido **cancelado** esconde EnvioEcom, Vincular, etiqueta OCR, baixa e abater saldo; **Marcar Pago** e comprovante ficam. WhatsApp / copiar / detalhes / PDF já vinculado continuam.
 - Lazy routes / chunks manuais no Vite quando já existirem — preservar o padrão local.

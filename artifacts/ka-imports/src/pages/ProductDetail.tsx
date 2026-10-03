@@ -153,7 +153,7 @@ export default function ProductDetail() {
 
   return (
     <AppLayout>
-      <section className="py-6 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full">
+      <section className="py-6 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         <Button variant="ghost" className={`${pharma ? "mb-2" : "mb-6"} px-0 hover:bg-transparent`}>
           <Link href={backHref} className="flex items-center">
             <ArrowLeft className="w-4 h-4 mr-1.5" />
@@ -174,16 +174,16 @@ export default function ProductDetail() {
             <p className="font-semibold text-foreground">Produto não encontrado.</p>
           </div>
         ) : (
-          <div className={pharma ? "mx-auto flex w-full max-w-lg flex-col gap-4" : "grid lg:grid-cols-2 gap-8 items-start"}>
-            <div className={pharma ? "flex h-44 items-center justify-center overflow-hidden rounded-3xl bg-white" : "rounded-3xl border border-border/60 overflow-hidden bg-muted/20 shadow-sm aspect-square"}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 items-start">
+            <div className={pharma ? "flex items-center justify-center rounded-3xl bg-white p-4 sm:p-8 md:sticky md:top-24" : "rounded-3xl border border-border/60 bg-white shadow-sm p-4 sm:p-6 md:sticky md:top-24"}>
               {galleryImages.length > 0 ? (
-                <div className={`grid h-full w-full auto-rows-fr ${galleryImages.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                <div className={`grid gap-3 ${galleryImages.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
                   {galleryImages.map((src, index) => (
                     <img
                       key={`${src}-${index}`}
                       src={src}
                       alt=""
-                      className={`h-full w-full ${pharma ? "object-contain" : "object-cover"} ${galleryImages.length > 1 && galleryImages.length % 2 === 1 && index === galleryImages.length - 1 ? "col-span-2" : ""}`}
+                      className={`w-full h-auto max-h-[420px] object-contain mx-auto ${galleryImages.length > 1 && galleryImages.length % 2 === 1 && index === galleryImages.length - 1 ? "col-span-2 max-h-[280px]" : ""}`}
                     />
                   ))}
                 </div>
@@ -191,7 +191,7 @@ export default function ProductDetail() {
                 <img
                   src={selectedVariantImage || product.image || PRODUCT_IMAGE_FALLBACK}
                   alt={product.name}
-                  className={pharma ? "max-h-full max-w-full object-contain" : "h-full w-full object-cover"}
+                  className="w-full h-auto max-h-[520px] object-contain mx-auto"
                 />
               )}
             </div>
@@ -368,12 +368,17 @@ export default function ProductDetail() {
                 </Button>
               )}
 
-              <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
-                {product.description || "Sem descrição para este produto."}
-              </p>
             </div>
           </div>
         )}
+        {product && !isLoading && !isError ? (
+          <div className="mt-8 md:mt-10 pt-6 border-t border-border/60">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Descrição</h2>
+            <p className="text-muted-foreground leading-relaxed whitespace-pre-line max-w-3xl">
+              {product.description || "Sem descrição para este produto."}
+            </p>
+          </div>
+        ) : null}
       </section>
     </AppLayout>
   );
