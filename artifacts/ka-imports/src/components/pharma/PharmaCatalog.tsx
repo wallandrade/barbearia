@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Check, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { ProductCard } from "@/components/product/ProductCard";
 import type { Product } from "@workspace/api-client-react";
 import {
@@ -102,15 +102,15 @@ export function PharmaCatalog({
   return (
     <section className="min-h-[60vh] flex-1 bg-[#f6f7f9] px-4 py-6 sm:px-6">
       <div className="mx-auto w-full max-w-7xl">
-        <h1 className="text-2xl font-bold text-neutral-900">Produtos</h1>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button type="button" onClick={openFilters} className="inline-flex h-10 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold">
-            <SlidersHorizontal className="h-4 w-4" />
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={openFilters} className="inline-flex h-11 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold">
+            <SlidersHorizontal className="h-4 w-4 text-[var(--pharma-green)]" />
             Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
           </button>
-          <div className="relative">
-            <button type="button" onClick={() => setSortOpen((open) => !open)} className="inline-flex h-10 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold">
+          <div className="relative min-w-[10.5rem]">
+            <button type="button" onClick={() => setSortOpen((open) => !open)} className="inline-flex h-11 w-full items-center justify-between gap-3 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold">
               {orderLabel}
+              <ChevronDown className="h-4 w-4 text-neutral-500" />
             </button>
             {sortOpen && (
               <div className="absolute left-0 z-30 mt-2 w-52 overflow-hidden rounded-xl bg-neutral-700 py-1 text-white shadow-xl">
@@ -149,9 +149,9 @@ export function PharmaCatalog({
           </div>
         )}
 
-        <p className="mt-4 text-sm text-neutral-500">
-          {page.start}–{page.end} de {filtered.length}
-        </p>
+        <div className="mt-3 rounded-full bg-white px-4 py-2.5 text-sm text-neutral-500">
+          {page.start}-{page.end} de {filtered.length}
+        </div>
 
         {isLoading ? (
           <p className="py-16 text-center text-neutral-500">Carregando produtos...</p>

@@ -91,7 +91,7 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank, 
 
   if (layout === "pharma") {
     return (
-      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
         <div className="relative aspect-square bg-white">
           {product.image ? (
             <img src={product.image} alt={product.name} loading={priority ? "eager" : "lazy"} className="h-full w-full object-contain p-3" />
@@ -108,29 +108,31 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank, 
             aria-label={isSoldOut ? "Produto esgotado" : "Adicionar ao carrinho"}
             disabled={isSoldOut}
             onClick={handlePharmaAdd}
-            className="absolute bottom-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--pharma-green)] text-white disabled:bg-neutral-300"
+            className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--pharma-green)] text-white disabled:bg-neutral-300"
           >
             <ShoppingCart className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex flex-1 flex-col p-3">
+        <div className="flex flex-1 flex-col px-3 pb-3 pt-1">
           {brand ? <p className="text-xs text-neutral-400">{brand}</p> : null}
-          <h3 className="line-clamp-2 text-sm font-bold leading-tight text-neutral-900">{product.name}</h3>
-          <div className="mt-2">
+          <h3 className="line-clamp-3 text-sm font-bold leading-tight text-neutral-900">{product.name}</h3>
+          <div className="mt-auto pt-2">
             {pharmaOff != null && (
               <>
-                <p className="text-[10px] font-semibold tracking-wide text-neutral-400">A PARTIR DE</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">A partir de</p>
                 <p className="text-xs text-neutral-400 line-through">{formatCurrency(product.price)}</p>
               </>
             )}
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-[var(--pharma-green-ink)]">{formatCurrency(pharmaSale)}</span>
-              <span className="rounded-full bg-[var(--pharma-green-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--pharma-green-ink)]">PIX</span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="text-[15px] font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
+                <span className="rounded-full border border-[var(--pharma-green)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--pharma-green-ink)]">PIX</span>
+              </div>
+              <Link href={href} className="inline-flex h-8 shrink-0 items-center rounded-full bg-[var(--pharma-green)] px-3 text-sm font-semibold text-white">
+                Ver →
+              </Link>
             </div>
           </div>
-          <Link href={href} className="mt-auto inline-flex h-10 w-full items-center justify-center rounded-xl bg-[var(--pharma-green)] text-sm font-semibold text-white">
-            Ver
-          </Link>
         </div>
       </div>
     );

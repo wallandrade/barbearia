@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
-import { Menu, Search, ShoppingBag, User, X, Home, MessageCircle } from "lucide-react";
+import { Menu, Search, ShoppingBag, User, X, Home, MessageCircle, ChevronDown } from "lucide-react";
 import { getCustomerToken } from "@/lib/customer-auth";
 import { useCart } from "@/store/use-cart";
 import { getActiveWhatsApp, getSellerSlugFromPath } from "@/lib/utils";
@@ -188,6 +188,7 @@ export function PharmaStoreChrome() {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
+        <div className="h-1 bg-gradient-to-r from-orange-500 via-red-500 to-red-600" />
         <div className="flex h-14 items-center gap-2 px-3">
           <button
             type="button"
@@ -215,7 +216,7 @@ export function PharmaStoreChrome() {
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
               placeholder="Buscar produtos.."
-              className="h-10 w-full rounded-full bg-neutral-100 pl-9 pr-3 text-sm outline-none"
+              className="h-11 w-full rounded-full bg-[#f3f4f6] pl-9 pr-3 text-sm outline-none"
             />
           </form>
           {loggedIn ? (
@@ -229,7 +230,7 @@ export function PharmaStoreChrome() {
           )}
           <button
             type="button"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full bg-[var(--pharma-cart)] text-white"
+            className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--pharma-cart)] text-white"
             aria-label="Carrinho"
             onClick={() => setIsOpen(true)}
           >
@@ -255,12 +256,13 @@ export function PharmaStoreChrome() {
             ref={catBtnRef}
             type="button"
             onClick={openCategories}
-            className="shrink-0 rounded-full bg-[var(--pharma-green)] px-4 py-1.5 text-sm font-semibold text-white"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--pharma-green)] px-4 py-2 text-sm font-semibold text-white"
           >
             Categorias
+            <ChevronDown className="h-4 w-4" />
           </button>
-          <Link href={offersHref} className="shrink-0 rounded-full border border-neutral-200 bg-white px-4 py-1.5 text-sm font-semibold text-neutral-800">
-            Promoções
+          <Link href={offersHref} className="shrink-0 rounded-full border border-[var(--pharma-green)]/30 bg-[var(--pharma-green-soft)] px-4 py-2 text-sm font-semibold text-[var(--pharma-green-ink)]">
+            🔥 Promoções 🔥
           </Link>
           {categories.map((category) => {
             const selected = activeCategory === category;
@@ -269,7 +271,7 @@ export function PharmaStoreChrome() {
                 key={category}
                 type="button"
                 onClick={() => selectCategory(selected ? "" : category)}
-                className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold ${selected ? "bg-[var(--pharma-green)] text-white" : "bg-neutral-100 text-neutral-700"}`}
+                className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold ${selected ? "border-[var(--pharma-green)] bg-[var(--pharma-green)] text-white" : "border-neutral-200 bg-white text-neutral-800"}`}
               >
                 {category}
               </button>

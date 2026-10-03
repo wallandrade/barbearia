@@ -42,6 +42,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-03 | Cabeçalho e card do tema Farmácia Compacta seguem o modelo visual | Faixa laranja no topo, Categorias com seta, Promoções com fogo, chip branco, carrinho quadrado. Card com carrinho no alto, PIX com borda e Ver na linha do preço. Contagem numa faixa branca | Tema atual, preços e checkout iguais |
 | 2026-10-03 | Vitrine com dois temas (`store_theme_preset`): o atual e **Farmácia Compacta** (`pharma_compact`) | Admin escolhe em Identidade Visual. O novo tema troca cabeçalho, home, card, página do produto, carrinho e login. Catálogo, preço e checkout continuam os mesmos | Tema atual, `--color-primary` e checkout iguais |
 | 2026-10-02 | Lista negra de extravio na cotação EnvioEcom (`carrier_loss_incidents`) | Card da transportadora avisa extravio/roubo/furto/sinistro dos últimos 180 dias. São Paulo por região do CEP; outra capital pelo CEP de 3 dígitos; demais cidades, a cidade inteira. Confirma e gera. **Gerenciar EE** marca ou tira na mão | Checkout, Motoboy e a cópia 48h iguais. Apreensão, devolução e endereço errado não entram sozinhos |
 | 2026-10-02 | Link de vendedor pode usar código manual | Nome continua na lista. Com código, loja, pagamento e `sellerCode` da venda usam o código. Sem código, o link segue o nome | Vendedor já cadastrado continua no slug atual. Comissão e rodízio iguais |
