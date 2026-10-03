@@ -6,6 +6,13 @@ import { broadcastNotification } from "./notifications";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
+import {
+  CarrierLossError,
+  clearCarrierLoss,
+  lossAlertsForDestination,
+  markManualCarrierLoss,
+  recordCarrierLossFromStatus,
+} from "../lib/carrier-loss-store";
 import { inventoryPoolLabel, parseInventoryPool } from "../lib/order-inventory-debit";
 import { grantInsuranceCashbackIfEligible } from "../lib/insurance-claims";
 import {
@@ -109,7 +116,7 @@ function parseProducts(raw: unknown): OrderProduct[] {
 }
 
 function mapApiError(err: unknown, res: import("express").Response): void {
-  if (err instanceof OrderShipmentError) {
+  if (err instanceof OrderShipmentError || err instanceof CarrierLossError) {
     res.status(err.status).json({ error: err.code, message: err.message });
     return;
   }
@@ -575,6 +582,7 @@ async function applyShipmentStatusToOrder(params: {
       });
     }
     if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
+    await noteCarrierLoss(order, params, pkg.id, pkg.envioecomDeliveryMode);
     return { updated: true };
   }
 
@@ -648,7 +656,47 @@ async function applyShipmentStatusToOrder(params: {
     });
   }
   if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
+  await noteCarrierLoss(order, params, null, order.envioecomDeliveryMode);
   return { updated: true };
+}
+
+async function noteCarrierLoss(
+  order: typeof ordersTable.$inferSelect,
+  params: {
+    status: string;
+    description?: string | null;
+    timeline?: StatusHistoryEntry[] | null;
+    deliveryMode?: string | null;
+    updatedAt?: string | null;
+    timestamp?: number | null;
+    packageId?: string | null;
+  },
+  packageId: string | null,
+  savedDeliveryMode?: string | null,
+) {
+  const carrier = String(params.deliveryMode || savedDeliveryMode || "").trim();
+  let occurredAt: Date | null = null;
+  if (typeof params.timestamp === "number" && params.timestamp > 0) {
+    const ms = params.timestamp > 1e12 ? params.timestamp : params.timestamp * 1000;
+    const parsed = new Date(ms);
+    if (!Number.isNaN(parsed.getTime())) occurredAt = parsed;
+  } else if (params.updatedAt) {
+    const parsed = new Date(params.updatedAt);
+    if (!Number.isNaN(parsed.getTime())) occurredAt = parsed;
+  }
+  try {
+    await recordCarrierLossFromStatus({
+      order,
+      packageId: packageId || params.packageId,
+      status: params.status,
+      description: params.description,
+      timeline: params.timeline,
+      deliveryMode: carrier || null,
+      occurredAt,
+    });
+  } catch (err) {
+    console.warn("[EnvioEcom] carrier loss record failed", order.id, err);
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -757,17 +805,85 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
       }),
     );
 
+    const rawQuotes = quote.quotes || [];
+    const quotes = await lossAlertsForDestination({
+      destination: {
+        city: order.addressCity,
+        state: order.addressState,
+        cep,
+        neighborhood: order.addressNeighborhood,
+      },
+      quotes: rawQuotes,
+    });
+
     res.json({
       orderId: order.id,
       orderNumber: order.orderNumber,
       destinationCep: cep,
       products,
       carriers: carriers || null,
-      quotes: quote.quotes || [],
+      quotes,
       unavailable_carriers: quote.unavailable_carriers || [],
       origin_zipcode: quote.origin_zipcode || null,
       accountId,
     });
+  } catch (err) {
+    mapApiError(err, res);
+  }
+});
+
+router.post("/admin/envioecom/orders/:id/loss-blacklist", requireAdminAuth, async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+    const loaded = await loadOrderForAdmin(req, orderId);
+    if ("error" in loaded) {
+      res.status(loaded.error === "NOT_FOUND" ? 404 : loaded.error === "UNAUTHORIZED" ? 401 : 403).json({
+        error: loaded.error,
+        message: "Pedido não encontrado ou sem permissão.",
+      });
+      return;
+    }
+    const { order } = loaded;
+    const { pkg } = await requirePackageForSplit(order, req.body);
+    const carrier = String(req.body?.carrier || pkg?.envioecomDeliveryMode || order.envioecomDeliveryMode || "").trim();
+    const result = await markManualCarrierLoss({
+      order,
+      packageId: pkg?.id || "",
+      carrierLabel: carrier,
+    });
+    recordAdminActivity(
+      req,
+      order.id,
+      "envioecom",
+      "Lista negra de extravio",
+      `${result.carrierLabel} · ${result.phrase}`,
+    );
+    res.json({ ok: true, listed: true, carrier: result.carrierLabel, phrase: result.phrase });
+  } catch (err) {
+    mapApiError(err, res);
+  }
+});
+
+router.delete("/admin/envioecom/orders/:id/loss-blacklist", requireAdminAuth, async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+    const loaded = await loadOrderForAdmin(req, orderId);
+    if ("error" in loaded) {
+      res.status(loaded.error === "NOT_FOUND" ? 404 : loaded.error === "UNAUTHORIZED" ? 401 : 403).json({
+        error: loaded.error,
+        message: "Pedido não encontrado ou sem permissão.",
+      });
+      return;
+    }
+    const { order } = loaded;
+    const { pkg } = await requirePackageForSplit(order, req.body);
+    const removed = await clearCarrierLoss(order.id, pkg?.id || "");
+    if (!removed) {
+      res.status(404).json({ error: "NOT_LISTED", message: "Este pedido não está na lista negra de extravio." });
+      return;
+    }
+    recordAdminActivity(req, order.id, "envioecom", "Tirou da lista negra de extravio");
+    res.json({ ok: true, listed: false });
   } catch (err) {
     mapApiError(err, res);
   }

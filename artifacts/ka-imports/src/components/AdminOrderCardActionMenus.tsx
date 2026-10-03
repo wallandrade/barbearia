@@ -21,6 +21,7 @@ import {
   FileText,
   RefreshCw,
   Send,
+  ShieldAlert,
   Unlink,
   Upload,
 } from "lucide-react";
@@ -41,6 +42,8 @@ export function EnvioEcomManageMenu({
   onSyncStatus,
   onUnlink,
   onCancelShipment,
+  lossListed = false,
+  onToggleLossBlacklist,
 }: {
   busy?: boolean;
   compact?: boolean;
@@ -52,8 +55,10 @@ export function EnvioEcomManageMenu({
   onSyncStatus: () => void;
   onUnlink: () => void;
   onCancelShipment: () => void;
+  lossListed?: boolean;
+  onToggleLossBlacklist?: () => void;
 }) {
-  if (!canManageShipment && !hasPdf && !canUnlink) return null;
+  if (!canManageShipment && !hasPdf && !canUnlink && !onToggleLossBlacklist) return null;
 
   return (
     <DropdownMenu>
@@ -111,6 +116,19 @@ export function EnvioEcomManageMenu({
           >
             Cancelar EE
           </DropdownMenuItem>
+        )}
+        {onToggleLossBlacklist && (
+          <>
+            {(canManageShipment || hasPdf || canUnlink) && <DropdownMenuSeparator />}
+            <DropdownMenuItem
+              disabled={busy}
+              className={`${MENU_ITEM} ${lossListed ? "text-red-800 focus:text-red-900" : "text-amber-900 focus:text-amber-950"}`}
+              onSelect={() => onToggleLossBlacklist()}
+            >
+              <ShieldAlert className="w-4 h-4" />
+              {lossListed ? "Tirar da lista negra" : "Lista negra de extravio"}
+            </DropdownMenuItem>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

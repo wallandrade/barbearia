@@ -30,3 +30,4 @@ export * from "./motoboy-bookings";
 export * from "./motoboy-cep-ranges";
 export * from "./motoboy-price-proposals";
 export * from "./shipping-queue";
+export * from "./carrier-loss-incidents";

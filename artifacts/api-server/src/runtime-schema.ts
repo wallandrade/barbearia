@@ -966,6 +966,39 @@ async function ensureManualReturnItemsTable(databaseName: string): Promise<void>
   }
 }
 
+async function ensureCarrierLossIncidentsTable(databaseName: string): Promise<void> {
+  if (await tableExists("carrier_loss_incidents", databaseName)) return;
+
+  await pool.query(`
+    CREATE TABLE carrier_loss_incidents (
+      id VARCHAR(64) NOT NULL PRIMARY KEY,
+      order_id VARCHAR(255) NOT NULL,
+      package_id VARCHAR(255) NOT NULL DEFAULT '',
+      order_number INT NULL,
+      carrier_key VARCHAR(128) NOT NULL,
+      carrier_label VARCHAR(128) NOT NULL,
+      city_key VARCHAR(128) NOT NULL,
+      city_label VARCHAR(128) NOT NULL,
+      state VARCHAR(2) NOT NULL,
+      neighborhood VARCHAR(255) NULL,
+      neighborhood_key VARCHAR(255) NULL,
+      cep VARCHAR(8) NULL,
+      region_key VARCHAR(64) NOT NULL,
+      region_label VARCHAR(128) NOT NULL,
+      scope VARCHAR(16) NOT NULL,
+      kind VARCHAR(16) NOT NULL,
+      source VARCHAR(16) NOT NULL,
+      status_text VARCHAR(255) NULL,
+      occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      removed_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY carrier_loss_order_package_uq (order_id, package_id),
+      KEY carrier_loss_city_idx (city_key, state, occurred_at)
+    )
+  `);
+}
+
 async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
   if (await tableExists("order_shipments", databaseName)) return;
 
@@ -1262,6 +1295,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureProductCostHistoryTable(databaseName);
     await ensureOrderActivityTable(databaseName);
     await ensureOrderShipmentsTable(databaseName);
+    await ensureCarrierLossIncidentsTable(databaseName);
     await ensureOrderShipmentSuperfreteColumns(databaseName);
     await ensureMarketingExpensesTable(databaseName);
     await ensureMarketingExpensesColumns(databaseName);

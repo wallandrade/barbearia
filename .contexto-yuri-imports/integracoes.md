@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-09-30
+> **Última atualização:** 2026-10-02
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-02 | Cotação EnvioEcom devolve `lossAlert` e o pedido entra em `carrier_loss_incidents` | Card da transportadora avisa extravio/roubo dos últimos 180 dias antes de gerar a etiqueta. Menu **Lista negra de extravio** grava na mão | Checkout, `/frete`, Motoboy e a cópia 48h iguais |
 | 2026-09-30 | SuperFrete no Admin, ao lado da EnvioEcom | Contas em `superfrete_accounts`. Sem conta, o card segue só EnvioEcom. Com conta, o clique pergunta qual usar. Colunas `superfrete_*` no pedido e no pacote | Checkout, `/frete` e o fluxo EnvioEcom iguais |
 | 2026-09-28 | `GET /api/admin/orders/:id/related-shipments` manda `products[].image` | Miniatura no alerta de CPF (URL do pedido ou do catálogo) | Create, webhook e etiqueta iguais. Base64 não vai na resposta |
 | 2026-09-27 | Página `/frete` chama `GET /api/motoboy-coverage/lookup` depois do ViaCEP | CEP coberto ganha card Motoboy com o preço da cobertura. `consult` (acima de 200 km) só avisa | Checkout, km e faixa de CEP iguais |
@@ -119,7 +120,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Webhook público: `POST /api/webhook/envioecom` — vínculo por **barcode** / `external_order_number` / `shipment_id` — **não** por CPF. Com o mesmo ref em dois pedidos, fica no **filho de reenvio**. Número cru do pedido só se esse pedido já tiver o barcode/ID/`orderId` EE. Cadastro da URL nas contas continua `POST /api/admin/envioecom/webhook` (`PUBLIC_API_URL`).
 - Sync automático: `startEnvioEcomStatusSyncJob` (`envioecom-status-job.ts`) chama `syncOpenEnvioEcomShipments` a cada 2 min (lote 8, envios dos últimos 90 dias). Prioridade: etiqueta pronta / Processando envio, depois criado, depois trânsito. Entregue e cancelado param. Split: um pacote por vez, identificador estrito. Sem mudança de status só anda o cursor `envioecom_status_updated_at` (não grava histórico). Desligar: `ENVIOECOM_AUTO_SYNC=0`. Intervalo: `ENVIOECOM_AUTO_SYNC_INTERVAL_MS` (mín. 60s). Lote: `ENVIOECOM_AUTO_SYNC_BATCH` (máx. 20).
 - Quando status, barcode ou `enviado` mudam (webhook, sync manual ou job), a API manda SSE `order_updated`. O Admin já refaz a lista nesse evento e também a cada 20s.
-- Admin: quote/create/labels/sync/cancel/unlink + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.)
+- Admin: quote/create/labels/sync/cancel/unlink + **Vincular EE** (modal ID/barcode → sync) + filtro `carriers` + registrar webhook (`PUBLIC_API_URL`) + aba **Rastreios** (`/admin/envioecom/tracking-board`; grupos: `awaiting_pickup` = etiqueta pronta ainda não coletado, `awaiting` = pagamento/criado, `in_transit`, etc.). A cotação devolve `lossAlert` por transportadora (`lib/carrier-loss.ts`). `POST/DELETE /api/admin/envioecom/orders/:id/loss-blacklist` marca ou tira a lista negra. Tabela `carrier_loss_incidents` (runtime-schema).
 - Etiqueta EE / Sync sem ID abre o mesmo modal de vínculo (não usa `window.prompt`)
 - Create: **`items` sempre 1 linha** das settings (`envioecom_shipment_item_name` default `Mercadoria`, `envioecom_shipment_item_qty` default 1, `envioecom_shipment_item_value` default R$5). Nunca nome/qty/preço do catálogo. Editável em Admin → Rastreios (`GET/PUT .../shipment-item-name` devolve/grava `name`, `quantity`, `declaredValue`). Cotação **não** usa esses settings (pacote 2×12×17, 0,3 kg, R$5). Envios já criados não mudam.
 - Filtro carriers: body `carriers[]` ou env `ENVIOECOM_CARRIERS` (csv)

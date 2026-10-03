@@ -21,9 +21,11 @@ export type SplitShipmentPackage = {
   inventoryReserved?: boolean | null;
   envioecomShipmentId?: string | null;
   envioecomBarcode?: string | null;
+  envioecomDeliveryMode?: string | null;
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
   envioecomAccountId?: string | null;
+  carrierLossListed?: boolean;
   superfreteOrderId?: string | null;
   superfreteStatus?: string | null;
   superfreteTracking?: string | null;

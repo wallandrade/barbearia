@@ -10965,10 +10965,19 @@ function OrdersPanel({
   const [envioecomSelectedCarriers, setEnvioecomSelectedCarriers] = useState<string[]>([]);
   const [envioecomQuoteModal, setEnvioecomQuoteModal] = useState<null | {
     order: AdminOrder;
-    quotes: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
+    quotes: Array<{
+      carrier?: string;
+      price?: string | number;
+      delivery_time?: string | number;
+      lossAlert?: { level: "warn" | "danger"; count: number; message: string } | null;
+    }>;
     originZipcode?: string | null;
     accountId?: string | null;
     accountName?: string | null;
+    packageId?: string | null;
+  }>(null);
+  const [lossBlacklistModal, setLossBlacklistModal] = useState<null | {
+    order: AdminOrder;
     packageId?: string | null;
   }>(null);
   const [envioecomLinkModal, setEnvioecomLinkModal] = useState<null | {
@@ -11109,7 +11118,12 @@ function OrdersPanel({
         }),
       });
       const data = await res.json() as {
-        quotes?: Array<{ carrier?: string; price?: string | number; delivery_time?: string | number }>;
+        quotes?: Array<{
+          carrier?: string;
+          price?: string | number;
+          delivery_time?: string | number;
+          lossAlert?: { level: "warn" | "danger"; count: number; message: string } | null;
+        }>;
         origin_zipcode?: string | null;
         accountId?: string | null;
         message?: string;
@@ -11137,6 +11151,74 @@ function OrdersPanel({
     } finally {
       setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
     }
+  };
+
+  const patchCarrierLossListed = (orderId: string, packageId: string | null | undefined, listed: boolean) => {
+    const current = ordersLookup.find((row) => row.id === orderId);
+    if (!current) return;
+    if (packageId) {
+      const packages = Array.isArray((current as { envioecomPackages?: Array<{ id?: string | null }> }).envioecomPackages)
+        ? (current as { envioecomPackages: Array<{ id?: string | null }> }).envioecomPackages.map((pkg) => (
+          pkg.id === packageId ? { ...pkg, carrierLossListed: listed } : pkg
+        ))
+        : (current as { envioecomPackages?: unknown }).envioecomPackages;
+      onSetOrderPatched({ ...current, envioecomPackages: packages } as AdminOrder);
+      return;
+    }
+    onSetOrderPatched({ ...current, carrierLossListed: listed } as AdminOrder);
+  };
+
+  const setCarrierLossListed = async (
+    order: AdminOrder,
+    packageId: string | null | undefined,
+    listed: boolean,
+    carrier?: string,
+  ) => {
+    setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/loss-blacklist`, {
+        method: listed ? "POST" : "DELETE",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(packageId ? { packageId } : {}),
+          ...(carrier ? { carrier } : {}),
+        }),
+      });
+      const data = await res.json() as { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Não foi possível atualizar a lista negra.");
+        return;
+      }
+      patchCarrierLossListed(order.id, packageId, listed);
+      setLossBlacklistModal(null);
+      toast.success(listed ? "Pedido na lista negra de extravio." : "Pedido tirado da lista negra.");
+    } catch {
+      toast.error("Erro ao atualizar a lista negra.");
+    } finally {
+      setEnvioecomBusy((prev) => ({ ...prev, [order.id]: false }));
+    }
+  };
+
+  const toggleCarrierLossBlacklist = (
+    order: AdminOrder,
+    packageId: string | null | undefined,
+    listed: boolean,
+    carrier: string | null | undefined,
+  ) => {
+    if (listed) {
+      const proceed = window.confirm("Tirar este pedido da lista negra de extravio?");
+      if (!proceed) return;
+      void setCarrierLossListed(order, packageId, false);
+      return;
+    }
+    const name = String(carrier || "").trim();
+    if (!name) {
+      setLossBlacklistModal({ order, packageId: packageId || null });
+      return;
+    }
+    const proceed = window.confirm(`Colocar ${name} na lista negra de extravio deste endereço?`);
+    if (!proceed) return;
+    void setCarrierLossListed(order, packageId, true, name);
   };
 
   const continueEnvioEcomQuote = (
@@ -11367,13 +11449,22 @@ function OrdersPanel({
 
   const createEnvioEcomShipment = async (
     order: AdminOrder,
-    quote: { carrier?: string; price?: string | number; delivery_time?: string | number },
+    quote: {
+      carrier?: string;
+      price?: string | number;
+      delivery_time?: string | number;
+      lossAlert?: { level: "warn" | "danger"; message: string } | null;
+    },
     originZipcode?: string | null,
   ) => {
     const shippingCompany = String(quote.carrier || "").trim();
     if (!shippingCompany) {
       toast.error("Cotação sem transportadora.");
       return;
+    }
+    if (quote.lossAlert?.message) {
+      const proceed = window.confirm(`${quote.lossAlert.message}\n\nGerar a etiqueta mesmo assim?`);
+      if (!proceed) return;
     }
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
@@ -13633,6 +13724,19 @@ function OrdersPanel({
                     onSyncStatus={() => { void syncEnvioEcomStatus(order); }}
                     onUnlink={() => { void unlinkEnvioEcomShipment(order); }}
                     onCancelShipment={() => { void cancelEnvioEcomShipment(order); }}
+                    lossListed={Boolean((order as { carrierLossListed?: boolean }).carrierLossListed)}
+                    onToggleLossBlacklist={
+                      hasLinkedEnvioEcom || Boolean((order as { carrierLossListed?: boolean }).carrierLossListed)
+                        ? () => {
+                          toggleCarrierLossBlacklist(
+                            order,
+                            null,
+                            Boolean((order as { carrierLossListed?: boolean }).carrierLossListed),
+                            (order as { envioecomDeliveryMode?: string | null }).envioecomDeliveryMode,
+                          );
+                        }
+                        : undefined
+                    }
                   />
                   {(order as { envioecomStatus?: string | null }).envioecomStatus && (
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass((order as { envioecomStatus?: string | null }).envioecomStatus)}`}>
@@ -13780,6 +13884,20 @@ function OrdersPanel({
                         } as AdminOrder, pkg.id); }}
                         onUnlink={() => { void unlinkEnvioEcomShipment(order, pkg.id); }}
                         onCancelShipment={() => { void cancelEnvioEcomShipment(order, pkg.id); }}
+                        lossListed={Boolean((pkg as { carrierLossListed?: boolean }).carrierLossListed)}
+                        onToggleLossBlacklist={
+                          Boolean(pkg.envioecomBarcode || pkg.envioecomShipmentId || pkg.envioecomLabelUrl || pkg.envioecomStatus)
+                          || Boolean((pkg as { carrierLossListed?: boolean }).carrierLossListed)
+                            ? () => {
+                              toggleCarrierLossBlacklist(
+                                order,
+                                pkg.id,
+                                Boolean((pkg as { carrierLossListed?: boolean }).carrierLossListed),
+                                pkg.envioecomDeliveryMode,
+                              );
+                            }
+                            : undefined
+                        }
                       />
                       {pkg.envioecomStatus && (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>
@@ -14740,7 +14858,14 @@ function OrdersPanel({
                 </div>
               </div>
               <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
-                {envioecomQuoteModal.quotes.map((quote, idx) => (
+                {envioecomQuoteModal.quotes.map((quote, idx) => {
+                  const lossAlert = quote.lossAlert;
+                  const cardClass = lossAlert?.level === "danger"
+                    ? "border-red-300 bg-red-50 hover:bg-red-100"
+                    : lossAlert?.level === "warn"
+                      ? "border-amber-300 bg-amber-50 hover:bg-amber-100"
+                      : "border-border hover:border-teal-300 hover:bg-teal-50/50";
+                  return (
                   <button
                     key={`${quote.carrier || "carrier"}-${idx}`}
                     type="button"
@@ -14752,13 +14877,56 @@ function OrdersPanel({
                         envioecomQuoteModal.originZipcode,
                       );
                     }}
-                    className="w-full text-left rounded-xl border border-border hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3 transition disabled:opacity-60"
+                    className={`w-full text-left rounded-xl border px-4 py-3 transition disabled:opacity-60 ${cardClass}`}
                   >
                     <p className="font-semibold text-foreground">{quote.carrier || "Transportadora"}</p>
                     <p className="text-sm text-muted-foreground mt-0.5">
                       {quote.price != null ? `R$ ${quote.price}` : "Preço n/d"}
                       {quote.delivery_time != null ? ` · ${quote.delivery_time} dia(s)` : ""}
                     </p>
+                    {lossAlert?.message && (
+                      <p className={`text-xs mt-1.5 font-medium ${lossAlert.level === "danger" ? "text-red-800" : "text-amber-900"}`}>
+                        {lossAlert.message}
+                      </p>
+                    )}
+                  </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {lossBlacklistModal && (
+          <div className="fixed inset-0 z-[125] bg-black/45 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Lista negra de extravio</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pedido #{getOrderReference(lossBlacklistModal.order)} · escolha a transportadora
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="p-1.5 rounded-lg hover:bg-muted"
+                  onClick={() => setLossBlacklistModal(null)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 flex flex-wrap gap-2">
+                {ENVIOECOM_CARRIER_OPTIONS.map((carrier) => (
+                  <button
+                    key={carrier}
+                    type="button"
+                    disabled={!!envioecomBusy[lossBlacklistModal.order.id]}
+                    onClick={() => {
+                      void setCarrierLossListed(lossBlacklistModal.order, lossBlacklistModal.packageId, true, carrier);
+                    }}
+                    className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:opacity-60"
+                  >
+                    {carrier}
                   </button>
                 ))}
               </div>

@@ -50,6 +50,7 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isOpenShippingListOrder } from "../lib/order-shipments-logic";
+import { attachCarrierLossFlags } from "../lib/carrier-loss-store";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { listEnvioEcomAccountsPublic, resolveEnvioEcomInventoryPool } from "../lib/envioecom-accounts";
 import {
@@ -1780,7 +1781,8 @@ router.get("/admin/orders", requireAdminAuth, async (req, res) => {
     const withPackages = await attachShipmentsToMappedOrders(prioritized);
     const withExtra = await attachReshipmentExtraQuantities(withPackages);
     const withVariantPhotos = await enrichSelectedVariantImages(withExtra);
-    res.json({ orders: withVariantPhotos });
+    const withLossFlags = await attachCarrierLossFlags(withVariantPhotos);
+    res.json({ orders: withLossFlags });
   } catch (err) {
     console.error("Admin orders error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao buscar pedidos." });
