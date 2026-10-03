@@ -84,6 +84,10 @@ export function isPharmaPromo(product: PharmaCatalogProduct, nowMs = Date.now())
   return Boolean(product.bulkDiscountEnabled) && parseBulkTiers(product.bulkDiscountTiers).length > 0;
 }
 
+function isTirzepatidaCategory(category: unknown): boolean {
+  return foldCatalogLabel(category) === "tirzepatida";
+}
+
 function peptideBrandRank(product: PharmaCatalogProduct): number {
   if (!isPeptideCategory(product.category)) return 1;
   const folded = foldCatalogLabel(product.brand).replace(/\s+/g, "");
@@ -101,6 +105,10 @@ export function comparePharmaRelevance(a: PharmaCatalogProduct, b: PharmaCatalog
   const aSold = a.isSoldOut === true;
   const bSold = b.isSoldOut === true;
   if (aSold !== bSold) return aSold ? 1 : -1;
+
+  const aTirze = isTirzepatidaCategory(a.category);
+  const bTirze = isTirzepatidaCategory(b.category);
+  if (aTirze !== bTirze) return aTirze ? -1 : 1;
 
   const rankDiff = peptideBrandRank(a) - peptideBrandRank(b);
   if (rankDiff !== 0) return rankDiff;

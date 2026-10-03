@@ -58,6 +58,17 @@ test("relevância: esgotado por último, marca peptídeo, vendas e sortOrder", (
   assert.deepEqual(sorted.map((row) => row.name), ["Bio muito", "Bio pouco", "Glow", "Esgotado"]);
 });
 
+test("relevância: tirzepatida disponível primeiro e esgotada por último", () => {
+  const rows = [
+    { id: "1", name: "Água", category: "Água", price: 10, soldQty: 500, sortOrder: 1 },
+    { id: "2", name: "Tirze esgotada", category: "Tirzepatida", price: 10, isSoldOut: true, soldQty: 900, sortOrder: 1 },
+    { id: "3", name: "Tirze B", category: "tirzepatida", price: 10, soldQty: 2, sortOrder: 2 },
+    { id: "4", name: "Tirze A", category: "Tirzepatida", price: 10, soldQty: 20, sortOrder: 2 },
+  ];
+  const sorted = rows.slice().sort(comparePharmaRelevance);
+  assert.deepEqual(sorted.map((row) => row.name), ["Tirze A", "Tirze B", "Água", "Tirze esgotada"]);
+});
+
 test("menor preço usa o preço de venda do card", () => {
   const sorted = sortPharmaProducts([
     { id: "1", name: "Tabela", price: 50, promoPrice: 40 },
