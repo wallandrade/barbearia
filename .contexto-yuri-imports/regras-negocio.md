@@ -42,6 +42,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-03 | Página do produto no tema Farmácia Compacta segue a tabela do exemplo | Foto baixa, categoria verde, 4 faixas numa linha, QTD/TOTAL, aviso verde e botão com carrinho | Tema atual e os preços cadastrados iguais |
 | 2026-10-03 | Home Farmácia Compacta abre com tirzepatidas disponíveis no topo | Relevância lista a categoria inteira antes do resto. Esgotada continua no fim | Menor/Maior/Nome e o tema atual iguais |
 | 2026-10-03 | Card Farmácia Compacta: PIX fica na linha do preço | Valor, selo PIX e Ver → não quebram no celular | A PARTIR DE e o preço riscado continuam acima |
 | 2026-10-03 | Menu Categorias da Farmácia Compacta: item escolhido vira pílula verde | Lista branca arredondada; os outros nomes ficam em texto. A seta sobe com o menu aberto | Chips da fileira e o restante do tema iguais |

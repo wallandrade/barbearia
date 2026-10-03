@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { usePharmaAddedNotice } from "@/components/pharma/PharmaAddedNotice";
 import { parseBulkTiers, pharmaOffPercent, pharmaSalePrice, tierForQuantity } from "@/lib/pharma-catalog-query";
+import { ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
 type SelectedVariant = { groupName?: string; option?: string };
@@ -83,9 +84,9 @@ export function PharmaProductPurchase({
   }
 
   const circles = (count: number) => (
-    <div className="flex -space-x-2">
+    <div className="flex justify-center -space-x-1.5">
       {Array.from({ length: count }).map((_, index) => (
-        <img key={index} src={photo} alt="" className="h-8 w-8 rounded-full border-2 border-white object-cover" />
+        <img key={index} src={photo} alt="" className="h-6 w-6 rounded-full border-2 border-white object-cover" />
       ))}
     </div>
   );
@@ -95,8 +96,8 @@ export function PharmaProductPurchase({
       {isSoldOut && <p className="text-sm font-semibold text-[var(--pharma-off)]">Produto esgotado no momento.</p>}
       {hasTiers ? (
         <>
-          <h2 className="text-lg font-bold">Tabela de preços</h2>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Tabela de preços</h2>
+          <div className="grid grid-cols-4 gap-1.5">
             {[1, 2, 3, 4].map((qty) => {
               const price = tierForQuantity(qty, tiers)?.unitPrice ?? oneBox;
               const cheaper = price < oneBox - 0.001;
@@ -107,15 +108,15 @@ export function PharmaProductPurchase({
                   key={qty}
                   type="button"
                   onClick={() => setQuantity(qty)}
-                  className={`rounded-2xl border p-3 text-left ${selected ? "border-[var(--pharma-green)] bg-[var(--pharma-green-soft)]" : "border-neutral-200 bg-white"}`}
+                  className={`rounded-2xl border px-1 py-2 text-center ${selected ? "border-[var(--pharma-green)] bg-[var(--pharma-green-soft)]" : "border-neutral-200 bg-white"}`}
                 >
                   {circles(qty)}
-                  <p className="mt-2 text-sm font-semibold">{qty >= 4 ? "4cx+" : `${qty}cx`}</p>
-                  <p className="text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(price)}</p>
+                  <p className={`mt-1.5 text-xs font-semibold ${selected ? "text-[var(--pharma-green-ink)]" : "text-neutral-700"}`}>{qty >= 4 ? "4cx+" : `${qty}cx`}</p>
+                  <p className="text-xs font-bold leading-tight text-[var(--pharma-green)]">{formatCurrency(price)}</p>
                   {cheaper && percent != null && (
-                    <p className="text-xs">
+                    <p className="text-[10px] leading-tight">
                       <span className="text-neutral-400 line-through">{formatCurrency(oneBox)}</span>
-                      <span className="ml-1 text-[var(--pharma-off)]">-{percent}%</span>
+                      <span className="ml-0.5 text-[var(--pharma-off)]">-{percent}%</span>
                     </p>
                   )}
                 </button>
@@ -127,22 +128,26 @@ export function PharmaProductPurchase({
         circles(Math.min(4, quantity))
       )}
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center rounded-full border border-neutral-200 bg-white">
-          <button type="button" className="h-10 w-10" onClick={() => setQuantity((value) => Math.max(1, value - 1))} aria-label="Diminuir">−</button>
-          <span className="w-8 text-center text-sm font-semibold">{quantity}</span>
-          <button type="button" className="h-10 w-10" onClick={() => setQuantity((value) => Math.min(99, value + 1))} aria-label="Aumentar">+</button>
+      <div className="flex items-center justify-between gap-3 rounded-full border border-neutral-200 bg-white px-4 py-2">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Qtd</span>
+          <div className="flex items-center">
+            <button type="button" className="h-8 w-8 text-lg text-neutral-500" onClick={() => setQuantity((value) => Math.max(1, value - 1))} aria-label="Diminuir">−</button>
+            <span className="w-6 text-center text-sm font-semibold">{quantity}</span>
+            <button type="button" className="h-8 w-8 text-lg text-neutral-500" onClick={() => setQuantity((value) => Math.min(99, value + 1))} aria-label="Aumentar">+</button>
+          </div>
         </div>
         <div className="text-right">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Total</p>
           {!hasTiers && pharmaSalePrice(product as never) < listPrice && (
             <p className="text-xs text-neutral-400 line-through">{formatCurrency(listPrice * quantity)}</p>
           )}
-          <p className="text-lg font-bold text-[var(--pharma-green-ink)]">{formatCurrency(total)}</p>
+          <p className="text-lg font-bold leading-none text-neutral-900">{formatCurrency(total)}</p>
         </div>
       </div>
 
       {wholesaleHint && (
-        <p className="text-sm text-neutral-600">
+        <p className="rounded-2xl bg-[var(--pharma-green-soft)] px-4 py-3 text-sm leading-snug text-[var(--pharma-green-ink)]">
           Adicione mais {wholesaleHint.more} un. para garantir preço de atacado ({formatCurrency(wholesaleHint.price)}) e economize {wholesaleHint.percent}% vs varejo.
         </p>
       )}
@@ -152,8 +157,9 @@ export function PharmaProductPurchase({
           type="button"
           disabled={isSoldOut}
           onClick={() => add(false)}
-          className="h-12 w-full rounded-xl bg-[var(--pharma-green)] text-sm font-semibold text-white disabled:opacity-50"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--pharma-green)] text-base font-semibold text-white disabled:opacity-50"
         >
+          <ShoppingCart className="h-5 w-5" />
           Adicionar ao carrinho
         </button>
       ) : (

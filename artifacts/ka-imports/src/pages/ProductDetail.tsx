@@ -154,7 +154,7 @@ export default function ProductDetail() {
   return (
     <AppLayout>
       <section className="py-6 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full">
-        <Button variant="ghost" className="mb-6 px-0 hover:bg-transparent">
+        <Button variant="ghost" className={`${pharma ? "mb-2" : "mb-6"} px-0 hover:bg-transparent`}>
           <Link href={backHref} className="flex items-center">
             <ArrowLeft className="w-4 h-4 mr-1.5" />
             Voltar para produtos
@@ -174,8 +174,8 @@ export default function ProductDetail() {
             <p className="font-semibold text-foreground">Produto não encontrado.</p>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-2 gap-8 items-start">
-            <div className="rounded-3xl border border-border/60 overflow-hidden bg-muted/20 shadow-sm aspect-square">
+          <div className={pharma ? "mx-auto flex w-full max-w-lg flex-col gap-4" : "grid lg:grid-cols-2 gap-8 items-start"}>
+            <div className={pharma ? "flex h-44 items-center justify-center overflow-hidden rounded-3xl bg-white" : "rounded-3xl border border-border/60 overflow-hidden bg-muted/20 shadow-sm aspect-square"}>
               {galleryImages.length > 0 ? (
                 <div className={`grid h-full w-full auto-rows-fr ${galleryImages.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
                   {galleryImages.map((src, index) => (
@@ -183,7 +183,7 @@ export default function ProductDetail() {
                       key={`${src}-${index}`}
                       src={src}
                       alt=""
-                      className={`h-full w-full object-cover ${galleryImages.length > 1 && galleryImages.length % 2 === 1 && index === galleryImages.length - 1 ? "col-span-2" : ""}`}
+                      className={`h-full w-full ${pharma ? "object-contain" : "object-cover"} ${galleryImages.length > 1 && galleryImages.length % 2 === 1 && index === galleryImages.length - 1 ? "col-span-2" : ""}`}
                     />
                   ))}
                 </div>
@@ -191,15 +191,15 @@ export default function ProductDetail() {
                 <img
                   src={selectedVariantImage || product.image || PRODUCT_IMAGE_FALLBACK}
                   alt={product.name}
-                  className="h-full w-full object-cover"
+                  className={pharma ? "max-h-full max-w-full object-contain" : "h-full w-full object-cover"}
                 />
               )}
             </div>
 
             <div className="space-y-5">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-secondary">{product.category}</p>
-                <h1 className="text-3xl font-bold text-foreground mt-2 leading-tight">{product.name}</h1>
+                <p className={`text-xs font-semibold uppercase tracking-wider ${pharma ? "text-[var(--pharma-green)]" : "text-secondary"}`}>{product.category}</p>
+                <h1 className={`font-bold text-foreground mt-2 leading-tight ${pharma ? "text-2xl" : "text-3xl"}`}>{product.name}</h1>
                 {pharma && visibleStockQty != null && (
                   <p className="mt-2 text-sm font-semibold text-foreground">{visibleStockQty} em estoque</p>
                 )}
