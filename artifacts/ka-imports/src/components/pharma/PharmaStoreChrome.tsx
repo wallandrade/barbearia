@@ -259,7 +259,7 @@ export function PharmaStoreChrome() {
             className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--pharma-green)] px-4 py-2 text-sm font-semibold text-white"
           >
             Categorias
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className={`h-4 w-4 transition-transform ${catOpen ? "rotate-180" : ""}`} />
           </button>
           <Link href={offersHref} className="shrink-0 rounded-full border border-[var(--pharma-green)]/30 bg-[var(--pharma-green-soft)] px-4 py-2 text-sm font-semibold text-[var(--pharma-green-ink)]">
             🔥 Promoções 🔥
@@ -283,26 +283,29 @@ export function PharmaStoreChrome() {
       {catOpen && (
         <div
           ref={catMenuRef}
-          className="fixed z-50 max-h-80 w-64 overflow-y-auto rounded-2xl border border-neutral-200 bg-white py-2 shadow-xl"
+          className="fixed z-50 max-h-[70vh] w-[min(18.5rem,calc(100vw-1.5rem))] overflow-y-auto rounded-3xl bg-white p-3 shadow-xl"
           style={{ top: menuPos.top, left: menuPos.left }}
         >
           <button
             type="button"
-            className={`block w-full px-4 py-2 text-left text-sm ${activeCategory === "" ? "font-semibold text-[var(--pharma-green-ink)]" : "text-neutral-800"}`}
+            className={`block w-full rounded-xl px-4 py-2.5 text-left text-sm ${activeCategory === "" ? "bg-[var(--pharma-green)] font-semibold text-white" : "font-medium text-neutral-800"}`}
             onClick={() => selectCategory("")}
           >
             Todos os produtos
           </button>
-          {categories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              className={`block w-full px-4 py-2 text-left text-sm ${activeCategory === category ? "font-semibold text-[var(--pharma-green-ink)]" : "text-neutral-800"}`}
-              onClick={() => selectCategory(category)}
-            >
-              {category}
-            </button>
-          ))}
+          {categories.map((category) => {
+            const selected = activeCategory === category;
+            return (
+              <button
+                key={category}
+                type="button"
+                className={`mt-0.5 block w-full rounded-xl px-4 py-2.5 text-left text-sm ${selected ? "bg-[var(--pharma-green)] font-semibold text-white" : "font-medium text-neutral-800"}`}
+                onClick={() => selectCategory(category)}
+              >
+                {category}
+              </button>
+            );
+          })}
         </div>
       )}
 

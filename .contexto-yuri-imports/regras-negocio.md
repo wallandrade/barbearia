@@ -42,6 +42,8 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-03 | Card Farmácia Compacta: PIX fica na linha do preço | Valor, selo PIX e Ver → não quebram no celular | A PARTIR DE e o preço riscado continuam acima |
+| 2026-10-03 | Menu Categorias da Farmácia Compacta: item escolhido vira pílula verde | Lista branca arredondada; os outros nomes ficam em texto. A seta sobe com o menu aberto | Chips da fileira e o restante do tema iguais |
 | 2026-10-03 | Cabeçalho e card do tema Farmácia Compacta seguem o modelo visual | Faixa laranja no topo, Categorias com seta, Promoções com fogo, chip branco, carrinho quadrado. Card com carrinho no alto, PIX com borda e Ver na linha do preço. Contagem numa faixa branca | Tema atual, preços e checkout iguais |
 | 2026-10-03 | Vitrine com dois temas (`store_theme_preset`): o atual e **Farmácia Compacta** (`pharma_compact`) | Admin escolhe em Identidade Visual. O novo tema troca cabeçalho, home, card, página do produto, carrinho e login. Catálogo, preço e checkout continuam os mesmos | Tema atual, `--color-primary` e checkout iguais |
 | 2026-10-02 | Lista negra de extravio na cotação EnvioEcom (`carrier_loss_incidents`) | Card da transportadora avisa extravio/roubo/furto/sinistro dos últimos 180 dias. São Paulo por região do CEP; outra capital pelo CEP de 3 dígitos; demais cidades, a cidade inteira. Confirma e gera. **Gerenciar EE** marca ou tira na mão | Checkout, Motoboy e a cópia 48h iguais. Apreensão, devolução e endereço errado não entram sozinhos |

@@ -123,12 +123,10 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank, 
                 <p className="text-xs text-neutral-400 line-through">{formatCurrency(product.price)}</p>
               </>
             )}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[15px] font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
-                <span className="rounded-full border border-[var(--pharma-green)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--pharma-green-ink)]">PIX</span>
-              </div>
-              <Link href={href} className="inline-flex h-8 shrink-0 items-center rounded-full bg-[var(--pharma-green)] px-3 text-sm font-semibold text-white">
+            <div className="flex items-center gap-1">
+              <span className="whitespace-nowrap text-sm font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
+              <span className="shrink-0 whitespace-nowrap rounded-full border border-[var(--pharma-green)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--pharma-green-ink)]">PIX</span>
+              <Link href={href} className="ml-auto inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-full bg-[var(--pharma-green)] px-2.5 text-xs font-semibold text-white">
                 Ver →
               </Link>
             </div>
