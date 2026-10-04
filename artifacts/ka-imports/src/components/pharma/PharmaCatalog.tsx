@@ -3,15 +3,19 @@ import { useLocation, useSearch } from "wouter";
 import { Check, ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { ProductCard } from "@/components/product/ProductCard";
 import type { Product } from "@workspace/api-client-react";
+import { PharmaHomeShelves } from "@/components/pharma/PharmaHomeShelves";
 import {
   PHARMA_PAGE_SIZE,
+  applyPharmaVitrine,
   brandsInCategory,
+  buildPharmaHomeShelves,
   filterPharmaProducts,
+  isPharmaHomeQuery,
   isPharmaPromo,
   parsePharmaCatalogQuery,
+  pharmaHomeHasShelves,
   pharmaPageSlice,
   pharmaSearchString,
-  sortPharmaProducts,
   type PharmaCatalogProduct,
   type PharmaCatalogQuery,
   type PharmaOrder,
@@ -48,9 +52,11 @@ export function PharmaCatalog({
   const now = Date.now();
   const rows = products as unknown as PharmaCatalogProduct[];
   const filtered = useMemo(
-    () => sortPharmaProducts(filterPharmaProducts(rows, query, now), query.ordem, now),
-    [products, query.q, query.categoria, query.marca, query.promo, query.ordem, now],
+    () => applyPharmaVitrine(filterPharmaProducts(rows, query, now), query.vitrine, query.ordem, now),
+    [products, query.q, query.categoria, query.marca, query.promo, query.vitrine, query.ordem, now],
   );
+  const homeShelves = useMemo(() => buildPharmaHomeShelves(rows), [products]);
+  const showHome = isPharmaHomeQuery(query) && pharmaHomeHasShelves(homeShelves);
   const page = pharmaPageSlice(filtered, query.pagina);
   const categories = useMemo(() => {
     const seen = new Set<string>();
@@ -98,6 +104,22 @@ export function PharmaCatalog({
   if (query.categoria) chips.push({ key: "categoria", label: query.categoria, clear: { categoria: "" } });
   if (query.marca) chips.push({ key: "marca", label: query.marca, clear: { marca: "" } });
   if (query.promo) chips.push({ key: "promo", label: "Promoções", clear: { promo: false } });
+  if (query.vitrine === "vendidos") chips.push({ key: "vitrine", label: "Mais vendidos", clear: { vitrine: "" } });
+  if (query.vitrine === "lancamentos") chips.push({ key: "vitrine", label: "Novidades", clear: { vitrine: "" } });
+
+  if (showHome) {
+    return (
+      <PharmaHomeShelves
+        shelves={homeShelves}
+        sellerSlug={sellerSlug}
+        onCategory={(categoria) => write({ ...query, categoria, vitrine: "", pagina: 1 })}
+        onBestsellers={() => write({ ...query, vitrine: "vendidos", pagina: 1 })}
+        onLaunches={() => write({ ...query, vitrine: "lancamentos", pagina: 1 })}
+      />
+    );
+  }
+
+  const vitrineTitle = query.vitrine === "vendidos" ? "Mais vendidos" : query.vitrine === "lancamentos" ? "Novidades" : "";
 
   return (
     <section className="min-h-[60vh] flex-1 bg-[#f6f7f9] px-4 py-6 sm:px-6">
@@ -148,6 +170,8 @@ export function PharmaCatalog({
             ))}
           </div>
         )}
+
+        {vitrineTitle ? <h1 className="mt-4 text-2xl font-bold text-neutral-950">{vitrineTitle}</h1> : null}
 
         <div className="mt-3 rounded-full bg-white px-4 py-2.5 text-sm text-neutral-500">
           {page.start}-{page.end} de {filtered.length}
@@ -255,7 +279,7 @@ export function PharmaCatalog({
               type="button"
               className="h-11 flex-[2] rounded-xl bg-[var(--pharma-green)] text-sm font-semibold text-white"
               onClick={() => {
-                write({ ...query, ...draft, pagina: 1 });
+                write({ ...query, ...draft, vitrine: "", pagina: 1 });
                 setFiltersOpen(false);
               }}
             >

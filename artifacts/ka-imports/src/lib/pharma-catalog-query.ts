@@ -1,9 +1,15 @@
-import { foldCatalogLabel, isPeptideCategory } from "./catalog-sort";
+import { foldCatalogLabel, isPeptideCategory, sortCategoryProducts } from "./catalog-sort";
 import { isPromoStillActive } from "./promo-ends-at";
 
 export const PHARMA_PAGE_SIZE = 24;
+/** Cards por fileira no desktop (4 colunas). 3, 2 e 1 fileiras. */
+export const PHARMA_HOME_TIRZEPATIDA_LIMIT = 12;
+export const PHARMA_HOME_BESTSELLER_LIMIT = 8;
+export const PHARMA_HOME_LAUNCH_LIMIT = 4;
+export const PHARMA_HOME_PEPTIDE_LIMIT = 12;
 
 export type PharmaOrder = "relevancia" | "menor" | "maior" | "nome";
+export type PharmaVitrine = "" | "vendidos" | "lancamentos";
 
 export type PharmaCatalogQuery = {
   q: string;
@@ -11,6 +17,7 @@ export type PharmaCatalogQuery = {
   marca: string;
   promo: boolean;
   ordem: PharmaOrder;
+  vitrine: PharmaVitrine;
   pagina: number;
 };
 
@@ -26,13 +33,30 @@ export type PharmaCatalogProduct = {
   isSoldOut?: boolean | null;
   soldQty?: number | null;
   sortOrder?: number | null;
+  isLaunch?: boolean | null;
+  createdAt?: string | Date | null;
   bulkDiscountEnabled?: boolean | null;
   bulkDiscountTiers?: unknown;
+};
+
+export type PharmaHomeShelf = {
+  label: string;
+  products: PharmaCatalogProduct[];
+  total: number;
+};
+
+export type PharmaHomeShelves = {
+  tirzepatida: PharmaHomeShelf;
+  bestsellers: PharmaCatalogProduct[];
+  launches: PharmaCatalogProduct[];
+  peptide: PharmaHomeShelf;
 };
 
 type BulkTier = { minQty: number; maxQty: number | null; unitPrice: number };
 
 const ORDER_VALUES = new Set<PharmaOrder>(["menor", "maior", "nome"]);
+const VITRINE_VALUES = new Set<PharmaVitrine>(["vendidos", "lancamentos"]);
+const TIRZEPATIDA_FOLD = "tirzepatida";
 
 export function parseBulkTiers(raw: unknown): BulkTier[] {
   if (!Array.isArray(raw)) return [];
@@ -85,7 +109,7 @@ export function isPharmaPromo(product: PharmaCatalogProduct, nowMs = Date.now())
 }
 
 function isTirzepatidaCategory(category: unknown): boolean {
-  return foldCatalogLabel(category) === "tirzepatida";
+  return foldCatalogLabel(category) === TIRZEPATIDA_FOLD;
 }
 
 function peptideBrandRank(product: PharmaCatalogProduct): number {
@@ -126,14 +150,20 @@ export function parsePharmaCatalogQuery(search: string): PharmaCatalogQuery {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const ordemRaw = String(params.get("ordem") || "").trim() as PharmaOrder;
   const paginaRaw = Number(params.get("pagina") || "1");
+  const vitrineRaw = String(params.get("vitrine") || "").trim() as PharmaVitrine;
   return {
     q: String(params.get("q") || "").trim(),
     categoria: String(params.get("categoria") || ""),
     marca: String(params.get("marca") || "").trim(),
     promo: params.get("promo") === "1",
     ordem: ORDER_VALUES.has(ordemRaw) ? ordemRaw : "relevancia",
+    vitrine: VITRINE_VALUES.has(vitrineRaw) ? vitrineRaw : "",
     pagina: Number.isFinite(paginaRaw) && paginaRaw >= 1 ? Math.floor(paginaRaw) : 1,
   };
+}
+
+export function isPharmaHomeQuery(query: PharmaCatalogQuery): boolean {
+  return !query.q && !query.categoria && !query.marca && !query.promo && !query.vitrine && query.ordem === "relevancia" && query.pagina === 1;
 }
 
 export function pharmaSearchString(query: PharmaCatalogQuery): string {
@@ -142,6 +172,7 @@ export function pharmaSearchString(query: PharmaCatalogQuery): string {
   if (query.categoria) params.set("categoria", query.categoria);
   if (query.marca) params.set("marca", query.marca);
   if (query.promo) params.set("promo", "1");
+  if (query.vitrine) params.set("vitrine", query.vitrine);
   if (query.ordem !== "relevancia") params.set("ordem", query.ordem);
   if (query.pagina > 1) params.set("pagina", String(query.pagina));
   return params.toString();
@@ -232,4 +263,88 @@ export function brandsInCategory(products: PharmaCatalogProduct[], categoria: st
     if (!unique.has(key)) unique.set(key, brand);
   }
   return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+}
+
+function availableProducts(products: PharmaCatalogProduct[]): PharmaCatalogProduct[] {
+  return products.filter((product) => product.isSoldOut !== true);
+}
+
+function categoryShelfLabel(products: PharmaCatalogProduct[], fold: string): string {
+  const counts = new Map<string, number>();
+  for (const product of products) {
+    if (foldCatalogLabel(product.category) !== fold) continue;
+    const label = String(product.category || "").trim();
+    if (!label) continue;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  let best = "";
+  let bestCount = -1;
+  for (const [label, count] of counts) {
+    if (count > bestCount) {
+      best = label;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function bySoldQty(a: PharmaCatalogProduct, b: PharmaCatalogProduct): number {
+  const soldDiff = Number(a.isSoldOut === true) - Number(b.isSoldOut === true);
+  if (soldDiff !== 0) return soldDiff;
+  const salesDiff = Number(b.soldQty || 0) - Number(a.soldQty || 0);
+  if (salesDiff !== 0) return salesDiff;
+  return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR", { sensitivity: "base" });
+}
+
+function byNewest(a: PharmaCatalogProduct, b: PharmaCatalogProduct): number {
+  const soldDiff = Number(a.isSoldOut === true) - Number(b.isSoldOut === true);
+  if (soldDiff !== 0) return soldDiff;
+  const created = String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  if (created !== 0) return created;
+  return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR", { sensitivity: "base" });
+}
+
+function categoryShelf(products: PharmaCatalogProduct[], fold: string, limit: number): PharmaHomeShelf {
+  const matches = products.filter((product) => foldCatalogLabel(product.category) === fold);
+  const label = categoryShelfLabel(matches, fold);
+  return {
+    label,
+    total: matches.length,
+    products: sortCategoryProducts(label || fold, availableProducts(matches)).slice(0, limit),
+  };
+}
+
+/** Vitrine da home: sem esgotado. Tirzepatida e peptídeo seguem a ordem da categoria. */
+export function buildPharmaHomeShelves(products: PharmaCatalogProduct[]): PharmaHomeShelves {
+  return {
+    tirzepatida: categoryShelf(products, TIRZEPATIDA_FOLD, PHARMA_HOME_TIRZEPATIDA_LIMIT),
+    bestsellers: availableProducts(products).slice().sort(bySoldQty).slice(0, PHARMA_HOME_BESTSELLER_LIMIT),
+    launches: availableProducts(products)
+      .filter((product) => product.isLaunch === true)
+      .slice()
+      .sort(byNewest)
+      .slice(0, PHARMA_HOME_LAUNCH_LIMIT),
+    peptide: categoryShelf(products, "peptideo", PHARMA_HOME_PEPTIDE_LIMIT),
+  };
+}
+
+export function pharmaHomeHasShelves(shelves: PharmaHomeShelves): boolean {
+  return shelves.tirzepatida.products.length > 0
+    || shelves.bestsellers.length > 0
+    || shelves.launches.length > 0
+    || shelves.peptide.products.length > 0;
+}
+
+/** Grade de Mais vendidos ou Novidades. Relevância usa venda ou data; as outras ordens continuam. */
+export function applyPharmaVitrine(
+  products: PharmaCatalogProduct[],
+  vitrine: PharmaVitrine,
+  ordem: PharmaOrder,
+  nowMs = Date.now(),
+): PharmaCatalogProduct[] {
+  const source = vitrine === "lancamentos" ? products.filter((product) => product.isLaunch === true) : products.slice();
+  if (ordem !== "relevancia") return sortPharmaProducts(source, ordem, nowMs);
+  if (vitrine === "vendidos") return source.slice().sort(bySoldQty);
+  if (vitrine === "lancamentos") return source.slice().sort(byNewest);
+  return sortPharmaProducts(source, ordem, nowMs);
 }

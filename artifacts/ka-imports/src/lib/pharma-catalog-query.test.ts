@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyPharmaVitrine,
+  buildPharmaHomeShelves,
   comparePharmaRelevance,
   filterPharmaProducts,
+  isPharmaHomeQuery,
   parsePharmaCatalogQuery,
   pharmaNameSuggestions,
   pharmaOffPercent,
@@ -87,6 +90,68 @@ test("sugestão da busca casa o nome sem acento e para no limite", () => {
   assert.deepEqual(pharmaNameSuggestions(products, "agua").map((row) => row.id), ["2"]);
   assert.equal(pharmaNameSuggestions(products, "  ").length, 0);
   assert.deepEqual(pharmaNameSuggestions(products, "t", 2).map((row) => row.id), ["1", "2"]);
+});
+
+test("home da farmácia só abre sem busca, filtro, vitrine ou página", () => {
+  const home = parsePharmaCatalogQuery("");
+  assert.equal(home.vitrine, "");
+  assert.equal(isPharmaHomeQuery(home), true);
+  const bestsellers = parsePharmaCatalogQuery("?vitrine=vendidos");
+  assert.equal(bestsellers.vitrine, "vendidos");
+  assert.equal(isPharmaHomeQuery(bestsellers), false);
+  assert.equal(pharmaSearchString(bestsellers), "vitrine=vendidos");
+  assert.equal(parsePharmaCatalogQuery("?vitrine=outra").vitrine, "");
+  assert.equal(isPharmaHomeQuery(parsePharmaCatalogQuery("?pagina=2")), false);
+});
+
+test("vitrines da home: 12 tirzepatidas, 8 mais vendidos, 4 novidades, 12 peptídeos, sem esgotado", () => {
+  const tirze = Array.from({ length: 14 }, (_, index) => ({
+    id: `t${index}`,
+    name: `Tirze ${String(index).padStart(2, "0")}`,
+    category: index === 1 ? "tirzepatida" : "Tirzepatida",
+    price: 10,
+    soldQty: 20 + index,
+    sortOrder: index + 1,
+    isSoldOut: index === 0,
+  }));
+  const peptide = [
+    { id: "p1", name: "Glow", category: "Peptídeo", brand: "Glow", price: 10, soldQty: 3, sortOrder: 0 },
+    { id: "p2", name: "Bio", category: "Peptideo", brand: "BIOGENESIS", price: 10, soldQty: 1, sortOrder: 0 },
+    { id: "p3", name: "Peptídeo esgotado", category: "Peptídeo", brand: "BIOGENESIS", price: 10, soldQty: 80, sortOrder: 1, isSoldOut: true },
+  ];
+  const launches = [
+    { id: "l1", name: "Antigo", category: "Botox", price: 10, isLaunch: true, createdAt: "2026-01-01", soldQty: 2 },
+    { id: "l2", name: "Novo", category: "Água", price: 10, isLaunch: true, createdAt: "2026-09-01", soldQty: 2 },
+    { id: "l3", name: "Lançamento esgotado", category: "Água", price: 10, isLaunch: true, isSoldOut: true, createdAt: "2026-10-01", soldQty: 40 },
+  ];
+  const champion = { id: "b1", name: "Campeão", category: "Água", price: 10, soldQty: 999 };
+
+  const shelves = buildPharmaHomeShelves([...tirze, ...peptide, ...launches, champion]);
+  assert.equal(shelves.tirzepatida.label, "Tirzepatida");
+  assert.equal(shelves.tirzepatida.total, 14);
+  assert.equal(shelves.tirzepatida.products.length, 12);
+  assert.equal(shelves.tirzepatida.products[0]?.name, "Tirze 01");
+  assert.equal(shelves.tirzepatida.products.some((product) => product.isSoldOut === true), false);
+
+  assert.equal(shelves.bestsellers.length, 8);
+  assert.equal(shelves.bestsellers[0]?.name, "Campeão");
+  assert.equal(shelves.bestsellers.some((product) => product.name === "Lançamento esgotado"), false);
+
+  assert.deepEqual(shelves.launches.map((product) => product.name), ["Novo", "Antigo"]);
+
+  assert.equal(shelves.peptide.label, "Peptídeo");
+  assert.equal(shelves.peptide.total, 3);
+  assert.deepEqual(shelves.peptide.products.map((product) => product.name), ["Bio", "Glow"]);
+});
+
+test("ver todos de mais vendidos e novidades inclui esgotado no fim", () => {
+  const rows = [
+    { id: "1", name: "Velho", price: 10, isLaunch: true, createdAt: "2026-01-01", soldQty: 9 },
+    { id: "2", name: "Novo esgotado", price: 10, isLaunch: true, createdAt: "2026-08-01", soldQty: 1, isSoldOut: true },
+    { id: "3", name: "Comum", price: 10, soldQty: 100 },
+  ];
+  assert.deepEqual(applyPharmaVitrine(rows, "lancamentos", "relevancia").map((row) => row.name), ["Velho", "Novo esgotado"]);
+  assert.deepEqual(applyPharmaVitrine(rows, "vendidos", "relevancia").map((row) => row.name), ["Comum", "Velho", "Novo esgotado"]);
 });
 
 test("filtro de marca ignora maiúsculas e promoção é promo=1", () => {
