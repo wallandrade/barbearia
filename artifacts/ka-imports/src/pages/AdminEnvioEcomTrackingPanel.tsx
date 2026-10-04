@@ -7,9 +7,11 @@ import {
   Clock,
   Loader2,
   Package,
+  Plus,
   RefreshCw,
   Save,
   Search,
+  Trash2,
   Truck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -118,6 +120,50 @@ function formatDeclaredValueInput(value: number | null | undefined): string {
   return Number(value).toFixed(2).replace(".", ",");
 }
 
+type LabelOptionDraft = { id: string; name: string; value: string };
+
+const LABEL_POOL_MAX = 30;
+
+const SUGGESTED_LABEL_OPTIONS: Array<{ name: string; value: string }> = [
+  { name: "Capa de celular", value: "8,90" },
+  { name: "Película de vidro", value: "12,50" },
+  { name: "Carregador USB", value: "19,90" },
+  { name: "Cabo de dados", value: "15,00" },
+  { name: "Fone de ouvido", value: "24,90" },
+  { name: "Suporte de mesa", value: "18,50" },
+  { name: "Caixa de som", value: "29,90" },
+  { name: "Mouse sem fio", value: "22,00" },
+  { name: "Teclado compacto", value: "35,00" },
+  { name: "Pen drive", value: "16,90" },
+  { name: "Adaptador de tomada", value: "9,90" },
+  { name: "Luminária de mesa", value: "27,50" },
+  { name: "Organizador de cabos", value: "11,90" },
+  { name: "Suporte veicular", value: "21,00" },
+  { name: "Power bank", value: "39,90" },
+  { name: "Ring light", value: "32,00" },
+  { name: "Tripé de celular", value: "28,50" },
+  { name: "Capa de notebook", value: "45,00" },
+  { name: "Mousepad", value: "14,90" },
+  { name: "Hub USB", value: "26,90" },
+];
+
+let labelOptionSeq = 0;
+function nextLabelOptionId(): string {
+  labelOptionSeq += 1;
+  return `label-opt-${labelOptionSeq}`;
+}
+
+function labelOptionDraft(name: string, value: string): LabelOptionDraft {
+  return { id: nextLabelOptionId(), name, value };
+}
+
+function labelOptionsSnapshot(qty: string, rows: LabelOptionDraft[]): string {
+  return JSON.stringify({
+    qty: qty.trim(),
+    rows: rows.map((row) => ({ name: row.name.trim(), value: row.value.trim() })),
+  });
+}
+
 export default function AdminEnvioEcomTrackingPanel({
   authHeaders,
   onUnauthorized,
@@ -131,12 +177,13 @@ export default function AdminEnvioEcomTrackingPanel({
   const [q, setQ] = useState("");
   const [group, setGroup] = useState<"all" | TrackingBoardItem["group"]>("all");
   const [configured, setConfigured] = useState(true);
-  const [itemNameDraft, setItemNameDraft] = useState("Mercadoria");
-  const [itemNameSaved, setItemNameSaved] = useState("Mercadoria");
   const [itemQtyDraft, setItemQtyDraft] = useState("1");
-  const [itemQtySaved, setItemQtySaved] = useState("1");
-  const [itemValueDraft, setItemValueDraft] = useState("5,00");
-  const [itemValueSaved, setItemValueSaved] = useState("5,00");
+  const [itemOptionsDraft, setItemOptionsDraft] = useState<LabelOptionDraft[]>(() => [
+    labelOptionDraft("Mercadoria", "5,00"),
+  ]);
+  const [itemLabelSavedSnapshot, setItemLabelSavedSnapshot] = useState("");
+  const [itemLabelReady, setItemLabelReady] = useState(false);
+  const [itemPoolMax, setItemPoolMax] = useState(LABEL_POOL_MAX);
   const [itemNameLoading, setItemNameLoading] = useState(true);
   const [itemNameSaving, setItemNameSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -158,6 +205,8 @@ export default function AdminEnvioEcomTrackingPanel({
         defaultQuantity?: number;
         declaredValue?: number | null;
         defaultDeclaredValue?: number;
+        maxOptions?: number;
+        options?: Array<{ name?: string; declaredValue?: number }>;
         message?: string;
       };
       if (!res.ok) {
@@ -169,12 +218,19 @@ export default function AdminEnvioEcomTrackingPanel({
       const valueText = formatDeclaredValueInput(
         data.declaredValue ?? data.defaultDeclaredValue ?? 5,
       ) || "5,00";
-      setItemNameDraft(name);
-      setItemNameSaved(name);
-      setItemQtyDraft(String(qty));
-      setItemQtySaved(String(qty));
-      setItemValueDraft(valueText);
-      setItemValueSaved(valueText);
+      const loaded = Array.isArray(data.options) ? data.options : [];
+      const rows = loaded.length
+        ? loaded.slice(0, LABEL_POOL_MAX).map((row) => labelOptionDraft(
+          String(row.name || "").trim() || "Mercadoria",
+          formatDeclaredValueInput(row.declaredValue) || "5,00",
+        ))
+        : [labelOptionDraft(name, valueText)];
+      const qtyText = String(qty);
+      setItemPoolMax(Math.max(1, Number(data.maxOptions) || LABEL_POOL_MAX));
+      setItemQtyDraft(qtyText);
+      setItemOptionsDraft(rows);
+      setItemLabelSavedSnapshot(labelOptionsSnapshot(qtyText, rows));
+      setItemLabelReady(true);
     } catch {
       toast.error("Erro ao carregar dados da etiqueta EnvioEcom.");
     } finally {
@@ -183,22 +239,34 @@ export default function AdminEnvioEcomTrackingPanel({
   }, [authHeaders, onUnauthorized]);
 
   const saveItemName = async () => {
-    const name = itemNameDraft.trim().slice(0, 120);
-    if (!name) {
-      toast.error("Informe o nome genérico do produto.");
-      return;
-    }
     const rawQty = itemQtyDraft.trim() || "1";
     const qty = Number(rawQty.replace(",", "."));
     if (!Number.isFinite(qty) || qty < 1 || qty > 999) {
       toast.error("Quantidade inválida. Use de 1 a 999.");
       return;
     }
-    const rawValue = itemValueDraft.trim().replace(",", ".") || "5";
-    const parsedValue = Number(rawValue);
-    if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 3000) {
-      toast.error("Valor declarado inválido. Use de 0 a 3000.");
+    const options = itemOptionsDraft.map((row) => ({
+      name: row.name.trim().slice(0, 120),
+      declaredValue: row.value.trim(),
+    }));
+    if (!options.length) {
+      toast.error("Deixe pelo menos 1 opção de nome e valor.");
       return;
+    }
+    if (options.length > itemPoolMax) {
+      toast.error(`Use no máximo ${itemPoolMax} opções.`);
+      return;
+    }
+    for (let i = 0; i < options.length; i += 1) {
+      if (!options[i].name) {
+        toast.error(`Informe o nome da opção ${i + 1}.`);
+        return;
+      }
+      const parsedValue = Number(options[i].declaredValue.replace(",", ".") || "");
+      if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 3000) {
+        toast.error(`Valor inválido na opção ${i + 1}. Use de 0 a 3000.`);
+        return;
+      }
     }
     setItemNameSaving(true);
     try {
@@ -206,9 +274,8 @@ export default function AdminEnvioEcomTrackingPanel({
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
           quantity: Math.round(qty),
-          declaredValue: rawValue,
+          options,
         }),
       });
       if (res.status === 401) {
@@ -216,25 +283,28 @@ export default function AdminEnvioEcomTrackingPanel({
         return;
       }
       const data = await res.json() as {
-        name?: string;
         quantity?: number;
-        declaredValue?: number | null;
+        options?: Array<{ name?: string; declaredValue?: number }>;
         message?: string;
       };
       if (!res.ok) {
         toast.error(data.message || "Falha ao salvar dados da etiqueta.");
         return;
       }
-      const saved = String(data.name || name).trim();
       const savedQty = String(Math.max(1, Number(data.quantity || qty) || 1));
-      const savedValue = formatDeclaredValueInput(data.declaredValue) || "5,00";
-      setItemNameDraft(saved);
-      setItemNameSaved(saved);
+      const fromApi = Array.isArray(data.options) ? data.options : [];
+      const normalized = (fromApi.length ? fromApi : options).map((row) => labelOptionDraft(
+        String(row.name || "").trim() || "Mercadoria",
+        formatDeclaredValueInput(typeof row.declaredValue === "number" ? row.declaredValue : Number(String(row.declaredValue).replace(",", "."))) || "5,00",
+      ));
       setItemQtyDraft(savedQty);
-      setItemQtySaved(savedQty);
-      setItemValueDraft(savedValue);
-      setItemValueSaved(savedValue);
-      toast.success("Etiqueta salva. Só o próximo create EnvioEcom usa esses dados.");
+      setItemOptionsDraft(normalized);
+      setItemLabelSavedSnapshot(labelOptionsSnapshot(savedQty, normalized));
+      toast.success(
+        normalized.length > 1
+          ? `${normalized.length} opções salvas. Cada etiqueta nova pega a próxima, sem repetir até acabar a lista.`
+          : "Etiqueta salva. Só o próximo create usa esses dados.",
+      );
     } catch {
       toast.error("Erro ao salvar dados da etiqueta.");
     } finally {
@@ -362,10 +432,15 @@ export default function AdminEnvioEcomTrackingPanel({
     { key: "cancelled", group: "cancelled" as const, label: "Cancelados", value: summary?.cancelled ?? 0 },
   ]), [items.length, summary]);
 
-  const itemNameDirty =
-    itemNameDraft.trim() !== itemNameSaved.trim() ||
-    itemQtyDraft.trim() !== itemQtySaved.trim() ||
-    itemValueDraft.trim() !== itemValueSaved.trim();
+  const itemNameDirty = labelOptionsSnapshot(itemQtyDraft, itemOptionsDraft) !== itemLabelSavedSnapshot;
+
+  const updateOption = (id: string, patch: Partial<Pick<LabelOptionDraft, "name" | "value">>) => {
+    setItemOptionsDraft((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const applySuggestedOptions = () => {
+    setItemOptionsDraft(SUGGESTED_LABEL_OPTIONS.map((row) => labelOptionDraft(row.name, row.value)));
+  };
 
   return (
     <div className="space-y-4">
@@ -409,62 +484,105 @@ export default function AdminEnvioEcomTrackingPanel({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
         <div>
           <p className="text-sm font-bold text-amber-950">Item da etiqueta EnvioEcom</p>
           <p className="text-xs text-amber-900/80 mt-0.5">
-            O create manda sempre 1 linha com estes dados. Pedido, estoque, comissão e cotação
-            (pacote 2×12×17, 0,3 kg, R$ 5) não mudam. Envios já gerados não mudam — só o próximo create.
+            O create manda sempre 1 linha. Com várias opções, cada etiqueta nova (EnvioEcom ou SuperFrete)
+            pega a próxima da lista embaralhada e não repete até a lista acabar. A quantidade vale para todas.
+            Pedido, estoque, comissão e cotação (pacote 2×12×17, 0,3 kg, R$ 5) não mudam. Envios já gerados não mudam.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={itemNameDraft}
-            onChange={(e) => setItemNameDraft(e.target.value.slice(0, 120))}
-            disabled={itemNameLoading || itemNameSaving}
-            placeholder="Ex.: Tela de celular"
-            className="flex-1 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
-            maxLength={120}
-          />
-          <input
-            value={itemQtyDraft}
-            onChange={(e) => {
-              const next = e.target.value.replace(/[^\d]/g, "").slice(0, 3);
-              setItemQtyDraft(next);
-            }}
-            disabled={itemNameLoading || itemNameSaving}
-            inputMode="numeric"
-            placeholder="Qtd (1)"
-            className="w-full sm:w-24 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
-          />
-          <input
-            value={itemValueDraft}
-            onChange={(e) => {
-              const next = e.target.value.replace(/[^\d.,]/g, "").slice(0, 8);
-              setItemValueDraft(next);
-            }}
-            disabled={itemNameLoading || itemNameSaving}
-            inputMode="decimal"
-            placeholder="Valor R$ (5,00)"
-            className="w-full sm:w-40 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
-          />
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <label className="flex items-center gap-2 text-xs font-semibold text-amber-950">
+            Qtd
+            <input
+              value={itemQtyDraft}
+              onChange={(e) => {
+                const next = e.target.value.replace(/[^\d]/g, "").slice(0, 3);
+                setItemQtyDraft(next);
+              }}
+              disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
+              inputMode="numeric"
+              placeholder="1"
+              className="w-20 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm font-normal"
+            />
+          </label>
           <Button
-            className="h-11 gap-1.5 bg-amber-700 hover:bg-amber-800"
-            disabled={itemNameLoading || itemNameSaving || !itemNameDraft.trim() || !itemNameDirty}
+            type="button"
+            variant="outline"
+            className="h-11 border-amber-300 bg-white"
+            disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
+            onClick={applySuggestedOptions}
+          >
+            Usar 20 sugestões
+          </Button>
+          <Button
+            className="h-11 gap-1.5 bg-amber-700 hover:bg-amber-800 sm:ml-auto"
+            disabled={itemNameLoading || itemNameSaving || !itemLabelReady || !itemNameDirty}
             onClick={() => { void saveItemName(); }}
           >
             {itemNameSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {itemNameSaving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-        <p className="text-[11px] text-amber-900/70">
-          Atual:{" "}
-          <span className="font-semibold">
+        <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+          {itemOptionsDraft.map((row, index) => (
+            <div key={row.id} className="flex gap-2 items-center">
+              <span className="w-6 shrink-0 text-xs font-semibold text-amber-900/70">{index + 1}</span>
+              <input
+                value={row.name}
+                onChange={(e) => updateOption(row.id, { name: e.target.value.slice(0, 120) })}
+                disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
+                placeholder="Ex.: Tela de celular"
+                className="flex-1 min-w-0 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
+                maxLength={120}
+              />
+              <input
+                value={row.value}
+                onChange={(e) => {
+                  const next = e.target.value.replace(/[^\d.,]/g, "").slice(0, 8);
+                  updateOption(row.id, { value: next });
+                }}
+                disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
+                inputMode="decimal"
+                placeholder="R$"
+                className="w-24 sm:w-28 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-11 shrink-0 border-amber-200 bg-white px-0"
+                disabled={itemNameLoading || itemNameSaving || !itemLabelReady || itemOptionsDraft.length <= 1}
+                title="Remover opção"
+                onClick={() => {
+                  setItemOptionsDraft((rows) => rows.filter((item) => item.id !== row.id));
+                }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-1.5 border-amber-300 bg-white"
+            disabled={itemNameLoading || itemNameSaving || !itemLabelReady || itemOptionsDraft.length >= itemPoolMax}
+            onClick={() => {
+              setItemOptionsDraft((rows) => [...rows, labelOptionDraft("", "")]);
+            }}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Adicionar opção
+          </Button>
+          <p className="text-[11px] text-amber-900/70">
             {itemNameLoading
-              ? "…"
-              : `${itemNameSaved} · qty ${itemQtySaved} · R$ ${itemValueSaved}`}
-          </span>
-        </p>
+              ? "Carregando…"
+              : `${itemOptionsDraft.length} opção(ões) · qty ${itemQtyDraft.trim() || "1"} · cada create usa uma`}
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">

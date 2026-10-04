@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gt, isNotNull, or, sql } from "drizzle-orm";
-import { db, orderShipmentsTable, ordersTable, siteSettingsTable } from "@workspace/db";
+import { db, orderShipmentsTable, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
@@ -73,6 +73,24 @@ import {
   type EnvioEcomCreateShipmentInput,
   type StatusHistoryEntry,
 } from "../lib/envioecom";
+import {
+  ENVIOECOM_LABEL_POOL_MAX,
+  ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT,
+  ENVIOECOM_SHIPMENT_ITEM_NAME_KEY,
+  ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT,
+  ENVIOECOM_SHIPMENT_ITEM_QTY_KEY,
+  ENVIOECOM_SHIPMENT_ITEM_QTY_MAX,
+  ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY,
+  parseShipmentDeclaredValue,
+  parseShipmentItemQuantity,
+  validateLabelPoolInput,
+} from "../lib/envioecom-label-pool";
+import {
+  consumeShipmentLabelProfile,
+  readShipmentLabelSettings,
+  saveShipmentLabelFallback,
+  saveShipmentLabelPool,
+} from "../lib/envioecom-label-pool-store";
 import {
   createEnvioEcomAccount,
   deleteEnvioEcomAccount,
@@ -187,72 +205,7 @@ function formatDimString(value: unknown): string {
   return String(Math.min(100, Math.max(2, Math.round(n))));
 }
 
-const ENVIOECOM_SHIPMENT_ITEM_NAME_KEY = "envioecom_shipment_item_name";
-const ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT = "Mercadoria";
-const ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY = "envioecom_shipment_item_value";
-const ENVIOECOM_SHIPMENT_ITEM_QTY_KEY = "envioecom_shipment_item_qty";
-const ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT = 1;
-const ENVIOECOM_SHIPMENT_ITEM_QTY_MAX = 999;
-
-async function readSiteSetting(key: string): Promise<string> {
-  const rows = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, key))
-    .limit(1);
-  return String(rows[0]?.value || "").trim();
-}
-
-async function getEnvioEcomShipmentItemName(): Promise<string> {
-  const raw = (await readSiteSetting(ENVIOECOM_SHIPMENT_ITEM_NAME_KEY)).slice(0, 120);
-  return raw || ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT;
-}
-
-function parseShipmentDeclaredValue(raw: unknown): number | null {
-  if (raw == null) return null;
-  const text = String(raw).trim().replace(",", ".");
-  if (!text) return null;
-  const n = Number(text);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return clampEnvioEcomDeclaredValue(n);
-}
-
-function parseShipmentItemQuantity(raw: unknown): number | null {
-  if (raw == null) return null;
-  const text = String(raw).trim().replace(",", ".");
-  if (!text) return null;
-  const n = Number(text);
-  if (!Number.isFinite(n) || n < 1) return null;
-  return Math.min(ENVIOECOM_SHIPMENT_ITEM_QTY_MAX, Math.max(1, Math.round(n)));
-}
-
-async function getEnvioEcomShipmentItemProfile(): Promise<{
-  name: string;
-  quantity: number;
-  declaredValue: number;
-}> {
-  const [nameRaw, qtyRaw, valueRaw] = await Promise.all([
-    getEnvioEcomShipmentItemName(),
-    readSiteSetting(ENVIOECOM_SHIPMENT_ITEM_QTY_KEY),
-    readSiteSetting(ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY),
-  ]);
-  return {
-    name: nameRaw,
-    quantity: parseShipmentItemQuantity(qtyRaw) ?? ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT,
-    declaredValue: parseShipmentDeclaredValue(valueRaw) ?? getDefaultDeclaredValue(),
-  };
-}
-
-async function upsertSiteSetting(key: string, value: string): Promise<void> {
-  await db
-    .insert(siteSettingsTable)
-    .values({ key, value, updatedAt: new Date() })
-    .onDuplicateKeyUpdate({
-      set: { value, updatedAt: new Date() },
-    });
-}
-
-/** Create EnvioEcom: sempre 1 linha de setting. Pedido/catálogo não entram em items. */
+/** Create EnvioEcom: sempre 1 linha. Com lista, a linha é a próxima opção. Pedido/catálogo não entram. */
 function buildShipmentLabelItem(profile: {
   name: string;
   quantity: number;
@@ -935,8 +888,6 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
 
     const quoteProducts = buildQuoteProductsFromOrder(order);
     const pack = buildPackageFromProducts(quoteProducts);
-    const labelProfile = await getEnvioEcomShipmentItemProfile();
-    const labelItems = buildShipmentLabelItem(labelProfile);
     // orderId único na EnvioEcom (evita DUPLICATE_ORDER em retentativas; sufixo novo após cancelar)
     const externalOrderNumber = targetPackage
       ? nextPackageEnvioEcomExternalOrderNumber(order, targetPackage)
@@ -1008,6 +959,9 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       return;
     }
 
+    const labelProfile = await consumeShipmentLabelProfile();
+    const labelItems = buildShipmentLabelItem(labelProfile);
+
     const shipment: EnvioEcomCreateShipmentInput = {
       orderId: externalOrderNumber,
       shipping_company: shippingCompany,
@@ -1055,6 +1009,8 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       phone_len: phone.length,
       document_len: documentDigits.length,
       items: shipment.items?.length || 0,
+      itemName: labelProfile.name,
+      itemValue: labelProfile.declaredValue,
     });
 
     const { result: created } = await withEnvioEcomAccount(accountId, async () =>
@@ -1791,7 +1747,7 @@ router.post("/admin/envioecom/orders/:id/unlink", requireAdminAuth, async (req, 
 // --------------------------------------------------------------------------
 router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req, res) => {
   try {
-    const { name, quantity, declaredValue } = await getEnvioEcomShipmentItemProfile();
+    const { name, quantity, declaredValue, options } = await readShipmentLabelSettings();
     res.json({
       ok: true,
       key: ENVIOECOM_SHIPMENT_ITEM_NAME_KEY,
@@ -1804,6 +1760,8 @@ router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req,
       declaredValue,
       defaultDeclaredValue: getDefaultDeclaredValue(),
       maxDeclaredValue: ENVIOECOM_MAX_DECLARED_VALUE,
+      options,
+      maxOptions: ENVIOECOM_LABEL_POOL_MAX,
     });
   } catch (err) {
     console.error("[EnvioEcom] get shipment-item-name error:", err);
@@ -1813,17 +1771,21 @@ router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req,
 
 router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, res) => {
   try {
-    const body = (req.body || {}) as { name?: unknown; declaredValue?: unknown; quantity?: unknown };
-    const name = String(body.name || "").trim().slice(0, 120);
-    if (!name) {
-      res.status(400).json({
-        error: "INVALID_INPUT",
-        message: "Informe o nome genérico do produto (não pode ficar vazio).",
-      });
+    const body = (req.body || {}) as {
+      name?: unknown;
+      declaredValue?: unknown;
+      quantity?: unknown;
+      options?: unknown;
+    };
+    const hasOptions = Array.isArray(body.options);
+    const parsedOptions = hasOptions ? validateLabelPoolInput(body.options) : null;
+    if (parsedOptions && "error" in parsedOptions) {
+      res.status(400).json({ error: "INVALID_INPUT", message: parsedOptions.error });
       return;
     }
+    const options = parsedOptions && "options" in parsedOptions ? parsedOptions.options : null;
 
-    const current = await getEnvioEcomShipmentItemProfile();
+    const current = await readShipmentLabelSettings();
     let quantity = current.quantity;
     if (body.quantity !== undefined) {
       const raw = String(body.quantity ?? "").trim();
@@ -1839,14 +1801,24 @@ router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, 
       }
     }
 
-    let declaredValue = current.declaredValue;
-    if (body.declaredValue !== undefined) {
+    let name = options?.[0]?.name || String(body.name || "").trim().slice(0, 120);
+    if (!name) {
+      res.status(400).json({
+        error: "INVALID_INPUT",
+        message: "Informe o nome genérico do produto (não pode ficar vazio).",
+      });
+      return;
+    }
+
+    let declaredValue = options?.[0]?.declaredValue ?? current.declaredValue;
+    if (!options && body.declaredValue !== undefined) {
       const raw = String(body.declaredValue ?? "").trim();
       if (!raw) {
         declaredValue = getDefaultDeclaredValue();
       } else {
         const parsed = parseShipmentDeclaredValue(raw);
-        if (parsed == null) {
+        const typed = Number(raw.replace(",", "."));
+        if (parsed == null || (Number.isFinite(typed) && typed > ENVIOECOM_MAX_DECLARED_VALUE)) {
           res.status(400).json({
             error: "INVALID_DECLARED_VALUE",
             message: `Valor declarado inválido. Use um número de 0 a ${ENVIOECOM_MAX_DECLARED_VALUE}.`,
@@ -1857,11 +1829,17 @@ router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, 
       }
     }
 
-    await upsertSiteSetting(ENVIOECOM_SHIPMENT_ITEM_NAME_KEY, name);
-    await upsertSiteSetting(ENVIOECOM_SHIPMENT_ITEM_QTY_KEY, String(quantity));
-    await upsertSiteSetting(ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY, formatMoneyString(declaredValue));
+    await saveShipmentLabelFallback({ name, quantity, declaredValue });
+    if (options) await saveShipmentLabelPool(options);
 
-    res.json({ ok: true, name, quantity, declaredValue });
+    res.json({
+      ok: true,
+      name,
+      quantity,
+      declaredValue,
+      options: options ?? current.options,
+      maxOptions: ENVIOECOM_LABEL_POOL_MAX,
+    });
   } catch (err) {
     console.error("[EnvioEcom] put shipment-item-name error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar dados da etiqueta EnvioEcom." });

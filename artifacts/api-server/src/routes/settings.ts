@@ -64,6 +64,9 @@ const ALLOWED_KEYS = [
   // EnvioEcom: qty e valor da etiqueta no create (nunca catálogo)
   "envioecom_shipment_item_qty",
   "envioecom_shipment_item_value",
+  "envioecom_shipment_item_pool",
+  "envioecom_shipment_item_pool_order",
+  "envioecom_shipment_item_pool_cursor",
   SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
   SHIPPING_QUEUE_MANUAL_HOURS_KEY,
   CHECKOUT_CARRIER_PRIORITY_KEY,

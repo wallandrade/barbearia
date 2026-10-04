@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gt, isNotNull, or, sql } from "drizzle-orm";
-import { db, orderShipmentsTable, ordersTable, siteSettingsTable } from "@workspace/db";
+import { db, orderShipmentsTable, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { recordAdminActivity } from "../lib/order-activity";
@@ -18,8 +18,8 @@ import { refreshShippingQueueForOrder } from "../lib/shipping-queue-allocator";
 import {
   consolidateOrderIntoSinglePackage,
   digitsOnly,
-  getDefaultDeclaredValue,
 } from "../lib/envioecom";
+import { consumeShipmentLabelProfile } from "../lib/envioecom-label-pool-store";
 import {
   SuperfreteApiError,
   calculateSuperfrete,
@@ -55,9 +55,6 @@ import {
 
 const router: IRouter = Router();
 
-const ITEM_NAME_KEY = "envioecom_shipment_item_name";
-const ITEM_VALUE_KEY = "envioecom_shipment_item_value";
-const ITEM_QTY_KEY = "envioecom_shipment_item_qty";
 const WEBHOOK_EVENTS = [
   "order.created",
   "order.released",
@@ -133,27 +130,12 @@ function parseProducts(raw: unknown): Array<{ weight?: number; length?: number; 
   return [];
 }
 
-async function readSetting(key: string): Promise<string> {
-  const rows = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, key))
-    .limit(1);
-  return String(rows[0]?.value || "").trim();
-}
-
 async function labelItem(): Promise<{ name: string; quantity: number; unitaryValue: number }> {
-  const [nameRaw, qtyRaw, valueRaw] = await Promise.all([
-    readSetting(ITEM_NAME_KEY),
-    readSetting(ITEM_QTY_KEY),
-    readSetting(ITEM_VALUE_KEY),
-  ]);
-  const quantity = Math.max(1, Math.round(Number(qtyRaw) || 1));
-  const unitary = Number(String(valueRaw || "").replace(",", "."));
+  const profile = await consumeShipmentLabelProfile();
   return {
-    name: (nameRaw || "Mercadoria").slice(0, 80),
-    quantity,
-    unitaryValue: Number.isFinite(unitary) && unitary >= 0 ? unitary : getDefaultDeclaredValue(),
+    name: profile.name.slice(0, 80),
+    quantity: profile.quantity,
+    unitaryValue: profile.declaredValue,
   };
 }
 
