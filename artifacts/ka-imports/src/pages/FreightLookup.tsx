@@ -134,7 +134,7 @@ export default function FreightLookup() {
   }, [cep]);
 
   return (
-    <AppLayout minimal>
+    <AppLayout>
       <div className="max-w-xl mx-auto px-4 py-12 w-full">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
