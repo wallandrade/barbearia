@@ -107,18 +107,6 @@ export function PharmaCatalog({
   if (query.vitrine === "vendidos") chips.push({ key: "vitrine", label: "Mais vendidos", clear: { vitrine: "" } });
   if (query.vitrine === "lancamentos") chips.push({ key: "vitrine", label: "Novidades", clear: { vitrine: "" } });
 
-  if (showHome) {
-    return (
-      <PharmaHomeShelves
-        shelves={homeShelves}
-        sellerSlug={sellerSlug}
-        onCategory={(categoria) => write({ ...query, categoria, vitrine: "", pagina: 1 })}
-        onBestsellers={() => write({ ...query, vitrine: "vendidos", pagina: 1 })}
-        onLaunches={() => write({ ...query, vitrine: "lancamentos", pagina: 1 })}
-      />
-    );
-  }
-
   const vitrineTitle = query.vitrine === "vendidos" ? "Mais vendidos" : query.vitrine === "lancamentos" ? "Novidades" : "";
 
   return (
@@ -177,7 +165,15 @@ export function PharmaCatalog({
           {page.start}-{page.end} de {filtered.length}
         </div>
 
-        {isLoading ? (
+        {showHome ? (
+          <PharmaHomeShelves
+            shelves={homeShelves}
+            sellerSlug={sellerSlug}
+            onCategory={(categoria) => write({ ...query, categoria, vitrine: "", pagina: 1 })}
+            onBestsellers={() => write({ ...query, vitrine: "vendidos", pagina: 1 })}
+            onLaunches={() => write({ ...query, vitrine: "lancamentos", pagina: 1 })}
+          />
+        ) : isLoading ? (
           <p className="py-16 text-center text-neutral-500">Carregando produtos...</p>
         ) : isError ? (
           <p className="py-16 text-center text-red-600">Não foi possível carregar os produtos.</p>
@@ -191,7 +187,7 @@ export function PharmaCatalog({
           </div>
         )}
 
-        {filtered.length > PHARMA_PAGE_SIZE && (
+        {!showHome && filtered.length > PHARMA_PAGE_SIZE && (
           <div className="mt-6 flex items-center justify-center gap-3">
             <button
               type="button"

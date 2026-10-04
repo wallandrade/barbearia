@@ -88,8 +88,7 @@ export function PharmaHomeShelves({
   onLaunches: () => void;
 }) {
   return (
-    <section className="min-h-[60vh] flex-1 bg-[#f6f7f9] px-4 py-6 sm:px-6">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-12">
+    <div className="mt-8 flex w-full flex-col gap-12">
         <CategoryShelf
           shelf={shelves.tirzepatida}
           title={shelves.tirzepatida.label || "Tirzepatida"}
@@ -140,7 +139,6 @@ export function PharmaHomeShelves({
           priorityOffset={99}
           onOpen={() => onCategory(shelves.peptide.label)}
         />
-      </div>
-    </section>
+    </div>
   );
 }
