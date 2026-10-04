@@ -144,6 +144,23 @@ test("vitrines da home: 12 tirzepatidas, 8 mais vendidos, 4 novidades, 12 peptí
   assert.deepEqual(shelves.peptide.products.map((product) => product.name), ["Bio", "Glow"]);
 });
 
+test("vitrine de retatrutida fica em 4 e aceita o nome em inglês", () => {
+  const rows = [
+    { id: "r0", name: "Reta esgotada", category: "Retatrutide", price: 10, sortOrder: 1, isSoldOut: true, soldQty: 90 },
+    { id: "r1", name: "Reta 1", category: "Retatrutide", price: 10, sortOrder: 2, soldQty: 1 },
+    { id: "r2", name: "Reta 2", category: "Retatrutide", price: 10, sortOrder: 3, soldQty: 1 },
+    { id: "r3", name: "Reta 3", category: "Retatrutida", price: 10, sortOrder: 4, soldQty: 1 },
+    { id: "r4", name: "Reta 4", category: "Retatrutide", price: 10, sortOrder: 5, soldQty: 1 },
+    { id: "r5", name: "Reta 5", category: "Retatrutide", price: 10, sortOrder: 6, soldQty: 1 },
+  ];
+  const shelf = buildPharmaHomeShelves(rows).retatrutida;
+  assert.equal(shelf.label, "Retatrutide");
+  assert.equal(shelf.total, 6);
+  assert.deepEqual(shelf.products.map((product) => product.name), ["Reta 1", "Reta 2", "Reta 3", "Reta 4"]);
+  const all = filterPharmaProducts(rows, { q: "", categoria: "Retatrutide", marca: "", promo: false });
+  assert.deepEqual(all.map((product) => product.name), ["Reta esgotada", "Reta 1", "Reta 2", "Reta 3", "Reta 4", "Reta 5"]);
+});
+
 test("ver todos de mais vendidos e novidades inclui esgotado no fim", () => {
   const rows = [
     { id: "1", name: "Velho", price: 10, isLaunch: true, createdAt: "2026-01-01", soldQty: 9 },

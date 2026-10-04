@@ -98,6 +98,14 @@ export function PharmaHomeShelves({
           onOpen={() => onCategory(shelves.tirzepatida.label)}
         />
 
+        <CategoryShelf
+          shelf={shelves.retatrutida}
+          title={shelves.retatrutida.label || "Retatrutida"}
+          sellerSlug={sellerSlug}
+          priorityOffset={99}
+          onOpen={() => onCategory(shelves.retatrutida.label)}
+        />
+
         {shelves.bestsellers.length > 0 && (
           <section>
             <div className="mb-4 flex items-end justify-between gap-3">

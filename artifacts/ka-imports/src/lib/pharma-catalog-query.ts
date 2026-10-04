@@ -4,6 +4,7 @@ import { isPromoStillActive } from "./promo-ends-at";
 export const PHARMA_PAGE_SIZE = 24;
 /** Cards por fileira no desktop (4 colunas). 3, 2 e 1 fileiras. */
 export const PHARMA_HOME_TIRZEPATIDA_LIMIT = 12;
+export const PHARMA_HOME_RETATRUTIDA_LIMIT = 4;
 export const PHARMA_HOME_BESTSELLER_LIMIT = 8;
 export const PHARMA_HOME_LAUNCH_LIMIT = 4;
 export const PHARMA_HOME_PEPTIDE_LIMIT = 12;
@@ -47,6 +48,7 @@ export type PharmaHomeShelf = {
 
 export type PharmaHomeShelves = {
   tirzepatida: PharmaHomeShelf;
+  retatrutida: PharmaHomeShelf;
   bestsellers: PharmaCatalogProduct[];
   launches: PharmaCatalogProduct[];
   peptide: PharmaHomeShelf;
@@ -57,6 +59,18 @@ type BulkTier = { minQty: number; maxQty: number | null; unitPrice: number };
 const ORDER_VALUES = new Set<PharmaOrder>(["menor", "maior", "nome"]);
 const VITRINE_VALUES = new Set<PharmaVitrine>(["vendidos", "lancamentos"]);
 const TIRZEPATIDA_FOLD = "tirzepatida";
+const RETATRUTIDA_FOLDS = ["retatrutida", "retatrutide"] as const;
+
+function isRetatrutidaFold(value: unknown): boolean {
+  const folded = foldCatalogLabel(value);
+  return folded === "retatrutida" || folded === "retatrutide";
+}
+
+function matchesCategoryFilter(productCategory: unknown, queryCategory: string): boolean {
+  if (!queryCategory) return true;
+  if (String(productCategory || "") === queryCategory) return true;
+  return isRetatrutidaFold(queryCategory) && isRetatrutidaFold(productCategory);
+}
 
 export function parseBulkTiers(raw: unknown): BulkTier[] {
   if (!Array.isArray(raw)) return [];
@@ -191,7 +205,7 @@ export function filterPharmaProducts(
       const description = String(product.description || "").toLocaleLowerCase("pt-BR");
       if (!name.includes(q) && !description.includes(q)) return false;
     }
-    if (query.categoria && String(product.category || "") !== query.categoria) return false;
+    if (query.categoria && !matchesCategoryFilter(product.category, query.categoria)) return false;
     if (marca && String(product.brand || "").trim().toLocaleLowerCase("pt-BR") !== marca) return false;
     if (query.promo && !isPharmaPromo(product, nowMs)) return false;
     return true;
@@ -269,10 +283,10 @@ function availableProducts(products: PharmaCatalogProduct[]): PharmaCatalogProdu
   return products.filter((product) => product.isSoldOut !== true);
 }
 
-function categoryShelfLabel(products: PharmaCatalogProduct[], fold: string): string {
+function categoryShelfLabel(products: PharmaCatalogProduct[], folds: ReadonlySet<string>): string {
   const counts = new Map<string, number>();
   for (const product of products) {
-    if (foldCatalogLabel(product.category) !== fold) continue;
+    if (!folds.has(foldCatalogLabel(product.category))) continue;
     const label = String(product.category || "").trim();
     if (!label) continue;
     counts.set(label, (counts.get(label) ?? 0) + 1);
@@ -304,32 +318,35 @@ function byNewest(a: PharmaCatalogProduct, b: PharmaCatalogProduct): number {
   return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR", { sensitivity: "base" });
 }
 
-function categoryShelf(products: PharmaCatalogProduct[], fold: string, limit: number): PharmaHomeShelf {
-  const matches = products.filter((product) => foldCatalogLabel(product.category) === fold);
-  const label = categoryShelfLabel(matches, fold);
+function categoryShelf(products: PharmaCatalogProduct[], folds: readonly string[], limit: number): PharmaHomeShelf {
+  const accepted = new Set(folds);
+  const matches = products.filter((product) => accepted.has(foldCatalogLabel(product.category)));
+  const label = categoryShelfLabel(matches, accepted);
   return {
     label,
     total: matches.length,
-    products: sortCategoryProducts(label || fold, availableProducts(matches)).slice(0, limit),
+    products: sortCategoryProducts(label || folds[0] || "", availableProducts(matches)).slice(0, limit),
   };
 }
 
 /** Vitrine da home: sem esgotado. Tirzepatida e peptídeo seguem a ordem da categoria. */
 export function buildPharmaHomeShelves(products: PharmaCatalogProduct[]): PharmaHomeShelves {
   return {
-    tirzepatida: categoryShelf(products, TIRZEPATIDA_FOLD, PHARMA_HOME_TIRZEPATIDA_LIMIT),
+    tirzepatida: categoryShelf(products, [TIRZEPATIDA_FOLD], PHARMA_HOME_TIRZEPATIDA_LIMIT),
+    retatrutida: categoryShelf(products, RETATRUTIDA_FOLDS, PHARMA_HOME_RETATRUTIDA_LIMIT),
     bestsellers: availableProducts(products).slice().sort(bySoldQty).slice(0, PHARMA_HOME_BESTSELLER_LIMIT),
     launches: availableProducts(products)
       .filter((product) => product.isLaunch === true)
       .slice()
       .sort(byNewest)
       .slice(0, PHARMA_HOME_LAUNCH_LIMIT),
-    peptide: categoryShelf(products, "peptideo", PHARMA_HOME_PEPTIDE_LIMIT),
+    peptide: categoryShelf(products, ["peptideo"], PHARMA_HOME_PEPTIDE_LIMIT),
   };
 }
 
 export function pharmaHomeHasShelves(shelves: PharmaHomeShelves): boolean {
   return shelves.tirzepatida.products.length > 0
+    || shelves.retatrutida.products.length > 0
     || shelves.bestsellers.length > 0
     || shelves.launches.length > 0
     || shelves.peptide.products.length > 0;
