@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { Loader2, Truck } from "lucide-react";
+import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ProductCard } from "@/components/product/ProductCard";
+import { foldCatalogLabel, sortCategoryProducts } from "@/lib/catalog-sort";
 import { formatCurrency } from "@/lib/utils";
 import {
   formatFreightCep,
@@ -21,6 +24,11 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 type ListedOption = FreightOptionInput & { price: string | number };
 
 export default function FreightLookup() {
+  const { data: catalog } = useGetProducts();
+  const tirzepatidaProducts = useMemo(() => {
+    const rows = (catalog?.products ?? []).filter((product) => foldCatalogLabel(product.category) === "tirzepatida");
+    return sortCategoryProducts("Tirzepatida", rows);
+  }, [catalog?.products]);
   const [cepDisplay, setCepDisplay] = useState("");
   const [options, setOptions] = useState<ListedOption[]>([]);
   const [optionsStatus, setOptionsStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -135,7 +143,8 @@ export default function FreightLookup() {
 
   return (
     <AppLayout>
-      <div className="max-w-xl mx-auto px-4 py-12 w-full">
+      <div className="w-full px-4 py-12">
+      <div className="max-w-xl mx-auto">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
             <Truck className="w-8 h-8 text-primary" />
@@ -231,6 +240,17 @@ export default function FreightLookup() {
             </p>
           )}
         </div>
+      </div>
+      {tirzepatidaProducts.length > 0 && (
+        <section className="mx-auto mt-10 w-full max-w-7xl">
+          <h2 className="mb-4 text-xl font-bold text-foreground">Tirzepatida</h2>
+          <div className="grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {tirzepatidaProducts.map((product, index) => (
+              <ProductCard key={product.id} product={product} priority={index < 4} layout="pharma" />
+            ))}
+          </div>
+        </section>
+      )}
       </div>
     </AppLayout>
   );

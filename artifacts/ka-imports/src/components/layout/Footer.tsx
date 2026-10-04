@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { Link } from "wouter";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getActiveWhatsApp } from "@/lib/utils";
@@ -56,44 +54,11 @@ async function openWhatsApp(text: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-function useFooterCategories(): string[] {
-  const [categories, setCategories] = useState<string[]>([]);
-  useEffect(() => {
-    fetch(`${BASE}/api/products`)
-      .then((res) => res.json())
-      .then((data: { categories?: string[]; products?: Array<{ category?: string }> }) => {
-        const fromApi = (data.categories ?? []).map((item) => String(item || "").trim()).filter(Boolean);
-        if (fromApi.length > 0) {
-          setCategories(fromApi);
-          return;
-        }
-        const seen = new Set<string>();
-        const list: string[] = [];
-        for (const product of data.products ?? []) {
-          const category = String(product.category || "").trim();
-          if (!category || seen.has(category)) continue;
-          seen.add(category);
-          list.push(category);
-        }
-        setCategories(list);
-      })
-      .catch(() => {});
-  }, []);
-  return categories;
-}
-
-function categoryHref(category: string): string {
-  const slug = getSellerSlugFromPathname(window.location.pathname);
-  const query = `categoria=${encodeURIComponent(category)}`;
-  return slug ? `/${encodeURIComponent(slug)}?${query}` : `/?${query}`;
-}
-
 export function Footer() {
-  const categories = useFooterCategories();
   return (
     <footer className="bg-white border-t border-border mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
               <span className="font-bold text-xl text-primary">Yury</span>
@@ -102,21 +67,6 @@ export function Footer() {
               A sua loja de importados com os melhores preços e garantia de qualidade.
             </p>
           </div>
-
-          {categories.length > 0 && (
-            <div>
-              <h3 className="font-bold text-foreground mb-4">Categorias</h3>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                {categories.map((category) => (
-                  <li key={category}>
-                    <Link href={categoryHref(category)} className="hover:text-primary transition-colors">
-                      {category}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           <div>
             <h3 className="font-bold text-foreground mb-4">Links Úteis</h3>
