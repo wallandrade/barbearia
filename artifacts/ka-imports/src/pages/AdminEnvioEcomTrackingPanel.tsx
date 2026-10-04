@@ -120,6 +120,31 @@ function formatDeclaredValueInput(value: number | null | undefined): string {
   return Number(value).toFixed(2).replace(".", ",");
 }
 
+function readDeclaredRangeDraft(minRaw: string, maxRaw: string): { min: number; max: number } | { error: string } | null {
+  const minText = minRaw.trim();
+  const maxText = maxRaw.trim();
+  if (!minText && !maxText) return null;
+  if (!minText || !maxText) {
+    return { error: "Informe o valor mínimo e o máximo, ou deixe os dois vazios." };
+  }
+  const min = Number(minText.replace(",", "."));
+  const max = Number(maxText.replace(",", "."));
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max > 3000 || min > max) {
+    return { error: "Faixa inválida. O mínimo precisa ser menor ou igual ao máximo, até 3000." };
+  }
+  return { min, max };
+}
+
+function randomValueInRangeText(min: number, max: number): string {
+  const low = Math.round(Math.min(min, max) * 100);
+  const high = Math.round(Math.max(min, max) * 100);
+  const span = Math.max(1, high - low + 1);
+  let offset = Math.floor(Math.random() * span);
+  if (offset < 0) offset = 0;
+  if (offset >= span) offset = span - 1;
+  return ((low + offset) / 100).toFixed(2).replace(".", ",");
+}
+
 type LabelOptionDraft = { id: string; name: string; value: string };
 
 const LABEL_POOL_MAX = 30;
@@ -477,7 +502,18 @@ export default function AdminEnvioEcomTrackingPanel({
   };
 
   const applySuggestedOptions = () => {
-    setItemOptionsDraft(SUGGESTED_LABEL_OPTIONS.map((row) => labelOptionDraft(row.name, row.value)));
+    const range = readDeclaredRangeDraft(itemValueMinDraft, itemValueMaxDraft);
+    if (range && "error" in range) {
+      toast.error(range.error);
+      return;
+    }
+    setItemOptionsDraft(SUGGESTED_LABEL_OPTIONS.map((row) => labelOptionDraft(
+      row.name,
+      range ? randomValueInRangeText(range.min, range.max) : row.value,
+    )));
+    if (range) {
+      toast.success(`20 sugestões com valor entre R$ ${formatDeclaredValueInput(range.min)} e R$ ${formatDeclaredValueInput(range.max)}. Salve para gravar.`);
+    }
   };
 
   return (
@@ -528,6 +564,7 @@ export default function AdminEnvioEcomTrackingPanel({
           <p className="text-xs text-amber-900/80 mt-0.5">
             O create manda sempre 1 linha. O nome vem da próxima opção da lista e não repete até a lista acabar.
             Com mínimo e máximo, o valor declarado de cada etiqueta fica nessa faixa e o valor da linha não entra.
+            Usar 20 sugestões, com a faixa preenchida, coloca em cada linha um valor dentro do mínimo e do máximo.
             A quantidade vale para todas.
             Pedido, estoque, comissão e cotação (pacote 2×12×17, 0,3 kg, R$ 5) não mudam. Envios já gerados não mudam.
           </p>
