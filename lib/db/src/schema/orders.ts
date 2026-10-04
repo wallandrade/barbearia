@@ -70,6 +70,8 @@ export const ordersTable = mysqlTable("orders", {
   pixCode: mediumtext("pix_code"),
   pixBase64: mediumtext("pix_base64"),
   enviado: boolean("enviado").notNull().default(false),
+  /** Data (YYYY-MM-DD) que o admin informa ao cliente como previsão de envio. Não marca enviado nem baixa estoque. */
+  shippingForecastDate: varchar("shipping_forecast_date", { length: 10 }),
   /** Momento em que `enviado` passou a true (manual ou EE). Usado p/ “Entregue” após 25 dias no envio manual. */
   enviadoAt: timestamp("enviado_at"),
   /** Admin estacionou o pedido na sub-aba Pedidos aguardando estoque (manual). */

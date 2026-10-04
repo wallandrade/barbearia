@@ -204,6 +204,10 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
       name: "aguardando_estoque",
       sql: "ALTER TABLE orders ADD COLUMN aguardando_estoque TINYINT(1) NOT NULL DEFAULT 0",
     },
+    {
+      name: "shipping_forecast_date",
+      sql: "ALTER TABLE orders ADD COLUMN shipping_forecast_date VARCHAR(10) NULL",
+    },
   ];
 
   for (const definition of definitions) {
@@ -1010,6 +1014,7 @@ async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
       inventory_pool VARCHAR(16) NOT NULL,
       items JSON NOT NULL,
       enviado TINYINT(1) NOT NULL DEFAULT 0,
+      shipping_forecast_date VARCHAR(10) NULL,
       enviado_at TIMESTAMP NULL,
       inventory_reserved TINYINT(1) NOT NULL DEFAULT 0,
       envioecom_shipment_id VARCHAR(64) NULL,
@@ -1050,6 +1055,7 @@ async function ensureOrderShipmentSuperfreteColumns(databaseName: string): Promi
     { name: "superfrete_freight_cost", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_freight_cost DECIMAL(10,2) NULL" },
     { name: "superfrete_service_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_service_id INT NULL" },
     { name: "superfrete_account_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_account_id VARCHAR(64) NULL" },
+    { name: "shipping_forecast_date", sql: "ALTER TABLE order_shipments ADD COLUMN shipping_forecast_date VARCHAR(10) NULL" },
   ];
   for (const definition of definitions) {
     if (!(await columnExists("order_shipments", definition.name, databaseName))) {

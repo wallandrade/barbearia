@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  customerForecastLines,
+  customerOrderForecastText,
+  customerPackageForecastText,
   customerPackageLabel,
   customerPackageSituation,
   customerPrimaryTracking,
@@ -364,4 +367,51 @@ test("rastreio SuperFrete aparece sem apagar o status da EnvioEcom de outro paco
   assert.equal(shouldShowShipmentSection(row), true);
   const posted = order({ superfreteStatus: "posted", superfreteTracking: "AA1", superfreteOrderId: "sf-2" });
   assert.equal(getCustomerSituation(posted).kind, "shipping");
+});
+
+test("previsão de envio aparece na conta até o pacote sair", () => {
+  const waiting = order({ status: "paid", shippingForecastDate: "2026-10-06" });
+  assert.equal(customerOrderForecastText(waiting), "Previsão de envio: 06/10/2026");
+  assert.deepEqual(customerForecastLines(waiting), ["Previsão de envio: 06/10/2026"]);
+
+  const packing = order({
+    status: "paid",
+    shippingForecastDate: "2026-10-06",
+    envioecomStatus: "Processando envio",
+  });
+  assert.equal(customerOrderForecastText(packing), "Previsão de envio: 06/10/2026");
+
+  const sent = order({ status: "paid", enviado: true, shippingForecastDate: "2026-10-06" });
+  assert.equal(customerOrderForecastText(sent), null);
+
+  const collected = order({
+    status: "paid",
+    shippingForecastDate: "2026-10-06",
+    envioecomStatus: "Coletado",
+  });
+  assert.equal(customerOrderForecastText(collected), null);
+
+  const cancelled = order({ status: "cancelled", shippingForecastDate: "2026-10-06" });
+  assert.equal(customerOrderForecastText(cancelled), null);
+  assert.deepEqual(customerForecastLines(cancelled), []);
+});
+
+test("previsão de envio no split é por pacote e some só no que já saiu", () => {
+  const row = order({
+    shippingForecastDate: "2026-10-01",
+    envioecomPackages: [
+      { id: "minas", packageIndex: 1, shippingForecastDate: "2026-10-06" },
+      {
+        id: "moto",
+        packageIndex: 2,
+        shippingForecastDate: "2026-10-08",
+        envioecomStatus: "Coletado",
+        envioecomBarcode: "FS-1",
+      },
+    ],
+  });
+  assert.equal(customerOrderForecastText(row), null);
+  assert.equal(customerPackageForecastText(row.envioecomPackages![0]), "Previsão de envio: 06/10/2026");
+  assert.equal(customerPackageForecastText(row.envioecomPackages![1]), null);
+  assert.deepEqual(customerForecastLines(row), ["Envio 1 — Previsão de envio: 06/10/2026"]);
 });

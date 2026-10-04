@@ -65,6 +65,7 @@ import {
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
+import { formatShippingForecastDateBR, normalizeShippingForecastDate } from "../lib/shipping-forecast";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
 import { diffEditedOrderProducts, snapshotProductImage, type OrderEditProductLine } from "../lib/order-activity-format";
 import { clampLineDiscount, lineNetAmount } from "../lib/line-discount";
@@ -2883,6 +2884,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipIsProxy:              o.ipIsProxy ?? null,
     isPrioridade:           !!(o as any).isPrioridade,
     enviado:                !!o.enviado,
+    shippingForecastDate:   String((o as { shippingForecastDate?: string | null }).shippingForecastDate || "").trim().slice(0, 10) || null,
     aguardandoEstoque:      !!(o as { aguardandoEstoque?: boolean }).aguardandoEstoque,
     enviadoAt:              (o as { enviadoAt?: Date | null }).enviadoAt?.toISOString?.()
       ?? (o as { enviadoAt?: string | null }).enviadoAt
@@ -3219,6 +3221,94 @@ router.patch("/admin/orders/:id/aguardando-estoque", requireAdminAuth, async (re
   } catch (err) {
     console.error("Update order aguardando estoque error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao atualizar fila de estoque do pedido." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/shipping-forecast
+// Data de calendário visível na conta do cliente. Não marca enviado nem baixa estoque.
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/shipping-forecast", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const body = req.body as { shippingForecastDate?: unknown; packageId?: unknown };
+    const parsed = normalizeShippingForecastDate(body.shippingForecastDate);
+    if (!parsed.ok) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe uma data válida ou deixe em branco para limpar." });
+      return;
+    }
+
+    const existing = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    const order = existing[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    const packageId = String(body.packageId || "").trim();
+    let poolLabel: string | null = null;
+    if (packageId) {
+      const pkg = await getOrderShipment(id, packageId);
+      if (!pkg) {
+        res.status(404).json({ error: "NOT_FOUND", message: "Pacote de envio não encontrado." });
+        return;
+      }
+      poolLabel = inventoryPoolLabel(parseInventoryPool(pkg.inventoryPool) || "loja");
+      await db.update(orderShipmentsTable).set({
+        shippingForecastDate: parsed.date,
+        updatedAt: new Date(),
+      }).where(eq(orderShipmentsTable.id, pkg.id));
+    } else {
+      const packages = await listOrderShipments(id);
+      if (packages.length >= 2) {
+        res.status(400).json({
+          error: "SPLIT_FORECAST_PER_PACKAGE",
+          message: "Envio dividido. A previsão de envio é em cada origem.",
+        });
+        return;
+      }
+      await db.update(ordersTable).set({
+        shippingForecastDate: parsed.date,
+        updatedAt: new Date(),
+      }).where(buildAdminOrderWhere(id, adminScope));
+    }
+
+    const updated = await db
+      .select()
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    const [mapped] = updated[0]
+      ? await attachShipmentsToMappedOrders([mapOrder(updated[0])])
+      : [null];
+
+    const when = formatShippingForecastDateBR(parsed.date);
+    const where = poolLabel ? ` (${poolLabel})` : "";
+    recordAdminActivity(
+      req,
+      id,
+      "shipping_forecast",
+      parsed.date ? `Definiu previsão de envio${where} para ${when}` : `Removeu a previsão de envio${where}`,
+    );
+    res.json({
+      ok: true,
+      id,
+      packageId: packageId || null,
+      shippingForecastDate: parsed.date,
+      order: mapped,
+    });
+  } catch (err) {
+    console.error("Update shipping forecast error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar a previsão de envio." });
   }
 });
 

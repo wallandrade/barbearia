@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-02 | Colunas `shipping_forecast_date` em `orders` e `order_shipments` (+ runtime) | `PATCH /api/admin/orders/:id/shipping-forecast` grava YYYY-MM-DD. No split, `packageId` aponta o pacote | `enviado`, baixa de estoque e `shipping_queue` iguais |
 | 2026-10-02 | Tabela `carrier_loss_incidents` (+ runtime) | Extravio/roubo por transportadora e região, lido na cotação EnvioEcom | Checkout e cópia 48h iguais |
 | 2026-10-02 | Coluna `sellers.display_name` (+ runtime) | Nome do vendedor separado do slug do link | `sellers.slug` continua a chave do link e do `sellerCode` |
 | 2026-09-23 | Coluna `orders.store_credit_withheld_from_edit` (+ runtime) | Sobra de edição que o admin escolheu não mandar à carteira | `store_credit_from_edit` continua o que foi creditado; `paidAmount` continua o PIX |

@@ -8,6 +8,8 @@ export const orderShipmentsTable = mysqlTable("order_shipments", {
   inventoryPool: varchar("inventory_pool", { length: 16 }).notNull(),
   items: json("items").notNull(),
   enviado: boolean("enviado").notNull().default(false),
+  /** Data (YYYY-MM-DD) da previsão de envio deste pacote, visível na conta do cliente. */
+  shippingForecastDate: varchar("shipping_forecast_date", { length: 10 }),
   enviadoAt: timestamp("enviado_at"),
   inventoryReserved: boolean("inventory_reserved").notNull().default(false),
   envioecomShipmentId: varchar("envioecom_shipment_id", { length: 64 }),

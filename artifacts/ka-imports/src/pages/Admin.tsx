@@ -774,6 +774,7 @@ import { AdminLiveVisitorStats } from "@/components/AdminLiveVisitorStats";
 import { AdminOrdersChargesSearchShell } from "@/components/AdminOrdersChargesSearchShell";
 import { AdminOrdersCopyBar } from "@/components/AdminOrdersCopyBar";
 import { EnvioEcomManageMenu, OrderCopyMenu } from "@/components/AdminOrderCardActionMenus";
+import { ShippingForecastField } from "@/components/ShippingForecastField";
 
 
 
@@ -11020,6 +11021,7 @@ function OrdersPanel({
   }>(null);
   const [splitShipmentModal, setSplitShipmentModal] = useState<AdminOrder | null>(null);
   const [splitShipmentSaving, setSplitShipmentSaving] = useState(false);
+  const [shippingForecastSaving, setShippingForecastSaving] = useState<Record<string, boolean>>({});
   const trackingInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [trackingReview, setTrackingReview] = useState<null | {
     order: AdminOrder;
@@ -11067,6 +11069,29 @@ function OrdersPanel({
     const current = ordersLookup.find((o) => o.id === orderId);
     if (!current) return;
     onSetOrderPatched({ ...current, ...patch } as AdminOrder);
+  };
+
+  const saveShippingForecast = async (order: AdminOrder, date: string | null, packageId?: string | null) => {
+    const key = packageId ? `${order.id}:${packageId}` : order.id;
+    setShippingForecastSaving((prev) => ({ ...prev, [key]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${order.id}/shipping-forecast`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ shippingForecastDate: date, packageId: packageId || null }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string; order?: AdminOrder };
+      if (!res.ok || !data.order) {
+        toast.error(data.message || "Não foi possível salvar a previsão de envio.");
+        return;
+      }
+      onSetOrderPatched(data.order);
+      toast.success(date ? "Previsão de envio salva." : "Previsão de envio removida.");
+    } catch {
+      toast.error("Erro ao salvar a previsão de envio.");
+    } finally {
+      setShippingForecastSaving((prev) => ({ ...prev, [key]: false }));
+    }
   };
 
   useEffect(() => {
@@ -13681,6 +13706,13 @@ function OrdersPanel({
                   )}
                   {!isSplitShipment && (!isCancelledCard || hasLinkedEnvioEcom || Boolean((order as { envioecomStatus?: string | null }).envioecomStatus)) && (
                   <div className="flex gap-2 flex-wrap items-center">
+                  {!isCancelledCard && (
+                    <ShippingForecastField
+                      value={(order as { shippingForecastDate?: string | null }).shippingForecastDate}
+                      saving={!!shippingForecastSaving[order.id]}
+                      onChange={(date) => { void saveShippingForecast(order, date); }}
+                    />
+                  )}
                   {!isCancelledCard && !targetHasSuperfrete(order) && (
                   <Button
                     size="sm"
@@ -13771,6 +13803,13 @@ function OrdersPanel({
                       <span className="text-[11px] font-bold text-teal-900">
                         {pkg.inventoryPoolLabel || pkg.inventoryPool}
                       </span>
+                      {!isCancelledCard && pkg.id && (
+                        <ShippingForecastField
+                          value={pkg.shippingForecastDate}
+                          saving={!!shippingForecastSaving[`${order.id}:${pkg.id}`]}
+                          onChange={(date) => { void saveShippingForecast(order, date, pkg.id); }}
+                        />
+                      )}
                       <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                         {(pkg.items || []).filter(Boolean).map((item, itemIndex) => {
                           const name = String(item.productName || "Produto").trim() || "Produto";

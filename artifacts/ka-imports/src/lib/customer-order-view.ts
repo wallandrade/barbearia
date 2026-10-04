@@ -44,6 +44,7 @@ export type CustomerOrderPackage = {
   superfreteStatus?: string | null;
   superfreteTracking?: string | null;
   superfreteServiceId?: number | null;
+  shippingForecastDate?: string | null;
 };
 
 export type CustomerOrder = {
@@ -85,6 +86,7 @@ export type CustomerOrder = {
   /** Pedido original com ao menos um filho de reenvio (`parent_order_id`). */
   hasReshipmentChild?: boolean;
   observation?: string | null;
+  shippingForecastDate?: string | null;
   distanceKmFromCustomerCity?: number | null;
   distancePackageCity?: string | null;
   distanceCustomerCity?: string | null;
@@ -395,6 +397,61 @@ export function isCustomerPackageOnTheWay(pkg: CustomerOrderPackage): boolean {
   if (packageIsDelivered(pkg)) return true;
   const current = packageCarrierStatus(pkg);
   return current ? isShippingInTransit(current) : false;
+}
+
+function calendarForecastDate(raw: string | null | undefined): string | null {
+  const text = String(raw || "").trim().slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return null;
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+function forecastSentence(raw: string | null | undefined): string | null {
+  const formatted = calendarForecastDate(raw);
+  return formatted ? `Previsão de envio: ${formatted}` : null;
+}
+
+/** Some quando o pacote já saiu (enviado, coletado ou em trânsito). */
+export function customerPackageForecastText(pkg: CustomerOrderPackage): string | null {
+  if (isCustomerPackageOnTheWay(pkg)) return null;
+  return forecastSentence(pkg.shippingForecastDate);
+}
+
+function customerShipmentHasLeft(order: CustomerOrder): boolean {
+  if (order.enviado) return true;
+  if (isSuperfretePosted(order.superfreteStatus) || isSuperfreteDelivered(order.superfreteStatus)) return true;
+  const pkgs = listCustomerFacingPackages(order);
+  if (pkgs.length === 1 && isCustomerPackageOnTheWay(pkgs[0])) return true;
+  const status = customerPrimaryTracking(order).status;
+  return Boolean(status && (isShippingInTransit(status) || isShippingDelivered(status)));
+}
+
+/** Pedido sem divisão. No split, a data fica em cada pacote. */
+export function customerOrderForecastText(order: CustomerOrder): string | null {
+  if (order.status === "cancelled") return null;
+  if (shouldHideParentReshipmentTracking(order)) return null;
+  if (isSplitCustomerOrder(order)) return null;
+  if (customerShipmentHasLeft(order)) return null;
+  const pkgs = listCustomerFacingPackages(order);
+  const raw = order.shippingForecastDate || (pkgs.length === 1 ? pkgs[0].shippingForecastDate : null);
+  return forecastSentence(raw);
+}
+
+export function customerForecastLines(order: CustomerOrder): string[] {
+  if (order.status === "cancelled" || shouldHideParentReshipmentTracking(order)) return [];
+  if (isSplitCustomerOrder(order)) {
+    return listCustomerFacingPackages(order).flatMap((pkg, index) => {
+      const text = customerPackageForecastText(pkg);
+      return text ? [`${customerPackageLabel(pkg, index)} — ${text}`] : [];
+    });
+  }
+  const text = customerOrderForecastText(order);
+  return text ? [text] : [];
 }
 
 export function customerPackageSituation(pkg: CustomerOrderPackage): {

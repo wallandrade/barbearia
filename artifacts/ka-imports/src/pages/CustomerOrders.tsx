@@ -5,6 +5,8 @@ import { clearCustomerToken, fetchCustomerProfile, getCustomerAuthHeaders } from
 import { formatCurrency, formatDateBR, getActiveWhatsApp } from "@/lib/utils";
 import { parseInsurancePlan } from "@/lib/checkout-insurance";
 import {
+  customerForecastLines,
+  customerPackageForecastText,
   customerPackageLabel,
   customerPackageSituation,
   customerReshipmentLabel,
@@ -684,6 +686,7 @@ export default function CustomerOrders() {
                         const splitOrder = isSplitCustomerOrder(order);
                         const packages = listCustomerFacingPackages(order);
                         const showShipmentSection = shouldShowShipmentSection(order);
+                        const forecastLines = customerForecastLines(order);
 
                         return (
                         <div id={`customer-order-${order.id}`} key={order.id} className={`border rounded-2xl p-5 bg-white hover:shadow-md transition-shadow ${hasUnreadStoreObs ? "border-sky-300 ring-2 ring-sky-100" : "border-border"}`}>
@@ -811,6 +814,9 @@ export default function CustomerOrders() {
                               {situation.hint ? (
                                 <p className="text-xs text-muted-foreground mt-1 leading-snug">{situation.hint}</p>
                               ) : null}
+                              {forecastLines.map((line) => (
+                                <p key={line} className="text-xs font-semibold text-sky-800 mt-1 leading-snug">{line}</p>
+                              ))}
                               {shouldShowDistanceToCustomerCity(order, situation) && (
                                 <p className="text-xs text-muted-foreground mt-1 leading-snug">
                                   Está a cerca de {order.distanceKmFromCustomerCity} km da sua cidade
@@ -851,6 +857,9 @@ export default function CustomerOrders() {
                                         </div>
                                         {pkgSituation.hint ? (
                                           <p className="text-xs text-blue-900/80 mt-1">{pkgSituation.hint}</p>
+                                        ) : null}
+                                        {customerPackageForecastText(pkg) ? (
+                                          <p className="text-xs font-semibold text-sky-800 mt-1">{customerPackageForecastText(pkg)}</p>
                                         ) : null}
                                         <PackageProductRows order={order} pkg={pkg} />
                                         {(pkg.envioecomBarcode || pkg.superfreteTracking) ? (
@@ -986,6 +995,9 @@ export default function CustomerOrders() {
                                               {pkgSituation.label}
                                             </span>
                                           </div>
+                                          {customerPackageForecastText(pkg) ? (
+                                            <p className="text-xs font-semibold text-sky-800">{customerPackageForecastText(pkg)}</p>
+                                          ) : null}
                                           {items.map((item, idx) => {
                                             const image = findOrderProductImage(order, item);
                                             const catalog = item.variantOption

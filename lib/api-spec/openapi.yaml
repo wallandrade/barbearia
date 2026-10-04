@@ -549,6 +549,10 @@ components:
         aguardandoEstoque:
           type: boolean
           description: Admin estacionou o pedido na sub-aba Pedidos aguardando estoque
+        shippingForecastDate:
+          type: string
+          nullable: true
+          description: Data YYYY-MM-DD da previsão de envio visível na conta do cliente. Não marca enviado.
         total:
           type: number
         status:

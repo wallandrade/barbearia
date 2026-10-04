@@ -146,6 +146,8 @@ export interface AdminOrder {
   isPrioridade?: boolean;
   enviado?: boolean;
   aguardandoEstoque?: boolean;
+  /** Data YYYY-MM-DD da previsão de envio visível na conta do cliente. */
+  shippingForecastDate?: string | null;
   trackingCode?: string | null;
   trackingLabelUrl?: string | null;
   trackingLabelText?: string | null;

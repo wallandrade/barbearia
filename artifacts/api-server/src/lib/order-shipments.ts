@@ -66,6 +66,7 @@ export type OrderShipmentPublic = {
   inventoryPoolLabel: string;
   items: OrderShipmentItem[];
   enviado: boolean;
+  shippingForecastDate: string | null;
   inventoryReserved: boolean;
   envioecomShipmentId: string | null;
   envioecomBarcode: string | null;
@@ -100,6 +101,7 @@ export function mapOrderShipmentPublic(row: OrderShipment): OrderShipmentPublic 
     inventoryPoolLabel: inventoryPoolLabel(pool),
     items: parseShipmentItems(row.items),
     enviado: !!row.enviado,
+    shippingForecastDate: String(row.shippingForecastDate || "").trim().slice(0, 10) || null,
     inventoryReserved: !!row.inventoryReserved,
     envioecomShipmentId: row.envioecomShipmentId || null,
     envioecomBarcode: row.envioecomBarcode || null,

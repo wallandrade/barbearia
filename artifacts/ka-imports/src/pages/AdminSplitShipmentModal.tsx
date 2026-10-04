@@ -18,6 +18,7 @@ export type SplitShipmentPackage = {
   inventoryPoolLabel?: string;
   items: SplitShipmentItem[];
   enviado?: boolean | null;
+  shippingForecastDate?: string | null;
   inventoryReserved?: boolean | null;
   envioecomShipmentId?: string | null;
   envioecomBarcode?: string | null;
