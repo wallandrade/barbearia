@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { Menu, Search, ShoppingBag, User, X, Home, MessageCircle, ChevronDown } from "lucide-react";
 import { getCustomerToken } from "@/lib/customer-auth";
 import { useCart } from "@/store/use-cart";
-import { getActiveWhatsApp, getSellerSlugFromPath } from "@/lib/utils";
+import { formatCurrency, getActiveWhatsApp, getSellerSlugFromPath } from "@/lib/utils";
+import { pharmaNameSuggestions, pharmaSalePrice } from "@/lib/pharma-catalog-query";
 import { usePharmaLogin } from "@/components/pharma/PharmaLoginDialog";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -33,12 +34,44 @@ function usePublicSiteSettings() {
   return settings;
 }
 
-function useCategoryNames(): string[] {
+type PharmaSuggestProduct = {
+  id: string;
+  name: string;
+  category: string;
+  image: string | null;
+  price: number;
+  promoPrice: number | null;
+  promoEndsAt: string | null;
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: unknown;
+  isSoldOut: boolean;
+};
+
+function useStoreCatalog(): { categories: string[]; products: PharmaSuggestProduct[]; ready: boolean } {
   const [categories, setCategories] = useState<string[]>([]);
+  const [products, setProducts] = useState<PharmaSuggestProduct[]>([]);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     fetch(`${BASE}/api/products`)
       .then((res) => res.json())
-      .then((data: { categories?: string[]; products?: Array<{ category?: string }> }) => {
+      .then((data: { categories?: string[]; products?: Array<Record<string, unknown>> }) => {
+        const rows = Array.isArray(data.products) ? data.products : [];
+        setProducts(
+          rows
+            .map((raw) => ({
+              id: String(raw.id || ""),
+              name: String(raw.name || ""),
+              category: String(raw.category || "").trim(),
+              image: typeof raw.image === "string" && raw.image.trim() ? raw.image : null,
+              price: Number(raw.price) || 0,
+              promoPrice: raw.promoPrice == null || raw.promoPrice === "" ? null : Number(raw.promoPrice),
+              promoEndsAt: raw.promoEndsAt == null ? null : String(raw.promoEndsAt),
+              bulkDiscountEnabled: raw.bulkDiscountEnabled === true,
+              bulkDiscountTiers: raw.bulkDiscountTiers,
+              isSoldOut: raw.isSoldOut === true,
+            }))
+            .filter((product) => product.id && product.name),
+        );
         const fromApi = (data.categories ?? []).map((item) => String(item || "").trim()).filter(Boolean);
         if (fromApi.length > 0) {
           setCategories(fromApi);
@@ -46,7 +79,7 @@ function useCategoryNames(): string[] {
         }
         const seen = new Set<string>();
         const list: string[] = [];
-        for (const product of data.products ?? []) {
+        for (const product of rows) {
           const category = String(product.category || "").trim();
           if (!category || seen.has(category)) continue;
           seen.add(category);
@@ -54,9 +87,10 @@ function useCategoryNames(): string[] {
         }
         setCategories(list);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setReady(true));
   }, []);
-  return categories;
+  return { categories, products, ready };
 }
 
 export function PharmaStoreChrome() {
@@ -66,12 +100,14 @@ export function PharmaStoreChrome() {
   const authVersion = usePharmaLogin((state) => state.authVersion);
   const setLoginOpen = usePharmaLogin((state) => state.setOpen);
   const siteSettings = usePublicSiteSettings();
-  const categories = useCategoryNames();
+  const { categories, products, ready: catalogReady } = useStoreCatalog();
   const [menuOpen, setMenuOpen] = useState(false);
   const [catOpen, setCatOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
   const catBtnRef = useRef<HTMLButtonElement>(null);
   const catMenuRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ down: false, x: 0, left: 0, moved: false });
@@ -87,9 +123,29 @@ export function PharmaStoreChrome() {
   const offersHref = sellerSlug ? `/${encodeURIComponent(sellerSlug)}/ofertas` : "/ofertas";
   const params = new URLSearchParams(searchString);
   const activeCategory = params.get("categoria") || "";
+  const suggestions = useMemo(
+    () => pharmaNameSuggestions(products, searchValue, 8),
+    [products, searchValue],
+  );
+  const showSuggestions = suggestionsOpen && searchValue.trim().length > 0;
+
+  useEffect(() => {
+    function closeSuggestions(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node;
+      if (searchRef.current?.contains(target)) return;
+      setSuggestionsOpen(false);
+    }
+    document.addEventListener("mousedown", closeSuggestions);
+    document.addEventListener("touchstart", closeSuggestions);
+    return () => {
+      document.removeEventListener("mousedown", closeSuggestions);
+      document.removeEventListener("touchstart", closeSuggestions);
+    };
+  }, []);
 
   useEffect(() => {
     setSearchValue(new URLSearchParams(searchString).get("q") || "");
+    setSuggestionsOpen(false);
     setMenuOpen(false);
   }, [location, searchString]);
 
@@ -122,7 +178,12 @@ export function PharmaStoreChrome() {
     if (q) next.set("q", q);
     else next.delete("q");
     next.delete("pagina");
+    setSuggestionsOpen(false);
     goWithQuery(next);
+  }
+
+  function productHref(id: string): string {
+    return sellerSlug ? `/${sellerSlug}/produto/${id}` : `/produto/${id}`;
   }
 
   function selectCategory(category: string) {
@@ -189,6 +250,7 @@ export function PharmaStoreChrome() {
     <>
       <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
         <div className="h-1 bg-gradient-to-r from-orange-500 via-red-500 to-red-600" />
+        <div ref={searchRef} className="relative z-20">
         <div className="flex h-14 items-center gap-2 px-3">
           <button
             type="button"
@@ -214,8 +276,24 @@ export function PharmaStoreChrome() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <input
               value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value;
+                setSearchValue(value);
+                setSuggestionsOpen(value.trim().length > 0);
+              }}
+              onFocus={() => {
+                if (searchValue.trim()) setSuggestionsOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSuggestionsOpen(false);
+                }
+              }}
               placeholder="Buscar produtos.."
+              autoComplete="off"
+              aria-autocomplete="list"
+              aria-expanded={showSuggestions}
               className="h-11 w-full rounded-full bg-[#f3f4f6] pl-9 pr-3 text-sm outline-none"
             />
           </form>
@@ -241,6 +319,41 @@ export function PharmaStoreChrome() {
               </span>
             )}
           </button>
+        </div>
+        {showSuggestions && (
+          <div className="absolute top-full right-3 left-3 z-30 mt-1 max-h-80 overflow-y-auto rounded-2xl border border-neutral-200 bg-white shadow-xl">
+            {!catalogReady ? (
+              <p className="px-4 py-3 text-sm text-neutral-500">Buscando produtos...</p>
+            ) : suggestions.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-neutral-500">Nenhum produto encontrado.</p>
+            ) : (
+              suggestions.map((product) => {
+                const sale = pharmaSalePrice(product);
+                return (
+                  <Link
+                    key={product.id}
+                    href={productHref(product.id)}
+                    onClick={() => setSuggestionsOpen(false)}
+                    className="flex items-center gap-3 border-b border-neutral-100 px-3 py-2.5 last:border-0 hover:bg-neutral-50"
+                  >
+                    {product.image ? (
+                      <img src={product.image} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-neutral-200 object-cover" />
+                    ) : (
+                      <span className="h-10 w-10 shrink-0 rounded-lg border border-neutral-200 bg-neutral-100" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-neutral-900">{product.name}</span>
+                      <span className="block truncate text-xs text-neutral-500">
+                        {product.isSoldOut ? "Esgotado" : product.category}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(sale)}</span>
+                  </Link>
+                );
+              })
+            )}
+          </div>
+        )}
         </div>
         <div
           ref={scrollerRef}

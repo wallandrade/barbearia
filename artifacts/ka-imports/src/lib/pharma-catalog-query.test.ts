@@ -5,6 +5,7 @@ import {
   comparePharmaRelevance,
   filterPharmaProducts,
   parsePharmaCatalogQuery,
+  pharmaNameSuggestions,
   pharmaOffPercent,
   pharmaSalePrice,
   pharmaSearchString,
@@ -75,6 +76,17 @@ test("menor preço usa o preço de venda do card", () => {
     { id: "2", name: "Faixa", price: 80, bulkDiscountEnabled: true, bulkDiscountTiers: [{ minQty: 1, maxQty: 1, unitPrice: 30 }] },
   ], "menor", now);
   assert.deepEqual(sorted.map((row) => row.name), ["Faixa", "Tabela"]);
+});
+
+test("sugestão da busca casa o nome sem acento e para no limite", () => {
+  const products = [
+    { id: "1", name: "Tirzepatida 10mg" },
+    { id: "2", name: "Água bacteriostática" },
+    { id: "3", name: "Retatrutida" },
+  ];
+  assert.deepEqual(pharmaNameSuggestions(products, "agua").map((row) => row.id), ["2"]);
+  assert.equal(pharmaNameSuggestions(products, "  ").length, 0);
+  assert.deepEqual(pharmaNameSuggestions(products, "t", 2).map((row) => row.id), ["1", "2"]);
 });
 
 test("filtro de marca ignora maiúsculas e promoção é promo=1", () => {

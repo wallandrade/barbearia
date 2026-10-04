@@ -167,6 +167,23 @@ export function filterPharmaProducts(
   });
 }
 
+/** Até `limit` produtos cujo nome contém o texto, sem acento e sem diferenciar maiúsculas. */
+export function pharmaNameSuggestions<T extends { name?: string | null }>(
+  products: T[],
+  query: string,
+  limit = 8,
+): T[] {
+  const needle = foldCatalogLabel(query);
+  if (!needle) return [];
+  const matches: T[] = [];
+  for (const product of products) {
+    if (!foldCatalogLabel(product.name).includes(needle)) continue;
+    matches.push(product);
+    if (matches.length >= limit) break;
+  }
+  return matches;
+}
+
 export function sortPharmaProducts(
   products: PharmaCatalogProduct[],
   ordem: PharmaOrder,
