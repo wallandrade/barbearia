@@ -67,6 +67,8 @@ const ALLOWED_KEYS = [
   "envioecom_shipment_item_pool",
   "envioecom_shipment_item_pool_order",
   "envioecom_shipment_item_pool_cursor",
+  "envioecom_shipment_item_value_min",
+  "envioecom_shipment_item_value_max",
   SHIPPING_QUEUE_MANUAL_ENABLED_KEY,
   SHIPPING_QUEUE_MANUAL_HOURS_KEY,
   CHECKOUT_CARRIER_PRIORITY_KEY,

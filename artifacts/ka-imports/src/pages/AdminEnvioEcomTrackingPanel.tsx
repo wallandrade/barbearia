@@ -157,9 +157,11 @@ function labelOptionDraft(name: string, value: string): LabelOptionDraft {
   return { id: nextLabelOptionId(), name, value };
 }
 
-function labelOptionsSnapshot(qty: string, rows: LabelOptionDraft[]): string {
+function labelOptionsSnapshot(qty: string, rows: LabelOptionDraft[], valueMin: string, valueMax: string): string {
   return JSON.stringify({
     qty: qty.trim(),
+    valueMin: valueMin.trim(),
+    valueMax: valueMax.trim(),
     rows: rows.map((row) => ({ name: row.name.trim(), value: row.value.trim() })),
   });
 }
@@ -178,6 +180,8 @@ export default function AdminEnvioEcomTrackingPanel({
   const [group, setGroup] = useState<"all" | TrackingBoardItem["group"]>("all");
   const [configured, setConfigured] = useState(true);
   const [itemQtyDraft, setItemQtyDraft] = useState("1");
+  const [itemValueMinDraft, setItemValueMinDraft] = useState("");
+  const [itemValueMaxDraft, setItemValueMaxDraft] = useState("");
   const [itemOptionsDraft, setItemOptionsDraft] = useState<LabelOptionDraft[]>(() => [
     labelOptionDraft("Mercadoria", "5,00"),
   ]);
@@ -207,6 +211,8 @@ export default function AdminEnvioEcomTrackingPanel({
         defaultDeclaredValue?: number;
         maxOptions?: number;
         options?: Array<{ name?: string; declaredValue?: number }>;
+        valueMin?: number | null;
+        valueMax?: number | null;
         message?: string;
       };
       if (!res.ok) {
@@ -226,10 +232,14 @@ export default function AdminEnvioEcomTrackingPanel({
         ))
         : [labelOptionDraft(name, valueText)];
       const qtyText = String(qty);
+      const minText = formatDeclaredValueInput(data.valueMin);
+      const maxText = formatDeclaredValueInput(data.valueMax);
       setItemPoolMax(Math.max(1, Number(data.maxOptions) || LABEL_POOL_MAX));
       setItemQtyDraft(qtyText);
+      setItemValueMinDraft(minText);
+      setItemValueMaxDraft(maxText);
       setItemOptionsDraft(rows);
-      setItemLabelSavedSnapshot(labelOptionsSnapshot(qtyText, rows));
+      setItemLabelSavedSnapshot(labelOptionsSnapshot(qtyText, rows, minText, maxText));
       setItemLabelReady(true);
     } catch {
       toast.error("Erro ao carregar dados da etiqueta EnvioEcom.");
@@ -257,6 +267,24 @@ export default function AdminEnvioEcomTrackingPanel({
       toast.error(`Use no máximo ${itemPoolMax} opções.`);
       return;
     }
+    const minText = itemValueMinDraft.trim();
+    const maxText = itemValueMaxDraft.trim();
+    if ((minText && !maxText) || (!minText && maxText)) {
+      toast.error("Informe o valor mínimo e o máximo, ou deixe os dois vazios.");
+      return;
+    }
+    if (minText && maxText) {
+      const minValue = Number(minText.replace(",", "."));
+      const maxValue = Number(maxText.replace(",", "."));
+      if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue < 0 || maxValue > 3000 || minValue > maxValue) {
+        toast.error("Faixa inválida. O mínimo precisa ser menor ou igual ao máximo, até 3000.");
+        return;
+      }
+      if (Math.round(qty) * maxValue > 3000) {
+        toast.error("Quantidade × máximo passa de R$ 3000. Baixe o máximo ou a quantidade.");
+        return;
+      }
+    }
     for (let i = 0; i < options.length; i += 1) {
       if (!options[i].name) {
         toast.error(`Informe o nome da opção ${i + 1}.`);
@@ -276,6 +304,8 @@ export default function AdminEnvioEcomTrackingPanel({
         body: JSON.stringify({
           quantity: Math.round(qty),
           options,
+          valueMin: minText,
+          valueMax: maxText,
         }),
       });
       if (res.status === 401) {
@@ -285,6 +315,8 @@ export default function AdminEnvioEcomTrackingPanel({
       const data = await res.json() as {
         quantity?: number;
         options?: Array<{ name?: string; declaredValue?: number }>;
+        valueMin?: number | null;
+        valueMax?: number | null;
         message?: string;
       };
       if (!res.ok) {
@@ -297,13 +329,19 @@ export default function AdminEnvioEcomTrackingPanel({
         String(row.name || "").trim() || "Mercadoria",
         formatDeclaredValueInput(typeof row.declaredValue === "number" ? row.declaredValue : Number(String(row.declaredValue).replace(",", "."))) || "5,00",
       ));
+      const savedMin = formatDeclaredValueInput(data.valueMin);
+      const savedMax = formatDeclaredValueInput(data.valueMax);
       setItemQtyDraft(savedQty);
+      setItemValueMinDraft(savedMin);
+      setItemValueMaxDraft(savedMax);
       setItemOptionsDraft(normalized);
-      setItemLabelSavedSnapshot(labelOptionsSnapshot(savedQty, normalized));
+      setItemLabelSavedSnapshot(labelOptionsSnapshot(savedQty, normalized, savedMin, savedMax));
       toast.success(
-        normalized.length > 1
-          ? `${normalized.length} opções salvas. Cada etiqueta nova pega a próxima, sem repetir até acabar a lista.`
-          : "Etiqueta salva. Só o próximo create usa esses dados.",
+        savedMin && savedMax
+          ? `${normalized.length} nomes salvos. Cada etiqueta usa um valor entre R$ ${savedMin} e R$ ${savedMax}.`
+          : normalized.length > 1
+            ? `${normalized.length} opções salvas. Cada etiqueta nova pega a próxima, sem repetir até acabar a lista.`
+            : "Etiqueta salva. Só o próximo create usa esses dados.",
       );
     } catch {
       toast.error("Erro ao salvar dados da etiqueta.");
@@ -432,7 +470,7 @@ export default function AdminEnvioEcomTrackingPanel({
     { key: "cancelled", group: "cancelled" as const, label: "Cancelados", value: summary?.cancelled ?? 0 },
   ]), [items.length, summary]);
 
-  const itemNameDirty = labelOptionsSnapshot(itemQtyDraft, itemOptionsDraft) !== itemLabelSavedSnapshot;
+  const itemNameDirty = labelOptionsSnapshot(itemQtyDraft, itemOptionsDraft, itemValueMinDraft, itemValueMaxDraft) !== itemLabelSavedSnapshot;
 
   const updateOption = (id: string, patch: Partial<Pick<LabelOptionDraft, "name" | "value">>) => {
     setItemOptionsDraft((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -488,8 +526,9 @@ export default function AdminEnvioEcomTrackingPanel({
         <div>
           <p className="text-sm font-bold text-amber-950">Item da etiqueta EnvioEcom</p>
           <p className="text-xs text-amber-900/80 mt-0.5">
-            O create manda sempre 1 linha. Com várias opções, cada etiqueta nova (EnvioEcom ou SuperFrete)
-            pega a próxima da lista embaralhada e não repete até a lista acabar. A quantidade vale para todas.
+            O create manda sempre 1 linha. O nome vem da próxima opção da lista e não repete até a lista acabar.
+            Com mínimo e máximo, o valor declarado de cada etiqueta fica nessa faixa e o valor da linha não entra.
+            A quantidade vale para todas.
             Pedido, estoque, comissão e cotação (pacote 2×12×17, 0,3 kg, R$ 5) não mudam. Envios já gerados não mudam.
           </p>
         </div>
@@ -506,6 +545,28 @@ export default function AdminEnvioEcomTrackingPanel({
               inputMode="numeric"
               placeholder="1"
               className="w-20 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm font-normal"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs font-semibold text-amber-950">
+            Mínimo
+            <input
+              value={itemValueMinDraft}
+              onChange={(e) => setItemValueMinDraft(e.target.value.replace(/[^\d.,]/g, "").slice(0, 8))}
+              disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
+              inputMode="decimal"
+              placeholder="100"
+              className="w-24 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm font-normal"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs font-semibold text-amber-950">
+            Máximo
+            <input
+              value={itemValueMaxDraft}
+              onChange={(e) => setItemValueMaxDraft(e.target.value.replace(/[^\d.,]/g, "").slice(0, 8))}
+              disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
+              inputMode="decimal"
+              placeholder="500"
+              className="w-24 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm font-normal"
             />
           </label>
           <Button
@@ -580,7 +641,9 @@ export default function AdminEnvioEcomTrackingPanel({
           <p className="text-[11px] text-amber-900/70">
             {itemNameLoading
               ? "Carregando…"
-              : `${itemOptionsDraft.length} opção(ões) · qty ${itemQtyDraft.trim() || "1"} · cada create usa uma`}
+              : itemValueMinDraft.trim() && itemValueMaxDraft.trim()
+                ? `${itemOptionsDraft.length} nomes · qty ${itemQtyDraft.trim() || "1"} · valor entre R$ ${itemValueMinDraft.trim()} e R$ ${itemValueMaxDraft.trim()}`
+                : `${itemOptionsDraft.length} opção(ões) · qty ${itemQtyDraft.trim() || "1"} · cada create usa o valor da linha`}
           </p>
         </div>
       </div>

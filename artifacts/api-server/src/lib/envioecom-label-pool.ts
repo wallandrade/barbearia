@@ -6,6 +6,8 @@ import {
 export const ENVIOECOM_SHIPMENT_ITEM_NAME_KEY = "envioecom_shipment_item_name";
 export const ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT = "Mercadoria";
 export const ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY = "envioecom_shipment_item_value";
+export const ENVIOECOM_SHIPMENT_ITEM_VALUE_MIN_KEY = "envioecom_shipment_item_value_min";
+export const ENVIOECOM_SHIPMENT_ITEM_VALUE_MAX_KEY = "envioecom_shipment_item_value_max";
 export const ENVIOECOM_SHIPMENT_ITEM_QTY_KEY = "envioecom_shipment_item_qty";
 export const ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT = 1;
 export const ENVIOECOM_SHIPMENT_ITEM_QTY_MAX = 999;
@@ -28,7 +30,62 @@ export type ShipmentLabelProfile = {
 
 export type ShipmentLabelSettings = ShipmentLabelProfile & {
   options: LabelPoolOption[];
+  valueMin: number | null;
+  valueMax: number | null;
 };
+
+export function parseDeclaredValueBound(raw: unknown): number | null {
+  if (raw == null) return null;
+  const text = String(raw).trim().replace(",", ".");
+  if (!text) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0 || n > ENVIOECOM_MAX_DECLARED_VALUE) return null;
+  return roundMoney(n);
+}
+
+/** Mínimo e máximo vazios desligam a faixa. Um só preenchido é erro. */
+export function validateDeclaredValueRange(
+  minRaw: unknown,
+  maxRaw: unknown,
+  quantity: number,
+): { valueMin: number | null; valueMax: number | null } | { error: string } {
+  const minText = String(minRaw ?? "").trim();
+  const maxText = String(maxRaw ?? "").trim();
+  if (!minText && !maxText) return { valueMin: null, valueMax: null };
+  if (!minText || !maxText) {
+    return { error: "Informe o valor mínimo e o máximo, ou deixe os dois vazios." };
+  }
+  const valueMin = parseDeclaredValueBound(minText);
+  const valueMax = parseDeclaredValueBound(maxText);
+  if (valueMin == null || valueMax == null) {
+    return { error: `Valor da faixa inválido. Use de 0 a ${ENVIOECOM_MAX_DECLARED_VALUE}.` };
+  }
+  if (valueMin > valueMax) {
+    return { error: "O valor mínimo não pode ser maior que o máximo." };
+  }
+  const qty = Math.max(1, quantity);
+  if (roundMoney(qty * valueMax) > ENVIOECOM_MAX_DECLARED_VALUE) {
+    return {
+      error: `Quantidade ${qty} × máximo ${valueMax.toFixed(2)} passa de R$ ${ENVIOECOM_MAX_DECLARED_VALUE}. Baixe o máximo ou a quantidade.`,
+    };
+  }
+  return { valueMin, valueMax };
+}
+
+/** Valor declarado inclusive entre o mínimo e o máximo, em centavos. */
+export function pickDeclaredValueInRange(
+  valueMin: number,
+  valueMax: number,
+  random: () => number = Math.random,
+): number {
+  const low = Math.round(Math.min(valueMin, valueMax) * 100);
+  const high = Math.round(Math.max(valueMin, valueMax) * 100);
+  const span = high - low + 1;
+  let offset = Math.floor(random() * span);
+  if (offset < 0) offset = 0;
+  if (offset >= span) offset = span - 1;
+  return (low + offset) / 100;
+}
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;

@@ -83,6 +83,7 @@ import {
   ENVIOECOM_SHIPMENT_ITEM_VALUE_KEY,
   parseShipmentDeclaredValue,
   parseShipmentItemQuantity,
+  validateDeclaredValueRange,
   validateLabelPoolInput,
 } from "../lib/envioecom-label-pool";
 import {
@@ -90,6 +91,7 @@ import {
   readShipmentLabelSettings,
   saveShipmentLabelFallback,
   saveShipmentLabelPool,
+  saveShipmentLabelValueRange,
 } from "../lib/envioecom-label-pool-store";
 import {
   createEnvioEcomAccount,
@@ -1747,7 +1749,7 @@ router.post("/admin/envioecom/orders/:id/unlink", requireAdminAuth, async (req, 
 // --------------------------------------------------------------------------
 router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req, res) => {
   try {
-    const { name, quantity, declaredValue, options } = await readShipmentLabelSettings();
+    const { name, quantity, declaredValue, options, valueMin, valueMax } = await readShipmentLabelSettings();
     res.json({
       ok: true,
       key: ENVIOECOM_SHIPMENT_ITEM_NAME_KEY,
@@ -1762,6 +1764,8 @@ router.get("/admin/envioecom/shipment-item-name", requireAdminAuth, async (_req,
       maxDeclaredValue: ENVIOECOM_MAX_DECLARED_VALUE,
       options,
       maxOptions: ENVIOECOM_LABEL_POOL_MAX,
+      valueMin,
+      valueMax,
     });
   } catch (err) {
     console.error("[EnvioEcom] get shipment-item-name error:", err);
@@ -1776,6 +1780,8 @@ router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, 
       declaredValue?: unknown;
       quantity?: unknown;
       options?: unknown;
+      valueMin?: unknown;
+      valueMax?: unknown;
     };
     const hasOptions = Array.isArray(body.options);
     const parsedOptions = hasOptions ? validateLabelPoolInput(body.options) : null;
@@ -1829,8 +1835,18 @@ router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, 
       }
     }
 
+    const hasRange = body.valueMin !== undefined || body.valueMax !== undefined;
+    const range = hasRange
+      ? validateDeclaredValueRange(body.valueMin, body.valueMax, quantity)
+      : { valueMin: current.valueMin, valueMax: current.valueMax };
+    if ("error" in range) {
+      res.status(400).json({ error: "INVALID_DECLARED_VALUE", message: range.error });
+      return;
+    }
+
     await saveShipmentLabelFallback({ name, quantity, declaredValue });
     if (options) await saveShipmentLabelPool(options);
+    if (hasRange) await saveShipmentLabelValueRange(range.valueMin, range.valueMax);
 
     res.json({
       ok: true,
@@ -1839,6 +1855,8 @@ router.put("/admin/envioecom/shipment-item-name", requireAdminAuth, async (req, 
       declaredValue,
       options: options ?? current.options,
       maxOptions: ENVIOECOM_LABEL_POOL_MAX,
+      valueMin: range.valueMin,
+      valueMax: range.valueMax,
     });
   } catch (err) {
     console.error("[EnvioEcom] put shipment-item-name error:", err);

@@ -5,7 +5,9 @@ import {
   advanceLabelPool,
   parseLabelPool,
   parsePoolOrder,
+  pickDeclaredValueInRange,
   shuffleIndices,
+  validateDeclaredValueRange,
   validateLabelPoolInput,
   ENVIOECOM_LABEL_POOL_MAX,
 } from "./envioecom-label-pool";
@@ -70,6 +72,22 @@ test("um ciclo da lista usa cada nome uma vez antes de repetir", () => {
   assert.ok(again);
   assert.equal(again.cursor, 1);
   assert.deepEqual(again.order, shuffleIndices(OPTIONS.length, () => 0));
+});
+
+test("faixa de valor: vazia desliga, invertida recusa, e o sorteio fica entre os limites", () => {
+  assert.deepEqual(validateDeclaredValueRange("", "", 1), { valueMin: null, valueMax: null });
+  assert.equal("error" in validateDeclaredValueRange("100", "", 1), true);
+  assert.equal("error" in validateDeclaredValueRange("500", "100", 1), true);
+  assert.equal("error" in validateDeclaredValueRange("100", "500", 10), true);
+  const ok = validateDeclaredValueRange("100", "500", 1);
+  assert.deepEqual(ok, { valueMin: 100, valueMax: 500 });
+
+  assert.equal(pickDeclaredValueInRange(100, 500, () => 0), 100);
+  assert.equal(pickDeclaredValueInRange(100, 500, () => 1), 500);
+  for (let i = 0; i < 20; i += 1) {
+    const value = pickDeclaredValueInRange(100, 500);
+    assert.ok(value >= 100 && value <= 500);
+  }
 });
 
 test("ordem inválida embaralha de novo em vez de repetir a primeira", () => {
