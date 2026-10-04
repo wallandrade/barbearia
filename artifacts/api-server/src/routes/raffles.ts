@@ -11,6 +11,7 @@ import {
   isPaymentConfirmed,
 } from "../gateway";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
+import { resolveRaffleLookupQuery } from "../lib/raffle-lookup";
 
 const router: IRouter = Router();
 
@@ -356,22 +357,11 @@ router.post("/raffles/:id/reserve", async (req, res) => {
 // PUBLIC: GET /api/raffles/reservations/lookup?phone=XX|cpf=YYY|query=ZZZ&raffleId=ID — consulta por tel/CPF.
 // ---------------------------------------------------------------------------
 router.get("/raffles/reservations/lookup", async (req, res) => {
-  const rawQuery = String(req.query.query || "").trim();
-  const queryDigits = rawQuery.replace(/\D/g, "");
-  const phone = String(req.query.phone || "").replace(/\D/g, "");
-  const cpf = String(req.query.cpf || "").replace(/\D/g, "");
-
-  // Avoid ambiguity for 11-digit query: default to phone unless CPF is explicit.
-  const hasExplicitPhone = phone.length > 0;
-  const hasExplicitCpf = cpf.length > 0;
-  const queryLooksCpf = /[.-]/.test(rawQuery) && queryDigits.length === 11;
-
-  const lookupPhone = hasExplicitPhone
-    ? phone
-    : (!hasExplicitCpf && queryDigits.length >= 8 ? queryDigits : "");
-  const lookupCpf = hasExplicitCpf
-    ? cpf
-    : (!hasExplicitPhone && queryLooksCpf ? queryDigits : "");
+  const { phone: lookupPhone, cpf: lookupCpf } = resolveRaffleLookupQuery({
+    query: String(req.query.query || ""),
+    phone: String(req.query.phone || ""),
+    cpf: String(req.query.cpf || ""),
+  });
   const raffleId = String(req.query.raffleId || "").trim();
 
   if (lookupPhone.length < 8 && lookupCpf.length !== 11) {
@@ -380,29 +370,29 @@ router.get("/raffles/reservations/lookup", async (req, res) => {
   }
 
   let whereClause;
-  const cpfLike = "%" + lookupCpf + "%";
+  const normalizedDocumentExpr = sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(client_document,''),'.',''),'-',''),'/',''),' ',''),'(','')`;
   const cpfByEmailSubquery = raffleId
-    ? sql`SELECT rr2.client_email FROM raffle_reservations rr2 WHERE rr2.client_document LIKE ${cpfLike} AND rr2.raffle_id = ${raffleId}`
-    : sql`SELECT rr2.client_email FROM raffle_reservations rr2 WHERE rr2.client_document LIKE ${cpfLike}`;
+    ? sql`SELECT rr2.client_email FROM raffle_reservations rr2 WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(rr2.client_document,''),'.',''),'-',''),'/',''),' ',''),'(','') = ${lookupCpf} AND rr2.raffle_id = ${raffleId}`
+    : sql`SELECT rr2.client_email FROM raffle_reservations rr2 WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(rr2.client_document,''),'.',''),'-',''),'/',''),' ',''),'(','') = ${lookupCpf}`;
 
   const normalizedPhoneExpr = sql`REPLACE(REPLACE(REPLACE(REPLACE(client_phone,' ',''),'-',''),'(',''),')','')`;
 
   if (lookupPhone.length >= 8 && lookupCpf.length === 11) {
     whereClause = sql`(
       ${normalizedPhoneExpr} LIKE ${"%" + lookupPhone}
-      OR client_document LIKE ${cpfLike}
+      OR ${normalizedDocumentExpr} = ${lookupCpf}
       OR client_email IN (${cpfByEmailSubquery})
     )`;
   } else if (lookupCpf.length === 11) {
     whereClause = sql`(
-      client_document LIKE ${cpfLike}
+      ${normalizedDocumentExpr} = ${lookupCpf}
       OR client_email IN (${cpfByEmailSubquery})
     )`;
   } else {
     whereClause = sql`${normalizedPhoneExpr} LIKE ${"%" + lookupPhone}`;
   }
 
-  // Match reservation where phone/CPF contains the typed digits.
+  // Telefone casa pelo fim do número. CPF casa os 11 dígitos, com ou sem máscara.
   const conditions = [whereClause];
   if (raffleId) {
     conditions.push(eq(raffleReservationsTable.raffleId, raffleId));

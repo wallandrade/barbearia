@@ -42,6 +42,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-04 | Consulta de cotas da rifa acha o cliente pelo CPF | 11 dígitos (com ou sem máscara) buscam telefone e CPF. Telefone menor que 11 continua só celular | Reserva, PIX e ranking iguais |
 | 2026-10-04 | Barra Buscar produtos da Farmácia Compacta lista o produto com foto enquanto digita | Até 8 nomes (sem acento). Linha com foto, categoria e preço. Toque abre o produto. Enter continua o filtro `q` da grade | Tema atual, chips e checkout iguais |
 | 2026-10-03 | Página do produto no tema Farmácia Compacta segue a tabela do exemplo | Foto baixa, categoria verde, 4 faixas numa linha, QTD/TOTAL, aviso verde e botão com carrinho | Tema atual e os preços cadastrados iguais |
 | 2026-10-03 | Home Farmácia Compacta abre com tirzepatidas disponíveis no topo | Relevância lista a categoria inteira antes do resto. Esgotada continua no fim | Menor/Maior/Nome e o tema atual iguais |
@@ -345,6 +346,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 ## Rifas
 
 - `raffles`, reservas, resultados, promoções — `routes/raffles.ts` (PIX de reserva, ranking, etc.).
+- **Consulte seus números** (`GET /api/raffles/reservations/lookup`): telefone com 8 a 10 dígitos busca só o celular. Com 11 dígitos (CPF ou celular, com ou sem máscara) busca os dois: o telefone no fim do número e o CPF só com dígitos, inclusive documento gravado com ponto ou traço. `phone=` explícito não vira CPF. `cpf=` explícito não vira telefone.
 - Admin, card da rifa: **Clonar** (`POST /api/admin/raffles`) cria outra do zero. Copia título, descrição, foto, quantidade de números, preço por número e tempo de reserva. A nova nasce **Ativa**. Reservas, ranking, promoções, resultado e total pago ficam na original.
 
 ## Suporte, reenvios, estoque
