@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-09-18
+> **Última atualização:** 2026-10-05
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-05 | Login da loja pharma: dois botões, **Não tenho conta** (cadastro) e **Esqueci minha senha** (WhatsApp com o e-mail) | O cliente não cai mais no cadastro quando só esqueceu a senha | Login/cadastro e `set-password` do admin iguais; sem reset por e-mail |
 | 2026-09-18 | Carteira na aba Clientes: `POST /api/admin/customers/:id/store-credit` só admin primário (`hasGlobalAccess`); `GET /admin/customers` mostra saldo a qualquer admin autenticado | Ajustar/zerar na lista sem ir na aba Seguro | Impersonate/senha e aba Seguro iguais |
 | 2026-09-10 | Janela da senha de baixa Motoboy/Minas: **30 min** | Uma senha cobre várias baixas no período | GET snapshot e token iguais |
 | 2026-09-10 | Senha de baixa: modal no Dar baixa agora Motoboy/Minas; `POST /admin/integrations/inventory/unlock`; janela 10 min no espelho | Dá para digitar a senha no Admin | GET snapshot e token iguais |
@@ -69,7 +70,8 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Registro/login: `routes/customer-auth.ts` + `middlewares/customer-auth.ts`. Cadastro/login aceitam **CPF opcional** (`document`); grava em `customer_users.document`.
 - Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha). Ao cadastrar/entrar/abrir Meus pedidos ou carteira, liga `userId` se o **e-mail ou o CPF** da compra bater (`claimGuestOrdersForCustomer`).
 - Sessão **em memória** via Bearer token (não tabela de sessão de cliente) — cai em restart/deploy.
-- Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original”.
+- Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original” nem reset por e-mail.
+- Loja pharma (`PharmaLoginDialog`): **Não tenho conta** abre o cadastro; **Esqueci minha senha** abre o WhatsApp com o e-mail informado. A redefinição continua no admin (`set-password`).
 - Admin primário: `POST /api/admin/customers/:id/set-password` gera ou define nova senha e devolve o plaintext **uma vez**; UI Admin aba Clientes → botão **Senha**.
 - Admin primário: impersonate `POST /api/admin/customers/:id/impersonate`.
 - Admin primário: carteira do cliente `POST /api/admin/customers/:id/store-credit` (`add` / `zero`); listagem já manda `storeCreditBalance`.

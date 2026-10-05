@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { saveCustomerToken } from "@/lib/customer-auth";
 import { getStoredReferralCode } from "@/lib/affiliate";
+import { makeWhatsAppLink } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -21,7 +22,7 @@ export const usePharmaLogin = create<LoginUiState>((set) => ({
   bumpAuth: () => set((state) => ({ authVersion: state.authVersion + 1, open: false })),
 }));
 
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "forgot";
 
 export function PharmaLoginDialog() {
   const open = usePharmaLogin((state) => state.open);
@@ -35,13 +36,26 @@ export function PharmaLoginDialog() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setMode("login");
+      return;
+    }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
+
+  function openPasswordHelp() {
+    const accountEmail = email.trim();
+    if (!accountEmail) {
+      toast.error("Informe o e-mail da conta.");
+      return;
+    }
+    const text = `Olá, esqueci minha senha. E-mail da conta: ${accountEmail}`;
+    window.open(makeWhatsAppLink(text), "_blank", "noopener,noreferrer");
+  }
 
   if (!open) return null;
 
@@ -110,8 +124,37 @@ export function PharmaLoginDialog() {
         aria-labelledby="pharma-login-title"
       >
         <h2 id="pharma-login-title" className="text-xl font-bold text-neutral-900">
-          {mode === "login" ? "Entrar" : "Criar conta"}
+          {mode === "login" ? "Entrar" : mode === "register" ? "Criar conta" : "Esqueci minha senha"}
         </h2>
+        {mode === "forgot" ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm leading-relaxed text-neutral-600">
+              A senha não volta por e-mail. Informe o e-mail da conta e chame no WhatsApp para redefinir.
+            </p>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="E-mail"
+              autoComplete="email"
+              className="h-11 w-full rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-900"
+            />
+            <button
+              type="button"
+              onClick={openPasswordHelp}
+              className="flex h-11 w-full items-center justify-center rounded-xl bg-[var(--pharma-cart)] text-sm font-semibold text-white"
+            >
+              Falar no WhatsApp
+            </button>
+            <button
+              type="button"
+              className="w-full text-sm font-medium text-neutral-600 underline-offset-2 hover:underline"
+              onClick={() => setMode("login")}
+            >
+              Voltar para entrar
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           {mode === "register" && (
             <input
@@ -156,15 +199,29 @@ export function PharmaLoginDialog() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "login" ? "Entrar" : "Criar conta"}
           </button>
         </form>
+        )}
         {mode === "login" ? (
-          <button type="button" className="mt-4 text-sm text-neutral-600 underline" onClick={() => setMode("register")}>
-            Esqueci ou ainda não tenho senha
-          </button>
-        ) : (
+          <div className="mt-4 flex flex-col gap-2 border-t border-neutral-100 pt-4">
+            <button
+              type="button"
+              className="h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-100"
+              onClick={() => setMode("register")}
+            >
+              Não tenho conta
+            </button>
+            <button
+              type="button"
+              className="h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-100"
+              onClick={() => setMode("forgot")}
+            >
+              Esqueci minha senha
+            </button>
+          </div>
+        ) : mode === "register" ? (
           <button type="button" className="mt-4 text-sm text-neutral-600 underline" onClick={() => setMode("login")}>
             Já tenho conta
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );
