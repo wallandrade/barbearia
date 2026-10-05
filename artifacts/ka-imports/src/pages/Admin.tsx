@@ -11397,6 +11397,12 @@ function OrdersPanel({
         paymentPending?: boolean;
         packages?: unknown[];
         enviado?: boolean;
+        inventoryReserved?: boolean;
+        inventoryAlreadyReserved?: boolean;
+        inventoryPool?: string | null;
+        inventoryPoolLabel?: string | null;
+        passwordRequired?: boolean;
+        inventoryWarning?: string | null;
       };
       if (!res.ok) {
         toast.error(data.message || "Falha ao criar etiqueta SuperFrete.");
@@ -11412,8 +11418,10 @@ function OrdersPanel({
         ...(data.enviado ? { enviado: true } : {}),
         ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
       });
+      const createdPackageId = superfreteQuoteModal.packageId;
       setSuperfreteQuoteModal(null);
       toast.success(data.message || "Etiqueta SuperFrete criada.");
+      followSuperfreteInventory(order, data, createdPackageId);
     } catch {
       toast.error("Erro ao criar etiqueta SuperFrete.");
     } finally {
@@ -11440,6 +11448,12 @@ function OrdersPanel({
         tracking?: string | null;
         packages?: unknown[];
         enviado?: boolean;
+        inventoryReserved?: boolean;
+        inventoryAlreadyReserved?: boolean;
+        inventoryPool?: string | null;
+        inventoryPoolLabel?: string | null;
+        passwordRequired?: boolean;
+        inventoryWarning?: string | null;
       };
       if (!res.ok) {
         toast.error(data.message || "Falha na SuperFrete.");
@@ -11465,6 +11479,9 @@ function OrdersPanel({
             ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
           });
       if (action !== "labels") toast.success(data.message || "SuperFrete atualizada.");
+      if (action === "labels" || action === "sync") {
+        followSuperfreteInventory(order, data, packageId);
+      }
     } catch {
       toast.error("Erro na SuperFrete.");
     } finally {
@@ -12516,6 +12533,58 @@ function OrdersPanel({
       setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: false }));
     }
   };
+
+  function followSuperfreteInventory(
+    order: AdminOrder,
+    data: {
+      inventoryReserved?: boolean;
+      inventoryAlreadyReserved?: boolean;
+      inventoryPool?: string | null;
+      inventoryPoolLabel?: string | null;
+      passwordRequired?: boolean;
+      inventoryWarning?: string | null;
+      packages?: unknown[];
+    },
+    packageId?: string | null,
+  ) {
+    const pool = data.inventoryPool === "loja" || data.inventoryPool === "motoboy" || data.inventoryPool === "minas"
+      ? data.inventoryPool
+      : null;
+    if (Array.isArray(data.packages)) {
+      patchOrderLocal(order.id, { envioecomPackages: data.packages } as Partial<AdminOrder>);
+    }
+    if (data.passwordRequired && pool) {
+      const label = data.inventoryPoolLabel || inventoryPoolLabel(pool);
+      openAdminPasswordModal(
+        "Senha de baixa",
+        "A etiqueta foi gerada. Informe a senha para dar baixa neste estoque. Depois fica 30 minutos e trava de novo.",
+        async (password) => {
+          if (packageId) {
+            await debitInventoryNowForPackage(order.id, packageId, label, password, pool);
+            return;
+          }
+          await saveInventoryPoolForOrder(order.id, pool, { reserveNow: true, password });
+        },
+      );
+      return;
+    }
+    if (data.inventoryWarning) toast.warning(data.inventoryWarning);
+    if (!data.inventoryReserved) return;
+    if (!packageId) {
+      patchOrderLocal(order.id, {
+        inventoryReserved: true,
+        ...(pool ? { inventoryPool: pool } : {}),
+      } as Partial<AdminOrder>);
+      setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: true }));
+      if (pool) setEnviadoInventoryPool((prev) => ({ ...prev, [order.id]: pool }));
+    } else if (Array.isArray(data.packages)) {
+      const allReserved = (data.packages as Array<{ inventoryReserved?: boolean }>).every((pkg) => !!pkg.inventoryReserved);
+      setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: allReserved }));
+    }
+    if (data.inventoryAlreadyReserved) return;
+    onRefreshInventory();
+    toast.success(`Baixa feita no estoque ${data.inventoryPoolLabel || "do pedido"}.`);
+  }
 
   const verifyOrderStock = (
     orderId: string,

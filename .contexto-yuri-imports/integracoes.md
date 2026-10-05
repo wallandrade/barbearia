@@ -6,6 +6,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-04 | Etiqueta Super Frete (`released`/`posted`/`delivered`) baixa o depósito do pedido ou do pacote | Create, PDF e Sync do Admin chamam a mesma baixa do Dar baixa agora. Sem depósito ou sem saldo a resposta segue 200 com `inventoryWarning`. Motoboy/Minas sem janela devolvem `passwordRequired` | Webhook e `superfrete-status-job` não baixam. `released` não marca `enviado`. Etiqueta EnvioEcom igual |
 | 2026-10-04 | Admin Rastreios: **Usar 20 sugestões** respeita `valueMin`/`valueMax` | Com a faixa preenchida, cada linha da sugestão recebe um valor dentro dela. Sem a faixa, seguem os preços fixos | O create continua sorteando na hora. GET não sorteia |
 | 2026-10-04 | Faixa de valor declarado da etiqueta (`envioecom_shipment_item_value_min` / `_max`) | Create EnvioEcom e SuperFrete sorteiam o valor dentro da faixa quando os dois estão preenchidos. GET/PUT `.../shipment-item-name` grava e devolve `valueMin`/`valueMax`. GET não sorteia | Cotação, webhook, qtd e envio já criado |
 | 2026-10-04 | Lista de nomes/valores da etiqueta (`envioecom_shipment_item_pool` + ordem/cursor) | Create EnvioEcom e SuperFrete consomem a próxima opção. GET/PUT `.../shipment-item-name` também devolve `options` | Cotação, webhook e envio já criado |
@@ -99,7 +100,8 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Sem conta configurada, o botão do card continua **EnvioEcom**. Com conta, vira **Emitir frete** e pergunta EnvioEcom ou SuperFrete. Pedido ou pacote já vinculado a uma das duas não oferece a outra até desvincular.
 - Rotas: `POST /api/admin/superfrete/orders/:id/quote|create|labels|sync|cancel|unlink`. Create usa a caixa da cotação, declaração de conteúdo (`non_commercial`) e o item genérico da EnvioEcom. Depois tenta `checkout` com saldo. Sem saldo a etiqueta fica `pending`.
 - Webhook `POST /api/webhook/superfrete/:accountId` valida `X-ME-Signature` (HMAC-SHA256). Cadastro: `POST /api/admin/superfrete/accounts/:id/webhook` (`PUBLIC_API_URL`).
-- Status: `pending` fica na cópia 48h e no card Pedidos para Enviar. `released` sai da cópia e **fica** no card (igual Aguardando postagem). `posted` e `delivered` saem dos dois e marcam `enviado`. Não baixa estoque. `isLabelReadyStatus` da EnvioEcom não mudou.
+- Status: `pending` fica na cópia 48h e no card Pedidos para Enviar. `released` sai da cópia e **fica** no card (igual Aguardando postagem). `posted` e `delivered` saem dos dois e marcam `enviado`. `released` não marca `enviado`. `isLabelReadyStatus` da EnvioEcom não mudou.
+- Baixa: create, PDF (`labels`) e Sync do Admin, com `released`/`posted`/`delivered`, descontam o `inventoryPool` já gravado no pedido ou no pacote (`debitSuperfreteLabelInventory`). Foz na hora. Motoboy/Minas só se a janela de 30 min estiver aberta; senão a resposta manda `passwordRequired` e o card abre a senha. Sem pool ou sem saldo: `inventoryWarning`, etiqueta segue. Webhook e o job não baixam.
 - Job `superfrete-status-job.ts` consulta envios `pending`/`released`. Desligar: `SUPERFRETE_AUTO_SYNC=0`.
 - Checkout do cliente e a página `/frete` não cotam na SuperFrete.
 
