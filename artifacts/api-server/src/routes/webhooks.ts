@@ -22,6 +22,7 @@ import { ensureOrderCommission } from "../lib/affiliates";
 import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { recordOrderActivity } from "../lib/order-activity";
+import { markSubscriptionFromWebhook } from "../lib/customer-subscription";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
 import { requirePrimaryAdmin } from "./admin-auth";
 
@@ -240,7 +241,16 @@ async function handleCallback(body: GatewayCallback) {
     }
   }
 
-  return { matched: orderUpdated || chargeUpdated, orderUpdated, chargeUpdated };
+  const subscriptionUpdated = await markSubscriptionFromWebhook({
+    transactionId,
+    confirmed,
+    cancelled,
+  });
+  if (subscriptionUpdated && confirmed) {
+    console.log(`[WEBHOOK] Subscription ${transactionId} marked paid`);
+  }
+
+  return { matched: orderUpdated || chargeUpdated || subscriptionUpdated, orderUpdated, chargeUpdated, subscriptionUpdated };
 }
 
 // Generic webhook — gateway can call with just the transactionId/status

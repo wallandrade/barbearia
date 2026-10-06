@@ -32,14 +32,15 @@ import {
   type TrackingInfo,
 } from "@/lib/customer-order-view";
 import { superfreteServiceName } from "@/lib/superfrete-status";
-import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
+import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell, FlaskConical } from "lucide-react";
+import PeptideToolsMenu from "@/components/PeptideToolsMenu";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
 import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type AccountSection = "orders" | "affiliate" | "raffle";
+type AccountSection = "orders" | "affiliate" | "raffle" | "protocols";
 
 type AffiliateDashboardResponse = {
   summary: {
@@ -602,6 +603,14 @@ export default function CustomerOrders() {
                 >
                   <Ticket className="w-4 h-4" />
                   Rifa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("protocols")}
+                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "protocols" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
+                >
+                  <FlaskConical className="w-4 h-4" />
+                  Protocolos
                 </button>
               </div>
             </aside>
@@ -1300,6 +1309,8 @@ export default function CustomerOrders() {
                   <p className="text-sm text-muted-foreground mt-2">Em breve esta aba vai mostrar seus números, sorteios e resultados.</p>
                 </div>
               )}
+
+              {activeSection === "protocols" && <PeptideToolsMenu />}
             </section>
           </div>
         </div>

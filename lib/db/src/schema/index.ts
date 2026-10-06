@@ -12,6 +12,7 @@ export * from "./order-bumps";
 export * from "./kyc";
 export * from "./social-proof";
 export * from "./customer-users";
+export * from "./customer-subscriptions";
 export * from "./affiliates";
 export * from "./store-credits";
 export * from "./raffles";

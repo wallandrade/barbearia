@@ -1250,6 +1250,28 @@ async function ensureStoreCreditTables(databaseName: string): Promise<void> {
   }
 }
 
+async function ensureCustomerSubscriptionsTable(databaseName: string): Promise<void> {
+  if (await tableExists("customer_subscriptions", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE customer_subscriptions (
+      id VARCHAR(255) NOT NULL PRIMARY KEY,
+      user_id VARCHAR(255) NOT NULL,
+      amount DECIMAL(10,2) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      transaction_id VARCHAR(255) NULL,
+      pix_code TEXT NULL,
+      pix_base64 MEDIUMTEXT NULL,
+      expires_at TIMESTAMP NULL,
+      period_end TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY customer_subscriptions_user_id_idx (user_id),
+      KEY customer_subscriptions_transaction_id_idx (transaction_id)
+    )
+  `);
+  console.log("[RuntimeSchema] Created table customer_subscriptions");
+}
+
 async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<void> {
   if (await tableExists(databaseName, "motoboy_price_proposals")) return;
   try {
@@ -1309,6 +1331,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureSellerCommissionBatchesTable(databaseName);
     await ensureMotoboyPriceProposalsTable(databaseName);
     await ensureStoreCreditTables(databaseName);
+    await ensureCustomerSubscriptionsTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

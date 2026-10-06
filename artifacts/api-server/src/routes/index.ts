@@ -42,6 +42,7 @@ import superfreteRouter from "./superfrete";
 import bankStatementRouter from "./bank-statement";
 import peptideChatRouter from "./peptide-chat";
 import insuranceRouter from "./insurance";
+import subscriptionRouter from "./subscription";
 import supplierPurchasesRouter from "./supplier-purchases";
 const router: IRouter = Router();
 
@@ -87,6 +88,7 @@ router.use(superfreteRouter);
 router.use(bankStatementRouter);
 router.use(peptideChatRouter);
 router.use(insuranceRouter);
+router.use(subscriptionRouter);
 router.use(supplierPurchasesRouter);
 
 export default router;
