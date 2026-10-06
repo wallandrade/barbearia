@@ -32,8 +32,20 @@ export function isSuperfreteExcludedFromCopy(input: {
   return Boolean(String(input.superfreteLabelUrl || "").trim());
 }
 
-export function superfreteLeavesSendCard(status: string | null | undefined): boolean {
-  return isSuperfretePosted(status);
+/**
+ * Card Pedidos para Enviar: igual etiqueta emitida da EnvioEcom.
+ * `released`, postado ou URL do PDF saem. Cancelado fica. Não marca Enviado.
+ */
+export function superfreteLeavesSendCard(
+  statusOrInput: string | null | undefined | {
+    superfreteStatus?: string | null;
+    superfreteLabelUrl?: string | null;
+  },
+): boolean {
+  if (statusOrInput && typeof statusOrInput === "object") {
+    return isSuperfreteExcludedFromCopy(statusOrInput);
+  }
+  return isSuperfreteLabelReady(statusOrInput) || isSuperfretePosted(statusOrInput);
 }
 
 export function superfreteServiceName(serviceId: number | string | null | undefined): string {

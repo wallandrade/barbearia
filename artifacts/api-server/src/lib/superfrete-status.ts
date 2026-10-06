@@ -13,7 +13,7 @@ export function isSuperfreteLabelReady(status: string | null | undefined): boole
   return normalizeSuperfreteStatus(status) === "released";
 }
 
-/** posted e delivered marcam Enviado e saem do card Pedidos para Enviar. */
+/** posted e delivered marcam Enviado. `released` sai do card e não marca Enviado. */
 export function isSuperfretePosted(status: string | null | undefined): boolean {
   const value = normalizeSuperfreteStatus(status);
   return value === "posted" || value === "delivered";
@@ -41,9 +41,20 @@ export function isSuperfreteExcludedFromCopy(input: {
   return Boolean(String(input.superfreteLabelUrl || "").trim());
 }
 
-/** Card Pedidos para Enviar: `released` fica. URL sozinha não tira. */
-export function superfreteLeavesSendCard(status: string | null | undefined): boolean {
-  return isSuperfretePosted(status);
+/**
+ * Card Pedidos para Enviar: igual etiqueta emitida da EnvioEcom.
+ * `released`, postado ou URL do PDF saem. Cancelado fica. Não marca Enviado.
+ */
+export function superfreteLeavesSendCard(
+  statusOrInput: string | null | undefined | {
+    superfreteStatus?: string | null;
+    superfreteLabelUrl?: string | null;
+  },
+): boolean {
+  if (statusOrInput && typeof statusOrInput === "object") {
+    return isSuperfreteExcludedFromCopy(statusOrInput);
+  }
+  return isSuperfreteLabelReady(statusOrInput) || isSuperfretePosted(statusOrInput);
 }
 
 export function superfreteServiceName(serviceId: number | string | null | undefined): string {

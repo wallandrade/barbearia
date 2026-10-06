@@ -13,7 +13,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
-import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage, snapshotSelectedVariants, variantImageUrl } from "../lib/variant-groups";
+import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage, resolveOrderEditLineVariants, snapshotSelectedVariants, variantImageUrl } from "../lib/variant-groups";
 import {
   ensureOrderCommission,
   normalizeAffiliateCode,
@@ -2273,7 +2273,15 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
     const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument, skipWalletCredit } = req.body as {
-      products: Array<{ id: string; name: string; quantity: number; price: number; lineDiscount?: number }>;
+      products: Array<{
+        id: string;
+        name: string;
+        quantity: number;
+        price: number;
+        lineDiscount?: number;
+        image?: string | null;
+        selectedVariants?: unknown;
+      }>;
       discountAmount?: number;
       skipWalletCredit?: boolean;
       clientPhone?: string | null;
@@ -2340,7 +2348,8 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       }
     }
 
-    // Resolve final products with correct tier prices
+    // Resolve final products with correct tier prices and the same variant snapshot as checkout.
+    const variantErrors: string[] = [];
     const resolvedProducts = newProducts.map((item) => {
       const productId = String(item?.id || "").trim();
       const quantity = Number(item?.quantity) || 0;
@@ -2353,16 +2362,36 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
         : undefined;
       const billedQty = isChildReshipment ? Number(extraQuantity) || 0 : quantity;
       const lineDiscount = clampLineDiscount(price, billedQty, item?.lineDiscount);
+      const variants = resolveOrderEditLineVariants({
+        hasCatalog: Boolean(catalogProduct),
+        catalogGroupsRaw: catalogProduct?.variantGroups,
+        catalogName: catalogProduct?.name,
+        catalogImage: catalogProduct?.image,
+        sentName: String(item?.name || "Produto"),
+        sentImage: item?.image,
+        sentVariants: item?.selectedVariants,
+      });
+      if (!variants.ok) {
+        variantErrors.push(variants.message);
+        return null;
+      }
       return {
         id: productId,
-        name: String(item?.name || "Produto"),
+        name: variants.name,
         quantity,
         price,
+        image: variants.image,
+        ...(variants.selectedVariants.length > 0 ? { selectedVariants: variants.selectedVariants } : {}),
         ...(lineDiscount > 0 ? { lineDiscount } : {}),
         ...(isChildReshipment ? { extraQuantity } : {}),
         ...(Number.isFinite(costPriceRaw) ? { costPrice: costPriceRaw } : {}),
       };
-    }).filter((item) => item.id && item.quantity > 0);
+    }).filter((item): item is NonNullable<typeof item> => Boolean(item && item.id && item.quantity > 0));
+
+    if (variantErrors.length > 0) {
+      res.status(400).json({ error: "INVALID_VARIANT", message: variantErrors[0] });
+      return;
+    }
 
     const computedSubtotal = resolvedProducts.reduce((sum, product) => {
       const billedQty = isChildReshipment

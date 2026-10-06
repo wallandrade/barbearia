@@ -381,7 +381,7 @@ test("mesmo barcode em pai e filho: lookup prefere o pedido de reenvio", () => {
   );
 });
 
-test("SuperFrete released sai da cópia e fica no card; posted sai do card", () => {
+test("SuperFrete released sai da cópia e do card; pending fica no card", () => {
   assert.equal(isPackageExcludedFromShippingCopyList({
     enviado: false,
     superfreteStatus: "pending",
@@ -399,7 +399,17 @@ test("SuperFrete released sai da cópia e fica no card; posted sai do card", () 
     status: "paid",
     enviado: false,
     superfreteStatus: "released",
+  }), false);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    superfreteStatus: "pending",
   }), true);
+  assert.equal(isOpenShippingListOrder({
+    status: "paid",
+    enviado: false,
+    superfreteLabelUrl: "https://sf/a.pdf",
+  }), false);
   assert.equal(isOpenShippingListOrder({
     status: "paid",
     enviado: false,

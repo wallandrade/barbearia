@@ -245,6 +245,15 @@ function isoToSPDate(iso: string) {
 }
 
 type OrderProductLite = { id: string; name: string; quantity: number; price: number; costPrice?: number; extraQuantity?: number; lineDiscount?: number; image?: string | null; selectedVariants?: unknown };
+type EditOrderLine = {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  lineDiscount?: number;
+  image?: string | null;
+  selectedVariants: SelectedVariant[];
+};
 type OrderActivityProductThumb = { id: string; name: string; image: string | null; fromQty: number; toQty: number };
 type OrderActivityEventView = {
   id: string;
@@ -719,7 +728,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { canSavePromoEnd, isPromoEndScheduleIncomplete, promoEndsAtFromParts, splitPromoEndsAt } from "@/lib/promo-ends-at";
 import { formatCurrency, formatDateOnlyBR, sellerListTitle, type SavedSellerItem } from "@/lib/utils";
 import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
-import { orderCopyItemName, parseVariantGroups, readEditorVariantGroups, type VariantGroup } from "@/lib/product-variants";
+import { cartLineKey, orderCopyItemName, orderLineNameWithVariants, parseVariantGroups, readEditorVariantGroups, readOrderVariantChoices, toggleVariantOption, variantImageFromSelection, variantSelectionError, type SelectedVariant, type VariantGroup } from "@/lib/product-variants";
 import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
 import {
   findOrderProductForShipmentItem,
@@ -1719,7 +1728,7 @@ export default function Admin() {
   const [webhookCopied, setWebhookCopied] = useState(false);
   // Order editing
   const [editOrderModal, setEditOrderModal] = useState<AdminOrder | null>(null);
-  const [editItems, setEditItems] = useState<Array<{ id: string; name: string; quantity: number; price: number; lineDiscount?: number; image?: string | null }>>([]);
+  const [editItems, setEditItems] = useState<EditOrderLine[]>([]);
   const [editAddress, setEditAddress] = useState({
     cep: "",
     street: "",
@@ -3791,6 +3800,7 @@ export default function Admin() {
       price: p.price,
       lineDiscount: Math.max(0, Number(p.lineDiscount) || 0),
       image: p.image ?? null,
+      selectedVariants: readOrderVariantChoices(p.selectedVariants),
     })));
     setEditDiscount(order.discountAmount || 0);
     setSkipEditWalletCredit(false);
@@ -3816,7 +3826,7 @@ export default function Admin() {
       try {
         const res = await fetch(`${BASE}/api/products`);
         const data = await res.json() as { products: AdminProduct[] };
-        setEditCatalog(data.products.filter((p) => p.isActive));
+        setEditCatalog(data.products);
       } catch { /* ignore */ }
       finally { setEditCatalogLoading(false); }
     }
@@ -3995,6 +4005,11 @@ export default function Admin() {
 
   const saveEditOrder = async () => {
     if (!editOrderModal || editItems.length === 0) { toast.error("Adicione ao menos um produto."); return; }
+    for (const item of editItems) {
+      const catalog = editCatalog.find((product) => product.id === item.id) as { variantGroups?: unknown } | undefined;
+      const variantError = variantSelectionError(parseVariantGroups(catalog?.variantGroups), item.selectedVariants);
+      if (variantError) { toast.error(variantError); return; }
+    }
     setEditSaving(true);
     const originalTotal = editOrderModal.total;
     try {
@@ -8322,7 +8337,7 @@ export default function Admin() {
             <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={(e) => { if (e.target === e.currentTarget) setEditOrderModal(null); }}>
-              <motion.div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col"
+              <motion.div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
                 initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
                 <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
                   <h3 className="text-lg font-bold">Editar Pedido #{getOrderReference(editOrderModal)}</h3>
@@ -8341,18 +8356,36 @@ export default function Admin() {
                           className="w-full h-9 px-3 rounded-lg border border-border bg-muted/30 text-sm outline-none focus:border-primary" />
                         {editProductSearch.trim().length > 0 && (
                           <div className="absolute top-full left-0 right-0 z-10 bg-white border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
-                            {editCatalog.filter((p) => p.name.toLowerCase().includes(editProductSearch.toLowerCase())).slice(0, 8).map((p) => (
+                            {editCatalog.filter((p) => p.isActive && p.name.toLowerCase().includes(editProductSearch.toLowerCase())).slice(0, 8).map((p) => (
                               <button key={p.id} className="w-full px-3 py-2 text-sm text-left hover:bg-muted/50 flex items-center gap-2"
                                 onClick={() => {
                                   const catalogImage = String((p as { image?: string | null }).image || "").trim() || null;
-                                  const exists = editItems.find((i) => i.id === p.id);
-                                  if (exists) {
-                                    const newQty = exists.quantity + 1;
-                                    const newPrice = resolveEditItemPrice(p, newQty);
-                                    setEditItems((prev) => prev.map((i) => i.id === p.id ? { ...i, quantity: newQty, price: newPrice, image: i.image || catalogImage } : i));
+                                  const groups = parseVariantGroups((p as { variantGroups?: unknown }).variantGroups);
+                                  if (groups.length > 0) {
+                                    const pending = editItems.find((line) => line.id === p.id && variantSelectionError(groups, line.selectedVariants));
+                                    if (pending) {
+                                      toast.error(variantSelectionError(groups, pending.selectedVariants) || "Escolha as opções.");
+                                    } else {
+                                      const newPrice = resolveEditItemPrice(p, 1);
+                                      setEditItems((prev) => [...prev, {
+                                        id: p.id,
+                                        name: p.name,
+                                        quantity: 1,
+                                        price: newPrice,
+                                        image: catalogImage,
+                                        selectedVariants: [],
+                                      }]);
+                                    }
                                   } else {
-                                    const newPrice = resolveEditItemPrice(p, 1);
-                                    setEditItems((prev) => [...prev, { id: p.id, name: p.name, quantity: 1, price: newPrice, image: catalogImage }]);
+                                    const exists = editItems.find((i) => i.id === p.id);
+                                    if (exists) {
+                                      const newQty = exists.quantity + 1;
+                                      const newPrice = resolveEditItemPrice(p, newQty);
+                                      setEditItems((prev) => prev.map((i) => i.id === p.id ? { ...i, quantity: newQty, price: newPrice, image: i.image || catalogImage } : i));
+                                    } else {
+                                      const newPrice = resolveEditItemPrice(p, 1);
+                                      setEditItems((prev) => [...prev, { id: p.id, name: p.name, quantity: 1, price: newPrice, image: catalogImage, selectedVariants: [] }]);
+                                    }
                                   }
                                   setEditProductSearch("");
                                 }}>
@@ -8372,7 +8405,7 @@ export default function Admin() {
                                 <span className="text-muted-foreground text-xs shrink-0">{formatCurrency(p.promoPrice ?? p.price)}</span>
                               </button>
                             ))}
-                            {editCatalog.filter((p) => p.name.toLowerCase().includes(editProductSearch.toLowerCase())).length === 0 && (
+                            {editCatalog.filter((p) => p.isActive && p.name.toLowerCase().includes(editProductSearch.toLowerCase())).length === 0 && (
                               <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum produto encontrado</p>
                             )}
                           </div>
@@ -8389,9 +8422,13 @@ export default function Admin() {
                       <div className="space-y-2">
                         {editItems.map((item, idx) => {
                           const catalog = editCatalog.find((c) => c.id === item.id);
-                          const thumb = String(item.image || (catalog as { image?: string | null } | undefined)?.image || "").trim();
+                          const catalogImage = String((catalog as { image?: string | null } | undefined)?.image || "").trim() || null;
+                          const groups = parseVariantGroups((catalog as { variantGroups?: unknown } | undefined)?.variantGroups);
+                          const thumb = String(item.image || catalogImage || "").trim();
+                          const variantHint = groups.length > 0 ? variantSelectionError(groups, item.selectedVariants) : null;
                           return (
-                          <div key={idx} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+                          <div key={`${item.id}-${idx}`} className="p-2.5 rounded-lg bg-muted/30 border border-border/50 space-y-2">
+                            <div className="flex items-center gap-3">
                             {thumb ? (
                               <img
                                 src={thumb}
@@ -8444,6 +8481,73 @@ export default function Admin() {
                               <button className="w-7 h-7 ml-1 rounded-lg hover:bg-red-50 text-red-500 flex items-center justify-center"
                                 onClick={() => setEditItems((prev) => prev.filter((_, j) => j !== idx))}><X className="w-4 h-4" /></button>
                             </div>
+                            </div>
+                            {groups.length > 0 ? (
+                              <div className="space-y-2">
+                                {groups.map((group) => {
+                                  const picked = item.selectedVariants.filter((choice) => choice.groupName === group.name);
+                                  const max = group.maxSelect > 0 ? group.maxSelect : 1;
+                                  return (
+                                    <div key={group.name}>
+                                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{group.name}</p>
+                                        {max > 1 && <span className="text-[11px] text-muted-foreground">{picked.length} de {max}</span>}
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {group.options.map((option) => {
+                                          const selected = picked.some((choice) => choice.option === option.label);
+                                          const blocked = !selected && max > 1 && picked.length >= max;
+                                          return (
+                                            <button
+                                              key={option.label}
+                                              type="button"
+                                              disabled={blocked}
+                                              onClick={() => {
+                                                const baseName = String(catalog?.name || "").trim();
+                                                setEditItems((prev) => {
+                                                  const current = prev[idx];
+                                                  if (!current) return prev;
+                                                  const selectedVariants = toggleVariantOption(groups, current.selectedVariants, group.name, option.label);
+                                                  const swapImage = variantImageFromSelection(groups, selectedVariants);
+                                                  const nextLine = {
+                                                    ...current,
+                                                    selectedVariants,
+                                                    name: orderLineNameWithVariants(baseName || current.name, selectedVariants),
+                                                    image: swapImage || catalogImage || current.image || null,
+                                                  };
+                                                  if (variantSelectionError(groups, selectedVariants)) {
+                                                    return prev.map((row, j) => j === idx ? nextLine : row);
+                                                  }
+                                                  const key = cartLineKey(nextLine.id, selectedVariants);
+                                                  const twin = prev.findIndex((row, j) => j !== idx && cartLineKey(row.id, row.selectedVariants) === key);
+                                                  if (twin < 0) return prev.map((row, j) => j === idx ? nextLine : row);
+                                                  return prev.flatMap((row, j) => {
+                                                    if (j === idx) return [];
+                                                    if (j !== twin) return [row];
+                                                    const quantity = row.quantity + nextLine.quantity;
+                                                    const price = catalog ? resolveEditItemPrice(catalog, quantity) : row.price;
+                                                    return [{ ...row, quantity, price, selectedVariants, name: nextLine.name, image: nextLine.image || row.image }];
+                                                  });
+                                                });
+                                              }}
+                                              className={`flex items-center gap-1.5 rounded-lg border px-1.5 py-1 text-left text-xs disabled:cursor-not-allowed disabled:opacity-40 ${selected ? "border-primary bg-primary/10" : "border-border bg-white hover:border-primary/40"}`}
+                                            >
+                                              {(option.image || catalogImage) && (
+                                                <img src={option.image || catalogImage || ""} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
+                                              )}
+                                              <span className="font-medium pr-0.5">{option.label}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {variantHint && <p className="text-[11px] text-amber-700">{variantHint}</p>}
+                              </div>
+                            ) : item.selectedVariants.length > 0 ? (
+                              <OrderVariantChoices raw={item.selectedVariants} />
+                            ) : null}
                           </div>
                           );
                         })}
@@ -11397,12 +11501,6 @@ function OrdersPanel({
         paymentPending?: boolean;
         packages?: unknown[];
         enviado?: boolean;
-        inventoryReserved?: boolean;
-        inventoryAlreadyReserved?: boolean;
-        inventoryPool?: string | null;
-        inventoryPoolLabel?: string | null;
-        passwordRequired?: boolean;
-        inventoryWarning?: string | null;
       };
       if (!res.ok) {
         toast.error(data.message || "Falha ao criar etiqueta SuperFrete.");
@@ -11418,10 +11516,8 @@ function OrdersPanel({
         ...(data.enviado ? { enviado: true } : {}),
         ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
       });
-      const createdPackageId = superfreteQuoteModal.packageId;
       setSuperfreteQuoteModal(null);
       toast.success(data.message || "Etiqueta SuperFrete criada.");
-      followSuperfreteInventory(order, data, createdPackageId);
     } catch {
       toast.error("Erro ao criar etiqueta SuperFrete.");
     } finally {
@@ -11448,12 +11544,6 @@ function OrdersPanel({
         tracking?: string | null;
         packages?: unknown[];
         enviado?: boolean;
-        inventoryReserved?: boolean;
-        inventoryAlreadyReserved?: boolean;
-        inventoryPool?: string | null;
-        inventoryPoolLabel?: string | null;
-        passwordRequired?: boolean;
-        inventoryWarning?: string | null;
       };
       if (!res.ok) {
         toast.error(data.message || "Falha na SuperFrete.");
@@ -11479,9 +11569,6 @@ function OrdersPanel({
             ...(Array.isArray(data.packages) ? { envioecomPackages: data.packages } : {}),
           });
       if (action !== "labels") toast.success(data.message || "SuperFrete atualizada.");
-      if (action === "labels" || action === "sync") {
-        followSuperfreteInventory(order, data, packageId);
-      }
     } catch {
       toast.error("Erro na SuperFrete.");
     } finally {
@@ -12533,58 +12620,6 @@ function OrdersPanel({
       setInventoryPoolSaving((prev) => ({ ...prev, [busyKey]: false }));
     }
   };
-
-  function followSuperfreteInventory(
-    order: AdminOrder,
-    data: {
-      inventoryReserved?: boolean;
-      inventoryAlreadyReserved?: boolean;
-      inventoryPool?: string | null;
-      inventoryPoolLabel?: string | null;
-      passwordRequired?: boolean;
-      inventoryWarning?: string | null;
-      packages?: unknown[];
-    },
-    packageId?: string | null,
-  ) {
-    const pool = data.inventoryPool === "loja" || data.inventoryPool === "motoboy" || data.inventoryPool === "minas"
-      ? data.inventoryPool
-      : null;
-    if (Array.isArray(data.packages)) {
-      patchOrderLocal(order.id, { envioecomPackages: data.packages } as Partial<AdminOrder>);
-    }
-    if (data.passwordRequired && pool) {
-      const label = data.inventoryPoolLabel || inventoryPoolLabel(pool);
-      openAdminPasswordModal(
-        "Senha de baixa",
-        "A etiqueta foi gerada. Informe a senha para dar baixa neste estoque. Depois fica 30 minutos e trava de novo.",
-        async (password) => {
-          if (packageId) {
-            await debitInventoryNowForPackage(order.id, packageId, label, password, pool);
-            return;
-          }
-          await saveInventoryPoolForOrder(order.id, pool, { reserveNow: true, password });
-        },
-      );
-      return;
-    }
-    if (data.inventoryWarning) toast.warning(data.inventoryWarning);
-    if (!data.inventoryReserved) return;
-    if (!packageId) {
-      patchOrderLocal(order.id, {
-        inventoryReserved: true,
-        ...(pool ? { inventoryPool: pool } : {}),
-      } as Partial<AdminOrder>);
-      setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: true }));
-      if (pool) setEnviadoInventoryPool((prev) => ({ ...prev, [order.id]: pool }));
-    } else if (Array.isArray(data.packages)) {
-      const allReserved = (data.packages as Array<{ inventoryReserved?: boolean }>).every((pkg) => !!pkg.inventoryReserved);
-      setInventoryReservedByOrder((prev) => ({ ...prev, [order.id]: allReserved }));
-    }
-    if (data.inventoryAlreadyReserved) return;
-    onRefreshInventory();
-    toast.success(`Baixa feita no estoque ${data.inventoryPoolLabel || "do pedido"}.`);
-  }
 
   const verifyOrderStock = (
     orderId: string,

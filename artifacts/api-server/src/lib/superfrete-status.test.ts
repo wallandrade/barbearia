@@ -20,8 +20,14 @@ test("status SuperFrete: pending fica, released é etiqueta, posted marca enviad
   assert.equal(isSuperfreteExcludedFromCopy({ superfreteStatus: "pending" }), false);
   assert.equal(isSuperfreteLabelReady("released"), true);
   assert.equal(isSuperfreteExcludedFromCopy({ superfreteStatus: "released" }), true);
-  assert.equal(superfreteLeavesSendCard("released"), false);
+  assert.equal(superfreteLeavesSendCard("released"), true);
+  assert.equal(superfreteLeavesSendCard("pending"), false);
   assert.equal(superfreteLeavesSendCard("posted"), true);
+  assert.equal(superfreteLeavesSendCard({ superfreteLabelUrl: "https://sf/a.pdf" }), true);
+  assert.equal(superfreteLeavesSendCard({
+    superfreteStatus: "cancelled",
+    superfreteLabelUrl: "https://sf/old.pdf",
+  }), false);
   assert.equal(superfreteMarksEnviado("delivered"), true);
   assert.equal(superfreteMarksEnviado("released"), false);
   assert.equal(isSuperfreteExcludedFromCopy({

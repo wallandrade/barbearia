@@ -5,7 +5,9 @@ import {
   parseVariantGroups,
   readEditorVariantGroups,
   orderCopyItemName,
+  orderLineNameWithVariants,
   readOrderVariantChoices,
+  toggleVariantOption,
   variantGalleryImages,
   variantImageFromSelection,
   variantSelectionError,
@@ -114,6 +116,27 @@ test("resumo do pedido lê a foto gravada da opção", () => {
 test("rascunho do admin guarda o máximo", () => {
   const groups = readEditorVariantGroups([{ name: "Kit", maxSelect: 4, options: [{ label: "TG", image: null }] }]);
   assert.equal(groups[0]?.maxSelect, 4);
+});
+
+test("editar pedido troca a opção e não passa do máximo", () => {
+  const groups = parseVariantGroups([{
+    name: "Escolha seu kit",
+    maxSelect: 4,
+    options: ["Lipoland", "Lipoless", "Tirzedral", "Gluconex", "Retatrutida"],
+  }]);
+  const current = ["Lipoland", "Lipoless", "Tirzedral", "Gluconex"].map((option) => ({
+    groupName: "Escolha seu kit",
+    option,
+  }));
+  const blocked = toggleVariantOption(groups, current, "Escolha seu kit", "Retatrutida");
+  assert.deepEqual(blocked.map((item) => item.option), ["Lipoland", "Lipoless", "Tirzedral", "Gluconex"]);
+  const withoutGluconex = toggleVariantOption(groups, current, "Escolha seu kit", "Gluconex");
+  const swapped = toggleVariantOption(groups, withoutGluconex, "Escolha seu kit", "Retatrutida");
+  assert.deepEqual(swapped.map((item) => item.option), ["Lipoland", "Lipoless", "Tirzedral", "Retatrutida"]);
+  assert.equal(
+    orderLineNameWithVariants("Kit Degustação Tirzepatidas", swapped),
+    "Kit Degustação Tirzepatidas - Escolha seu kit: Lipoland, Lipoless, Tirzedral, Retatrutida",
+  );
 });
 
 test("mesma peça com opções diferentes vira linhas diferentes no carrinho", () => {

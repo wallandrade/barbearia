@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acceptSelectedVariants, parseVariantGroups, resolveLineImage, snapshotSelectedVariants } from "./variant-groups";
+import { acceptSelectedVariants, parseVariantGroups, resolveLineImage, resolveOrderEditLineVariants, snapshotSelectedVariants } from "./variant-groups";
 
 test("opção antiga em texto continua válida e sem foto", () => {
   const groups = parseVariantGroups([{ name: "Cor", options: ["Preta", "Branca"] }]);
@@ -139,4 +139,63 @@ test("foto do pedido usa a opção escolhida", () => {
     resolveLineImage("https://cdn.example/produto.jpg", groups, [{ groupName: "Cor", option: "Branca" }]),
     "https://cdn.example/produto.jpg",
   );
+});
+
+test("editar pedido grava a nova escolha do kit e recusa se faltar opção", () => {
+  const groups = [{
+    name: "Escolha seu kit",
+    maxSelect: 4,
+    imageMode: "all",
+    options: [
+      { label: "Lipoland", image: "https://cdn.example/lipoland.jpg" },
+      { label: "Lipoless", image: "https://cdn.example/lipoless.jpg" },
+      { label: "Tirzedral", image: "https://cdn.example/tirzedral.jpg" },
+      { label: "Gluconex", image: "https://cdn.example/gluconex.jpg" },
+      { label: "Retatrutida", image: "https://cdn.example/reta.jpg" },
+    ],
+  }];
+  const incomplete = resolveOrderEditLineVariants({
+    hasCatalog: true,
+    catalogGroupsRaw: groups,
+    catalogName: "Kit Degustação Tirzepatidas",
+    catalogImage: "https://cdn.example/kit.jpg",
+    sentName: "Kit Degustação Tirzepatidas - Escolha seu kit: Lipoland, Lipoless, Tirzedral, Gluconex",
+    sentVariants: [
+      { groupName: "Escolha seu kit", option: "Lipoland" },
+      { groupName: "Escolha seu kit", option: "Lipoless" },
+    ],
+  });
+  assert.equal(incomplete.ok, false);
+  if (!incomplete.ok) assert.match(incomplete.message, /4 opções/);
+
+  const saved = resolveOrderEditLineVariants({
+    hasCatalog: true,
+    catalogGroupsRaw: groups,
+    catalogName: "Kit Degustação Tirzepatidas",
+    catalogImage: "https://cdn.example/kit.jpg",
+    sentName: "Kit Degustação Tirzepatidas - Escolha seu kit: Lipoland, Lipoless, Tirzedral, Gluconex",
+    sentVariants: [
+      { groupName: "Escolha seu kit", option: "Lipoland" },
+      { groupName: "Escolha seu kit", option: "Lipoless" },
+      { groupName: "Escolha seu kit", option: "Tirzedral" },
+      { groupName: "Escolha seu kit", option: "Retatrutida" },
+    ],
+  });
+  assert.equal(saved.ok, true);
+  if (!saved.ok) return;
+  assert.equal(saved.name, "Kit Degustação Tirzepatidas - Escolha seu kit: Lipoland, Lipoless, Tirzedral, Retatrutida");
+  assert.equal(saved.image, "https://cdn.example/kit.jpg");
+  assert.deepEqual(saved.selectedVariants.map((item) => item.option), ["Lipoland", "Lipoless", "Tirzedral", "Retatrutida"]);
+
+  const kept = resolveOrderEditLineVariants({
+    hasCatalog: false,
+    catalogGroupsRaw: null,
+    sentName: "Kit antigo - Escolha seu kit: Lipoland",
+    sentImage: "https://cdn.example/kit.jpg",
+    sentVariants: [{ groupName: "Escolha seu kit", option: "Lipoland", image: "https://cdn.example/lipoland.jpg" }],
+  });
+  assert.equal(kept.ok, true);
+  if (!kept.ok) return;
+  assert.equal(kept.selectedVariants[0]?.option, "Lipoland");
+  assert.equal(kept.selectedVariants[0]?.image, "https://cdn.example/lipoland.jpg");
 });

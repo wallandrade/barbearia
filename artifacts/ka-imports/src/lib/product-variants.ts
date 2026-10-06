@@ -240,6 +240,46 @@ export function readOrderVariantChoices(raw: unknown): OrderVariantChoice[] {
   return choices;
 }
 
+/** Nome do catálogo mais o rótulo das opções. Não repete se o rótulo já está no nome. */
+export function orderLineNameWithVariants(baseName: string, selectedVariants: SelectedVariant[]): string {
+  const base = baseName.trim() || "Produto";
+  const label = buildVariantLabel(selectedVariants);
+  if (!label || base.includes(label)) return base;
+  return `${base} - ${label}`;
+}
+
+/** Marca ou tira uma opção, respeitando o máximo do grupo. */
+export function toggleVariantOption(
+  groups: VariantGroup[],
+  selected: SelectedVariant[],
+  groupName: string,
+  optionLabel: string,
+): SelectedVariant[] {
+  const group = groups.find((item) => item.name === groupName);
+  if (!group) return selected;
+  const option = group.options.find((item) => item.label === optionLabel);
+  if (!option) return selected;
+  const max = group.maxSelect > 0 ? group.maxSelect : 1;
+  const current = selected.filter((item) => item.groupName === group.name);
+  const others = selected.filter((item) => item.groupName !== group.name);
+  const already = current.some((item) => item.option === option.label);
+  let nextLabels: string[];
+  if (already) {
+    nextLabels = current.filter((item) => item.option !== option.label).map((item) => item.option);
+  } else if (max <= 1) {
+    nextLabels = [option.label];
+  } else if (current.length >= max) {
+    return selected;
+  } else {
+    nextLabels = [...current.map((item) => item.option), option.label];
+  }
+  const picked = nextLabels.map((label) => {
+    const match = group.options.find((item) => item.label === label);
+    return { groupName: group.name, option: label, image: match?.image ?? null };
+  });
+  return [...others, ...picked];
+}
+
 export function cartLineKey(productId: string, selectedVariants: SelectedVariant[]): string {
   if (selectedVariants.length === 0) return productId;
   const signature = selectedVariants

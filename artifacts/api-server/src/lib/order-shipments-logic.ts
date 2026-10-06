@@ -166,10 +166,11 @@ function isSendCardPinPackageReady(pkg: {
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
   superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
 } | null | undefined): boolean {
   if (!pkg) return false;
   if (pkg.enviado) return true;
-  if (superfreteLeavesSendCard(pkg.superfreteStatus)) return true;
+  if (superfreteLeavesSendCard(pkg)) return true;
   if (String(pkg.envioecomLabelUrl || "").trim()) return true;
   return isSendCardPinLabelStatus(pkg.envioecomStatus);
 }
@@ -189,6 +190,7 @@ export function isOpenShippingListOrder(input: {
   envioecomStatus?: string | null;
   envioecomLabelUrl?: string | null;
   superfreteStatus?: string | null;
+  superfreteLabelUrl?: string | null;
   reshipmentStatus?: string | null;
   packages?: Array<{
     enviado?: boolean | null;
@@ -206,7 +208,7 @@ export function isOpenShippingListOrder(input: {
   const packages = Array.isArray(input.packages) ? input.packages : [];
   if (packages.length >= 2) return !packages.every(isSendCardPinPackageReady);
   if (input.enviado) return false;
-  if (superfreteLeavesSendCard(input.superfreteStatus)) return false;
+  if (superfreteLeavesSendCard(input)) return false;
   if (String(input.envioecomLabelUrl || "").trim()) return false;
   return !isSendCardPinLabelStatus(input.envioecomStatus);
 }

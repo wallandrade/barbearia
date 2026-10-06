@@ -213,9 +213,16 @@ test("dividido com os dois pacotes abertos mostra as duas fotos", () => {
   assert.deepEqual(sendCardThumbProducts(order).map((item) => item.id), ["a", "b"]);
 });
 
-test("SuperFrete released fica no card; posted sai", () => {
-  assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "released" }), true);
+test("SuperFrete released sai do card igual etiqueta emitida; pending fica", () => {
+  assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "released" }), false);
   assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "pending" }), true);
+  assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteLabelUrl: "https://sf/a.pdf" }), false);
+  assert.equal(isOnSendCard({
+    id: "1",
+    status: "paid",
+    superfreteStatus: "cancelled",
+    superfreteLabelUrl: "https://sf/old.pdf",
+  }), true);
   assert.equal(isOnSendCard({ id: "1", status: "paid", superfreteStatus: "posted" }), false);
   assert.equal(isOnSendCard({ id: "1", status: "paid", envioecomStatus: "Aguardando postagem" }), true);
   assert.equal(isOnSendCard({
@@ -223,7 +230,15 @@ test("SuperFrete released fica no card; posted sai", () => {
     status: "paid",
     envioecomPackages: [
       { envioecomLabelUrl: "https://ee/a.pdf" },
-      { superfreteStatus: "released" },
+      { superfreteStatus: "pending" },
     ],
   }), true);
+  assert.equal(isOnSendCard({
+    id: "1",
+    status: "paid",
+    envioecomPackages: [
+      { envioecomLabelUrl: "https://ee/a.pdf" },
+      { superfreteStatus: "released" },
+    ],
+  }), false);
 });

@@ -47,11 +47,6 @@ import {
   updateSuperfreteAccount,
 } from "../lib/superfrete-accounts";
 import {
-  debitSuperfreteLabelInventory,
-  type SuperfreteLabelDebitResult,
-} from "../lib/superfrete-inventory";
-import { superfreteStatusCanDebitInventory } from "../lib/superfrete-inventory-plan";
-import {
   isSuperfreteCancelled,
   packageHasSuperfreteBinding,
   superfreteMarksEnviado,
@@ -199,43 +194,6 @@ async function lookupOriginAddress(cep: string): Promise<ViaCep> {
 function publishRefresh(orderId: string, changed: boolean, status: string) {
   if (!changed) return;
   broadcastNotification({ type: "order_updated", data: { id: orderId, superfreteStatus: status } });
-}
-
-function emptyLabelDebit(): SuperfreteLabelDebitResult {
-  return {
-    inventoryReserved: false,
-    inventoryAlreadyReserved: false,
-    inventoryPool: null,
-    inventoryPoolLabel: null,
-    passwordRequired: false,
-    inventoryWarning: null,
-  };
-}
-
-/** Create, PDF e Sync do Admin. Webhook e o job não passam por aqui. */
-async function debitReleasedSuperfreteLabel(
-  req: import("express").Request,
-  order: typeof ordersTable.$inferSelect,
-  packageId: string | null | undefined,
-  status: string | null | undefined,
-): Promise<SuperfreteLabelDebitResult> {
-  if (!superfreteStatusCanDebitInventory(status)) return emptyLabelDebit();
-  try {
-    const result = await debitSuperfreteLabelInventory({ order, packageId, status });
-    if (result.inventoryReserved && !result.inventoryAlreadyReserved) {
-      recordAdminActivity(
-        req,
-        order.id,
-        "inventory",
-        `Baixa de estoque: ${result.inventoryPoolLabel || "pedido"}`,
-        "Etiqueta SuperFrete",
-      );
-    }
-    return result;
-  } catch (err) {
-    console.warn("[SuperFrete] baixa de estoque", order.id, err);
-    return emptyLabelDebit();
-  }
 }
 
 async function applySuperfreteSnapshot(input: {
@@ -570,7 +528,6 @@ router.post("/admin/superfrete/orders/:id/create", requireAdminAuth, async (req,
       serviceId: service,
       labelUrl: live.labelUrl,
     });
-    const inventory = await debitReleasedSuperfreteLabel(req, order, pkg?.id, applied.status);
     recordAdminActivity(req, order.id, "superfrete", "Criou etiqueta SuperFrete", superfreteServiceName(service) || String(service));
     res.json({
       ok: true,
@@ -584,14 +541,8 @@ router.post("/admin/superfrete/orders/:id/create", requireAdminAuth, async (req,
         : "Etiqueta SuperFrete paga e liberada.",
       accountId: auth.accountId,
       serviceName: superfreteServiceName(service),
-      packages: inventory.packages || applied.packages,
+      packages: applied.packages,
       enviado: applied.enviado,
-      inventoryReserved: inventory.inventoryReserved,
-      inventoryAlreadyReserved: inventory.inventoryAlreadyReserved,
-      inventoryPool: inventory.inventoryPool,
-      inventoryPoolLabel: inventory.inventoryPoolLabel,
-      passwordRequired: inventory.passwordRequired,
-      inventoryWarning: inventory.inventoryWarning,
     });
   } catch (err) {
     mapApiError(err, res);
@@ -635,19 +586,7 @@ router.post("/admin/superfrete/orders/:id/labels", requireAdminAuth, async (req,
       });
       return;
     }
-    const inventory = await debitReleasedSuperfreteLabel(req, loaded.order, pkg?.id, applied.status);
-    res.json({
-      ok: true,
-      labelUrl: live.labelUrl,
-      status: applied.status,
-      packages: inventory.packages || applied.packages,
-      inventoryReserved: inventory.inventoryReserved,
-      inventoryAlreadyReserved: inventory.inventoryAlreadyReserved,
-      inventoryPool: inventory.inventoryPool,
-      inventoryPoolLabel: inventory.inventoryPoolLabel,
-      passwordRequired: inventory.passwordRequired,
-      inventoryWarning: inventory.inventoryWarning,
-    });
+    res.json({ ok: true, labelUrl: live.labelUrl, status: applied.status, packages: applied.packages });
   } catch (err) {
     mapApiError(err, res);
   }
@@ -680,20 +619,13 @@ router.post("/admin/superfrete/orders/:id/sync", requireAdminAuth, async (req, r
       info: { ...live.info, id: sfId },
       labelUrl: live.labelUrl,
     });
-    const inventory = await debitReleasedSuperfreteLabel(req, loaded.order, pkg?.id, applied.status);
     res.json({
       ok: true,
       status: applied.status,
       tracking: live.info.tracking,
       labelUrl: live.labelUrl,
       enviado: applied.enviado,
-      packages: inventory.packages || applied.packages,
-      inventoryReserved: inventory.inventoryReserved,
-      inventoryAlreadyReserved: inventory.inventoryAlreadyReserved,
-      inventoryPool: inventory.inventoryPool,
-      inventoryPoolLabel: inventory.inventoryPoolLabel,
-      passwordRequired: inventory.passwordRequired,
-      inventoryWarning: inventory.inventoryWarning,
+      packages: applied.packages,
     });
   } catch (err) {
     mapApiError(err, res);

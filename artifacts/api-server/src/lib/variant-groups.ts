@@ -162,6 +162,73 @@ export function buildVariantLabel(variants: SelectedVariantRef[]): string {
   return order.map((groupName) => `${groupName}: ${(byName.get(groupName) ?? []).join(", ")}`).join(" / ");
 }
 
+export type OrderEditLineVariants =
+  | { ok: true; name: string; image: string | null; selectedVariants: SelectedVariantSnapshot[] }
+  | { ok: false; message: string };
+
+function readStoredLineImage(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value || value.startsWith("data:")) return null;
+  return value;
+}
+
+function readSentVariantRefs(raw: unknown): Array<SelectedVariantRef & { image?: unknown }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      const value = item as Record<string, unknown>;
+      const groupName = String(value?.groupName ?? "").trim();
+      const option = String(value?.option ?? "").trim();
+      if (!groupName || !option) return null;
+      return { groupName, option, image: value?.image };
+    })
+    .filter((item): item is SelectedVariantRef & { image?: unknown } => Boolean(item));
+}
+
+/** Edição do pedido: mesma regra do checkout. Sem o máximo, recusa. Sem catálogo, mantém o que já estava gravado. */
+export function resolveOrderEditLineVariants(input: {
+  hasCatalog: boolean;
+  catalogGroupsRaw: unknown;
+  catalogName?: string | null;
+  catalogImage?: string | null;
+  sentName: string;
+  sentImage?: unknown;
+  sentVariants: unknown;
+}): OrderEditLineVariants {
+  const sent = readSentVariantRefs(input.sentVariants);
+  const groups = input.hasCatalog ? parseVariantGroups(input.catalogGroupsRaw) : [];
+  if (input.hasCatalog && groups.length > 0) {
+    const accepted = acceptSelectedVariants(groups, sent);
+    if (!accepted.ok) return accepted;
+    const snapshots = snapshotSelectedVariants(groups, accepted.selected);
+    const label = buildVariantLabel(accepted.selected);
+    const rawName = String(input.catalogName || input.sentName || "Produto").trim() || "Produto";
+    const name = label && !rawName.includes(label) ? `${rawName} - ${label}` : rawName;
+    return {
+      ok: true,
+      name,
+      image: resolveLineImage(input.catalogImage, input.catalogGroupsRaw, accepted.selected),
+      selectedVariants: snapshots,
+    };
+  }
+  if (input.hasCatalog) {
+    const rawName = String(input.catalogName || input.sentName || "Produto").trim() || "Produto";
+    return {
+      ok: true,
+      name: rawName,
+      image: resolveLineImage(input.catalogImage, null, []),
+      selectedVariants: [],
+    };
+  }
+  return {
+    ok: true,
+    name: String(input.sentName || "Produto").trim() || "Produto",
+    image: readStoredLineImage(input.sentImage),
+    selectedVariants: snapshotSelectedVariants([], sent),
+  };
+}
+
 export function resolveLineImage(
   productImage: string | null | undefined,
   variantGroupsRaw: unknown,
