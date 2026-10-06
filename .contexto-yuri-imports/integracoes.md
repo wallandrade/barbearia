@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-10-04
+> **Última atualização:** 2026-10-06
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-06 | Gastos de marketing saíram do topo de Configuração | O painel **APIs EnvioEcom** fica no topo da aba | Contas, token e seletor iguais |
 | 2026-10-04 | Etiqueta Super Frete `released` sai de Pedidos para Enviar | O card usa a mesma saída da Etiqueta emitida: `released`, postado ou URL do PDF. Create/PDF/Sync não baixam estoque e não pedem senha | `released` não marca `enviado`. Dar baixa agora segue manual. Cópia 48h igual |
 | 2026-10-04 | Admin Rastreios: **Usar 20 sugestões** respeita `valueMin`/`valueMax` | Com a faixa preenchida, cada linha da sugestão recebe um valor dentro dela. Sem a faixa, seguem os preços fixos | O create continua sorteando na hora. GET não sorteia |
 | 2026-10-04 | Faixa de valor declarado da etiqueta (`envioecom_shipment_item_value_min` / `_max`) | Create EnvioEcom e SuperFrete sorteiam o valor dentro da faixa quando os dois estão preenchidos. GET/PUT `.../shipment-item-name` grava e devolve `valueMin`/`valueMax`. GET não sorteia | Cotação, webhook, qtd e envio já criado |
@@ -111,7 +112,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Base: `ENVIOECOM_BASE_URL` (default `https://envioecom.com.br/api/v1/whitelabel`)
 - Auth: `ENVIOECOM_TOKEN` **ou** `ENVIOECOM_EMAIL` + `ENVIOECOM_PASSWORD` (+ `ENVIOECOM_TOKEN_NEVER_EXPIRES`) = conta **São Paulo (servidor)** (`id=env`)
 - Contas extras: `site_settings.envioecom_accounts` (JSON); CRUD `GET/POST/PUT/DELETE /api/admin/envioecom/accounts` (listar: qualquer admin; gravar/apagar: primary). Token/senha **não** voltam no GET (só hint)
-- Admin Configurações: painel **APIs EnvioEcom** no **topo** (depois de Gastos por data) para adicionar nome + token ou e-mail/senha + CEP origem
+- Admin Configurações: painel **APIs EnvioEcom** no **topo** da aba para adicionar nome + token ou e-mail/senha + CEP origem
 - Clique **EnvioEcom** / **Vincular EE**: se houver 2+ contas configuradas, modal escolhe a API; 1 conta segue direto. Create/sync grava `orders.envioecom_account_id` (no split, a conta fica no pacote). Sync/etiqueta/cancel/soft-sync tentam a conta do pedido/pacote e, se não achar, as demais. **Desvincular** é só local (não chama a API EnvioEcom).
 - **Split:** `GET/PUT /api/admin/orders/:id/shipments` (qty × pool). Create/labels/sync/cancel/unlink exigem `packageId` se houver 2+ pacotes (`NEED_PACKAGE_ID`). `orderId` EE do pacote: `{n}-{id8}-{pool}` (sufixo após cancelar **ou** desvincular). Webhook acha o pacote por barcode / ID / `external_order_number` — se o mesmo barcode estiver no pai e no filho de reenvio, **prefere o filho**; pacote já desvinculado (sem ID/barcode) **não** reatacha pelo orderId antigo. `external_order_number` só com dígitos **não** atualiza o pedido daquele número se ele não tiver vínculo EE (evita o reenvio gravar no original). Pai com filho: Sync/soft-sync **não** usa lista CPF/CEP/nome para achar envio. Se o barcode do filho já estiver no pai, `applyShipmentStatusToOrder` **desvincula o pai** (local) e não cancela na EnvioEcom. Listagens admin/`/me/orders` devolvem `envioecomPackages` (itens + histórico). `GET /me/orders` também manda `hasReshipmentChild`. No card do cliente a timeline usa o histórico **do pacote**, não o rollup do pedido. Pedido já `enviado` com pacote sem EE: a conta junta os itens no rastreio existente, **exceto** original com filho de reenvio (aí esconde o EE). Tracking-board admin ainda é 1 card por pedido (rollup)
 - Client: ALS por conta (`runWithEnvioEcomAuth`) em `lib/envioecom.ts`; contas em `lib/envioecom-accounts.ts`

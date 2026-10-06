@@ -764,6 +764,7 @@ import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
 import { AdminDrePanel } from "@/components/AdminDrePanel";
 import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchasesPanel";
+import { AdminMarketingExpensesPanel } from "@/components/AdminMarketingExpensesPanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { MotoboySlotHoursCard } from "@/components/MotoboySlotHoursCard";
@@ -1603,15 +1604,6 @@ export default function Admin() {
   const inventoryMvDatesRef = useRef({ from: todayStr(), to: todayStr() });
   const [inventoryMvDateFrom, setInventoryMvDateFrom] = useState(inventoryMvDatesRef.current.from);
   const [inventoryMvDateTo, setInventoryMvDateTo] = useState(inventoryMvDatesRef.current.to);
-  const [marketingExpenseForm, setMarketingExpenseForm] = useState({
-    expenseStartDate: todayStr(),
-    expenseEndDate: todayStr(),
-    channel: "Facebook",
-    amount: "",
-    note: "",
-  });
-  const [marketingExpensesSubmitting, setMarketingExpensesSubmitting] = useState(false);
-  const [marketingExpenseDeletingId, setMarketingExpenseDeletingId] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [expensesSubmitting, setExpensesSubmitting] = useState(false);
@@ -1989,79 +1981,6 @@ export default function Admin() {
     } catch {}
     setFinancialSummaryLoading(false);
   }, [statsDateFrom, statsDateTo, statsSeller]);
-  const handleAddMarketingExpense = React.useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const amount = Number(String(marketingExpenseForm.amount).replace(",", "."));
-    if (!marketingExpenseForm.expenseStartDate || !marketingExpenseForm.expenseEndDate || !marketingExpenseForm.channel.trim() || !Number.isFinite(amount) || amount <= 0) {
-      toast.error("Preencha data inicial, final, canal e valor do gasto.");
-      return;
-    }
-
-    if (marketingExpenseForm.expenseEndDate < marketingExpenseForm.expenseStartDate) {
-      toast.error("A data final deve ser igual ou posterior à data inicial.");
-      return;
-    }
-
-    setMarketingExpensesSubmitting(true);
-    try {
-      const res = await fetch(`${BASE}/api/admin/marketing-expenses`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          expenseStartDate: marketingExpenseForm.expenseStartDate,
-          expenseEndDate: marketingExpenseForm.expenseEndDate,
-          channel: marketingExpenseForm.channel.trim(),
-          amount,
-          note: marketingExpenseForm.note.trim(),
-        }),
-      });
-
-      const data = await res.json().catch(() => null) as { message?: string } | null;
-      if (!res.ok) {
-        toast.error(data?.message || "Erro ao registrar gasto.");
-        return;
-      }
-
-      setMarketingExpenseForm((current) => ({
-        ...current,
-        amount: "",
-        note: "",
-      }));
-      toast.success("Gasto adicionado com sucesso.");
-      fetchFinancialSummary();
-    } catch {
-      toast.error("Erro ao registrar gasto.");
-    } finally {
-      setMarketingExpensesSubmitting(false);
-    }
-  }, [BASE, fetchFinancialSummary, marketingExpenseForm]);
-
-  const handleDeleteMarketingExpense = React.useCallback(async (expenseId: string) => {
-    if (!expenseId) return;
-    if (!window.confirm("Remover este gasto de marketing?")) return;
-
-    setMarketingExpenseDeletingId(expenseId);
-    try {
-      const res = await fetch(`${BASE}/api/admin/marketing-expenses/${expenseId}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-
-      const data = await res.json().catch(() => null) as { message?: string } | null;
-      if (!res.ok) {
-        toast.error(data?.message || "Erro ao remover gasto.");
-        return;
-      }
-
-      toast.success("Gasto removido com sucesso.");
-      fetchFinancialSummary();
-    } catch {
-      toast.error("Erro ao remover gasto.");
-    } finally {
-      setMarketingExpenseDeletingId(null);
-    }
-  }, [BASE, fetchFinancialSummary]);
 
   const fetchExpenses = useCallback(async () => {
     setExpensesLoading(true);
@@ -5978,6 +5897,19 @@ export default function Admin() {
                 </div>
               )}
             </div>
+
+            {isPrimary ? (
+              <AdminMarketingExpensesPanel
+                dateFrom={statsDateFrom}
+                dateTo={statsDateTo}
+                seller={statsSeller}
+                periodNet={financialSummary && Number.isFinite(Number(financialSummary.realNetRevenue)) ? Number(financialSummary.realNetRevenue) : null}
+                periodMarketing={financialSummary && Number.isFinite(Number(financialSummary.totalMarketingExpenses)) ? Number(financialSummary.totalMarketingExpenses) : null}
+                periodLoading={financialSummaryLoading}
+                onChanged={fetchFinancialSummary}
+                onUnauthorized={handleUnauthorized}
+              />
+            ) : null}
           </div>
         ) : tab === "coupons" ? (
           <CouponsPanel
@@ -8057,119 +7989,6 @@ export default function Admin() {
           />
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
-            <div className="rounded-xl border bg-gradient-to-br from-rose-50 to-orange-50/60 border-rose-200 p-5">
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
-                <div>
-                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide">Gastos por data</p>
-                  <p className="text-sm text-rose-700/80">Cadastre novas despesas de marketing aqui. Os registros antigos ficam intactos.</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-rose-700/70 uppercase tracking-wide">Total no período</p>
-                  <p className="text-2xl font-bold text-rose-700">{formatCurrency(Number(financialSummary?.totalMarketingExpenses) || 0)}</p>
-                </div>
-              </div>
-
-              <form onSubmit={handleAddMarketingExpense} className="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4">
-                <input
-                  type="date"
-                  value={marketingExpenseForm.expenseStartDate}
-                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseStartDate: e.target.value }))}
-                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
-                />
-                <input
-                  type="date"
-                  value={marketingExpenseForm.expenseEndDate}
-                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, expenseEndDate: e.target.value }))}
-                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={marketingExpenseForm.channel}
-                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, channel: e.target.value }))}
-                  placeholder="Canal, ex: Facebook"
-                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={marketingExpenseForm.amount}
-                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, amount: e.target.value }))}
-                  placeholder="Valor"
-                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
-                />
-                <input
-                  type="text"
-                  value={marketingExpenseForm.note}
-                  onChange={(e) => setMarketingExpenseForm((current) => ({ ...current, note: e.target.value }))}
-                  placeholder="Observação opcional"
-                  className="h-11 px-3 rounded-xl border-2 border-border bg-white focus:border-primary outline-none text-sm"
-                />
-                <Button type="submit" disabled={marketingExpensesSubmitting} className="h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
-                  {marketingExpensesSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar gasto"}
-                </Button>
-              </form>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
-                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Resumo por canal</p>
-                  <div className="space-y-2">
-                    {(financialSummary?.marketingExpensesByChannel?.length || 0) > 0 ? (
-                      financialSummary!.marketingExpensesByChannel!.map((item) => (
-                        <div key={item.channel} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">
-                          <span className="text-sm font-medium text-rose-900">{item.channel}</span>
-                          <span className="text-sm font-semibold text-rose-700">{formatCurrency(Number(item.total) || 0)}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-rose-700/80">Nenhum gasto registrado no período selecionado.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-rose-200 bg-white/80 p-4">
-                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-3">Lançamentos recentes</p>
-                  <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                    {(financialSummary?.marketingExpenses?.length || 0) > 0 ? (
-                      financialSummary!.marketingExpenses!.map((item) => (
-                        <div key={item.id} className="rounded-lg border border-rose-100 bg-white px-3 py-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-rose-900">{item.channel}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatDateBR(item.expenseStartDate || item.expenseDate)} até {formatDateBR(item.expenseEndDate || item.expenseDate)}
-                              </p>
-                              {item.note ? <p className="text-xs text-rose-700/80 mt-1">{item.note}</p> : null}
-                            </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-8 px-2 border-rose-200 text-rose-700 hover:bg-rose-50"
-                                disabled={marketingExpenseDeletingId === item.id}
-                                onClick={() => handleDeleteMarketingExpense(item.id)}
-                              >
-                                {marketingExpenseDeletingId === item.id ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                )}
-                                <span className="ml-1">Remover</span>
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-rose-700/80">Sem lançamentos para mostrar.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <ConfiguracoesPanel
               settings={settings}
               loading={settingsLoading}

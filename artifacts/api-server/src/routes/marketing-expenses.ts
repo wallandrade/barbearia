@@ -156,6 +156,10 @@ async function createExpense(req: Parameters<typeof router.post>[1] extends (req
     const referenceReshipmentId = String(req.body?.referenceReshipmentId ?? req.body?.reshipmentId ?? "").trim() || null;
     const requestedSellerCode = normalizeSellerCode(req.body?.sellerCode);
     const channelRaw = String(req.body?.channel ?? "").trim();
+    if (expenseType === "marketing" && !channelRaw) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe o canal do gasto." });
+      return;
+    }
     const channel = channelRaw || defaultChannelForExpenseType(expenseType);
 
     if (!expenseStartDateRaw || !expenseEndDateRaw) {
@@ -267,12 +271,102 @@ async function deleteExpense(req: Parameters<typeof router.delete>[1] extends (r
   }
 }
 
+async function updateExpense(req: Parameters<typeof router.patch>[1] extends (req: infer R, _res: infer _S) => unknown ? R : never, res: Parameters<typeof router.patch>[1] extends (_req: infer _R, res: infer S) => unknown ? S : never) {
+  try {
+    const scope = resolveScope(req as never, res as never);
+    if (!scope) return;
+
+    const id = String(req.params.id || "").trim();
+    if (!id) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "ID inválido." });
+      return;
+    }
+
+    const expenseStartDateRaw = normalizeDateInput(req.body?.expenseStartDate ?? req.body?.expenseDate);
+    const expenseEndDateRaw = normalizeDateInput(req.body?.expenseEndDate ?? req.body?.expenseDate);
+    const amount = Number(req.body?.amount ?? 0);
+    const note = String(req.body?.note ?? "").trim();
+    const channel = String(req.body?.channel ?? "").trim();
+
+    if (!expenseStartDateRaw || !expenseEndDateRaw) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe a data inicial e final da despesa." });
+      return;
+    }
+    if (!channel) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe o canal do gasto." });
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe um valor válido." });
+      return;
+    }
+
+    const expenseStartDate = new Date(`${expenseStartDateRaw}T00:00:00-03:00`);
+    const expenseEndDate = new Date(`${expenseEndDateRaw}T23:59:59-03:00`);
+    if (Number.isNaN(expenseStartDate.getTime()) || Number.isNaN(expenseEndDate.getTime()) || expenseEndDate < expenseStartDate) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Período inválido." });
+      return;
+    }
+
+    const conditions = [eq(marketingExpensesTable.id, id)];
+    if (!scope.hasGlobalAccess) {
+      const sellerCode = normalizeSellerCode(scope.sellerCode);
+      if (!sellerCode) {
+        res.status(403).json({ error: "FORBIDDEN", message: "Usuário sem seller vinculado." });
+        return;
+      }
+      conditions.push(eq(marketingExpensesTable.sellerCode, sellerCode));
+    }
+
+    const existing = await db
+      .select()
+      .from(marketingExpensesTable)
+      .where(and(...conditions))
+      .limit(1);
+
+    if (existing.length === 0) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Despesa não encontrada." });
+      return;
+    }
+
+    const now = new Date();
+    await db
+      .update(marketingExpensesTable)
+      .set({
+        expenseDate: expenseStartDate,
+        expenseStartDate,
+        expenseEndDate,
+        channel,
+        amount: amount.toFixed(2),
+        note: note || null,
+        updatedAt: now,
+      })
+      .where(eq(marketingExpensesTable.id, id));
+
+    res.json(mapExpenseRow({
+      ...existing[0],
+      expenseDate: expenseStartDate,
+      expenseStartDate,
+      expenseEndDate,
+      channel,
+      amount: amount.toFixed(2),
+      note: note || null,
+      updatedAt: now,
+    }));
+  } catch (err) {
+    console.error("[Expenses] update error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar despesa." });
+  }
+}
+
 router.get("/admin/marketing-expenses", requireAdminAuth, listExpenses);
 router.post("/admin/marketing-expenses", requireAdminAuth, createExpense);
+router.patch("/admin/marketing-expenses/:id", requireAdminAuth, updateExpense);
 router.delete("/admin/marketing-expenses/:id", requireAdminAuth, deleteExpense);
 
 router.get("/admin/expenses", requireAdminAuth, listExpenses);
 router.post("/admin/expenses", requireAdminAuth, createExpense);
+router.patch("/admin/expenses/:id", requireAdminAuth, updateExpense);
 router.delete("/admin/expenses/:id", requireAdminAuth, deleteExpense);
 
 export default router;
