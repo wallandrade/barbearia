@@ -12,6 +12,8 @@ const FALLBACK_PRODUCTS: Product[] = [
   { slug: "adamax", name: "Adamax" },
   { slug: "aicar", name: "AICAR" },
   { slug: "aod-9604", name: "AOD-9604" },
+  { slug: "ara-290", name: "Ara-290" },
+  { slug: "bpc-157", name: "BPC-157" },
   { slug: "dsip", name: "DSIP" },
   { slug: "ghk-cu", name: "GHK-Cu" },
   { slug: "hgh-fragment-176-191", name: "HGH Fragment 176-191" },

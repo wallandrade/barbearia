@@ -1,3 +1,5 @@
+import { PEPTIDE_ATLAS_SHEETS, atlasSheetBody, type AtlasSheet } from "./peptide-atlas-sheets";
+
 export type PeptideChatEntry = {
   slug: string;
   name: string;
@@ -338,19 +340,32 @@ Pesquisa: TRIUMPH fase 2 NEJM 2023 (n=338); fase 2 T2DM; revisões 2024 do agoni
   },
 ];
 
+function allPeptideEntries(): PeptideChatEntry[] {
+  const known = new Set(PEPTIDE_CHAT_ENTRIES.map((entry) => entry.slug));
+  const extra = PEPTIDE_ATLAS_SHEETS
+    .filter((sheet) => !known.has(sheet.slug))
+    .map((sheet) => ({
+      slug: sheet.slug,
+      name: sheet.name,
+      aliases: sheet.aliases,
+      body: atlasSheetBody(sheet),
+    }));
+  return [...PEPTIDE_CHAT_ENTRIES, ...extra];
+}
+
 export function buildPeptideChatKnowledgeBlock(): string {
-  return PEPTIDE_CHAT_ENTRIES.map((entry) => {
+  return allPeptideEntries().map((entry) => {
     const aliases = entry.aliases.length ? `Apelidos: ${entry.aliases.join(", ")}` : "";
     return `### ${entry.name}\n${aliases}\n\n${entry.body}`.trim();
   }).join("\n\n---\n\n");
 }
 
 export function listPeptideChatNames(): string[] {
-  return PEPTIDE_CHAT_ENTRIES.map((entry) => entry.name);
+  return allPeptideEntries().map((entry) => entry.name);
 }
 
 export function listPeptideChatProducts(): Array<{ slug: string; name: string }> {
-  return PEPTIDE_CHAT_ENTRIES.map((entry) => ({ slug: entry.slug, name: entry.name }));
+  return allPeptideEntries().map((entry) => ({ slug: entry.slug, name: entry.name }));
 }
 
 export const PEPTIDE_GUIDE_TOPICS = [
@@ -544,7 +559,19 @@ export type PeptideSheetStat = {
 export type PeptideSheetTab = {
   id: string;
   label: string;
+  heading?: string;
   blocks: PeptideGuideBlock[];
+  prose?: string;
+  points?: string[];
+  periods?: Array<{ period: string; text: string }>;
+  facts?: Array<{ label: string; value: string }>;
+  rows?: Array<{ title: string; note?: string; value: string }>;
+  phases?: Array<{ phase: string; dose: string }>;
+  note?: string;
+  steps?: string[];
+  partners?: Array<{ name: string; status: string; note: string }>;
+  bundles?: Array<{ name: string; category: string; items: string[]; goal: string }>;
+  papers?: Array<{ title: string; meta: string; year: string; summary: string }>;
 };
 
 export type PeptideSheet = {
@@ -644,7 +671,32 @@ function sheetTabOf(line: string): (typeof SHEET_TABS)[number] | null {
   return SHEET_TABS.find((tab) => tab.pattern.test(line.trim())) ?? null;
 }
 
+function atlasToPeptideSheet(sheet: AtlasSheet): PeptideSheet {
+  const tabs: PeptideSheetTab[] = [
+    { id: "about", label: "O que é", heading: sheet.about.heading, blocks: [], prose: sheet.about.prose },
+    { id: "mechanism", label: "Mecanismo", heading: sheet.mechanism.heading, blocks: [], prose: sheet.mechanism.prose, points: sheet.mechanism.points },
+    { id: "benefits", label: "Benefícios", heading: sheet.benefits.heading, blocks: [], points: sheet.benefits.points },
+    { id: "timeline", label: "Linha do tempo", heading: sheet.timeline.heading, blocks: [], periods: sheet.timeline.periods },
+    { id: "dose", label: "Dosagem", heading: sheet.dose.heading, blocks: [], facts: sheet.dose.facts, rows: sheet.dose.indications.map((row) => ({ title: row.name, note: row.note, value: row.dose })), phases: sheet.dose.phases },
+    { id: "reconstitute", label: "Reconstituição", heading: sheet.reconstitution.heading, blocks: [], note: sheet.reconstitution.note, steps: sheet.reconstitution.steps },
+    { id: "effects", label: "Efeitos Colaterais", heading: sheet.effects.heading, blocks: [], points: sheet.effects.points },
+    { id: "stacks", label: "Sinergias & Stack", heading: sheet.stacks.heading, blocks: [], partners: sheet.stacks.partners, bundles: sheet.stacks.bundles },
+    { id: "research", label: "Pesquisa", heading: sheet.research.heading, blocks: [], papers: sheet.research.papers },
+  ];
+  return {
+    slug: sheet.slug,
+    name: sheet.name,
+    tagline: sheet.tagline,
+    aliases: sheet.aliases.join(", "),
+    stats: sheet.stats,
+    tabs,
+    disclaimer: DISCLAIMER,
+  };
+}
+
 export function getPeptideSheet(slug: string): PeptideSheet | null {
+  const atlas = PEPTIDE_ATLAS_SHEETS.find((sheet) => sheet.slug === slug);
+  if (atlas) return atlasToPeptideSheet(atlas);
   const entry = PEPTIDE_CHAT_ENTRIES.find((item) => item.slug === slug);
   if (!entry) return null;
   const lines = entry.body.split("\n");
@@ -699,7 +751,7 @@ export function getPeptideGuideSection(slug: string, topicId: string): {
   blocks: PeptideGuideBlock[];
   text: string;
 } | null {
-  const entry = PEPTIDE_CHAT_ENTRIES.find((item) => item.slug === slug);
+  const entry = allPeptideEntries().find((item) => item.slug === slug);
   const topic = PEPTIDE_GUIDE_TOPICS.find((item) => item.id === topicId);
   if (!entry || !topic) return null;
   const sections = splitGuideSections(entry.body);
@@ -732,7 +784,7 @@ function termsOf(entry: PeptideChatEntry): string[] {
 
 export function matchPeptideChatEntries(question: string): PeptideChatEntry[] {
   const q = ` ${fold(question)} `;
-  const scored = PEPTIDE_CHAT_ENTRIES.map((entry) => {
+  const scored = allPeptideEntries().map((entry) => {
     let score = 0;
     for (const term of termsOf(entry)) {
       if (q.includes(` ${term} `) || q.includes(term)) {

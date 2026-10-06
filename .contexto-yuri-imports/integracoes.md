@@ -6,6 +6,8 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-06 | Ficha completa do BPC-157 | `GET /api/chat/sheet/bpc-157` inclui stacks recomendados | Ara-290 igual |
+| 2026-10-06 | Ficha completa do card (`peptide-atlas-sheets.ts`) | `GET /api/chat/sheet/ara-290` devolve tabelas de dose, fases, sinergias e papers. A bolha recebe o mesmo texto em `GET /api/chat/guide` | As 12 fichas antigas iguais |
 | 2026-10-06 | `GET /api/chat/sheet/:slug` devolve a ficha inteira do card | Cabeçalho e abas saem do mesmo texto da biblioteca | `GET /api/chat/guide/:slug/:topic` e a bolha iguais |
 | 2026-10-06 | Gastos de marketing saíram do topo de Configuração | O painel **APIs EnvioEcom** fica no topo da aba | Contas, token e seletor iguais |
 | 2026-10-04 | Etiqueta Super Frete `released` sai de Pedidos para Enviar | O card usa a mesma saída da Etiqueta emitida: `released`, postado ou URL do PDF. Create/PDF/Sync não baixam estoque e não pedem senha | `released` não marca `enviado`. Dar baixa agora segue manual. Cópia 48h igual |

@@ -19,7 +19,23 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type SheetBlock = { title: string; items: string[] };
 type SheetStat = { id: string; label: string; value: string; pill?: "amber" | "green" };
-type SheetTab = { id: string; label: string; blocks: SheetBlock[] };
+type SheetTab = {
+  id: string;
+  label: string;
+  heading?: string;
+  blocks: SheetBlock[];
+  prose?: string;
+  points?: string[];
+  periods?: Array<{ period: string; text: string }>;
+  facts?: Array<{ label: string; value: string }>;
+  rows?: Array<{ title: string; note?: string; value: string }>;
+  phases?: Array<{ phase: string; dose: string }>;
+  note?: string;
+  steps?: string[];
+  partners?: Array<{ name: string; status: string; note: string }>;
+  bundles?: Array<{ name: string; category: string; items: string[]; goal: string }>;
+  papers?: Array<{ title: string; meta: string; year: string; summary: string }>;
+};
 type Sheet = {
   name: string;
   tagline: string;
@@ -78,7 +94,192 @@ function stackBadge(item: string): { label: string; className: string } | null {
   return null;
 }
 
+const STATUS_PILL: Record<string, string> = {
+  Sinérgico: "bg-emerald-100 text-emerald-800",
+  Compatível: "bg-sky-100 text-sky-800",
+  Monitorar: "bg-amber-100 text-amber-800",
+  Evitar: "bg-rose-100 text-rose-800",
+};
+
+function RichSheetBody({ tab }: { tab: SheetTab }) {
+  if (tab.papers?.length) {
+    return (
+      <div className="space-y-3">
+        {tab.papers.map((paper) => (
+          <article key={paper.title} className="rounded-xl bg-white px-3 py-3">
+            <h4 className="text-sm font-semibold leading-6 text-foreground">{paper.title}</h4>
+            <p className="mt-1 text-xs text-muted-foreground">{paper.meta} · {paper.year}</p>
+            <p className="mt-2 text-sm leading-6 text-foreground">{paper.summary}</p>
+          </article>
+        ))}
+      </div>
+    );
+  }
+
+  if (tab.partners?.length || tab.bundles?.length) {
+    return (
+      <div className="space-y-5">
+        {tab.partners?.length ? (
+          <ul className="space-y-2">
+            {tab.partners.map((partner) => (
+              <li key={partner.name} className="rounded-xl bg-white px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{partner.name}</p>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_PILL[partner.status] ?? "bg-slate-100 text-slate-700"}`}>
+                    {partner.status}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm leading-6 text-foreground">{partner.note}</p>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {tab.bundles?.length ? (
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">Stacks recomendados</h4>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {tab.bundles.map((bundle) => (
+                <article key={bundle.name} className="rounded-xl bg-white px-3 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">{bundle.category}</p>
+                  <h5 className="mt-1 text-sm font-semibold text-foreground">{bundle.name}</h5>
+                  <p className="mt-2 text-sm text-foreground">{bundle.items.join(" · ")}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{bundle.goal}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (tab.periods?.length) {
+    return (
+      <ol className="space-y-3">
+        {tab.periods.map((item) => (
+          <li key={item.period} className="flex gap-3">
+            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">{item.period}</p>
+              <p className="text-sm leading-6 text-foreground">{item.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  if (tab.facts?.length || tab.rows?.length || tab.phases?.length) {
+    return (
+      <div className="space-y-5">
+        {tab.facts?.length ? (
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {tab.facts.map((fact) => (
+              <div key={fact.label} className="rounded-xl bg-white px-3 py-2.5">
+                <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{fact.label}</dt>
+                <dd className="mt-1 text-sm font-medium text-foreground">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+        {tab.rows?.length ? (
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">Dosagem por indicação</h4>
+            <div className="mt-2 space-y-2">
+              {tab.rows.map((row) => (
+                <article key={row.title} className="rounded-xl bg-white px-3 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">{row.title}</p>
+                    <p className="text-sm font-semibold text-sky-800">{row.value}</p>
+                  </div>
+                  {row.note ? <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{row.note}</p> : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {tab.phases?.length ? (
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">Fases do protocolo</h4>
+            <ol className="mt-2 space-y-2">
+              {tab.phases.map((phase, index) => (
+                <li key={phase.phase} className="flex gap-3 rounded-xl bg-white px-3 py-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-foreground">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{phase.phase}</p>
+                    <p className="text-sm leading-6 text-foreground">{phase.dose}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (tab.steps?.length) {
+    return (
+      <div>
+        {tab.note ? <p className="text-sm leading-6 text-muted-foreground">{tab.note}</p> : null}
+        <ol className={`${tab.note ? "mt-3" : ""} space-y-2`}>
+          {tab.steps.map((step, index) => (
+            <li key={step} className="flex gap-3">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-semibold text-muted-foreground">
+                {index + 1}
+              </span>
+              <p className="text-sm leading-6 text-foreground">{step}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
+  if (tab.id === "effects" && tab.points?.length) {
+    return (
+      <ul className="space-y-2">
+        {tab.points.map((item) => (
+          <li key={item} className="flex gap-3 rounded-xl bg-white px-3 py-2.5">
+            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500" />
+            <p className="text-sm leading-6 text-foreground">{item}</p>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (tab.prose || tab.points?.length) {
+    return (
+      <div className="space-y-4">
+        {tab.prose?.split(/\n\n+/).map((paragraph) => (
+          <p key={paragraph.slice(0, 48)} className="text-sm leading-6 text-foreground">{paragraph}</p>
+        ))}
+        {tab.points?.length ? (
+          <ol className="space-y-2">
+            {tab.points.map((point, index) => (
+              <li key={point} className="flex gap-3 rounded-xl bg-white px-3 py-2.5">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-foreground">
+                  {index + 1}
+                </span>
+                <p className="text-sm leading-6 text-foreground">{point}</p>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function SheetBody({ tab }: { tab: SheetTab }) {
+  const rich = RichSheetBody({ tab });
+  if (rich) return rich;
+
   if (PROSE_TABS.has(tab.id)) {
     return (
       <div className="space-y-4">
@@ -301,7 +502,7 @@ export default function PeptideCardSheet({
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${meta.bubble}`}>
                     <Icon className="h-4 w-4" />
                   </span>
-                  <h3 className="text-base font-semibold text-foreground">{active.label} {sheet.name}</h3>
+                  <h3 className="text-base font-semibold text-foreground">{active.heading || `${active.label} ${sheet.name}`}</h3>
                 </div>
                 <div className="mt-4">
                   <SheetBody tab={active} />

@@ -42,6 +42,8 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-06 | Ficha completa do BPC-157 no card | Mesmo formato do Ara-290, com The Wolverine e Gut Restore em stacks recomendados | Ara-290 e as 12 fichas antigas iguais |
+| 2026-10-06 | Ficha completa do Ara-290 no card | Cabeçalho, mecanismo, benefícios, linha do tempo, dose por indicação, fases, reconstituição, efeitos, sinergias e papers. As próximas fichas entram no mesmo formato em `peptide-atlas-sheets.ts` | Os 12 textos antigos iguais |
 | 2026-10-06 | Ficha do card fica colorida, com ícone e texto em card | Aba aberta é pílula. O que é, mecanismo, benefícios e pesquisa viram parágrafo. Linha do tempo, dose, efeitos e sinergias ficam em linhas com cor | Texto da biblioteca igual |
 | 2026-10-06 | Card com ficha abre a página do composto | Os 12 da biblioteca (5-Amino-1MQ, AOD-9604, DSIP, GHK-Cu, HGH Fragment 176-191, SLU-PP-332, Tesamorelin, MOTS-C, Adamax, AICAR, Tirzepatida, Retatrutide) abrem frase, apelidos, números e abas. `GET /api/chat/sheet/:slug`. Os outros 58 cards continuam só nome e frase | Texto igual ao da bolha; sem dose inventada |
 | 2026-10-06 | Assinatura do menu Protocolos: R$ 19,90 no PIX da CN Pay | `POST /api/me/subscription/pix` cobra 19,90 fixo. O webhook marca pago e libera 30 dias. O front só lê o status no banco | Pedido da loja, rifa e cobrança avulsa iguais |
@@ -402,7 +404,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 - Admin: aba **Biblioteca** (após Suporte) com o mesmo painel; visível para **todo** admin (`isPrimary` e secundário). Sem bolha em `/admin`.
 - UX: **sem chat aberto**. Escolhe composto e depois assunto (O que é, Dose e ciclo, Reconstituição, Efeitos e cuidados, **Pode juntar com**, Pesquisa). Resposta em **blocos** (título + bullets), aviso médico no topo. Texto vem da ficha, sem OpenAI nesse fluxo.
 - API: `GET /api/chat/status` (produtos+tópicos), `GET /api/chat/guide/:slug/:topic`, `GET /api/chat/sheet/:slug` (página do card) — `routes/peptide-chat.ts` + `lib/peptide-chat-knowledge.ts`.
-- Fichas: 5-Amino-1MQ, AOD-9604, HGH Fragment 176-191, SLU-PP-332, DSIP, GHK-Cu, Tesamorelin, MOTS-C, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
+- Fichas: 5-Amino-1MQ, AOD-9604, HGH Fragment 176-191, SLU-PP-332, DSIP, GHK-Cu, Tesamorelin, MOTS-C, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. **Ara-290** e **BPC-157** são as fichas completas do card (`peptide-atlas-sheets.ts`: dose por indicação, fases, sinergias e papers). As próximas entram nesse arquivo, no mesmo formato. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
 - `POST /api/chat/ask` (OpenAI opcional) permanece no backend, mas o widget **não** usa.
 - Fetch direto no FE (não client Orval).
 
