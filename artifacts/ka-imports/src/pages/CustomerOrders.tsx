@@ -34,6 +34,8 @@ import {
 import { superfreteServiceName } from "@/lib/superfrete-status";
 import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
 import PeptideToolsMenu from "@/components/PeptideToolsMenu";
+import PeptideIndividualsGrid from "@/components/PeptideIndividualsGrid";
+import { PEPTIDE_TOOL_ITEMS } from "@/lib/peptide-tools-menu";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
 import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
@@ -265,6 +267,7 @@ export default function CustomerOrders() {
   const [profileName, setProfileName] = useState("");
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [activeSection, setActiveSection] = useState<AccountSection>("orders");
+  const [peptideTool, setPeptideTool] = useState<string | null>(null);
   const [affiliateLoading, setAffiliateLoading] = useState(true);
   const [affiliateData, setAffiliateData] = useState<AffiliateDashboardResponse | null>(null);
   const [storeCredit, setStoreCredit] = useState(0);
@@ -578,7 +581,7 @@ export default function CustomerOrders() {
               <div className="flex lg:flex-col gap-2 overflow-auto pb-1 lg:pb-0">
                 <button
                   type="button"
-                  onClick={() => setActiveSection("orders")}
+                  onClick={() => { setActiveSection("orders"); setPeptideTool(null); }}
                   className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "orders" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Package className="w-4 h-4" />
@@ -591,7 +594,7 @@ export default function CustomerOrders() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveSection("affiliate")}
+                  onClick={() => { setActiveSection("affiliate"); setPeptideTool(null); }}
                   className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "affiliate" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Users className="w-4 h-4" />
@@ -599,7 +602,7 @@ export default function CustomerOrders() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveSection("raffle")}
+                  onClick={() => { setActiveSection("raffle"); setPeptideTool(null); }}
                   className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "raffle" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Ticket className="w-4 h-4" />
@@ -607,11 +610,21 @@ export default function CustomerOrders() {
                 </button>
               </div>
             </aside>
-            <PeptideToolsMenu />
+            <PeptideToolsMenu selectedId={peptideTool} onOpen={setPeptideTool} />
             </div>
 
             <section>
-              {activeSection === "orders" && (
+              {peptideTool === "individuals" ? (
+                <PeptideIndividualsGrid />
+              ) : peptideTool ? (
+                <div className="rounded-3xl border border-dashed border-border p-8 text-center">
+                  <h2 className="text-lg font-semibold text-foreground">
+                    {PEPTIDE_TOOL_ITEMS.find((item) => item.id === peptideTool)?.label ?? "Protocolos"}
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">Os cards desta área ainda não foram montados.</p>
+                </div>
+              ) : null}
+              {!peptideTool && activeSection === "orders" && (
                 <>
                   <h2 className="font-semibold text-foreground mb-4">Seus pedidos</h2>
                   {unreadStoreObsOrders.length > 0 && (
@@ -1224,7 +1237,7 @@ export default function CustomerOrders() {
                 </>
               )}
 
-              {activeSection === "affiliate" && (
+              {!peptideTool && activeSection === "affiliate" && (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-border p-5 bg-slate-50/60">
                     <h2 className="text-lg font-semibold text-foreground">Programa de indicações</h2>
@@ -1297,7 +1310,7 @@ export default function CustomerOrders() {
                 </div>
               )}
 
-              {activeSection === "raffle" && (
+              {!peptideTool && activeSection === "raffle" && (
                 <div className="border border-dashed border-border rounded-2xl p-8 text-center">
                   <Gift className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
                   <h2 className="text-lg font-semibold text-foreground">Rifa</h2>

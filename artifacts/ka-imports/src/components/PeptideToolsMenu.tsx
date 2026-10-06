@@ -100,7 +100,13 @@ function MenuButton({
   );
 }
 
-export default function PeptideToolsMenu() {
+export default function PeptideToolsMenu({
+  selectedId = null,
+  onOpen,
+}: {
+  selectedId?: string | null;
+  onOpen?: (id: string) => void;
+}) {
   const [activeId, setActiveId] = useState(PEPTIDE_TOOL_ITEMS[0]?.id ?? "individuals");
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -164,6 +170,7 @@ export default function PeptideToolsMenu() {
       return;
     }
     setActiveId(id);
+    onOpen?.(id);
   }
 
   async function generatePix() {
@@ -216,12 +223,12 @@ export default function PeptideToolsMenu() {
       <div className="w-full max-w-sm rounded-3xl bg-[#0c1016] p-3 shadow-sm">
         <nav className="space-y-0.5" aria-label="Protocolos e ferramentas">
           {mainItems.map((item) => (
-            <MenuButton key={item.id} item={item} active={item.id === activeId} onPick={onPick} />
+            <MenuButton key={item.id} item={item} active={item.id === (selectedId ?? activeId)} onPick={onPick} />
           ))}
           <p className="px-3 pb-1 pt-5 text-[11px] font-semibold tracking-[0.16em] text-[#6b7280]">FERRAMENTAS</p>
           <div className="mx-3 mb-2 border-t border-white/10" />
           {toolItems.map((item) => (
-            <MenuButton key={item.id} item={item} active={item.id === activeId} onPick={onPick} />
+            <MenuButton key={item.id} item={item} active={item.id === (selectedId ?? activeId)} onPick={onPick} />
           ))}
         </nav>
         <div className="px-3 pb-1 pt-4">
