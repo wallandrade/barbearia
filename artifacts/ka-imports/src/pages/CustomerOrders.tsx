@@ -575,9 +575,11 @@ export default function CustomerOrders() {
             </Button>
           </div>
 
-          <aside className="mb-4 border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:gap-6">
+            <div className="space-y-4">
+            <aside className="border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
               <p className="text-xs uppercase tracking-wide text-muted-foreground px-2 pb-2">Menu da conta</p>
-              <div className="flex gap-2 overflow-auto pb-1">
+              <div className="flex flex-col gap-2">
                 <button
                   type="button"
                   onClick={() => { setActiveSection("orders"); setPeptideTool(null); setPeptideMenuOpen(false); }}
@@ -617,9 +619,9 @@ export default function CustomerOrders() {
                 </button>
               </div>
             </aside>
-          <div className={`grid gap-4 ${peptideMenuOpen ? "grid-cols-[minmax(10.5rem,13.5rem)_minmax(0,1fr)]" : "grid-cols-1"} lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:gap-6`}>
             <div className={peptideMenuOpen ? "min-w-0" : "hidden lg:block"}>
             <PeptideToolsMenu selectedId={peptideTool} onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); }} />
+            </div>
             </div>
 
             <section className="min-w-0">
