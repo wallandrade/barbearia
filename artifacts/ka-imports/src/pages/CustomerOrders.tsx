@@ -32,7 +32,7 @@ import {
   type TrackingInfo,
 } from "@/lib/customer-order-view";
 import { superfreteServiceName } from "@/lib/superfrete-status";
-import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
+import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell, FlaskConical } from "lucide-react";
 import PeptideToolsMenu from "@/components/PeptideToolsMenu";
 import PeptideIndividualsGrid from "@/components/PeptideIndividualsGrid";
 import { PEPTIDE_TOOL_ITEMS } from "@/lib/peptide-tools-menu";
@@ -268,6 +268,7 @@ export default function CustomerOrders() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [activeSection, setActiveSection] = useState<AccountSection>("orders");
   const [peptideTool, setPeptideTool] = useState<string | null>(null);
+  const [peptideMenuOpen, setPeptideMenuOpen] = useState(false);
   const [affiliateLoading, setAffiliateLoading] = useState(true);
   const [affiliateData, setAffiliateData] = useState<AffiliateDashboardResponse | null>(null);
   const [storeCredit, setStoreCredit] = useState(0);
@@ -574,14 +575,12 @@ export default function CustomerOrders() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(16rem,20rem)_1fr] gap-6">
-            <div className="space-y-4">
-            <aside className="border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
+          <aside className="mb-4 border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
               <p className="text-xs uppercase tracking-wide text-muted-foreground px-2 pb-2">Menu da conta</p>
-              <div className="flex lg:flex-col gap-2 overflow-auto pb-1 lg:pb-0">
+              <div className="flex gap-2 overflow-auto pb-1">
                 <button
                   type="button"
-                  onClick={() => { setActiveSection("orders"); setPeptideTool(null); }}
+                  onClick={() => { setActiveSection("orders"); setPeptideTool(null); setPeptideMenuOpen(false); }}
                   className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "orders" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Package className="w-4 h-4" />
@@ -594,7 +593,7 @@ export default function CustomerOrders() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setActiveSection("affiliate"); setPeptideTool(null); }}
+                  onClick={() => { setActiveSection("affiliate"); setPeptideTool(null); setPeptideMenuOpen(false); }}
                   className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "affiliate" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Users className="w-4 h-4" />
@@ -602,18 +601,28 @@ export default function CustomerOrders() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setActiveSection("raffle"); setPeptideTool(null); }}
+                  onClick={() => { setActiveSection("raffle"); setPeptideTool(null); setPeptideMenuOpen(false); }}
                   className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "raffle" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Ticket className="w-4 h-4" />
                   Rifa
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setPeptideMenuOpen((open) => !open)}
+                  className={`flex items-center gap-2 min-w-fit lg:hidden px-3 py-2 rounded-xl text-sm font-medium transition-colors ${peptideMenuOpen ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
+                >
+                  <FlaskConical className="w-4 h-4" />
+                  Peptídeos
+                </button>
               </div>
             </aside>
-            <PeptideToolsMenu selectedId={peptideTool} onOpen={setPeptideTool} />
+          <div className={`grid gap-4 ${peptideMenuOpen ? "grid-cols-[minmax(10.5rem,13.5rem)_minmax(0,1fr)]" : "grid-cols-1"} lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:gap-6`}>
+            <div className={peptideMenuOpen ? "min-w-0" : "hidden lg:block"}>
+            <PeptideToolsMenu selectedId={peptideTool} onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); }} />
             </div>
 
-            <section>
+            <section className="min-w-0">
               {peptideTool === "individuals" ? (
                 <PeptideIndividualsGrid />
               ) : peptideTool ? (

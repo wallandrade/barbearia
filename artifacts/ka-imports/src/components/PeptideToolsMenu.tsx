@@ -90,8 +90,8 @@ function MenuButton({
     <button
       type="button"
       onClick={() => onPick(item.id)}
-      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
-        active ? "bg-[#1a2332] text-[#38bdf8]" : "text-[#a3aab8] hover:bg-white/5"
+      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
+        active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"
       }`}
     >
       <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -107,7 +107,6 @@ export default function PeptideToolsMenu({
   selectedId?: string | null;
   onOpen?: (id: string) => void;
 }) {
-  const [activeId, setActiveId] = useState(PEPTIDE_TOOL_ITEMS[0]?.id ?? "individuals");
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [subscribeOpen, setSubscribeOpen] = useState(false);
@@ -169,7 +168,6 @@ export default function PeptideToolsMenu({
       setSubscribeOpen(true);
       return;
     }
-    setActiveId(id);
     onOpen?.(id);
   }
 
@@ -220,31 +218,31 @@ export default function PeptideToolsMenu({
 
   return (
     <div className="space-y-4">
-      <div className="w-full max-w-sm rounded-3xl bg-[#0c1016] p-3 shadow-sm">
+      <div className="w-full rounded-2xl border border-border bg-slate-50/60 p-3">
         <nav className="space-y-0.5" aria-label="Protocolos e ferramentas">
           {mainItems.map((item) => (
-            <MenuButton key={item.id} item={item} active={item.id === (selectedId ?? activeId)} onPick={onPick} />
+            <MenuButton key={item.id} item={item} active={item.id === selectedId} onPick={onPick} />
           ))}
-          <p className="px-3 pb-1 pt-5 text-[11px] font-semibold tracking-[0.16em] text-[#6b7280]">FERRAMENTAS</p>
-          <div className="mx-3 mb-2 border-t border-white/10" />
+          <p className="px-3 pb-1 pt-4 text-[11px] font-semibold tracking-[0.16em] text-muted-foreground">FERRAMENTAS</p>
+          <div className="mx-3 mb-2 border-t border-border" />
           {toolItems.map((item) => (
-            <MenuButton key={item.id} item={item} active={item.id === (selectedId ?? activeId)} onPick={onPick} />
+            <MenuButton key={item.id} item={item} active={item.id === selectedId} onPick={onPick} />
           ))}
         </nav>
         <div className="px-3 pb-1 pt-4">
           {subscription.active ? (
-            <p className="text-xs text-[#6b7280]">Assinatura ativa até {activeUntil}.</p>
+            <p className="text-xs text-muted-foreground">Assinatura ativa até {activeUntil}.</p>
           ) : (
             <button
               type="button"
               onClick={() => setSubscribeOpen(true)}
-              className="text-left text-xs font-medium text-[#38bdf8] hover:underline"
+              className="text-left text-xs font-medium text-primary hover:underline"
             >
               Assinar por {priceLabel}/mês
             </button>
           )}
           {testOpen && !subscription.active && (
-            <p className="mt-2 text-xs text-[#6b7280]">
+            <p className="mt-2 text-xs text-muted-foreground">
               Teste liberado por mais {formatTestLeft(remainingMs)}. Depois o clique pede a assinatura.
             </p>
           )}
