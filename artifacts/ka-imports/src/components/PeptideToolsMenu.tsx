@@ -152,11 +152,9 @@ export default function PeptideToolsMenu() {
   }, [subscribeOpen, subscription.pending?.transactionId, subscription.active]);
 
   const testOpen = startedAt != null && peptideMenuClickOpensTool(startedAt, now, false);
-  const unlocked = startedAt != null && peptideMenuClickOpensTool(startedAt, now, subscription.active);
   const remainingMs = startedAt == null ? 0 : peptideMenuRemainingMs(startedAt, now);
   const mainItems = PEPTIDE_TOOL_ITEMS.filter((item) => item.group === "main");
   const toolItems = PEPTIDE_TOOL_ITEMS.filter((item) => item.group === "tools");
-  const activeItem = PEPTIDE_TOOL_ITEMS.find((item) => item.id === activeId) ?? mainItems[0];
   const priceLabel = formatCurrency(subscription.amount || 19.9);
 
   function onPick(id: string) {
@@ -245,17 +243,6 @@ export default function PeptideToolsMenu() {
           )}
         </div>
       </div>
-
-      {unlocked && activeItem && (
-        <div className="rounded-2xl border border-border bg-white p-5">
-          <h2 className="text-lg font-semibold text-foreground">{activeItem.label}</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {subscription.active
-              ? "Sua assinatura está ativa. O conteúdo desta área entra com os benefícios do plano."
-              : "O clique está liberado neste teste. O conteúdo desta área entra com a assinatura mensal."}
-          </p>
-        </div>
-      )}
 
       <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
         <DialogContent className="sm:max-w-md">

@@ -32,7 +32,7 @@ import {
   type TrackingInfo,
 } from "@/lib/customer-order-view";
 import { superfreteServiceName } from "@/lib/superfrete-status";
-import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell, FlaskConical } from "lucide-react";
+import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell } from "lucide-react";
 import PeptideToolsMenu from "@/components/PeptideToolsMenu";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
@@ -40,7 +40,7 @@ import { OrderVariantChoices } from "@/components/order/OrderVariantChoices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type AccountSection = "orders" | "affiliate" | "raffle" | "protocols";
+type AccountSection = "orders" | "affiliate" | "raffle";
 
 type AffiliateDashboardResponse = {
   summary: {
@@ -571,7 +571,8 @@ export default function CustomerOrders() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(16rem,20rem)_1fr] gap-6">
+            <div className="space-y-4">
             <aside className="border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
               <p className="text-xs uppercase tracking-wide text-muted-foreground px-2 pb-2">Menu da conta</p>
               <div className="flex lg:flex-col gap-2 overflow-auto pb-1 lg:pb-0">
@@ -604,16 +605,10 @@ export default function CustomerOrders() {
                   <Ticket className="w-4 h-4" />
                   Rifa
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSection("protocols")}
-                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "protocols" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
-                >
-                  <FlaskConical className="w-4 h-4" />
-                  Protocolos
-                </button>
               </div>
             </aside>
+            <PeptideToolsMenu />
+            </div>
 
             <section>
               {activeSection === "orders" && (
@@ -1309,8 +1304,6 @@ export default function CustomerOrders() {
                   <p className="text-sm text-muted-foreground mt-2">Em breve esta aba vai mostrar seus números, sorteios e resultados.</p>
                 </div>
               )}
-
-              {activeSection === "protocols" && <PeptideToolsMenu />}
             </section>
           </div>
         </div>
