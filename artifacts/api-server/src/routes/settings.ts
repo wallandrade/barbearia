@@ -16,6 +16,16 @@ import { MOTOBOY_SLOT_HOURS_KEY, motoboySlotHoursSaveError } from "../lib/motobo
 
 const router: IRouter = Router();
 
+function normalizeStoreThemeColor(raw: unknown): string | null {
+  const value = String(raw ?? "").trim();
+  const full = /^#?([0-9a-fA-F]{6})$/.exec(value);
+  if (full) return `#${full[1].toLowerCase()}`;
+  const short = /^#?([0-9a-fA-F]{3})$/.exec(value);
+  if (!short) return null;
+  const [r, g, b] = short[1].split("");
+  return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+}
+
 const PUBLIC_KEYS  = [
   "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile", "site_name", "site_protected", "payment_protected",
   "logo_scale_pct",
@@ -34,6 +44,7 @@ const PUBLIC_KEYS  = [
   "checkout_insurance_reduced_label", "checkout_insurance_reduced_description",
   "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text",
   "store_theme_preset",
+  "store_theme_color",
 ];
 const ALLOWED_KEYS = [
   ...PUBLIC_KEYS,
@@ -129,10 +140,19 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
         return;
       }
     }
-    if (!value || (key === "store_theme_preset" && String(value).trim() === "default")) {
+    let themeColor: string | null = null;
+    if (key === "store_theme_color" && String(value ?? "").trim()) {
+      themeColor = normalizeStoreThemeColor(value);
+      if (!themeColor) {
+        res.status(400).json({ error: "INVALID_VALUE", message: "Informe uma cor em hexadecimal, como #22c55e." });
+        return;
+      }
+    }
+    const blankThemeColor = key === "store_theme_color" && !String(value ?? "").trim();
+    if (!value || blankThemeColor || (key === "store_theme_preset" && String(value).trim() === "default")) {
       await db.delete(siteSettingsTable).where(eq(siteSettingsTable.key, key));
     } else {
-      let storedValue = value;
+      let storedValue = themeColor ?? value;
       if (key === "logo_scale_pct") {
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) {

@@ -726,6 +726,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import { canSavePromoEnd, isPromoEndScheduleIncomplete, promoEndsAtFromParts, splitPromoEndsAt } from "@/lib/promo-ends-at";
+import { DEFAULT_PHARMA_GREEN, normalizeThemeColor } from "@/lib/store-theme";
 import { formatCurrency, formatDateOnlyBR, sellerListTitle, type SavedSellerItem } from "@/lib/utils";
 import { clampLineDiscount, lineNetAmount } from "@/lib/line-discount";
 import { cartLineKey, orderCopyItemName, orderLineNameWithVariants, parseVariantGroups, readEditorVariantGroups, readOrderVariantChoices, toggleVariantOption, variantImageFromSelection, variantSelectionError, type SelectedVariant, type VariantGroup } from "@/lib/product-variants";
@@ -19247,6 +19248,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [storeWhatsappNumber, setStoreWhatsappNumber] = useState(settings["checkout_store_whatsapp_number"] ?? "");
   const [raffleWhatsappNumber, setRaffleWhatsappNumber] = useState(settings["checkout_raffle_whatsapp_number"] ?? "");
   const [siteName, setSiteName] = useState(settings["site_name"] ?? "");
+  const [themeColor, setThemeColor] = useState(normalizeThemeColor(settings["store_theme_color"]) ?? DEFAULT_PHARMA_GREEN);
   const [queueManualEnabled, setQueueManualEnabled] = useState(["1", "true", "on", "yes"].includes(String(settings["shipping_queue_manual_enabled"] ?? "0").trim().toLowerCase()));
   const [queueManualHours, setQueueManualHours] = useState(settings["shipping_queue_manual_hours"] ?? "");
   const [carrierPriority, setCarrierPriority] = useState<string[]>(() => parseCheckoutCarrierPrioritySetting(settings[CHECKOUT_CARRIER_PRIORITY_KEY]));
@@ -19277,6 +19279,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
     setStoreWhatsappNumber(settings["checkout_store_whatsapp_number"] ?? "");
     setRaffleWhatsappNumber(settings["checkout_raffle_whatsapp_number"] ?? "");
     setSiteName(settings["site_name"] ?? "");
+    setThemeColor(normalizeThemeColor(settings["store_theme_color"]) ?? DEFAULT_PHARMA_GREEN);
     setQueueManualEnabled(["1", "true", "on", "yes"].includes(String(settings["shipping_queue_manual_enabled"] ?? "0").trim().toLowerCase()));
     setQueueManualHours(settings["shipping_queue_manual_hours"] ?? "");
     setCarrierPriority(parseCheckoutCarrierPrioritySetting(settings[CHECKOUT_CARRIER_PRIORITY_KEY]));
@@ -19501,6 +19504,51 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               </button>
             );
           })}
+        </div>
+        <div className="mb-5 bg-card border border-border/60 rounded-2xl p-4 shadow-sm">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            Cor do tema Farmácia Compacta
+          </label>
+          <p className="text-sm text-muted-foreground mb-3">
+            Muda o botão Ver, o preço, Categorias e o Adicionar ao carrinho. O tema atual não usa essa cor.
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <input
+              type="color"
+              aria-label="Cor do tema"
+              value={/^#[0-9a-fA-F]{6}$/.test(themeColor) ? themeColor : DEFAULT_PHARMA_GREEN}
+              onChange={(e) => setThemeColor(e.target.value)}
+              className="h-10 w-16 cursor-pointer rounded-xl border-2 border-border bg-transparent p-1"
+              disabled={!!loading["store_theme_color"]}
+            />
+            <input
+              type="text"
+              value={themeColor}
+              onChange={(e) => setThemeColor(e.target.value)}
+              placeholder="#22c55e"
+              maxLength={7}
+              className="h-10 w-full sm:w-32 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm font-mono"
+              disabled={!!loading["store_theme_color"]}
+            />
+            <Button
+              type="button"
+              disabled={!!loading["store_theme_color"] || !normalizeThemeColor(themeColor)}
+              onClick={() => onSave("store_theme_color", normalizeThemeColor(themeColor) || DEFAULT_PHARMA_GREEN)}
+            >
+              Salvar cor
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!!loading["store_theme_color"]}
+              onClick={() => {
+                setThemeColor(DEFAULT_PHARMA_GREEN);
+                onSave("store_theme_color", "");
+              }}
+            >
+              Verde padrão
+            </Button>
+          </div>
         </div>
         <div className="mb-5 bg-card border border-border/60 rounded-2xl p-4 shadow-sm">
           <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
