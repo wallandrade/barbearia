@@ -534,6 +534,164 @@ function blocksToPlainText(blocks: PeptideGuideBlock[]): string {
     .join("\n\n");
 }
 
+export type PeptideSheetStat = {
+  id: string;
+  label: string;
+  value: string;
+  pill?: "amber" | "green";
+};
+
+export type PeptideSheetTab = {
+  id: string;
+  label: string;
+  blocks: PeptideGuideBlock[];
+};
+
+export type PeptideSheet = {
+  slug: string;
+  name: string;
+  tagline: string;
+  aliases: string;
+  stats: PeptideSheetStat[];
+  tabs: PeptideSheetTab[];
+  disclaimer: string;
+};
+
+const SHEET_FIELDS: Array<{ id: string; label: string; pattern: RegExp }> = [
+  { id: "aliases", label: "", pattern: /tamb[eé]m conhecido como\s*:/i },
+  { id: "halfLife", label: "Meia vida", pattern: /\bmeia-vida\s*:/i },
+  { id: "classification", label: "Classificação", pattern: /\bclassifica[cç][aã]o\s*:/i },
+  { id: "cycle", label: "Ciclo", pattern: /\bciclo(?:\s+[a-záéíóúãõâêôàç]{3,16}){0,2}\s*:/i },
+  { id: "route", label: "Via", pattern: /\bvia(?:\s+[a-záéíóúãõâêôàç]{3,16}){0,2}\s*:/i },
+  { id: "dose", label: "Dose típica", pattern: /\bdose(?:\s+t[ií]pica(?:\s+citada)?)?\s*:/i },
+  { id: "cost", label: "Custo", pattern: /\bcusto\b\s*:?/i },
+  { id: "evidence", label: "Evidência", pattern: /\bevid[eê]ncia\s*:/i },
+  { id: "reconstitution", label: "Reconstituição", pattern: /\breconstitui[cç][aã]o(?:\s+de\s+vial)?\s*:/i },
+];
+
+const SHEET_TABS: Array<{ id: string; label: string; pattern: RegExp }> = [
+  { id: "about", label: "O que é", pattern: /^o que é(?:\s|:|\()/i },
+  { id: "mechanism", label: "Mecanismo", pattern: /^mecanismo(?:\s|:|\()/i },
+  { id: "benefits", label: "Benefícios", pattern: /^benef/i },
+  { id: "timeline", label: "Linha do tempo", pattern: /^linha do tempo(?:\s|:)/i },
+  { id: "dose", label: "Dosagem", pattern: /^(?:dosagem|indica|fases sc|titula)/i },
+  { id: "reconstitute", label: "Reconstituição", pattern: /^reconstitui/i },
+  { id: "effects", label: "Efeitos Colaterais", pattern: /^efeitos(?:\s|:)/i },
+  { id: "stacks", label: "Sinergias & Stack", pattern: /^stacks(?:\s|:)/i },
+  { id: "research", label: "Pesquisa", pattern: /^pesquisa(?:\s|:)/i },
+];
+
+function cleanField(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/^[.\s]+/, "").replace(/[.\s]+$/, "").trim();
+}
+
+function pillTone(value: string): "amber" | "green" | undefined {
+  const word = fold(value).split(" ")[0] ?? "";
+  if (word === "baixa" || word === "baixo" || word === "media" || word === "moderada" || word === "moderado") return "amber";
+  if (word === "alta" || word === "alto" || word === "facil") return "green";
+  return undefined;
+}
+
+function titleCaseWord(value: string): string {
+  const clean = cleanField(value);
+  if (!clean) return "";
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+function parseSheetHeader(preamble: string, fallbackAliases: string[]): { tagline: string; aliases: string; stats: PeptideSheetStat[] } {
+  const text = preamble.replace(/\s+/g, " ").trim();
+  const hits = SHEET_FIELDS.flatMap((field) => {
+    const match = field.pattern.exec(text);
+    if (!match || match.index === undefined) return [];
+    if (field.id === "cost" && !/:\s*\S|\$/.test(text.slice(match.index, match.index + match[0].length + 4))) return [];
+    return [{ field, index: match.index, end: match.index + match[0].length }];
+  }).sort((a, b) => a.index - b.index || b.end - a.end);
+
+  const unique: typeof hits = [];
+  for (const hit of hits) {
+    const previous = unique[unique.length - 1];
+    if (previous && hit.index < previous.end) continue;
+    unique.push(hit);
+  }
+
+  const first = unique[0]?.index ?? text.length;
+  const tagline = cleanField(text.slice(0, first).replace(/categoria ficha\s*:.*/i, ""));
+  const values = new Map<string, string>();
+  unique.forEach((hit, index) => {
+    const next = unique[index + 1]?.index ?? text.length;
+    values.set(hit.field.id, cleanField(text.slice(hit.end, next)));
+  });
+
+  const aliases = values.get("aliases") || fallbackAliases.join(", ");
+  const stats: PeptideSheetStat[] = [];
+  for (const field of SHEET_FIELDS) {
+    if (field.id === "aliases" || !field.label) continue;
+    const value = values.get(field.id);
+    if (!value) continue;
+    const short = value.length <= 28;
+    const pill = (field.id === "evidence" || field.id === "reconstitution") && short ? pillTone(value) : undefined;
+    stats.push({
+      id: field.id,
+      label: field.label,
+      value: pill ? titleCaseWord(value) : value,
+      ...(pill ? { pill } : {}),
+    });
+  }
+  return { tagline, aliases, stats };
+}
+
+function sheetTabOf(line: string): (typeof SHEET_TABS)[number] | null {
+  return SHEET_TABS.find((tab) => tab.pattern.test(line.trim())) ?? null;
+}
+
+export function getPeptideSheet(slug: string): PeptideSheet | null {
+  const entry = PEPTIDE_CHAT_ENTRIES.find((item) => item.slug === slug);
+  if (!entry) return null;
+  const lines = entry.body.split("\n");
+  const splitAt = lines.findIndex((line) => sheetTabOf(line));
+  const preamble = (splitAt === -1 ? lines : lines.slice(0, splitAt)).join(" ");
+  const header = parseSheetHeader(preamble, entry.aliases);
+  const recon = header.stats.find((item) => item.id === "reconstitution");
+  const reconExtra = recon?.value.match(/^([^.]{1,24})\.\s+(.+)$/);
+  if (recon && reconExtra) {
+    recon.value = titleCaseWord(reconExtra[1]);
+    const tone = pillTone(recon.value);
+    if (tone) recon.pill = tone;
+    else delete recon.pill;
+  }
+  const buckets = new Map<string, string[]>();
+  let current = "";
+  for (const raw of splitAt === -1 ? [] : lines.slice(splitAt)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const tab = sheetTabOf(line);
+    if (tab) current = tab.id;
+    if (!current) continue;
+    const bucket = buckets.get(current) ?? [];
+    bucket.push(line);
+    buckets.set(current, bucket);
+  }
+  if (reconExtra) {
+    const bucket = buckets.get("reconstitute") ?? [];
+    bucket.unshift(`Reconstituição: ${reconExtra[2]}`);
+    buckets.set("reconstitute", bucket);
+  }
+  const tabs = SHEET_TABS.flatMap((tab) => {
+    const useful = formatGuideBlocks((buckets.get(tab.id) ?? []).join("\n")).filter((block) => block.items.length > 0);
+    if (!useful.length) return [];
+    return [{ id: tab.id, label: tab.label, blocks: useful }];
+  });
+  return {
+    slug: entry.slug,
+    name: entry.name,
+    tagline: header.tagline,
+    aliases: header.aliases,
+    stats: header.stats,
+    tabs,
+    disclaimer: DISCLAIMER,
+  };
+}
+
 export function getPeptideGuideSection(slug: string, topicId: string): {
   name: string;
   topicLabel: string;

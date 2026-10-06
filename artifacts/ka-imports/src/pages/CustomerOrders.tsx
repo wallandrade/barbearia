@@ -557,6 +557,8 @@ export default function CustomerOrders() {
     }
   }
 
+  const accountMenuActive = !peptideTool && !peptideMenuOpen;
+
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 sm:py-10">
       <div className="max-w-6xl mx-auto">
@@ -583,32 +585,16 @@ export default function CustomerOrders() {
                 <button
                   type="button"
                   onClick={() => { setActiveSection("orders"); setPeptideTool(null); setPeptideMenuOpen(false); }}
-                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "orders" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
+                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${accountMenuActive && activeSection === "orders" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
                 >
                   <Package className="w-4 h-4" />
                   Meus pedidos
                   {unreadStoreObsOrders.length > 0 ? (
-                    <span className={`ml-auto inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${activeSection === "orders" ? "bg-white text-primary" : "bg-sky-600 text-white"}`}>
+                    <span className={`ml-auto inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${accountMenuActive && activeSection === "orders" ? "bg-white text-primary" : "bg-sky-600 text-white"}`}>
                       {unreadStoreObsOrders.length}
                     </span>
                   ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveSection("affiliate"); setPeptideTool(null); setPeptideMenuOpen(false); }}
-                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "affiliate" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
-                >
-                  <Users className="w-4 h-4" />
-                  Afiliação
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveSection("raffle"); setPeptideTool(null); setPeptideMenuOpen(false); }}
-                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "raffle" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
-                >
-                  <Ticket className="w-4 h-4" />
-                  Rifa
-                </button>
+                  </button>
                 <button
                   type="button"
                   onClick={() => setPeptideMenuOpen((open) => !open)}
@@ -622,6 +608,26 @@ export default function CustomerOrders() {
             <div className={peptideMenuOpen ? "min-w-0" : "hidden lg:block"}>
             <PeptideToolsMenu selectedId={peptideTool} onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); }} />
             </div>
+            <aside className="border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setActiveSection("affiliate"); setPeptideTool(null); setPeptideMenuOpen(false); }}
+                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${accountMenuActive && activeSection === "affiliate" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
+                >
+                  <Users className="w-4 h-4" />
+                  Afiliação
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActiveSection("raffle"); setPeptideTool(null); setPeptideMenuOpen(false); }}
+                  className={`flex items-center gap-2 min-w-fit lg:min-w-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${accountMenuActive && activeSection === "raffle" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}
+                >
+                  <Ticket className="w-4 h-4" />
+                  Rifa
+                </button>
+              </div>
+            </aside>
             </div>
 
             <section className="min-w-0">

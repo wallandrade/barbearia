@@ -6,6 +6,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-06 | `GET /api/chat/sheet/:slug` devolve a ficha inteira do card | Cabeçalho e abas saem do mesmo texto da biblioteca | `GET /api/chat/guide/:slug/:topic` e a bolha iguais |
 | 2026-10-06 | Gastos de marketing saíram do topo de Configuração | O painel **APIs EnvioEcom** fica no topo da aba | Contas, token e seletor iguais |
 | 2026-10-04 | Etiqueta Super Frete `released` sai de Pedidos para Enviar | O card usa a mesma saída da Etiqueta emitida: `released`, postado ou URL do PDF. Create/PDF/Sync não baixam estoque e não pedem senha | `released` não marca `enviado`. Dar baixa agora segue manual. Cópia 48h igual |
 | 2026-10-04 | Admin Rastreios: **Usar 20 sugestões** respeita `valueMin`/`valueMax` | Com a faixa preenchida, cada linha da sugestão recebe um valor dentro dela. Sem a faixa, seguem os preços fixos | O create continua sorteando na hora. GET não sorteia |
@@ -183,7 +184,7 @@ Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha
 - Distância rastreio cliente: BrasilAPI CEP + Nominatim — `lib/geo-distance.ts`.
 - Motoboy por km: BrasilAPI CEP v2 + AwesomeAPI (`lib/motoboy-geocode.ts`, `geocodeMotoboyCep`) + **OSRM** (default) / Google Distance Matrix (`lib/motoboy-route.ts`); origem sem coords usa Praça da Sé. Fontes a até 2 km: BrasilAPI. Divergência maior: AwesomeAPI. Ponto genérico `-23.5475,-46.63611` fora de CEP `010` não entra no km. Haversine só se a rota falhar.
 - OCR / parse de etiqueta: OpenAI e/ou OCR.space nas rotas de pedidos (quando usados) — fallback paralelo ao EnvioEcom.
-- **Chat informativo (compostos):** fluxo da loja e da aba Admin **Biblioteca** = `GET /api/chat/guide/:slug/:topic` (ficha fatiada, sem OpenAI). `POST /api/chat/ask` + `OPENAI_API_KEY` existem no backend mas o painel **não** usa. Status: `GET /api/chat/status` (produtos + tópicos). Não substitui médico; não confirma PIX/pedido.
+- **Chat informativo (compostos):** fluxo da loja e da aba Admin **Biblioteca** = `GET /api/chat/guide/:slug/:topic` (ficha fatiada, sem OpenAI). O card de Peptídeos Individuais que já tem ficha usa `GET /api/chat/sheet/:slug` (cabeçalho + abas no mesmo texto). `POST /api/chat/ask` + `OPENAI_API_KEY` existem no backend mas o painel **não** usa. Status: `GET /api/chat/status` (produtos + tópicos). Não substitui médico; não confirma PIX/pedido.
 - **Extrato OFX (Banco Inter):** `lib/ofx-bank-statement.ts` + `lib/bank-statement-reconcile.ts`; rotas `POST .../analyze|apply|clear`, `GET .../bank-deposits`; UI abas **Extrato** + **Depósitos** (Desfazer por linha). Só créditos novos (FITID não usado); só pedidos manuais Inter; valor exato + janela + nome; **CPF/CNPJ** no NAME/MEMO vs `clientDocument` → score 100%.
 - **Google Sheets:** mencionado em docs/comentários antigos — **sem implementação ativa encontrada**; produtos no MySQL.
 

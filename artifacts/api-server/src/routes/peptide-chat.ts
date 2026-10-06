@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { answerPeptideChat, sanitizeChatTurns } from "../lib/peptide-chat";
 import {
   getPeptideGuideSection,
+  getPeptideSheet,
   listPeptideChatNames,
   listPeptideChatProducts,
   PEPTIDE_GUIDE_TOPICS,
@@ -42,6 +43,15 @@ router.get("/chat/status", (_req, res) => {
     productNames: listPeptideChatNames(),
     topics: PEPTIDE_GUIDE_TOPICS,
   });
+});
+
+router.get("/chat/sheet/:slug", (req, res) => {
+  const sheet = getPeptideSheet(String(req.params.slug || ""));
+  if (!sheet) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Ficha não encontrada." });
+    return;
+  }
+  res.json(sheet);
 });
 
 router.get("/chat/guide/:slug/:topic", (req, res) => {
