@@ -272,9 +272,17 @@ export default function CustomerOrders() {
   const [peptideMenuOpen, setPeptideMenuOpen] = useState(false);
   const [peptideContentOpen, setPeptideContentOpen] = useState<boolean | null>(null);
   const [peptideSubscribeRequest, setPeptideSubscribeRequest] = useState(0);
+  const [peptideScroll, setPeptideScroll] = useState(0);
+  const peptideContentRef = useRef<HTMLElement>(null);
   const onPeptideContentAccess = useCallback((open: boolean | null) => {
     setPeptideContentOpen(open);
   }, []);
+
+  useEffect(() => {
+    if (!peptideTool || peptideScroll === 0) return;
+    if (!window.matchMedia("(max-width: 1023px)").matches) return;
+    peptideContentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [peptideTool, peptideScroll]);
   const [affiliateLoading, setAffiliateLoading] = useState(true);
   const [affiliateData, setAffiliateData] = useState<AffiliateDashboardResponse | null>(null);
   const [storeCredit, setStoreCredit] = useState(0);
@@ -614,7 +622,7 @@ export default function CustomerOrders() {
             <div className={peptideMenuOpen ? "min-w-0" : "hidden lg:block"}>
             <PeptideToolsMenu
               selectedId={peptideTool}
-              onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); }}
+              onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); setPeptideScroll((current) => current + 1); }}
               onContentAccess={onPeptideContentAccess}
               subscribeRequest={peptideSubscribeRequest}
             />
@@ -641,7 +649,7 @@ export default function CustomerOrders() {
             </aside>
             </div>
 
-            <section className="min-w-0">
+            <section ref={peptideContentRef} className="min-w-0 scroll-mt-4">
               {peptideTool === "individuals" ? (
                 <PeptideIndividualsGrid
                   contentOpen={peptideContentOpen}
