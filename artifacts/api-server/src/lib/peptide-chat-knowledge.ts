@@ -340,17 +340,24 @@ Pesquisa: TRIUMPH fase 2 NEJM 2023 (n=338); fase 2 T2DM; revisões 2024 do agoni
   },
 ];
 
+function atlasChatEntry(sheet: (typeof PEPTIDE_ATLAS_SHEETS)[number]): PeptideChatEntry {
+  return {
+    slug: sheet.slug,
+    name: sheet.name,
+    aliases: sheet.aliases,
+    body: atlasSheetBody(sheet),
+  };
+}
+
 function allPeptideEntries(): PeptideChatEntry[] {
-  const known = new Set(PEPTIDE_CHAT_ENTRIES.map((entry) => entry.slug));
-  const extra = PEPTIDE_ATLAS_SHEETS
-    .filter((sheet) => !known.has(sheet.slug))
-    .map((sheet) => ({
-      slug: sheet.slug,
-      name: sheet.name,
-      aliases: sheet.aliases,
-      body: atlasSheetBody(sheet),
-    }));
-  return [...PEPTIDE_CHAT_ENTRIES, ...extra];
+  const atlasBySlug = new Map(PEPTIDE_ATLAS_SHEETS.map((sheet) => [sheet.slug, sheet]));
+  const base = PEPTIDE_CHAT_ENTRIES.map((entry) => {
+    const sheet = atlasBySlug.get(entry.slug);
+    return sheet ? atlasChatEntry(sheet) : entry;
+  });
+  const known = new Set(base.map((entry) => entry.slug));
+  const extra = PEPTIDE_ATLAS_SHEETS.filter((sheet) => !known.has(sheet.slug)).map(atlasChatEntry);
+  return [...base, ...extra];
 }
 
 export function buildPeptideChatKnowledgeBlock(): string {

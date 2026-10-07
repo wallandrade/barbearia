@@ -6,6 +6,70 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-06 | Ficha completa do Vilon | `GET /api/chat/sheet/vilon` inclui o stack Bioregulator Protocol | Vesugen igual |
+| 2026-10-06 | Ficha completa do Vesugen | `GET /api/chat/sheet/vesugen` | Tirzepatida igual |
+| 2026-10-06 | Ficha completa da Tirzepatida | `GET /api/chat/sheet/tirzepatida` | Timosina Alfa-1 igual |
+| 2026-10-06 | Ficha completa da Timosina Alfa-1 | `GET /api/chat/sheet/timosina-alfa-1` | Thymalin igual |
+| 2026-10-06 | Ficha completa do Thymalin | `GET /api/chat/sheet/thymalin` | Testagen igual |
+| 2026-10-06 | Ficha completa do Testagen | `GET /api/chat/sheet/testagen` | Tesamorelin + Ipamorelin igual |
+| 2026-10-06 | Ficha completa do Tesamorelin + Ipamorelin (Blend 10mg) | `GET /api/chat/sheet/tesamorelin-ipamorelin-blend-10mg` | Tesamorelin igual |
+| 2026-10-06 | Ficha completa do Tesamorelin | `GET /api/chat/sheet/tesamorelin` substitui a ficha antiga | TB-500 igual |
+| 2026-10-06 | Ficha completa do TB-500 | `GET /api/chat/sheet/tb-500` | SS-31 igual |
+| 2026-10-06 | Ficha completa do SS-31 | `GET /api/chat/sheet/ss-31` | Survodutide igual |
+| 2026-10-06 | Ficha completa do Survodutide | `GET /api/chat/sheet/survodutide` | SNAP-8 igual |
+| 2026-10-06 | Ficha completa do SNAP-8 | `GET /api/chat/sheet/snap-8` | SLU-PP-332 igual |
+| 2026-10-06 | Ficha completa do SLU-PP-332 | `GET /api/chat/sheet/slu-pp-332` substitui a ficha antiga | Sermorelin igual |
+| 2026-10-06 | Ficha completa do Sermorelin | `GET /api/chat/sheet/sermorelin` | Semax igual |
+| 2026-10-06 | Ficha completa do Semax | `GET /api/chat/sheet/semax` | Semaglutida igual |
+| 2026-10-06 | Ficha completa da Semaglutida | `GET /api/chat/sheet/semaglutida` | Selank igual |
+| 2026-10-06 | Ficha completa do Selank | `GET /api/chat/sheet/selank` | Retatrutide igual |
+| 2026-10-06 | Ficha completa do Retatrutide | `GET /api/chat/sheet/retatrutide` substitui a ficha antiga | PT-141 igual |
+| 2026-10-06 | Ficha completa do PT-141 | `GET /api/chat/sheet/pt-141` | Prostamax igual |
+| 2026-10-06 | Ficha completa do Prostamax | `GET /api/chat/sheet/prostamax` | PNC-27 igual |
+| 2026-10-06 | Ficha completa do PNC-27 | `GET /api/chat/sheet/pnc-27` | Pinealon igual |
+| 2026-10-06 | Ficha completa do Pinealon | `GET /api/chat/sheet/pinealon` inclui o stack Bioregulator Protocol | PE-22-28 igual |
+| 2026-10-06 | Ficha completa do PE-22-28 | `GET /api/chat/sheet/pe-22-28` | P21 igual |
+| 2026-10-06 | Ficha completa do P21 | `GET /api/chat/sheet/p21` | Ovagen igual |
+| 2026-10-06 | Ficha completa do Ovagen | `GET /api/chat/sheet/ovagen` | Ocitocina igual |
+| 2026-10-06 | Ficha completa da Ocitocina | `GET /api/chat/sheet/ocitocina` | Noopept igual |
+| 2026-10-06 | Ficha completa do Noopept | `GET /api/chat/sheet/noopept` | NAD+ Injetável igual |
+| 2026-10-06 | Ficha completa do NAD+ Injetável | `GET /api/chat/sheet/nad-injetavel` | MOTS-C igual |
+| 2026-10-06 | Ficha completa do MOTS-C | `GET /api/chat/sheet/mots-c` passa a usar a ficha nova. A bolha também | MGF igual |
+| 2026-10-06 | Ficha completa do MGF | `GET /api/chat/sheet/mgf` inclui o stack Anabolic Edge | Melanotan II igual |
+| 2026-10-06 | Ficha completa do Melanotan II | `GET /api/chat/sheet/melanotan-ii` inclui o stack Bronze Shield | Mazdutide igual |
+| 2026-10-06 | Ficha completa do Mazdutide | `GET /api/chat/sheet/mazdutide` | LL-37 igual |
+| 2026-10-06 | Ficha completa do LL-37 | `GET /api/chat/sheet/ll-37` | Livagen igual |
+| 2026-10-06 | Ficha completa do Livagen | `GET /api/chat/sheet/livagen` | L-Carnitina Injetável igual |
+| 2026-10-06 | Ficha completa da L-Carnitina Injetável | `GET /api/chat/sheet/l-carnitina-injetavel` | KPV igual |
+| 2026-10-06 | Ficha completa do KPV | `GET /api/chat/sheet/kpv` inclui o stack Gut Restore | KLOW igual |
+| 2026-10-06 | Ficha completa do KLOW | `GET /api/chat/sheet/klow` | Kisspeptin igual |
+| 2026-10-06 | Ficha completa do Kisspeptin | `GET /api/chat/sheet/kisspeptin` | Ipamorelin igual |
+| 2026-10-06 | Ficha completa do Ipamorelin | `GET /api/chat/sheet/ipamorelin` inclui Fountain of Youth e GH Optimizer | IGF-1 LR3 igual |
+| 2026-10-06 | Ficha completa do IGF-1 LR3 | `GET /api/chat/sheet/igf-1-lr3` inclui o stack Anabolic Edge | IGF-1 DES igual |
+| 2026-10-06 | Ficha completa do IGF-1 DES | `GET /api/chat/sheet/igf-1-des` | HMG igual |
+| 2026-10-06 | Ficha completa do HMG | `GET /api/chat/sheet/hmg` | HGH Fragment 176-191 igual |
+| 2026-10-06 | Ficha completa do HGH Fragment 176-191 | `GET /api/chat/sheet/hgh-fragment-176-191` passa a usar a ficha nova. A bolha também | HGH 191AA igual |
+| 2026-10-06 | Ficha completa do HGH 191AA | `GET /api/chat/sheet/hgh-191aa`. Não substitui o fragmento 176-191 | Hexarelin igual |
+| 2026-10-06 | Ficha completa do Hexarelin | `GET /api/chat/sheet/hexarelin` | HCG igual |
+| 2026-10-06 | Ficha completa do HCG | `GET /api/chat/sheet/hcg` | Gonadorelin igual |
+| 2026-10-06 | Ficha completa do Gonadorelin | `GET /api/chat/sheet/gonadorelin` | Glutationa igual |
+| 2026-10-06 | Ficha completa da Glutationa | `GET /api/chat/sheet/glutationa` | GHRP-6 igual |
+| 2026-10-06 | Ficha completa do GHRP-6 | `GET /api/chat/sheet/ghrp-6` | GHRP-2 igual |
+| 2026-10-06 | Ficha completa do GHRP-2 | `GET /api/chat/sheet/ghrp-2` | GHK-Cu igual |
+| 2026-10-06 | Ficha completa do GHK-Cu | `GET /api/chat/sheet/ghk-cu` passa a usar a ficha nova. A bolha também | FOXO4-DRI igual |
+| 2026-10-06 | Ficha completa do FOXO4-DRI | `GET /api/chat/sheet/foxo4-dri` | Follistatin 344 igual |
+| 2026-10-06 | Ficha completa do Follistatin 344 | `GET /api/chat/sheet/follistatin-344` | Epithalon igual |
+| 2026-10-06 | Ficha completa do Epithalon | `GET /api/chat/sheet/epithalon` inclui o stack Fountain of Youth | DSIP igual |
+| 2026-10-06 | Ficha completa do DSIP | `GET /api/chat/sheet/dsip` passa a usar a ficha nova. A bolha também | Dihexa igual |
+| 2026-10-06 | Ficha completa do Dihexa | `GET /api/chat/sheet/dihexa` | Crystagen igual |
+| 2026-10-06 | Ficha completa do Crystagen | `GET /api/chat/sheet/crystagen` | Cortagen igual |
+| 2026-10-06 | Ficha completa do Cortagen | `GET /api/chat/sheet/cortagen` | CJC-1295 DAC igual |
+| 2026-10-06 | Ficha completa do CJC-1295 DAC | `GET /api/chat/sheet/cjc-1295-dac` | CJC-1295 sem DAC igual |
+| 2026-10-06 | Ficha completa do CJC-1295 | `GET /api/chat/sheet/cjc-1295` inclui o stack GH Optimizer | Chonluten igual |
+| 2026-10-06 | Ficha completa do Chonluten | `GET /api/chat/sheet/chonluten` | Cerebrolysin igual |
+| 2026-10-06 | Ficha completa do Cerebrolysin | `GET /api/chat/sheet/cerebrolysin` | Cartalax igual |
+| 2026-10-06 | Ficha completa do Cartalax | `GET /api/chat/sheet/cartalax` | Cardiogen igual |
+| 2026-10-06 | Ficha completa do Cardiogen | `GET /api/chat/sheet/cardiogen` | Ara-290 e BPC-157 iguais |
 | 2026-10-06 | Ficha completa do BPC-157 | `GET /api/chat/sheet/bpc-157` inclui stacks recomendados | Ara-290 igual |
 | 2026-10-06 | Ficha completa do card (`peptide-atlas-sheets.ts`) | `GET /api/chat/sheet/ara-290` devolve tabelas de dose, fases, sinergias e papers. A bolha recebe o mesmo texto em `GET /api/chat/guide` | As 12 fichas antigas iguais |
 | 2026-10-06 | `GET /api/chat/sheet/:slug` devolve a ficha inteira do card | Cabeçalho e abas saem do mesmo texto da biblioteca | `GET /api/chat/guide/:slug/:topic` e a bolha iguais |
