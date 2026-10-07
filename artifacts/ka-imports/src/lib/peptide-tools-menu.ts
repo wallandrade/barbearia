@@ -38,9 +38,9 @@ export function peptideMenuClickOpensTool(startedAt: number, now: number, subscr
   return now - startedAt < PEPTIDE_MENU_TEST_MS;
 }
 
-/** A grade de Peptídeos Individuais abre com o teste vencido. A ficha e os outros itens seguem o gate. */
+/** A grade e o questionário abrem com o teste vencido. A ficha e os outros itens seguem o gate. */
 export function peptideMenuClickOpensSurface(id: string, startedAt: number, now: number, subscribed = false): boolean {
-  if (id === "individuals") return true;
+  if (id === "individuals" || id === "find") return true;
   return peptideMenuClickOpensTool(startedAt, now, subscribed);
 }
 

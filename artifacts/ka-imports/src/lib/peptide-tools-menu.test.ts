@@ -50,6 +50,7 @@ test("teste vencido ainda abre a grade e trava a ficha", () => {
   const startedAt = 1_000;
   const now = startedAt + PEPTIDE_MENU_TEST_MS + 1;
   assert.equal(peptideMenuClickOpensSurface("individuals", startedAt, now, false), true);
+  assert.equal(peptideMenuClickOpensSurface("find", startedAt, now, false), true);
   assert.equal(peptideMenuClickOpensSurface("calculator", startedAt, now, false), false);
   assert.equal(peptideMenuClickOpensTool(startedAt, now, false), false);
   assert.equal(peptideMenuClickOpensSurface("calculator", startedAt, now, true), true);

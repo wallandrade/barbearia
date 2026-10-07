@@ -35,6 +35,7 @@ import { superfreteServiceName } from "@/lib/superfrete-status";
 import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell, FlaskConical } from "lucide-react";
 import PeptideToolsMenu from "@/components/PeptideToolsMenu";
 import PeptideIndividualsGrid from "@/components/PeptideIndividualsGrid";
+import PeptideFinderQuiz from "@/components/PeptideFinderQuiz";
 import { PEPTIDE_TOOL_ITEMS } from "@/lib/peptide-tools-menu";
 import { toast } from "sonner";
 import { isStoreObservationUnread, markStoreObservationRead } from "@/lib/store-observation-notice";
@@ -643,6 +644,11 @@ export default function CustomerOrders() {
             <section className="min-w-0">
               {peptideTool === "individuals" ? (
                 <PeptideIndividualsGrid
+                  contentOpen={peptideContentOpen}
+                  onRequireSubscription={() => setPeptideSubscribeRequest((current) => current + 1)}
+                />
+              ) : peptideTool === "find" ? (
+                <PeptideFinderQuiz
                   contentOpen={peptideContentOpen}
                   onRequireSubscription={() => setPeptideSubscribeRequest((current) => current + 1)}
                 />

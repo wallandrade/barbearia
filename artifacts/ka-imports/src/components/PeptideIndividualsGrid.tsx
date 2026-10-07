@@ -11,7 +11,7 @@ import {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const FALLBACK_LIBRARY: Array<{ slug: string; name: string }> = [
+export const PEPTIDE_LIBRARY_FALLBACK: Array<{ slug: string; name: string }> = [
   { slug: "5-amino-1mq", name: "5-Amino-1MQ" },
   { slug: "adamax", name: "Adamax" },
   { slug: "aicar", name: "AICAR" },
@@ -84,7 +84,7 @@ const FALLBACK_LIBRARY: Array<{ slug: string; name: string }> = [
   { slug: "retatrutide", name: "Retatrutide" },
 ];
 
-function foldName(value: string): string {
+export function foldPeptideName(value: string): string {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
 }
 
@@ -107,12 +107,12 @@ export default function PeptideIndividualsGrid({
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [library, setLibrary] = useState(FALLBACK_LIBRARY);
+  const [library, setLibrary] = useState(PEPTIDE_LIBRARY_FALLBACK);
   const [open, setOpen] = useState<PeptideCard | null>(null);
   const cards = useMemo(() => filterPeptideCards(PEPTIDE_CARDS, query, category), [query, category]);
   const slugByName = useMemo(() => {
     const map = new Map<string, string>();
-    for (const item of library) map.set(foldName(item.name), item.slug);
+    for (const item of library) map.set(foldPeptideName(item.name), item.slug);
     return map;
   }, [library]);
 
@@ -145,7 +145,7 @@ export default function PeptideIndividualsGrid({
   }
 
   if (open && contentOpen !== false) {
-    const slug = slugByName.get(foldName(open.name));
+    const slug = slugByName.get(foldPeptideName(open.name));
     if (slug) {
       return <PeptideCardSheet slug={slug} category={open.category} onBack={() => setOpen(null)} />;
     }
@@ -189,7 +189,7 @@ export default function PeptideIndividualsGrid({
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {cards.map((item) => {
-            const slug = slugByName.get(foldName(item.name));
+            const slug = slugByName.get(foldPeptideName(item.name));
             const body = (
               <>
                 <div className="flex items-start justify-between gap-3">
