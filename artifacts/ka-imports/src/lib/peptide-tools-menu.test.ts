@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PEPTIDE_MENU_TEST_MS,
   PEPTIDE_TOOL_ITEMS,
+  peptideMenuClickOpensSurface,
   peptideMenuClickOpensTool,
   peptideMenuRemainingMs,
   resolvePeptideMenuTestStart,
@@ -43,4 +44,13 @@ test("assinatura ativa abre o item mesmo depois do teste", () => {
   const now = startedAt + PEPTIDE_MENU_TEST_MS + 1;
   assert.equal(peptideMenuClickOpensTool(startedAt, now, false), false);
   assert.equal(peptideMenuClickOpensTool(startedAt, now, true), true);
+});
+
+test("teste vencido ainda abre a grade e trava a ficha", () => {
+  const startedAt = 1_000;
+  const now = startedAt + PEPTIDE_MENU_TEST_MS + 1;
+  assert.equal(peptideMenuClickOpensSurface("individuals", startedAt, now, false), true);
+  assert.equal(peptideMenuClickOpensSurface("calculator", startedAt, now, false), false);
+  assert.equal(peptideMenuClickOpensTool(startedAt, now, false), false);
+  assert.equal(peptideMenuClickOpensSurface("calculator", startedAt, now, true), true);
 });

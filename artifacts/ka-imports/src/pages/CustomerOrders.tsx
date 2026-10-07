@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { clearCustomerToken, fetchCustomerProfile, getCustomerAuthHeaders } from "@/lib/customer-auth";
@@ -269,6 +269,11 @@ export default function CustomerOrders() {
   const [activeSection, setActiveSection] = useState<AccountSection>("orders");
   const [peptideTool, setPeptideTool] = useState<string | null>(null);
   const [peptideMenuOpen, setPeptideMenuOpen] = useState(false);
+  const [peptideContentOpen, setPeptideContentOpen] = useState<boolean | null>(null);
+  const [peptideSubscribeRequest, setPeptideSubscribeRequest] = useState(0);
+  const onPeptideContentAccess = useCallback((open: boolean | null) => {
+    setPeptideContentOpen(open);
+  }, []);
   const [affiliateLoading, setAffiliateLoading] = useState(true);
   const [affiliateData, setAffiliateData] = useState<AffiliateDashboardResponse | null>(null);
   const [storeCredit, setStoreCredit] = useState(0);
@@ -606,7 +611,12 @@ export default function CustomerOrders() {
               </div>
             </aside>
             <div className={peptideMenuOpen ? "min-w-0" : "hidden lg:block"}>
-            <PeptideToolsMenu selectedId={peptideTool} onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); }} />
+            <PeptideToolsMenu
+              selectedId={peptideTool}
+              onOpen={(id) => { setPeptideTool(id); setPeptideMenuOpen(true); }}
+              onContentAccess={onPeptideContentAccess}
+              subscribeRequest={peptideSubscribeRequest}
+            />
             </div>
             <aside className="border border-border rounded-2xl p-3 h-fit bg-slate-50/60">
               <div className="flex flex-col gap-2">
@@ -632,7 +642,10 @@ export default function CustomerOrders() {
 
             <section className="min-w-0">
               {peptideTool === "individuals" ? (
-                <PeptideIndividualsGrid />
+                <PeptideIndividualsGrid
+                  contentOpen={peptideContentOpen}
+                  onRequireSubscription={() => setPeptideSubscribeRequest((current) => current + 1)}
+                />
               ) : peptideTool ? (
                 <div className="rounded-3xl border border-dashed border-border p-8 text-center">
                   <h2 className="text-lg font-semibold text-foreground">

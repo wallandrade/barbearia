@@ -98,7 +98,13 @@ const CATEGORY_CLASS: Record<PeptideCategory, string> = {
   Estética: "text-pink-700",
 };
 
-export default function PeptideIndividualsGrid() {
+export default function PeptideIndividualsGrid({
+  contentOpen = null,
+  onRequireSubscription,
+}: {
+  contentOpen?: boolean | null;
+  onRequireSubscription?: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [library, setLibrary] = useState(FALLBACK_LIBRARY);
@@ -125,7 +131,20 @@ export default function PeptideIndividualsGrid() {
       });
   }, []);
 
-  if (open) {
+  useEffect(() => {
+    if (contentOpen === false) setOpen(null);
+  }, [contentOpen]);
+
+  function openCard(item: PeptideCard) {
+    if (contentOpen === false) {
+      onRequireSubscription?.();
+      return;
+    }
+    if (contentOpen == null) return;
+    setOpen(item);
+  }
+
+  if (open && contentOpen !== false) {
     const slug = slugByName.get(foldName(open.name));
     if (slug) {
       return <PeptideCardSheet slug={slug} category={open.category} onBack={() => setOpen(null)} />;
@@ -194,7 +213,7 @@ export default function PeptideIndividualsGrid() {
               <button
                 key={item.name}
                 type="button"
-                onClick={() => setOpen(item)}
+                onClick={() => openCard(item)}
                 className="rounded-2xl border border-border bg-white p-4 text-left transition hover:border-primary"
               >
                 {body}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   Calculator,
@@ -28,6 +28,7 @@ import { formatCurrency } from "@/lib/utils";
 import {
   PEPTIDE_MENU_TEST_STARTED_KEY,
   PEPTIDE_TOOL_ITEMS,
+  peptideMenuClickOpensSurface,
   peptideMenuClickOpensTool,
   peptideMenuRemainingMs,
   resolvePeptideMenuTestStart,
@@ -103,9 +104,13 @@ function MenuButton({
 export default function PeptideToolsMenu({
   selectedId = null,
   onOpen,
+  onContentAccess,
+  subscribeRequest = 0,
 }: {
   selectedId?: string | null;
   onOpen?: (id: string) => void;
+  onContentAccess?: (open: boolean | null) => void;
+  subscribeRequest?: number;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -157,14 +162,26 @@ export default function PeptideToolsMenu({
   }, [subscribeOpen, subscription.pending?.transactionId, subscription.active]);
 
   const testOpen = startedAt != null && peptideMenuClickOpensTool(startedAt, now, false);
+  const contentOpen = startedAt == null ? null : peptideMenuClickOpensTool(startedAt, now, subscription.active);
   const remainingMs = startedAt == null ? 0 : peptideMenuRemainingMs(startedAt, now);
   const mainItems = PEPTIDE_TOOL_ITEMS.filter((item) => item.group === "main");
   const toolItems = PEPTIDE_TOOL_ITEMS.filter((item) => item.group === "tools");
   const priceLabel = formatCurrency(subscription.amount || 19.9);
+  const subscribeRequestSeen = useRef(subscribeRequest);
+
+  useEffect(() => {
+    onContentAccess?.(contentOpen);
+  }, [contentOpen, onContentAccess]);
+
+  useEffect(() => {
+    if (subscribeRequest === subscribeRequestSeen.current) return;
+    subscribeRequestSeen.current = subscribeRequest;
+    if (subscribeRequest > 0) setSubscribeOpen(true);
+  }, [subscribeRequest]);
 
   function onPick(id: string) {
     if (startedAt == null) return;
-    if (!peptideMenuClickOpensTool(startedAt, Date.now(), subscription.active)) {
+    if (!peptideMenuClickOpensSurface(id, startedAt, Date.now(), subscription.active)) {
       setSubscribeOpen(true);
       return;
     }
@@ -243,7 +260,7 @@ export default function PeptideToolsMenu({
           )}
           {testOpen && !subscription.active && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Teste liberado por mais {formatTestLeft(remainingMs)}. Depois o clique pede a assinatura.
+              Teste liberado por mais {formatTestLeft(remainingMs)}. Depois o clique na ficha pede a assinatura.
             </p>
           )}
         </div>
