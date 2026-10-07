@@ -8,6 +8,7 @@ import {
   orderStillOccupiesShippingQueue,
   isSplitOrderPartiallyShipped,
   nextPackageEnvioEcomExternalOrderNumber,
+  unlinkedExternalOrderNumberForNewPackage,
   parseShipmentItems,
   pendingCopyItemsFromSplitPackages,
   shipmentItemsForInventory,
@@ -229,6 +230,42 @@ test("orderId EnvioEcom do pacote leva o pool e rotaciona após cancelar", () =>
   );
   assert.equal(afterCancel.startsWith("2031-abcdefgh-motoboy-"), true);
   assert.notEqual(afterCancel, "2031-abcdefgh-motoboy");
+});
+
+test("pacote novo depois de desvincular guarda o orderId antigo para rotacionar", () => {
+  const seeded = unlinkedExternalOrderNumberForNewPackage(
+    {
+      envioecomExternalOrderNumber: "1573-31a34bfb-minas",
+      envioecomShipmentId: null,
+      envioecomBarcode: null,
+    },
+    null,
+  );
+  assert.equal(seeded, "1573-31a34bfb-minas");
+  const next = nextPackageEnvioEcomExternalOrderNumber(
+    { id: "31a34bfbcfc11319", orderNumber: 1573 },
+    {
+      inventoryPool: "minas",
+      envioecomExternalOrderNumber: seeded,
+      envioecomShipmentId: null,
+      envioecomBarcode: null,
+      envioecomStatus: null,
+    },
+    1_700_000_000_000,
+  );
+  assert.equal(next.startsWith("1573-31a34bfb-minas-"), true);
+  assert.notEqual(next, "1573-31a34bfb-minas");
+  assert.equal(
+    unlinkedExternalOrderNumberForNewPackage(
+      {
+        envioecomExternalOrderNumber: "1573-31a34bfb-minas",
+        envioecomShipmentId: "875968",
+        envioecomBarcode: "EC875",
+      },
+      null,
+    ),
+    null,
+  );
 });
 
 test("desvincular sem cancelar rotaciona o orderId EnvioEcom na próxima criação", () => {

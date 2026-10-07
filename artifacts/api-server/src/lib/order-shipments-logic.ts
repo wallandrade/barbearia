@@ -277,6 +277,25 @@ export function nextPackageEnvioEcomExternalOrderNumber(
   return `${base}-${now.toString(36)}`.slice(0, 64);
 }
 
+/**
+ * Pacote recém-criado na divisão, sem etiqueta: copia o orderId que o pedido
+ * já usou na EnvioEcom. Sem isso o próximo create repete a base (`…-minas`)
+ * e a API responde DUPLICATE_ORDER.
+ */
+export function unlinkedExternalOrderNumberForNewPackage(
+  order: {
+    envioecomExternalOrderNumber?: string | null;
+    envioecomShipmentId?: string | null;
+    envioecomBarcode?: string | null;
+  },
+  inheritedExternalOrderNumber?: string | null,
+): string | null {
+  if (String(inheritedExternalOrderNumber || "").trim()) return null;
+  if (packageHasEnvioEcomBinding(order)) return null;
+  const remembered = String(order.envioecomExternalOrderNumber || "").trim();
+  return remembered || null;
+}
+
 function unwrapJsonArray(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw;
   if (typeof raw !== "string") return [];

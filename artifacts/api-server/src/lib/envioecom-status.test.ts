@@ -11,6 +11,9 @@ import {
   isEnvioEcomPanelShipmentId,
   isInTransitStatus,
   isLabelReadyStatus,
+  envioEcomCreateResultError,
+  extractCreatedShipment,
+  forcedEnvioEcomExternalOrderNumber,
   nextEnvioEcomExternalOrderNumber,
   pickEffectiveShipmentStatus,
   scoreEnvioEcomShipmentCandidate,
@@ -116,6 +119,40 @@ test("create depois de cancelar usa orderId novo", () => {
     envioecomStatus: "Pronto para envio",
   });
   assert.equal(stable, "2031-abcdefgh");
+});
+
+test("DUPLICATE_ORDER sem barcode vira erro da EnvioEcom e o retry usa outro orderId", () => {
+  const created = {
+    shipping_create: {
+      success: true,
+      created: 0,
+      results: [{
+        index: 0,
+        order_id: "1573-31a34bfb-minas",
+        error_code: "DUPLICATE_ORDER",
+        error: "Pedido já cadastrado anteriormente com este orderId.",
+      }],
+    },
+    processed_barcodes: [] as string[],
+  };
+  const extracted = extractCreatedShipment(created);
+  assert.equal(extracted.barcode, null);
+  assert.equal(extracted.shipmentId, null);
+  const failure = envioEcomCreateResultError(created);
+  assert.equal(failure?.code, "DUPLICATE_ORDER");
+  assert.match(failure?.message || "", /já cadastrado/);
+
+  const order = { id: "31a34bfbcfc11319", orderNumber: 1573 };
+  const rotated = forcedEnvioEcomExternalOrderNumber(
+    "1573-31a34bfb-minas",
+    order,
+    "minas",
+    1_700_000_000_000,
+  );
+  assert.equal(rotated.startsWith("1573-31a34bfb-minas-"), true);
+  assert.notEqual(rotated, "1573-31a34bfb-minas");
+  const again = forcedEnvioEcomExternalOrderNumber(rotated, order, "minas", 1_700_000_000_000);
+  assert.notEqual(again, rotated);
 });
 
 test("conta EnvioEcom SP mapeia Motoboy e MG mapeia Minas (pool sugerido, sem baixa automática)", () => {

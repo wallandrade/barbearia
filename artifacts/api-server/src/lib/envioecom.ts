@@ -763,6 +763,47 @@ export function extractCreatedShipment(created: {
   };
 }
 
+/** Erro de negócio dentro de shipping_create.results (HTTP 200, created 0). */
+export function envioEcomCreateResultError(created: {
+  shipping_create?: {
+    results?: Array<Record<string, unknown>>;
+  };
+}): { code: string; message: string } | null {
+  const results = Array.isArray(created.shipping_create?.results)
+    ? created.shipping_create.results
+    : [];
+  const first = (results[0] || {}) as Record<string, unknown>;
+  const code = String(first.error_code || first.errorCode || "").trim();
+  const message = String(first.error || first.message || "").trim();
+  if (!code && !message) return null;
+  return { code, message };
+}
+
+/**
+ * Sufixo novo quando a EnvioEcom recusa o orderId (DUPLICATE_ORDER).
+ * A base estável (`1573-…-minas`) continua ocupada mesmo depois de desvincular.
+ */
+export function forcedEnvioEcomExternalOrderNumber(
+  current: string,
+  order: { id: string; orderNumber?: number | null },
+  pool?: string | null,
+  now = Date.now(),
+): string {
+  const poolSlug = pool
+    ? String(pool).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "pkg"
+    : "";
+  const base = poolSlug
+    ? `${order.orderNumber ?? "ped"}-${String(order.id).slice(0, 8)}-${poolSlug}`
+    : `${order.orderNumber ?? "ped"}-${String(order.id).slice(0, 8)}`;
+  let stamp = now.toString(36);
+  let next = `${base}-${stamp}`.slice(0, 64);
+  if (next === String(current || "").trim()) {
+    stamp = (now + 1).toString(36);
+    next = `${base}-${stamp}`.slice(0, 64);
+  }
+  return next;
+}
+
 /**
  * Resolve shipping_id + barcode atual na EnvioEcom.
  * Importante: após pagamento o barcode pode mudar (EC... → 8880... da transportadora).

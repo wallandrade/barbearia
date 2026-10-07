@@ -44,6 +44,8 @@ import {
   createShipments,
   digitsOnly,
   extractCreatedShipment,
+  envioEcomCreateResultError,
+  forcedEnvioEcomExternalOrderNumber,
   generateLabels,
   getDefaultCarriersFromEnv,
   getDefaultPackageDims,
@@ -891,7 +893,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     const quoteProducts = buildQuoteProductsFromOrder(order);
     const pack = buildPackageFromProducts(quoteProducts);
     // orderId único na EnvioEcom (evita DUPLICATE_ORDER em retentativas; sufixo novo após cancelar)
-    const externalOrderNumber = targetPackage
+    let externalOrderNumber = targetPackage
       ? nextPackageEnvioEcomExternalOrderNumber(order, targetPackage)
       : nextEnvioEcomExternalOrderNumber(order);
     const freightCost = formatMoneyString(req.body?.freight_cost ?? order.shippingCost ?? pack.cost ?? 0);
@@ -993,47 +995,85 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       })),
     };
 
-    console.log("[EnvioEcom] create payload", {
-      orderId: shipment.orderId,
-      shipping_company: shipment.shipping_company,
-      cep_origem: shipment.cep_origem,
-      cep_destino: shipment.cep_destino,
-      freight_cost: shipment.freight_cost,
-      delivery_time: shipment.delivery_time,
-      dims: {
-        h: shipment.height,
-        w: shipment.width,
-        l: shipment.length,
-        weight: shipment.weight,
-        cost: shipment.cost,
-      },
-      uf: shipment.uf,
-      phone_len: phone.length,
-      document_len: documentDigits.length,
-      items: shipment.items?.length || 0,
-      itemName: labelProfile.name,
-      itemValue: labelProfile.declaredValue,
-    });
+    const rememberBurnedOrderNumber = async (burned: string) => {
+      const value = String(burned || "").trim();
+      if (!value) return;
+      if (targetPackage) {
+        await updateOrderShipment(targetPackage.id, { envioecomExternalOrderNumber: value });
+        return;
+      }
+      await db
+        .update(ordersTable)
+        .set({ envioecomExternalOrderNumber: value, updatedAt: new Date() })
+        .where(eq(ordersTable.id, order.id));
+    };
 
-    const { result: created } = await withEnvioEcomAccount(accountId, async () =>
-      createShipments({
-        shipments: [shipment],
-        defer_payment: Boolean(req.body?.defer_payment),
-      }),
-    );
+    const postCreate = async (orderNumber: string) => {
+      const payload = { ...shipment, orderId: orderNumber };
+      console.log("[EnvioEcom] create payload", {
+        orderId: payload.orderId,
+        shipping_company: payload.shipping_company,
+        cep_origem: payload.cep_origem,
+        cep_destino: payload.cep_destino,
+        freight_cost: payload.freight_cost,
+        delivery_time: payload.delivery_time,
+        dims: {
+          h: payload.height,
+          w: payload.width,
+          l: payload.length,
+          weight: payload.weight,
+          cost: payload.cost,
+        },
+        uf: payload.uf,
+        phone_len: phone.length,
+        document_len: documentDigits.length,
+        items: payload.items?.length || 0,
+        itemName: labelProfile.name,
+        itemValue: labelProfile.declaredValue,
+      });
+      const { result } = await withEnvioEcomAccount(accountId, async () =>
+        createShipments({
+          shipments: [payload],
+          defer_payment: Boolean(req.body?.defer_payment),
+        }),
+      );
+      console.log("[EnvioEcom] create response", JSON.stringify(result).slice(0, 4000));
+      return result;
+    };
 
-    console.log("[EnvioEcom] create response", JSON.stringify(created).slice(0, 4000));
+    let created = await postCreate(externalOrderNumber);
+    let extracted = extractCreatedShipment(created);
+    let createError = envioEcomCreateResultError(created);
 
-    const extracted = extractCreatedShipment(created);
+    if (!extracted.barcode && !extracted.shipmentId && createError?.code === "DUPLICATE_ORDER") {
+      await rememberBurnedOrderNumber(externalOrderNumber);
+      const rotated = forcedEnvioEcomExternalOrderNumber(
+        externalOrderNumber,
+        order,
+        targetPackage?.inventoryPool,
+      );
+      console.log("[EnvioEcom] DUPLICATE_ORDER, retry", { from: externalOrderNumber, to: rotated });
+      externalOrderNumber = rotated;
+      created = await postCreate(externalOrderNumber);
+      extracted = extractCreatedShipment(created);
+      createError = envioEcomCreateResultError(created);
+    }
+
     const barcode = extracted.barcode;
     const shipmentId = extracted.shipmentId;
     const status = extracted.status;
     const trackingKey = extracted.trackingKey;
 
     if (!barcode && !shipmentId) {
+      if (createError?.code === "DUPLICATE_ORDER") {
+        await rememberBurnedOrderNumber(externalOrderNumber);
+      }
+      const message = createError?.message
+        ? `EnvioEcom: ${createError.message}`
+        : "EnvioEcom não retornou barcode/shipping_id. Verifique saldo e resposta da API.";
       res.status(502).json({
-        error: "CREATE_INCOMPLETE",
-        message: "EnvioEcom não retornou barcode/shipping_id. Verifique saldo e resposta da API.",
+        error: createError?.code || "CREATE_INCOMPLETE",
+        message,
         createResponse: created,
       });
       return;

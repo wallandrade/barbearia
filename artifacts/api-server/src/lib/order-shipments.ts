@@ -23,6 +23,7 @@ import {
   parseShipmentItems,
   pickPreferredEnvioEcomShipmentRow,
   shipmentItemsForInventory,
+  unlinkedExternalOrderNumberForNewPackage,
   validateShipmentAllocation,
   type OrderShipmentAllocationInput,
   type OrderShipmentItem,
@@ -34,6 +35,7 @@ export {
   isSplitOrderPartiallyShipped,
   isSplitShipmentList,
   nextPackageEnvioEcomExternalOrderNumber,
+  unlinkedExternalOrderNumberForNewPackage,
   orderAlreadyBoundToEnvioEcomRef,
   packageHasEnvioEcomBinding,
   packageInventoryReferenceId,
@@ -449,7 +451,11 @@ export async function saveOrderShipmentAllocation(
   for (let i = 0; i < validated.packages.length; i++) {
     const pack = validated.packages[i]!;
     const prev = existingByPool.get(pack.inventoryPool);
-    const inherit = inheritedPool === pack.inventoryPool ? inheritOrderEnvioEcom(order) : {};
+    const inherit: Partial<OrderShipment> = inheritedPool === pack.inventoryPool ? inheritOrderEnvioEcom(order) : {};
+    const seededExternal = unlinkedExternalOrderNumberForNewPackage(
+      order,
+      inherit.envioecomExternalOrderNumber,
+    );
     if (prev) {
       keepIds.add(prev.id);
       await db
@@ -483,6 +489,7 @@ export async function saveOrderShipmentAllocation(
         createdAt: now,
         updatedAt: now,
         ...inherit,
+        ...(seededExternal ? { envioecomExternalOrderNumber: seededExternal } : {}),
       };
       await db.insert(orderShipmentsTable).values(row);
       keepIds.add(id);
