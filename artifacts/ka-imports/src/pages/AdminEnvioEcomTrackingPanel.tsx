@@ -65,6 +65,47 @@ type TrackingBoardSummary = {
   other: number;
 };
 
+type TowerPeriod = "open" | "today" | "7" | "30" | "60";
+
+type TowerFocus =
+  | { type: "all" }
+  | { type: "carrier"; carrier: string }
+  | { type: "kind"; kind: string };
+
+type TowerCarrierRank = { carrier: string; count: number; percent: number };
+type TowerKindRank = { kind: string; label: string; count: number; percent: number };
+
+type TowerItem = {
+  orderId: string;
+  packageId?: string | null;
+  orderNumber?: number | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  trackingCode?: string | null;
+  carrier: string;
+  kind: string;
+  kindLabel: string;
+  action: string;
+  status?: string | null;
+  statusUpdatedAt?: string | null;
+};
+
+type TowerPayload = {
+  occurrences: number;
+  byCarrier: TowerCarrierRank[];
+  byKind: TowerKindRank[];
+  items: TowerItem[];
+  listTruncated: boolean;
+};
+
+const TOWER_PERIODS: Array<{ value: TowerPeriod; label: string }> = [
+  { value: "open", label: "Abertas (90 dias)" },
+  { value: "today", label: "Hoje" },
+  { value: "7", label: "Últimos 7 dias" },
+  { value: "30", label: "Últimos 30 dias" },
+  { value: "60", label: "Últimos 60 dias" },
+];
+
 type Props = {
   authHeaders: () => HeadersInit;
   onUnauthorized: () => void;
@@ -216,6 +257,10 @@ export default function AdminEnvioEcomTrackingPanel({
   const [itemNameLoading, setItemNameLoading] = useState(true);
   const [itemNameSaving, setItemNameSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [towerPeriod, setTowerPeriod] = useState<TowerPeriod>("open");
+  const [towerFocus, setTowerFocus] = useState<TowerFocus | null>(null);
+  const [tower, setTower] = useState<TowerPayload | null>(null);
+  const [towerLoading, setTowerLoading] = useState(true);
 
   const fetchItemName = useCallback(async () => {
     setItemNameLoading(true);
@@ -411,6 +456,55 @@ export default function AdminEnvioEcomTrackingPanel({
   useEffect(() => {
     void fetchBoard();
   }, [fetchBoard]);
+
+  const towerCarrier = towerFocus?.type === "carrier" ? towerFocus.carrier : "";
+  const towerKind = towerFocus?.type === "kind" ? towerFocus.kind : "";
+
+  const fetchTower = useCallback(async () => {
+    setTowerLoading(true);
+    try {
+      const params = new URLSearchParams({ period: towerPeriod });
+      if (towerCarrier) params.set("carrier", towerCarrier);
+      if (towerKind) params.set("kind", towerKind);
+      const res = await fetch(`${BASE}/api/admin/envioecom/control-tower?${params}`, {
+        headers: authHeaders(),
+      });
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      const data = await res.json() as Partial<TowerPayload> & { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Falha ao carregar ocorrências.");
+        return;
+      }
+      setTower({
+        occurrences: Number(data.occurrences) || 0,
+        byCarrier: Array.isArray(data.byCarrier) ? data.byCarrier : [],
+        byKind: Array.isArray(data.byKind) ? data.byKind : [],
+        items: Array.isArray(data.items) ? data.items : [],
+        listTruncated: Boolean(data.listTruncated),
+      });
+    } catch {
+      toast.error("Erro ao carregar ocorrências.");
+    } finally {
+      setTowerLoading(false);
+    }
+  }, [authHeaders, onUnauthorized, towerCarrier, towerKind, towerPeriod]);
+
+  useEffect(() => {
+    void fetchTower();
+  }, [fetchTower]);
+
+  const toggleTowerFocus = (next: TowerFocus) => {
+    setTowerFocus((prev) => {
+      if (!prev || prev.type !== next.type) return next;
+      if (prev.type === "all" && next.type === "all") return null;
+      if (prev.type === "carrier" && next.type === "carrier" && prev.carrier === next.carrier) return null;
+      if (prev.type === "kind" && next.type === "kind" && prev.kind === next.kind) return null;
+      return next;
+    });
+  };
 
   useEffect(() => {
     void fetchItemName();
@@ -684,6 +778,180 @@ export default function AdminEnvioEcomTrackingPanel({
           </p>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-bold text-foreground">Ocorrências</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Problema aberto na última movimentação. Não marca Enviado, não baixa estoque e não tira da cópia.
+            </p>
+          </div>
+          <select
+            value={towerPeriod}
+            onChange={(e) => {
+              setTowerFocus(null);
+              setTowerPeriod(e.target.value as TowerPeriod);
+            }}
+            className="h-10 px-3 rounded-xl border-2 border-border bg-white text-sm"
+          >
+            {TOWER_PERIODS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => toggleTowerFocus({ type: "all" })}
+          className={`rounded-xl border px-3 py-3 text-left transition-colors w-full sm:max-w-xs ${
+            towerFocus?.type === "all"
+              ? "border-amber-500 bg-amber-50 ring-1 ring-amber-400"
+              : "border-amber-200 bg-amber-50/40 hover:bg-amber-50"
+          }`}
+        >
+          <p className="text-[11px] uppercase tracking-wide text-amber-900/80 font-semibold">Ocorrências</p>
+          <p className="text-2xl font-bold text-foreground mt-1">
+            {towerLoading && !tower ? "…" : tower?.occurrences ?? 0}
+          </p>
+          <p className="text-[11px] text-amber-900 mt-1 font-medium">
+            {towerFocus?.type === "all" ? "Fechar" : "Ver mais"}
+          </p>
+        </button>
+
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-border p-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Transportadoras</p>
+            {towerLoading && !tower ? (
+              <p className="text-xs text-muted-foreground mt-2">Carregando…</p>
+            ) : !tower?.byCarrier.length ? (
+              <p className="text-xs text-muted-foreground mt-2">Nenhuma transportadora com ocorrência.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-border">
+                {tower.byCarrier.map((row) => {
+                  const active = towerFocus?.type === "carrier" && towerFocus.carrier === row.carrier;
+                  return (
+                    <li key={row.carrier} className="flex items-center justify-between gap-2 py-2">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{row.carrier}</p>
+                        <p className="text-[11px] text-muted-foreground">{row.count} · {row.percent}%</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-teal-700"
+                        onClick={() => toggleTowerFocus({ type: "carrier", carrier: row.carrier })}
+                      >
+                        {active ? "Fechar" : "Ver mais"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl border border-border p-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Tipos</p>
+            {towerLoading && !tower ? (
+              <p className="text-xs text-muted-foreground mt-2">Carregando…</p>
+            ) : !tower?.byKind.length ? (
+              <p className="text-xs text-muted-foreground mt-2">Nenhum tipo de ocorrência.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-border">
+                {tower.byKind.map((row) => {
+                  const active = towerFocus?.type === "kind" && towerFocus.kind === row.kind;
+                  return (
+                    <li key={row.kind} className="flex items-center justify-between gap-2 py-2">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{row.label}</p>
+                        <p className="text-[11px] text-muted-foreground">{row.count} · {row.percent}%</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-teal-700"
+                        onClick={() => toggleTowerFocus({ type: "kind", kind: row.kind })}
+                      >
+                        {active ? "Fechar" : "Ver mais"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {towerFocus && (
+          <div className="overflow-x-auto rounded-xl border border-border">
+            {tower?.listTruncated && (
+              <p className="px-3 py-2 text-[11px] text-amber-900 bg-amber-50 border-b border-amber-100">
+                Mostrando as 200 atualizações mais antigas. O total e os rankings usam o período inteiro.
+              </p>
+            )}
+            {towerLoading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Carregando…
+              </div>
+            ) : !tower?.items.length ? (
+              <p className="px-3 py-6 text-sm text-center text-muted-foreground">Nenhuma ocorrência neste recorte.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-left">
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Pedido</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Cliente</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Tipo</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Ação</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Atualização</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {tower.items.map((item) => (
+                    <tr key={`${item.orderId}:${item.packageId || "order"}`} className="border-b border-border/70 align-top">
+                      <td className="px-3 py-2.5">
+                        <p className="font-bold text-foreground">
+                          #{item.orderNumber != null ? item.orderNumber : item.orderId.slice(0, 8)}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{item.carrier}</p>
+                        <p className="font-mono text-[11px] text-muted-foreground break-all">{item.trackingCode || "—"}</p>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <p className="font-medium text-foreground">{item.clientName || "—"}</p>
+                        {item.clientPhone && (
+                          <p className="text-[11px] text-muted-foreground">{item.clientPhone}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <p className="font-medium text-foreground">{item.kindLabel}</p>
+                        {item.status && (
+                          <p className="text-[11px] text-muted-foreground max-w-[180px]">{item.status}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-foreground max-w-[220px]">{item.action}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                        {item.statusUpdatedAt ? formatDateBR(item.statusUpdatedAt) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {onGoToOrder && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            onClick={() => onGoToOrder(item.orderId)}
+                          >
+                            Pedido
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {cards.map((card) => {

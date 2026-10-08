@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gt, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, or, sql, type AnyColumn } from "drizzle-orm";
 import { db, orderShipmentsTable, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -35,6 +35,15 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isSplitShipmentList } from "../lib/order-shipments-logic";
+import {
+  controlTowerSince,
+  hasEnvioEcomTowerBinding,
+  parseControlTowerKind,
+  parseControlTowerPeriod,
+  pickControlTowerLabels,
+  summarizeControlTower,
+  type ControlTowerCandidate,
+} from "../lib/shipping-control-tower";
 import { closeOpenReshipmentIfLabelTracked } from "../lib/reshipment-label-tracked-apply";
 import { refreshShippingQueueForOrder } from "../lib/shipping-queue-allocator";
 import {
@@ -2067,6 +2076,169 @@ router.get("/admin/envioecom/tracking-board", requireAdminAuth, async (req, res)
   } catch (err) {
     console.error("[EnvioEcom] tracking-board error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar rastreios." });
+  }
+});
+
+function openEnvioEcomStatus(column: AnyColumn) {
+  return sql`(${column} IS NULL OR (
+    LOWER(${column}) NOT LIKE '%entregue%'
+    AND LOWER(${column}) NOT LIKE '%cancelad%'
+    AND LOWER(${column}) NOT LIKE '%cancelamento%'
+  ))`;
+}
+
+async function packageCountsForOrders(orderIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  for (let i = 0; i < orderIds.length; i += 400) {
+    const slice = orderIds.slice(i, i + 400);
+    if (!slice.length) continue;
+    const rows = await db
+      .select({
+        orderId: orderShipmentsTable.orderId,
+        packageCount: sql<number>`count(*)`,
+      })
+      .from(orderShipmentsTable)
+      .where(inArray(orderShipmentsTable.orderId, slice))
+      .groupBy(orderShipmentsTable.orderId);
+    for (const row of rows) {
+      map.set(row.orderId, Number(row.packageCount) || 0);
+    }
+  }
+  return map;
+}
+
+// --------------------------------------------------------------------------
+// GET /api/admin/envioecom/control-tower — ocorrências abertas (só leitura)
+// --------------------------------------------------------------------------
+router.get("/admin/envioecom/control-tower", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Não autenticado." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess && !adminScope.sellerCode) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão." });
+      return;
+    }
+
+    const period = parseControlTowerPeriod(req.query.period);
+    const since = controlTowerSince(period, new Date());
+    const carrier = String(req.query.carrier || "").trim();
+    const kind = parseControlTowerKind(req.query.kind);
+    const sellerCode = !adminScope.hasGlobalAccess && adminScope.sellerCode
+      ? adminScope.sellerCode
+      : null;
+
+    const orderConditions = [
+      or(
+        isNotNull(ordersTable.envioecomBarcode),
+        isNotNull(ordersTable.envioecomShipmentId),
+        isNotNull(ordersTable.envioecomStatus),
+      ),
+      gte(ordersTable.envioecomStatusUpdatedAt, since),
+      openEnvioEcomStatus(ordersTable.envioecomStatus),
+    ];
+    if (sellerCode) orderConditions.push(eq(ordersTable.sellerCode, sellerCode));
+
+    const packageConditions = [
+      or(
+        isNotNull(orderShipmentsTable.envioecomBarcode),
+        isNotNull(orderShipmentsTable.envioecomShipmentId),
+        isNotNull(orderShipmentsTable.envioecomStatus),
+      ),
+      gte(orderShipmentsTable.envioecomStatusUpdatedAt, since),
+      openEnvioEcomStatus(orderShipmentsTable.envioecomStatus),
+    ];
+    if (sellerCode) packageConditions.push(eq(ordersTable.sellerCode, sellerCode));
+
+    const [orderRows, packageRows] = await Promise.all([
+      db
+        .select({
+          id: ordersTable.id,
+          orderNumber: ordersTable.orderNumber,
+          clientName: ordersTable.clientName,
+          clientPhone: ordersTable.clientPhone,
+          trackingCode: ordersTable.trackingCode,
+          barcode: ordersTable.envioecomBarcode,
+          shipmentId: ordersTable.envioecomShipmentId,
+          deliveryMode: ordersTable.envioecomDeliveryMode,
+          status: ordersTable.envioecomStatus,
+          statusUpdatedAt: ordersTable.envioecomStatusUpdatedAt,
+          history: ordersTable.envioecomStatusHistory,
+        })
+        .from(ordersTable)
+        .where(and(...orderConditions)),
+      db
+        .select({
+          packageId: orderShipmentsTable.id,
+          orderId: orderShipmentsTable.orderId,
+          orderNumber: ordersTable.orderNumber,
+          clientName: ordersTable.clientName,
+          clientPhone: ordersTable.clientPhone,
+          barcode: orderShipmentsTable.envioecomBarcode,
+          shipmentId: orderShipmentsTable.envioecomShipmentId,
+          deliveryMode: orderShipmentsTable.envioecomDeliveryMode,
+          status: orderShipmentsTable.envioecomStatus,
+          statusUpdatedAt: orderShipmentsTable.envioecomStatusUpdatedAt,
+          history: orderShipmentsTable.envioecomStatusHistory,
+        })
+        .from(orderShipmentsTable)
+        .innerJoin(ordersTable, eq(orderShipmentsTable.orderId, ordersTable.id))
+        .where(and(...packageConditions)),
+    ]);
+
+    const orderIds = [...new Set([
+      ...orderRows.map((row) => row.id),
+      ...packageRows.map((row) => row.orderId),
+    ])];
+    const packageCounts = await packageCountsForOrders(orderIds);
+
+    const candidates: ControlTowerCandidate[] = [
+      ...orderRows.map((row) => ({
+        source: "order" as const,
+        orderId: row.id,
+        packageId: null,
+        packageCount: packageCounts.get(row.id) || 0,
+        hasEnvioEcom: hasEnvioEcomTowerBinding(row),
+        status: row.status,
+        history: row.history,
+        deliveryMode: row.deliveryMode,
+        statusUpdatedAt: row.statusUpdatedAt,
+        orderNumber: row.orderNumber,
+        clientName: row.clientName,
+        clientPhone: row.clientPhone,
+        trackingCode: row.trackingCode || row.barcode || row.shipmentId || null,
+        barcode: row.barcode,
+      })),
+      ...packageRows.map((row) => ({
+        source: "package" as const,
+        orderId: row.orderId,
+        packageId: row.packageId,
+        packageCount: packageCounts.get(row.orderId) || 0,
+        hasEnvioEcom: hasEnvioEcomTowerBinding(row),
+        status: row.status,
+        history: row.history,
+        deliveryMode: row.deliveryMode,
+        statusUpdatedAt: row.statusUpdatedAt,
+        orderNumber: row.orderNumber,
+        clientName: row.clientName,
+        clientPhone: row.clientPhone,
+        trackingCode: row.barcode || row.shipmentId || null,
+        barcode: row.barcode,
+      })),
+    ];
+
+    const summary = summarizeControlTower(pickControlTowerLabels(candidates), { carrier, kind });
+    res.json({
+      ok: true,
+      period,
+      since: since.toISOString(),
+      ...summary,
+    });
+  } catch (err) {
+    console.error("[EnvioEcom] control-tower error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao montar a torre de ocorrências." });
   }
 });
 

@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-10-07
+> **Última atualização:** 2026-10-08
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -24,6 +24,8 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 
 **SuperFrete** (colunas próprias, não entra em `isLabelReadyStatus`): `pending` fica na cópia e no card Pedidos para Enviar. `released` sai da cópia e do card (igual Etiqueta emitida). `posted` e `delivered` saem dos dois e marcam `enviado`. URL do PDF SuperFrete tira da cópia e do card. Cancelado fica, mesmo com URL antiga. No dividido, o pacote SuperFrete conta do mesmo jeito que o pacote EnvioEcom: o pedido só sai quando todos saíram. `released` não marca Enviado e não baixa estoque.
 
+**Torre de ocorrências** (aba Rastreios): só leitura. Não marca Enviado, não baixa estoque e não tira ninguém da cópia 48h.
+
 **Proibido em changelog/código:** “Aguardando coleta não conta” para a **cópia**. Funções: `isExcludedFromShippingCopyList` / `isSplitOrderPartiallyShipped` (`artifacts/ka-imports/src/lib/shipping-copy-list.ts`); `isSplitOrderExcludedFromShippingCopyList` / `pendingCopyItemsFromSplitPackages` (`order-shipments-logic.ts`); `isLabelReadyStatus` / `isInTransitStatus` (`lib/envioecom.ts`). Teste: `shipping-copy-list.test.ts` + `envioecom-status.test.ts` + `order-shipments.test.ts`.
 
 ## Card Pedidos para Enviar (painel)
@@ -42,6 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-08 | Torre de ocorrências na aba Rastreios | Card de problema aberto, ranking por transportadora e por tipo, lista com a ação sugerida. O período usa a última atualização do envio | Não marca Enviado, não baixa estoque e não tira da cópia 48h. SuperFrete, Motoboy e a lista negra de extravio iguais |
 | 2026-10-07 | Create EnvioEcom com `orderId` já usado tenta outro sufixo na hora. Pacote novo da divisão guarda o número antigo se o pedido foi desvinculado | #1573 deixa de cair em “verifique saldo” quando a EnvioEcom diz pedido já cadastrado | Cópia 48h, Vincular e cancelar na API iguais |
 | 2026-10-06 | No celular o item do menu desce até o conteúdo | O clique em Peptídeos Individuais, Encontre seu Peptídeo ou outro item rola a tela até a grade ou o questionário | No computador o menu e o conteúdo continuam lado a lado |
 | 2026-10-06 | Questionário Encontre seu Peptídeo | Três etapas no visual claro: até 4 objetivos, experiência e via. O iniciante vê a lista curta do objetivo. A via só coloca na frente quem a ficha já cita. Ver ficha completa segue o gate do teste | Os outros itens do menu e o PIX iguais |
