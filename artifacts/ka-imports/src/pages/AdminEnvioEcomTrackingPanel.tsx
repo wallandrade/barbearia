@@ -191,26 +191,26 @@ type LabelOptionDraft = { id: string; name: string; value: string };
 const LABEL_POOL_MAX = 30;
 
 const SUGGESTED_LABEL_OPTIONS: Array<{ name: string; value: string }> = [
-  { name: "Capa de celular", value: "8,90" },
-  { name: "Película de vidro", value: "12,50" },
-  { name: "Carregador USB", value: "19,90" },
-  { name: "Cabo de dados", value: "15,00" },
-  { name: "Fone de ouvido", value: "24,90" },
-  { name: "Suporte de mesa", value: "18,50" },
-  { name: "Caixa de som", value: "29,90" },
-  { name: "Mouse sem fio", value: "22,00" },
-  { name: "Teclado compacto", value: "35,00" },
-  { name: "Pen drive", value: "16,90" },
-  { name: "Adaptador de tomada", value: "9,90" },
-  { name: "Luminária de mesa", value: "27,50" },
-  { name: "Organizador de cabos", value: "11,90" },
-  { name: "Suporte veicular", value: "21,00" },
-  { name: "Power bank", value: "39,90" },
-  { name: "Ring light", value: "32,00" },
-  { name: "Tripé de celular", value: "28,50" },
-  { name: "Capa de notebook", value: "45,00" },
-  { name: "Mousepad", value: "14,90" },
-  { name: "Hub USB", value: "26,90" },
+  { name: "Peça sensor painel Land Rover", value: "902,68" },
+  { name: "Peça sensor Camaro 2026", value: "930,43" },
+  { name: "Peça sensor placa Range Rover", value: "814,46" },
+  { name: "Peça botão painel BMW", value: "985,30" },
+  { name: "Peça sensor estacionamento Mercedes", value: "876,20" },
+  { name: "Peça emblema grade Porsche", value: "941,15" },
+  { name: "Peça sensor chuva Audi", value: "858,90" },
+  { name: "Peça chave canivete Bentley", value: "967,40" },
+  { name: "Peça conector módulo Jaguar", value: "823,75" },
+  { name: "Peça botão vidro Lexus", value: "912,08" },
+  { name: "Peça sensor pressão pneu Maserati", value: "889,55" },
+  { name: "Peça relé pequeno Ferrari", value: "954,12" },
+  { name: "Peça sensor temperatura Rolls-Royce", value: "837,60" },
+  { name: "Peça interruptor painel Lamborghini", value: "978,25" },
+  { name: "Peça sensor ABS Porsche", value: "865,33" },
+  { name: "Peça moldura botão Mercedes", value: "921,70" },
+  { name: "Peça sensor ré Audi", value: "848,19" },
+  { name: "Peça atuador trava BMW", value: "993,80" },
+  { name: "Peça capa chave Land Rover", value: "806,42" },
+  { name: "Peça sensor luz RAM", value: "917,55" },
 ];
 
 let labelOptionSeq = 0;
@@ -726,7 +726,7 @@ export default function AdminEnvioEcomTrackingPanel({
                 value={row.name}
                 onChange={(e) => updateOption(row.id, { name: e.target.value.slice(0, 120) })}
                 disabled={itemNameLoading || itemNameSaving || !itemLabelReady}
-                placeholder="Ex.: Tela de celular"
+                placeholder="Ex.: Peça sensor Land Rover"
                 className="flex-1 min-w-0 h-11 px-3 rounded-xl border-2 border-amber-200 bg-white focus:border-amber-500 outline-none text-sm"
                 maxLength={120}
               />
