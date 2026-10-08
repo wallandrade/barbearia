@@ -7344,6 +7344,9 @@ export default function Admin() {
                         <p className="text-sm text-muted-foreground">Número vencedor</p>
                         <p className="text-xl font-bold text-primary">{raffleResult.winnerNumber}</p>
                         <p className="text-sm font-semibold text-foreground mt-1">{raffleResult.winnerClientName || "Sem comprador pago"}</p>
+                        {raffleResult.winnerClientPhone ? (
+                          <p className="text-xs text-muted-foreground">{raffleResult.winnerClientPhone}</p>
+                        ) : null}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">Sem resultado publicado.</p>

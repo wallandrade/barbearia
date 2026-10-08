@@ -44,6 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-08 | Admin, resultado da rifa mostra o celular do ganhador | No card Resultado da rifa, o telefone da reserva paga fica embaixo do nome | Página pública continua com o telefone mascarado. Ranking, publicar e PIX iguais |
 | 2026-10-08 | As 20 sugestões da etiqueta são peça pequena de carro de luxo | **Usar 20 sugestões** preenche sensor, botão, emblema, chave e conector (BMW, Porsche, Land Rover e afins). Sem mínimo e máximo, o valor da linha fica entre R$ 806,42 e R$ 993,80 | Com a faixa preenchida, o valor continua sorteado dentro dela. Create, cotação e envio já gerado iguais |
 | 2026-10-08 | Torre de ocorrências na aba Rastreios | Card de problema aberto, ranking por transportadora e por tipo, lista com a ação sugerida. O período usa a última atualização do envio | Não marca Enviado, não baixa estoque e não tira da cópia 48h. SuperFrete, Motoboy e a lista negra de extravio iguais |
 | 2026-10-07 | Create EnvioEcom com `orderId` já usado tenta outro sufixo na hora. Pacote novo da divisão guarda o número antigo se o pedido foi desvinculado | #1573 deixa de cair em “verifique saldo” quando a EnvioEcom diz pedido já cadastrado | Cópia 48h, Vincular e cancelar na API iguais |
@@ -441,6 +442,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 - `raffles`, reservas, resultados, promoções — `routes/raffles.ts` (PIX de reserva, ranking, etc.).
 - **Consulte seus números** (`GET /api/raffles/reservations/lookup`): telefone com 8 a 10 dígitos busca só o celular. Com 11 dígitos (CPF ou celular, com ou sem máscara) busca os dois: o telefone no fim do número e o CPF só com dígitos, inclusive documento gravado com ponto ou traço. `phone=` explícito não vira CPF. `cpf=` explícito não vira telefone.
 - Admin, card da rifa: **Clonar** (`POST /api/admin/raffles`) cria outra do zero. Copia título, descrição, foto, quantidade de números, preço por número e tempo de reserva. A nova nasce **Ativa**. Reservas, ranking, promoções, resultado e total pago ficam na original.
+- Admin, card **Resultado da rifa**: com resultado publicado, o celular do comprador pago (`winnerClientPhone`) aparece embaixo do nome. Sem comprador pago, o telefone não aparece. A página pública da rifa continua mostrando o telefone mascarado.
 
 ## Suporte, reenvios, estoque
 
