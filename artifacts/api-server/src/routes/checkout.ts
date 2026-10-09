@@ -13,6 +13,7 @@ import {
 import { getCustomerSession } from "../middlewares/customer-auth";
 import { applyAffiliateCreditToOrder, ensureOrderCommission, normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { queueReportanaDraftComplete, queueReportanaOrderSync } from "../lib/reportana";
 import { recordOrderActivity } from "../lib/order-activity";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
@@ -234,6 +235,7 @@ router.post("/checkout/pix", async (req, res) => {
       sellerCode,       couponCode,
       useAffiliateCredit,
       useStoreCredit,
+      draftId,
     } = req.body as {
       client: { name: string; email: string; phone: string; document: string };
       address?: {
@@ -250,6 +252,7 @@ router.post("/checkout/pix", async (req, res) => {
       couponCode?: string;
       useAffiliateCredit?: boolean;
       useStoreCredit?: boolean;
+      draftId?: string;
     };
 
     const normalizedAffiliateCode = normalizeAffiliateCode(req.body?.affiliateCode);
@@ -620,6 +623,8 @@ router.post("/checkout/pix", async (req, res) => {
         actorType: "system",
         actorName: "Sistema",
       });
+      queueReportanaOrderSync(orderId);
+      queueReportanaDraftComplete(draftId, orderId);
       res.json({
         orderId,
         orderNumber,
@@ -676,6 +681,7 @@ router.post("/checkout/pix", async (req, res) => {
         .set({ status: "cancelled", updatedAt: new Date() })
         .where(eq(ordersTable.id, orderId))
         .catch(() => {});
+      queueReportanaOrderSync(orderId);
       res.status(400).json({ error: "GATEWAY_ERROR", message: msg });
       return;
     }
@@ -686,10 +692,13 @@ router.post("/checkout/pix", async (req, res) => {
     await db.update(ordersTable)
       .set({
         transactionId: gatewayData.transactionId,
+        pixCode: gatewayData.pix?.code || null,
         status: "awaiting_payment",
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, orderId));
+    queueReportanaOrderSync(orderId);
+    queueReportanaDraftComplete(draftId, orderId);
 
     console.log(`[CHECKOUT/PIX:${requestId}] PIX generated — transactionId: ${gatewayData.transactionId}`);
 

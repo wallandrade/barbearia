@@ -14,6 +14,7 @@ import {
 import { ensureOrderCommission } from "../lib/affiliates";
 import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { queueReportanaOrderSync } from "../lib/reportana";
 import { recordOrderActivity } from "../lib/order-activity";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
 import { allocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
@@ -101,10 +102,12 @@ router.post("/pix/generate", async (req, res) => {
           .update(ordersTable)
           .set({
             transactionId: gatewayData.transactionId,
+            pixCode: gatewayData.pix?.code || null,
             status: "awaiting_payment",
             updatedAt: new Date(),
           })
           .where(eq(ordersTable.id, orderId));
+        queueReportanaOrderSync(orderId);
       } catch (dbErr) {
         console.error("[PIX] DB update error:", dbErr);
       }
@@ -171,6 +174,7 @@ router.get("/pix/status/:transactionId", async (req, res) => {
             await consumePromoStockForPaidOrder(row.id);
             if (isStandardShipping(row.shippingType)) void allocateShippingSlot(row.id);
           }
+          queueReportanaOrderSync(row.id);
         }
 
         const status = isPaid ? "OK" : isCancelled ? "CANCELED" : "PENDING";
@@ -260,6 +264,7 @@ router.post("/pix/callback/:token", async (req, res) => {
         total: existing[0]?.total,
         source: "legacy_pix_callback",
       });
+      queueReportanaOrderSync(existing[0]?.id);
       if (existing[0]?.id) {
         void recordOrderActivity({
           orderId: existing[0].id,

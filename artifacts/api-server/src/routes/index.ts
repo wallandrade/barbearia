@@ -37,6 +37,7 @@ import shippingQueueRouter from "./shipping-queue";
 import shippingDeliveryEstimateRouter from "./shipping-delivery-estimate";
 
 import brevoRouter from "./brevo";
+import reportanaRouter from "./reportana";
 import envioecomRouter from "./envioecom";
 import superfreteRouter from "./superfrete";
 import bankStatementRouter from "./bank-statement";
@@ -83,6 +84,7 @@ router.use(inventorySyncRouter);
 router.use(shippingQueueRouter);
 router.use(shippingDeliveryEstimateRouter);
 router.use(brevoRouter);
+router.use(reportanaRouter);
 router.use(envioecomRouter);
 router.use(superfreteRouter);
 router.use(bankStatementRouter);

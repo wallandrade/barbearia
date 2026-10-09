@@ -59,6 +59,7 @@ function getRefererOrigin(referer?: string | null): string | null {
 const sensitivePublicWritePaths = new Set([
   "/api/orders",
   "/api/checkout/pix",
+  "/api/checkout/draft",
   "/api/custom-charges",
   "/api/support/orders-by-cpf",
   "/api/support/tickets",
@@ -76,6 +77,7 @@ const sensitivePublicReadPaths = new Set([
 const sensitivePublicReadPathPatterns = [
   /^\/api\/kyc\/check-cpf\/[^/]+$/,
   /^\/api\/kyc\/[^/]+$/,
+  /^\/api\/checkout\/draft\/[^/]+$/,
 ];
 
 const CHECKOUT_TOKEN_TTL_MS = Number(process.env.CHECKOUT_TOKEN_TTL_MS || 5 * 60 * 1000);
@@ -163,6 +165,10 @@ const publicWriteRateRules: Record<string, RateLimitRule> = {
     windowMs: Number(process.env.RL_PUBLIC_CHECKOUT_WINDOW_MS || 10 * 60 * 1000),
     max: Number(process.env.RL_PUBLIC_CHECKOUT_MAX || 40),
   },
+  "/api/checkout/draft": {
+    windowMs: Number(process.env.RL_PUBLIC_CHECKOUT_WINDOW_MS || 10 * 60 * 1000),
+    max: Number(process.env.RL_PUBLIC_CHECKOUT_MAX || 40),
+  },
   "/api/custom-charges": {
     windowMs: Number(process.env.RL_PUBLIC_CUSTOM_CHARGES_WINDOW_MS || 10 * 60 * 1000),
     max: Number(process.env.RL_PUBLIC_CUSTOM_CHARGES_MAX || 25),
@@ -186,6 +192,10 @@ const publicWriteRateRules: Record<string, RateLimitRule> = {
 };
 
 const publicReadRateRules: Record<string, RateLimitRule> = {
+  "/api/checkout/draft/:id": {
+    windowMs: Number(process.env.RL_PUBLIC_CHECKOUT_WINDOW_MS || 10 * 60 * 1000),
+    max: Number(process.env.RL_PUBLIC_CHECKOUT_MAX || 40),
+  },
   "/api/raffles/reservations/lookup": {
     windowMs: Number(process.env.RL_PUBLIC_RAFFLE_LOOKUP_WINDOW_MS || 10 * 60 * 1000),
     max: Number(process.env.RL_PUBLIC_RAFFLE_LOOKUP_MAX || 25),
@@ -233,6 +243,9 @@ function resolvePublicReadRule(path: string): RateLimitRule | undefined {
   }
   if (/^\/api\/kyc\/[^/]+$/.test(path)) {
     return publicReadRateRules["/api/kyc/:orderId"];
+  }
+  if (/^\/api\/checkout\/draft\/[^/]+$/.test(path)) {
+    return publicReadRateRules["/api/checkout/draft/:id"];
   }
   return undefined;
 }

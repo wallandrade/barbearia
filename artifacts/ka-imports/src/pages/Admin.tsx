@@ -19237,6 +19237,149 @@ function parseCheckoutCarrierPrioritySetting(raw: string | undefined): string[] 
   }
 }
 
+function ReportanaSettingsCard() {
+  const [enabled, setEnabled] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [segmentId, setSegmentId] = useState("");
+  const [secretHint, setSecretHint] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [busy, setBusy] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/admin/reportana/config`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json() as {
+        enabled?: boolean;
+        clientId?: string;
+        secretHint?: string | null;
+        segmentId?: string;
+      };
+      setEnabled(Boolean(data.enabled));
+      setClientId(data.clientId || "");
+      setSegmentId(data.segmentId || "");
+      setSecretHint(data.secretHint || null);
+    } catch {
+      // painel segue editável
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const save = async () => {
+    setBusy("save");
+    try {
+      const res = await fetch(`${BASE}/api/admin/reportana/config`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          enabled,
+          clientId,
+          clientSecret,
+          segmentId,
+        }),
+      });
+      const data = await res.json() as { message?: string; error?: string; secretHint?: string | null };
+      if (!res.ok) {
+        toast.error(data.message || data.error || "Não salvou a Reportana.");
+        return;
+      }
+      setClientSecret("");
+      setSecretHint(data.secretHint || secretHint);
+      toast.success("Reportana salva.");
+    } catch {
+      toast.error("Não salvou a Reportana.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const run = async (path: string, body: Record<string, unknown> | undefined, label: string) => {
+    setBusy(path);
+    try {
+      const res = await fetch(`${BASE}/api/admin/reportana/${path}`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json() as { message?: string; error?: string; synced?: number; failed?: number; total?: number };
+      if (!res.ok) {
+        toast.error(data.message || data.error || `Falhou: ${label}.`);
+        return;
+      }
+      if (typeof data.synced === "number") {
+        toast.success(`${label}: ${data.synced} ok${data.failed ? `, ${data.failed} falharam` : ""}.`);
+      } else {
+        toast.success(label);
+      }
+    } catch {
+      toast.error(`Falhou: ${label}.`);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+      <div>
+        <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+          <MessageCircle className="w-5 h-5 text-primary" />
+          Reportana
+        </h2>
+        <p className="text-muted-foreground text-sm">
+          Envia pedido, carrinho abandonado e lead. O texto do WhatsApp fica no painel da Reportana. Sem o interruptor, nada sai sozinho.
+        </p>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        Ativar envio
+      </label>
+      <div className="grid grid-cols-1 gap-3">
+        <label className="block text-xs font-medium">
+          Client ID
+          <input value={clientId} onChange={(e) => setClientId(e.target.value)} className="mt-1 w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm" />
+        </label>
+        <label className="block text-xs font-medium">
+          Client Secret {secretHint ? `(salvo ${secretHint})` : ""}
+          <input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={secretHint ? "Deixe vazio para manter" : ""} className="mt-1 w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm" />
+        </label>
+        <label className="block text-xs font-medium">
+          ID da lista (segmento)
+          <input value={segmentId} onChange={(e) => setSegmentId(e.target.value)} placeholder="Opcional" className="mt-1 w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm" />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => void save()} disabled={busy === "save"}>
+          {busy === "save" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => void run("test", undefined, "Teste enviado")} disabled={!!busy}>
+          Testar conexão
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="Número do pedido" className="h-10 px-3 rounded-xl border-2 border-border text-sm" />
+        <Button size="sm" variant="outline" disabled={!!busy || !orderNumber.trim()} onClick={() => void run("sync-order", { orderNumber }, "Pedido sincronizado")}>
+          Sincronizar pedido
+        </Button>
+        <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void run("sync-recent", undefined, "Pedidos recentes")}>
+          Sincronizar 90 dias
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void run("sync-leads", undefined, "Lista de leads")}>
+          Enviar clientes pagos
+        </Button>
+        <input value={leadEmail} onChange={(e) => setLeadEmail(e.target.value)} placeholder="email para remover" className="h-10 px-3 rounded-xl border-2 border-border text-sm" />
+        <Button size="sm" variant="outline" disabled={!!busy || !leadEmail.includes("@")} onClick={() => void run("delete-lead", { email: leadEmail }, "Lead removido")}>
+          Remover da lista
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
@@ -20276,6 +20419,8 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           Pedido real só sai com <strong>Ativar envio</strong> ligado. Cole a URL exatamente como o Pushcut mostra (espaço no nome conta). Teste envia “Cliente teste — R$ 150,00”.
         </p>
       </div>
+
+      <ReportanaSettingsCard />
 
       {/* ── Integração Brevo ─────────────────────────────────────────────── */}
       <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">

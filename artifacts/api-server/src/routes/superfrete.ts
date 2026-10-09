@@ -4,6 +4,7 @@ import { db, orderShipmentsTable, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { recordAdminActivity } from "../lib/order-activity";
+import { queueReportanaOrderSync } from "../lib/reportana";
 import {
   getOrderShipment,
   listOrderShipments,
@@ -261,6 +262,7 @@ async function applySuperfreteSnapshot(input: {
   } catch (err) {
     console.warn("[SuperFrete] reenvio", input.order.id, err);
   }
+  queueReportanaOrderSync(input.order.id);
 
   const packages = (await listOrderShipments(input.order.id)).map(mapOrderShipmentPublic);
   const [fresh] = await db

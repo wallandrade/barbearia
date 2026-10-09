@@ -501,7 +501,10 @@ export default function Checkout() {
             getCustomerAuthHeaders() as Record<string, string>,
             forceRefreshToken,
           ),
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            draftId: sessionStorage.getItem("yury_checkout_draft_id") || undefined,
+          }),
         });
         const result = await resp.json() as Record<string, unknown>;
         return { resp, result };
@@ -1131,10 +1134,133 @@ export default function Checkout() {
     handleSubmit,
     setValue,
     getValues,
+    watch,
     formState: { errors },
   } = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
   });
+  const draftWatch = watch(["name", "email", "phone", "cep", "street", "number", "complement", "neighborhood", "city", "state"]);
+  const draftFingerprint = useRef("");
+
+  useEffect(() => {
+    const draftId = new URLSearchParams(window.location.search).get("draft");
+    if (!draftId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${BASE}/api/checkout/draft/${encodeURIComponent(draftId)}`, {
+          headers: await getCheckoutSecurityHeaders(),
+        });
+        if (!res.ok || cancelled) return;
+        const draft = await res.json() as {
+          completed?: boolean;
+          clientName?: string;
+          clientEmail?: string;
+          clientPhone?: string;
+          address?: {
+            cep?: string;
+            street?: string;
+            number?: string;
+            complement?: string;
+            neighborhood?: string;
+            city?: string;
+            state?: string;
+          };
+          products?: Array<{ id?: string; name?: string; quantity?: number; price?: number; image?: string; variantLabel?: string }>;
+        };
+        if (cancelled || draft.completed) return;
+        sessionStorage.setItem("yury_checkout_draft_id", draftId);
+        if (draft.clientName) setValue("name", draft.clientName);
+        if (draft.clientEmail) setValue("email", draft.clientEmail);
+        if (draft.clientPhone) {
+          const phone = formatPhone(draft.clientPhone);
+          setPhoneDisplay(phone);
+          setValue("phone", phone);
+        }
+        const address = draft.address || {};
+        if (address.cep) {
+          const cep = formatCEP(address.cep);
+          setCepDisplay(cep);
+          setValue("cep", cep);
+        }
+        if (address.street) setValue("street", address.street);
+        if (address.number) setValue("number", address.number);
+        if (address.complement) setValue("complement", address.complement);
+        if (address.neighborhood) setValue("neighborhood", address.neighborhood);
+        if (address.city) setValue("city", address.city);
+        if (address.state) setValue("state", address.state);
+        const products = Array.isArray(draft.products) ? draft.products : [];
+        if (products.length > 0) {
+          useCart.setState({
+            items: products.map((item) => ({
+              id: String(item.id || item.name || ""),
+              name: String(item.name || ""),
+              price: Number(item.price) || 0,
+              baseUnitPrice: Number(item.price) || 0,
+              regularPrice: Number(item.price) || 0,
+              quantity: Math.max(1, Number(item.quantity) || 1),
+              image: item.image,
+              variantLabel: item.variantLabel,
+            })),
+          });
+        }
+      } catch {
+        // rascunho ausente não bloqueia o checkout
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setValue]);
+
+  useEffect(() => {
+    const [name, email, phone, cep, street, number, complement, neighborhood, city, state] = draftWatch;
+    const phoneDigits = String(phone || "").replace(/\D/g, "");
+    if (String(name || "").trim().length < 3) return;
+    if (!String(email || "").includes("@")) return;
+    if (phoneDigits.length < 10) return;
+    if (items.length === 0) return;
+    const products = items.map((item) => ({
+      id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      image: (item as { image?: string }).image,
+      variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
+    }));
+    const body = {
+      id: sessionStorage.getItem("yury_checkout_draft_id") || undefined,
+      clientName: String(name),
+      clientEmail: String(email),
+      clientPhone: String(phone),
+      address: { cep, street, number, complement, neighborhood, city, state },
+      products,
+      subtotal,
+      total,
+    };
+    const fingerprint = JSON.stringify(body);
+    if (fingerprint === draftFingerprint.current) return;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`${BASE}/api/checkout/draft`, {
+            method: "POST",
+            headers: await getCheckoutSecurityHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) return;
+          const data = await res.json() as { id?: string };
+          if (data.id) {
+            sessionStorage.setItem("yury_checkout_draft_id", data.id);
+            draftFingerprint.current = JSON.stringify({ ...body, id: data.id });
+          }
+        } catch {
+          // falha do rascunho não interrompe a compra
+        }
+      })();
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [JSON.stringify(draftWatch), items, subtotal, total]);
 
   const handleCPFChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatCPF(e.target.value);
@@ -1353,6 +1479,7 @@ export default function Checkout() {
           useStoreCredit,
           couponCode:      appliedCoupon?.code,
           discountAmount:  discountAmount > 0 ? discountAmount : undefined,
+          draftId: sessionStorage.getItem("yury_checkout_draft_id") || undefined,
         }),
       });
 

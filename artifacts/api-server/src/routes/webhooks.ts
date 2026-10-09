@@ -21,6 +21,7 @@ import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { queueReportanaOrderSync } from "../lib/reportana";
 import { recordOrderActivity } from "../lib/order-activity";
 import { markSubscriptionFromWebhook } from "../lib/customer-subscription";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
@@ -139,6 +140,7 @@ async function handleCallback(body: GatewayCallback) {
             });
             recordPixPaid(row.id);
           }
+          queueReportanaOrderSync(row.id);
 
           console.log(`[WEBHOOK] Order ${row.id} updated to ${newStatus}`);
         }
@@ -225,6 +227,7 @@ async function handleCallback(body: GatewayCallback) {
                 });
                 recordPixPaid(row.orderId, "Cobrança de diferença");
               }
+              queueReportanaOrderSync(row.orderId);
 
               if (newOrderStatus === "paid" || newOrderStatus === "completed") {
                 await ensureOrderCommission(row.orderId);
@@ -457,6 +460,7 @@ router.post("/webhook", async (req, res) => {
           });
           recordPixPaid(rawOrderId);
         }
+        queueReportanaOrderSync(rawOrderId);
         console.log(`[WEBHOOK/universal] Order ${rawOrderId} → ${newStatus}`);
         res.json({ ok: true, matched: true, updated: "order", id: rawOrderId, status: newStatus });
         return;
@@ -516,6 +520,7 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
           source: "direct_order_webhook",
         });
         recordPixPaid(orderId);
+        queueReportanaOrderSync(orderId);
         console.log(`[WEBHOOK] Order ${orderId} paid via direct URL`);
       }
     }
@@ -595,6 +600,7 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
               });
               recordPixPaid(rows[0]!.orderId, "Cobrança de diferença");
             }
+            queueReportanaOrderSync(rows[0]!.orderId);
             console.log(`[WEBHOOK] Order ${rows[0]!.orderId} auto-updated to ${newOrderStatus} after diff charge (direct URL)`);
 
             if (newOrderStatus === "paid" || newOrderStatus === "completed") {

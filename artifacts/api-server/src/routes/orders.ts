@@ -64,6 +64,7 @@ import {
 } from "../lib/related-shipments";
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
+import { queueReportanaDraftComplete, queueReportanaOrderSync } from "../lib/reportana";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { formatShippingForecastDateBR, normalizeShippingForecastDate } from "../lib/shipping-forecast";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
@@ -1360,6 +1361,8 @@ router.post("/orders", async (req, res) => {
       sellerCode: resolvedSellerCode,
       createdAt: new Date().toISOString(),
     });
+    queueReportanaOrderSync(id);
+    queueReportanaDraftComplete(req.body?.draftId, id);
     void recordOrderActivity({
       orderId: id,
       type: "created",
@@ -1885,6 +1888,7 @@ router.post("/admin/orders/:id/apply-store-credit", requireAdminAuth, async (req
         coveredByStoreCredit: true,
       });
     }
+    queueReportanaOrderSync(id);
 
     const remainingAfter = next.fullyCovered ? 0 : roundOrderMoney(next.nextTotal);
     recordAdminActivity(
@@ -2078,6 +2082,7 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
         source: "admin_manual",
       });
     }
+    if (currentStatus !== nextStatus) queueReportanaOrderSync(id);
     const statusLabels: Record<string, string> = {
       paid: "Marcou como pago",
       completed: "Marcou como concluído",
@@ -2255,6 +2260,7 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
       });
     }
     recordAdminActivity(req, id, "proof", "Enviou comprovante");
+    queueReportanaOrderSync(id);
     res.json({ ok: true, proofUrls: urls });
   } catch (err) {
     console.error("Upload proof error:", err);
@@ -2582,6 +2588,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       detail: `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}${resolvedProducts.some((p) => Number(p.lineDiscount) > 0) ? ` · desconto item: ${resolvedProducts.filter((p) => Number(p.lineDiscount) > 0).map((p) => `${p.name} -${Number(p.lineDiscount).toFixed(2)}`).join(", ")}` : ""}`,
       meta: changedProducts.length > 0 ? { products: changedProducts } : null,
     });
+    queueReportanaOrderSync(id);
     res.json({ ok: true, order: mapOrder(updated[0]), walletCredit });
   } catch (err) {
     console.error("Edit order error:", err);
@@ -3979,6 +3986,7 @@ router.patch("/admin/orders/:id/tracking-code", requireAdminAuth, async (req, re
       .limit(1);
 
     broadcastNotification({ type: "order_tracking_updated", data: { id, trackingCode: normalized } });
+    queueReportanaOrderSync(id);
     recordAdminActivity(req, id, "tracking", "Atualizou código de rastreio", normalized);
     res.json({ ok: true, order: updated[0] ? mapOrder(updated[0]) : null });
   } catch (err) {

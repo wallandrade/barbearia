@@ -33,6 +33,7 @@ import {
   supportTicketsTable,
 } from "@workspace/db";
 import { normalizeStoredClientDocument } from "./related-shipments";
+import { queueReportanaOrderSync } from "./reportana";
 
 export type ReshipmentStatus =
   | "reenvio_aguardando_estoque"
@@ -757,6 +758,7 @@ export async function createReshipmentChildOrder(params: {
     enviado: false,
     inventoryReserved: false,
   });
+  queueReportanaOrderSync(childOrderId);
 
   try {
     await pool.query(

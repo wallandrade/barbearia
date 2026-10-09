@@ -1299,6 +1299,33 @@ async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<v
   }
 }
 
+async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
+  if (await tableExists("checkout_drafts", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE checkout_drafts (
+      id VARCHAR(64) NOT NULL PRIMARY KEY,
+      client_name VARCHAR(255) NOT NULL,
+      client_email VARCHAR(255) NOT NULL,
+      client_phone VARCHAR(255) NOT NULL,
+      address_cep VARCHAR(32) NULL,
+      address_street VARCHAR(255) NULL,
+      address_number VARCHAR(64) NULL,
+      address_complement VARCHAR(255) NULL,
+      address_neighborhood VARCHAR(255) NULL,
+      address_city VARCHAR(255) NULL,
+      address_state VARCHAR(8) NULL,
+      products JSON NOT NULL,
+      subtotal DECIMAL(10,2) NOT NULL,
+      total DECIMAL(10,2) NOT NULL,
+      completed_order_id VARCHAR(255) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY checkout_drafts_email_idx (client_email),
+      KEY checkout_drafts_completed_idx (completed_order_id)
+    )
+  `);
+}
+
 export async function ensureRuntimeSchema(): Promise<void> {
   try {
     const databaseName = getDatabaseName();
@@ -1332,6 +1359,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureMotoboyPriceProposalsTable(databaseName);
     await ensureStoreCreditTables(databaseName);
     await ensureCustomerSubscriptionsTable(databaseName);
+    await ensureCheckoutDraftsTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

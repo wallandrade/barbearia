@@ -6,6 +6,7 @@ import { broadcastNotification } from "./notifications";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
+import { queueReportanaOrderSync } from "../lib/reportana";
 import {
   CarrierLossError,
   clearCarrierLoss,
@@ -381,6 +382,7 @@ async function unlinkEnvioEcomBinding(
       updatedAt: new Date(),
     })
     .where(eq(ordersTable.id, order.id));
+  queueReportanaOrderSync(order.id);
 }
 
 function isBenignEnvioEcomCancelError(err: unknown): boolean {
@@ -550,6 +552,7 @@ async function applyShipmentStatusToOrder(params: {
     }
     if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
     await noteCarrierLoss(order, params, pkg.id, pkg.envioecomDeliveryMode);
+    queueReportanaOrderSync(order.id);
     return { updated: true };
   }
 
@@ -624,6 +627,7 @@ async function applyShipmentStatusToOrder(params: {
   }
   if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
   await noteCarrierLoss(order, params, null, order.envioecomDeliveryMode);
+  queueReportanaOrderSync(order.id);
   return { updated: true };
 }
 
@@ -1208,6 +1212,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     }
 
     recordAdminActivity(req, order.id, "envioecom", "Criou envio EnvioEcom", shippingCompany);
+    queueReportanaOrderSync(order.id);
     const packages = await listOrderShipments(order.id);
     res.json({
       ok: true,
@@ -1623,6 +1628,7 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
           .where(eq(ordersTable.id, order.id));
       }
       await closeReshipmentAfterLabelTracking(order.id);
+      queueReportanaOrderSync(order.id);
     }
 
     const refreshed = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id)).limit(1);
