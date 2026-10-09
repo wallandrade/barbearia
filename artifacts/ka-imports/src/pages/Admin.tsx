@@ -615,6 +615,8 @@ export function orderToPostPaymentText(order: any, deadlineHours: number = 48): 
     "",
     "⚠️ **Importante:** sábados, domingos e feriados não são considerados dias úteis para processamento de envio.",
     "",
+    postPaymentInsuranceNotice(order),
+    "",
     "Obrigado pela confiança! 💙📦",
   ].join("\n");
 }
@@ -770,7 +772,7 @@ import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActi
 import { MotoboyDistanceCard } from "@/components/MotoboyDistanceCard";
 import { MotoboySlotHoursCard } from "@/components/MotoboySlotHoursCard";
 import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
-import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
+import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, postPaymentInsuranceNotice, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
   adminOrdersKindForRow,
   isAdminOrdersReshipmentRow,
