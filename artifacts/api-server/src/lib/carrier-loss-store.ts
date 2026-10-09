@@ -1,15 +1,19 @@
 import crypto from "crypto";
-import { and, eq, gte, inArray, isNull } from "drizzle-orm";
-import { carrierLossIncidentsTable, db, type Order } from "@workspace/db";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { carrierLossIncidentsTable, db, orderShipmentsTable, ordersTable, type Order } from "@workspace/db";
 import {
   attachLossAlerts,
+  capLossBlacklistList,
   carrierDisplayName,
   carrierMatchKey,
   firstCarrierLossText,
+  lossBlacklistEventsFromHistory,
+  lossBlacklistMatchesQuery,
   lossPlaceFromAddress,
   lossPlacePhrase,
   neighborhoodMatchKey,
   CARRIER_LOSS_WINDOW_MS,
+  type LossBlacklistEvent,
   type LossIncidentView,
 } from "./carrier-loss";
 import type { StatusHistoryEntry } from "./envioecom";
@@ -335,4 +339,139 @@ async function insertIncident(input: {
     occurredAt: input.occurredAt,
     removedAt: null,
   });
+}
+
+export type LossBlacklistListItem = {
+  id: string;
+  orderId: string;
+  packageId: string | null;
+  orderNumber: number | null;
+  clientName: string | null;
+  orderCreatedAt: string | null;
+  carrierLabel: string;
+  cityLabel: string;
+  state: string;
+  neighborhood: string | null;
+  source: string;
+  kind: string;
+  occurredAt: string;
+  removedAt: string | null;
+  barcode: string | null;
+  status: string | null;
+  events: LossBlacklistEvent[];
+};
+
+function isoOrNull(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+async function rowsByIds<T extends { id: string }>(
+  ids: string[],
+  load: (chunk: string[]) => Promise<T[]>,
+): Promise<Map<string, T>> {
+  const map = new Map<string, T>();
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 400) {
+    const chunk = unique.slice(i, i + 400);
+    const rows = await load(chunk);
+    for (const row of rows) map.set(row.id, row);
+  }
+  return map;
+}
+
+export async function listCarrierLossBlacklist(input: {
+  query?: string | null;
+  includeRemoved?: boolean;
+}): Promise<{ items: LossBlacklistListItem[]; truncated: boolean }> {
+  const rows = input.includeRemoved
+    ? await db
+      .select()
+      .from(carrierLossIncidentsTable)
+      .orderBy(desc(carrierLossIncidentsTable.occurredAt))
+    : await db
+      .select()
+      .from(carrierLossIncidentsTable)
+      .where(isNull(carrierLossIncidentsTable.removedAt))
+      .orderBy(desc(carrierLossIncidentsTable.occurredAt));
+
+  const orders = await rowsByIds(
+    rows.map((row) => row.orderId),
+    (chunk) => db
+      .select({
+        id: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
+        clientName: ordersTable.clientName,
+        createdAt: ordersTable.createdAt,
+        envioecomStatus: ordersTable.envioecomStatus,
+        envioecomBarcode: ordersTable.envioecomBarcode,
+        trackingCode: ordersTable.trackingCode,
+        envioecomStatusHistory: ordersTable.envioecomStatusHistory,
+      })
+      .from(ordersTable)
+      .where(inArray(ordersTable.id, chunk)),
+  );
+  const packages = await rowsByIds(
+    rows.map((row) => row.packageId),
+    (chunk) => db
+      .select({
+        id: orderShipmentsTable.id,
+        envioecomStatus: orderShipmentsTable.envioecomStatus,
+        envioecomBarcode: orderShipmentsTable.envioecomBarcode,
+        envioecomStatusHistory: orderShipmentsTable.envioecomStatusHistory,
+      })
+      .from(orderShipmentsTable)
+      .where(inArray(orderShipmentsTable.id, chunk)),
+  );
+
+  const mapped = rows.map((row) => {
+    const order = orders.get(row.orderId);
+    const pkg = row.packageId ? packages.get(row.packageId) : undefined;
+    const barcode = String(
+      (pkg ? pkg.envioecomBarcode : order?.envioecomBarcode || order?.trackingCode) || "",
+    ).trim() || null;
+    const status = String((pkg ? pkg.envioecomStatus : order?.envioecomStatus) || "").trim() || null;
+    const history = pkg ? pkg.envioecomStatusHistory : order?.envioecomStatusHistory;
+    const sourceLabel = row.source === "manual" ? "manual" : "rastreio envioecom";
+    return {
+      search: {
+        orderNumber: order?.orderNumber ?? row.orderNumber,
+        clientName: order?.clientName ?? null,
+        cityLabel: row.cityLabel,
+        state: row.state,
+        neighborhood: row.neighborhood,
+        carrierLabel: row.carrierLabel,
+        cep: row.cep,
+        barcode,
+        kind: row.kind,
+        source: `${row.source} ${sourceLabel}`,
+      },
+      item: {
+        id: row.id,
+        orderId: row.orderId,
+        packageId: row.packageId || null,
+        orderNumber: order?.orderNumber ?? row.orderNumber ?? null,
+        clientName: order?.clientName ?? null,
+        orderCreatedAt: isoOrNull(order?.createdAt),
+        carrierLabel: row.carrierLabel,
+        cityLabel: row.cityLabel,
+        state: row.state,
+        neighborhood: row.neighborhood,
+        source: row.source,
+        kind: row.kind,
+        occurredAt: isoOrNull(row.occurredAt) || new Date(0).toISOString(),
+        removedAt: isoOrNull(row.removedAt),
+        barcode,
+        status,
+        events: lossBlacklistEventsFromHistory(history),
+      } satisfies LossBlacklistListItem,
+    };
+  });
+
+  const matched = mapped
+    .filter((row) => lossBlacklistMatchesQuery(row.search, input.query))
+    .map((row) => row.item);
+  return capLossBlacklistList(matched);
 }

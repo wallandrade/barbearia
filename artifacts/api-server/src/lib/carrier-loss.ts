@@ -291,3 +291,77 @@ export function attachLossAlerts<T extends { carrier?: string | null }>(
     }),
   }));
 }
+
+export const LOSS_BLACKLIST_LIST_LIMIT = 500;
+
+export type LossBlacklistSearchRow = {
+  orderNumber?: number | null;
+  clientName?: string | null;
+  cityLabel?: string | null;
+  state?: string | null;
+  neighborhood?: string | null;
+  carrierLabel?: string | null;
+  cep?: string | null;
+  barcode?: string | null;
+  kind?: string | null;
+  source?: string | null;
+};
+
+export type LossBlacklistEvent = {
+  status: string;
+  description: string | null;
+  location: string | null;
+  updated_at: string | null;
+};
+
+export function lossBlacklistMatchesQuery(row: LossBlacklistSearchRow, query: string | null | undefined): boolean {
+  const q = stripAccents(String(query || "")).replace(/\s+/g, " ").trim();
+  if (!q) return true;
+  const hay = stripAccents(
+    [
+      row.orderNumber,
+      row.clientName,
+      row.cityLabel,
+      row.state,
+      row.neighborhood,
+      row.carrierLabel,
+      row.cep,
+      row.barcode,
+      row.kind,
+      row.source,
+    ]
+      .map((value) => String(value ?? ""))
+      .join(" "),
+  );
+  if (hay.includes(q)) return true;
+  const qDigits = q.replace(/\D/g, "");
+  if (qDigits.length < 5) return false;
+  return hay.replace(/\D/g, "").includes(qDigits);
+}
+
+export function capLossBlacklistList<T>(
+  rows: T[],
+  limit = LOSS_BLACKLIST_LIST_LIMIT,
+): { items: T[]; truncated: boolean } {
+  if (rows.length <= limit) return { items: rows, truncated: false };
+  return { items: rows.slice(0, limit), truncated: true };
+}
+
+export function lossBlacklistEventsFromHistory(history: unknown, limit = 80): LossBlacklistEvent[] {
+  if (!Array.isArray(history)) return [];
+  const rows = history
+    .filter((row) => row && typeof row === "object")
+    .slice(-limit);
+  return [...rows].reverse().map((row) => {
+    const entry = row as Record<string, unknown>;
+    const description = entry.description == null ? null : String(entry.description);
+    const location = entry.location == null ? null : String(entry.location);
+    const updatedAt = entry.updated_at == null ? null : String(entry.updated_at);
+    return {
+      status: String(entry.status || "").trim(),
+      description,
+      location,
+      updated_at: updatedAt,
+    };
+  }).filter((row) => row.status || row.description || row.location);
+}

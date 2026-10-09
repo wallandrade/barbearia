@@ -9,6 +9,7 @@ import { recordAdminActivity } from "../lib/order-activity";
 import {
   CarrierLossError,
   clearCarrierLoss,
+  listCarrierLossBlacklist,
   lossAlertsForDestination,
   markManualCarrierLoss,
   recordCarrierLossFromStatus,
@@ -795,6 +796,28 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
     });
   } catch (err) {
     mapApiError(err, res);
+  }
+});
+
+router.get("/admin/envioecom/loss-blacklist", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Não autenticado." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Sem permissão." });
+      return;
+    }
+    const result = await listCarrierLossBlacklist({
+      query: String(req.query.q || ""),
+      includeRemoved: String(req.query.includeRemoved || "") === "1",
+    });
+    res.json({ ok: true, items: result.items, truncated: result.truncated });
+  } catch (err) {
+    console.error("[EnvioEcom] loss-blacklist list error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar a lista negra." });
   }
 });
 

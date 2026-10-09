@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   attachLossAlerts,
   buildLossAlert,
+  capLossBlacklistList,
   carrierMatchKey,
   classifyCarrierLossStatus,
+  lossBlacklistMatchesQuery,
   lossPlaceFromAddress,
   type LossIncidentView,
 } from "./carrier-loss";
@@ -182,6 +184,42 @@ test("outra capital usa o CEP de 3 dígitos", () => {
     NOW,
   );
   assert.equal(outside[0]?.lossAlert, null);
+});
+
+test("busca da lista negra ignora acento e caixa", () => {
+  const row = {
+    orderNumber: 2031,
+    clientName: "João",
+    cityLabel: "São Paulo",
+    state: "SP",
+    neighborhood: "República",
+    carrierLabel: "Jadlog",
+    cep: "01310-000",
+    barcode: "AB123",
+    kind: "extravio",
+    source: "envioecom rastreio",
+  };
+  assert.equal(lossBlacklistMatchesQuery(row, "joao"), true);
+  assert.equal(lossBlacklistMatchesQuery(row, "SAO"), true);
+  assert.equal(lossBlacklistMatchesQuery(row, "republica"), true);
+  assert.equal(lossBlacklistMatchesQuery(row, "01310000"), true);
+  assert.equal(lossBlacklistMatchesQuery({ cep: "01310000" }, "01310-000"), true);
+  assert.equal(lossBlacklistMatchesQuery(row, "ab123"), true);
+  assert.equal(lossBlacklistMatchesQuery(row, "sedex"), false);
+  assert.equal(lossBlacklistMatchesQuery(row, "   "), true);
+});
+
+test("lista negra devolve no máximo 500 e marca truncated", () => {
+  const rows = Array.from({ length: 501 }, (_, index) => index);
+  const capped = capLossBlacklistList(rows);
+  assert.equal(capped.truncated, true);
+  assert.equal(capped.items.length, 500);
+  assert.equal(capped.items[0], 0);
+  assert.equal(capped.items[499], 499);
+
+  const exact = capLossBlacklistList(rows.slice(0, 500));
+  assert.equal(exact.truncated, false);
+  assert.equal(exact.items.length, 500);
 });
 
 test("caso com mais de 180 dias não avisa", () => {
