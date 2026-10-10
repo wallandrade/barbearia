@@ -84,6 +84,8 @@ export const ordersTable = mysqlTable("orders", {
   paidWhatsappSentAt: timestamp("paid_whatsapp_sent_at"),
   /** Códigos de rastreio que já saíram no WhatsApp. JSON. EC não entra. */
   trackingWhatsappCodes: text("tracking_whatsapp_codes"),
+  /** Pacotes que já receberam o WhatsApp de postado. JSON. */
+  postedWhatsappKeys: text("posted_whatsapp_keys"),
   trackingCode: varchar("tracking_code", { length: 255 }),
   trackingLabelUrl: mediumtext("tracking_label_url"),
   trackingLabelText: mediumtext("tracking_label_text"),

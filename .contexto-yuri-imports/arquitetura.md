@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-10 | Coluna `orders.posted_whatsapp_keys` (+ runtime) | Guarda os pacotes que já receberam o WhatsApp de postado | Demais colunas de `orders` iguais |
 | 2026-10-10 | Coluna `orders.tracking_whatsapp_codes` (+ runtime) | Guarda os códigos de rastreio que já saíram no WhatsApp | Demais colunas de `orders` iguais |
 | 2026-10-10 | Coluna `orders.paid_whatsapp_sent_at` (+ runtime) | Marca que o WhatsApp do pedido pago já foi para o n8n | Demais colunas de `orders` iguais |
 | 2026-10-09 | Tabela `checkout_drafts` (+ runtime) | Rascunho do checkout para a Reportana retomar em `/checkout?draft=` | Pedido e PIX iguais; o rascunho não guarda cartão |

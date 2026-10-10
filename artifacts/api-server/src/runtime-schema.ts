@@ -154,6 +154,10 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
       sql: "ALTER TABLE orders ADD COLUMN tracking_whatsapp_codes TEXT NULL",
     },
     {
+      name: "posted_whatsapp_keys",
+      sql: "ALTER TABLE orders ADD COLUMN posted_whatsapp_keys TEXT NULL",
+    },
+    {
       name: "is_prioridade",
       sql: "ALTER TABLE orders ADD COLUMN is_prioridade TINYINT(1) NOT NULL DEFAULT 0",
     },

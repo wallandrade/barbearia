@@ -8,6 +8,7 @@ import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
 import { queueReportanaOrderSync } from "../lib/reportana";
 import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
+import { announcePosted } from "../lib/order-posted-whatsapp";
 import {
   CarrierLossError,
   clearCarrierLoss,
@@ -556,6 +557,13 @@ async function applyShipmentStatusToOrder(params: {
     if (params.source !== "create-refresh") {
       announceTrackingCode(order.id, pkg.envioecomBarcode, params.barcode);
     }
+    announcePosted({
+      orderId: order.id,
+      packageKey: pkg.id,
+      previousStatus: pkg.envioecomStatus,
+      nextStatus: params.status,
+      trackingCode: params.barcode || pkg.envioecomBarcode,
+    });
     queueReportanaOrderSync(order.id);
     return { updated: true };
   }
@@ -634,6 +642,13 @@ async function applyShipmentStatusToOrder(params: {
   if (params.source !== "create-refresh") {
     announceTrackingCode(order.id, order.envioecomBarcode || order.trackingCode, params.barcode);
   }
+  announcePosted({
+    orderId: order.id,
+    packageKey: "order",
+    previousStatus: order.envioecomStatus,
+    nextStatus: params.status,
+    trackingCode: params.barcode || order.envioecomBarcode || order.trackingCode,
+  });
   queueReportanaOrderSync(order.id);
   return { updated: true };
 }
