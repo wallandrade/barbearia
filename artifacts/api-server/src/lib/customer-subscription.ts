@@ -1,15 +1,18 @@
 import crypto from "crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, customerSubscriptionsTable, customerUsersTable, ordersTable } from "@workspace/db";
 import {
   SUBSCRIPTION_MONTHLY_AMOUNT,
   isPendingPixUsable,
-  isSubscriptionActive,
+  isPeptideMenuOpen,
   isSubscriptionDocument,
   isSubscriptionPhone,
   payerDigits,
   subscriptionPeriodEnd,
 } from "./customer-subscription-policy";
+
+export const PEPTIDE_ACCESS_GRANTED = "granted";
+export const PEPTIDE_ACCESS_REVOKED = "revoked";
 
 export type SubscriptionPixView = {
   transactionId: string;
@@ -21,6 +24,7 @@ export type SubscriptionPixView = {
 export type SubscriptionView = {
   amount: number;
   active: boolean;
+  granted: boolean;
   expiresAt: string | null;
   needsPayer: boolean;
   pending: SubscriptionPixView | null;
@@ -30,6 +34,47 @@ function toMs(value: Date | string | null | undefined): number | null {
   if (!value) return null;
   const ms = value instanceof Date ? value.getTime() : Date.parse(String(value));
   return Number.isFinite(ms) ? ms : null;
+}
+
+export async function hasPeptideAccessGrant(userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: customerSubscriptionsTable.id })
+    .from(customerSubscriptionsTable)
+    .where(and(eq(customerSubscriptionsTable.userId, userId), eq(customerSubscriptionsTable.status, PEPTIDE_ACCESS_GRANTED)))
+    .limit(1);
+  return Boolean(rows[0]);
+}
+
+export async function grantedPeptideUserIds(userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = await db
+    .select({ userId: customerSubscriptionsTable.userId })
+    .from(customerSubscriptionsTable)
+    .where(and(
+      inArray(customerSubscriptionsTable.userId, userIds),
+      eq(customerSubscriptionsTable.status, PEPTIDE_ACCESS_GRANTED),
+    ));
+  return new Set(rows.map((row) => row.userId));
+}
+
+export async function setPeptideAccessGrant(userId: string, grant: boolean, now = Date.now()): Promise<void> {
+  if (grant) {
+    if (await hasPeptideAccessGrant(userId)) return;
+    const id = crypto.randomBytes(8).toString("hex");
+    await db.insert(customerSubscriptionsTable).values({
+      id,
+      userId,
+      amount: "0.00",
+      status: PEPTIDE_ACCESS_GRANTED,
+      updatedAt: new Date(now),
+    });
+    return;
+  }
+
+  await db
+    .update(customerSubscriptionsTable)
+    .set({ status: PEPTIDE_ACCESS_REVOKED, updatedAt: new Date(now) })
+    .where(and(eq(customerSubscriptionsTable.userId, userId), eq(customerSubscriptionsTable.status, PEPTIDE_ACCESS_GRANTED)));
 }
 
 export async function latestPaidPeriodEnd(userId: string): Promise<number | null> {
@@ -60,10 +105,12 @@ export async function readSubscriptionView(userId: string, now = Date.now()): Pr
   const pendingExpires = toMs(pending?.expiresAt);
   const pendingUsable = Boolean(pending?.transactionId && pending.pixCode) && isPendingPixUsable(pendingExpires, now);
   const payer = await resolveSubscriptionPayer(userId, {});
+  const granted = await hasPeptideAccessGrant(userId);
 
   return {
     amount: SUBSCRIPTION_MONTHLY_AMOUNT,
-    active: isSubscriptionActive(periodEnd, now),
+    active: isPeptideMenuOpen(periodEnd, granted, now),
+    granted,
     expiresAt: periodEnd ? new Date(periodEnd).toISOString() : null,
     needsPayer: !payer.ok,
     pending: pendingUsable

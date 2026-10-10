@@ -5,6 +5,7 @@ import {
   SUBSCRIPTION_MONTHLY_AMOUNT,
   SUBSCRIPTION_PERIOD_MS,
   isPendingPixUsable,
+  isPeptideMenuOpen,
   isSubscriptionActive,
   isSubscriptionDocument,
   isSubscriptionPhone,
@@ -26,6 +27,14 @@ test("assinatura ativa só enquanto o fim não passou", () => {
   assert.equal(isSubscriptionActive(now + 1, now), true);
   assert.equal(isPendingPixUsable(now + 1, now), true);
   assert.equal(isPendingPixUsable(now, now), false);
+});
+
+test("cortesia do admin abre o menu sem esticar o PIX", () => {
+  const now = 1_000_000;
+  assert.equal(isPeptideMenuOpen(null, true, now), true);
+  assert.equal(isPeptideMenuOpen(null, false, now), false);
+  assert.equal(isPeptideMenuOpen(now + 1, false, now), true);
+  assert.equal(isPeptideMenuOpen(now, false, now), false);
 });
 
 test("CPF ou CNPJ e telefone com DDD", () => {

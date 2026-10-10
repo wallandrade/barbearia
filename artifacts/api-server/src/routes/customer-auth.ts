@@ -15,6 +15,7 @@ import { normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode }
 import { claimGuestOrdersForCustomer, digitsOnlyDocument, isUsableCustomerDocument } from "../lib/claim-guest-orders";
 import { applyStoreCredit, getStoreCreditBalance, getStoreCreditBalancesByUserIds } from "../lib/store-credits";
 import { compareCustomersByWalletDesc, resolveAdminStoreCreditDelta } from "../lib/store-credits-policy";
+import { grantedPeptideUserIds, setPeptideAccessGrant } from "../lib/customer-subscription";
 
 const router: IRouter = Router();
 
@@ -286,6 +287,13 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
       console.warn("[Admin] store credit balances for customers failed", err);
     }
 
+    let peptideGrantIds = new Set<string>();
+    try {
+      peptideGrantIds = await grantedPeptideUserIds(scopedCustomerIds);
+    } catch (err) {
+      console.warn("[Admin] peptide access grants for customers failed", err);
+    }
+
     const registeredEmailSet = new Set<string>();
 
     const registeredCustomers = scopedCustomers.map((c) => {
@@ -299,6 +307,7 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
         affiliateCode: affiliateCodeMap.get(c.id) ?? null,
         hasAccount: true,
         storeCreditBalance: storeCreditMap.get(c.id) ?? 0,
+        peptideAccessGranted: peptideGrantIds.has(c.id),
       };
     });
 
@@ -314,6 +323,7 @@ router.get("/admin/customers", requireAdminAuth, async (req, res) => {
         affiliateCode: null,
         hasAccount: false,
         storeCreditBalance: 0,
+        peptideAccessGranted: false,
       }));
 
     const allCustomers = [...registeredCustomers, ...guestCustomers].sort(compareCustomersByWalletDesc);
@@ -575,6 +585,60 @@ router.post("/admin/customers/:id/store-credit", requireAdminAuth, async (req, r
   } catch (err) {
     console.error("[Admin] customer store credit error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao ajustar saldo da carteira." });
+  }
+});
+
+// --------------------------------------------------------------------------
+// POST /api/admin/customers/:id/peptide-access — libera ou tira o menu de protocolos
+// --------------------------------------------------------------------------
+router.post("/admin/customers/:id/peptide-access", requireAdminAuth, async (req, res) => {
+  try {
+    const customerId = String(req.params.id || "").trim();
+    if (!customerId || customerId.startsWith("guest:")) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Cliente inválido ou sem conta cadastrada." });
+      return;
+    }
+
+    const adminScope = getAdminScope(req);
+    if (!adminScope) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "Sessão inválida." });
+      return;
+    }
+    if (!adminScope.hasGlobalAccess) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Apenas administrador principal pode liberar os protocolos." });
+      return;
+    }
+
+    const action = String(req.body?.action || "").trim();
+    if (action !== "grant" && action !== "revoke") {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Ação inválida." });
+      return;
+    }
+
+    const users = await db
+      .select({ id: customerUsersTable.id, name: customerUsersTable.name, email: customerUsersTable.email })
+      .from(customerUsersTable)
+      .where(eq(customerUsersTable.id, customerId))
+      .limit(1);
+
+    const user = users[0];
+    if (!user) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Cliente não encontrado." });
+      return;
+    }
+
+    await setPeptideAccessGrant(user.id, action === "grant");
+    console.warn(`[Admin] peptide access ${action} by admin for user=${user.id}`);
+
+    res.json({
+      ok: true,
+      action,
+      peptideAccessGranted: action === "grant",
+      user: { id: user.id, name: user.name, email: user.email },
+    });
+  } catch (err) {
+    console.error("[Admin] peptide access error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao alterar o acesso aos protocolos." });
   }
 });
 

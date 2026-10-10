@@ -1414,6 +1414,7 @@ interface CustomerUserRecord {
   phone?: string | null;
   hasAccount?: boolean;
   storeCreditBalance?: number | null;
+  peptideAccessGranted?: boolean;
 }
 
 interface RecurringCustomerRecord {
@@ -5975,6 +5976,7 @@ export default function Admin() {
             passwordResettingId={customerPasswordResettingId}
             canResetPassword={isPrimary}
             canAdjustStoreCredit={isPrimary}
+            canGrantPeptideAccess={isPrimary}
             onExportCSV={handleExportCustomersCSV}
             onSyncBrevo={handleSyncCustomersBrevo}
             exportingCSV={exportingCustomersCSV}
@@ -15932,7 +15934,7 @@ function SellersPanel({ siteOrigin, savedSellersList, sellerInput, setSellerInpu
 // ---------------------------------------------------------------------------
 function CustomersPanel({
   customers, loading, onRefresh, onImpersonate, impersonatingId, canImpersonate,
-  onResetPassword, passwordResettingId, canResetPassword, canAdjustStoreCredit,
+  onResetPassword, passwordResettingId, canResetPassword, canAdjustStoreCredit, canGrantPeptideAccess,
   onExportCSV, onSyncBrevo, exportingCSV, syncingBrevo, exportModalOpen, setExportModalOpen, exportColumns, setExportColumns,
 }: {
   customers: CustomerUserRecord[];
@@ -15945,6 +15947,7 @@ function CustomersPanel({
   passwordResettingId: string | null;
   canResetPassword: boolean;
   canAdjustStoreCredit: boolean;
+  canGrantPeptideAccess: boolean;
   onExportCSV: () => void;
   onSyncBrevo: () => void;
   exportingCSV: boolean;
@@ -15963,6 +15966,7 @@ function CustomersPanel({
   const [walletAmountDraft, setWalletAmountDraft] = useState("");
   const [walletNoteDraft, setWalletNoteDraft] = useState("");
   const [walletAdjusting, setWalletAdjusting] = useState<"add" | "zero" | null>(null);
+  const [peptideAccessId, setPeptideAccessId] = useState<string | null>(null);
   const [appliedSearch, setAppliedSearch] = useState("");
   const [searchEpoch, setSearchEpoch] = useState(0);
 
@@ -16035,6 +16039,40 @@ function CustomersPanel({
     setWalletAmountDraft("");
     setWalletNoteDraft("");
     setWalletAdjusting(null);
+  };
+
+  const togglePeptideAccess = async (customer: CustomerUserRecord) => {
+    if (!canGrantPeptideAccess) {
+      toast.error("Apenas administrador principal pode liberar os protocolos.");
+      return;
+    }
+    if (!customer.hasAccount) {
+      toast.error("Este comprador não possui conta cadastrada (compra como convidado).");
+      return;
+    }
+    const action = customer.peptideAccessGranted ? "revoke" : "grant";
+    if (action === "revoke" && !window.confirm(`Tirar o acesso aos protocolos de ${customer.name}?`)) {
+      return;
+    }
+    setPeptideAccessId(customer.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/customers/${encodeURIComponent(customer.id)}/peptide-access`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json() as { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao alterar o acesso aos protocolos.");
+        return;
+      }
+      onRefresh();
+      toast.success(action === "grant" ? "Protocolos liberados para este cliente." : "Acesso aos protocolos retirado.");
+    } catch {
+      toast.error("Erro ao alterar o acesso aos protocolos.");
+    } finally {
+      setPeptideAccessId(null);
+    }
   };
 
   const walletBalanceOf = (customer: CustomerUserRecord | null) =>
@@ -16237,6 +16275,42 @@ function CustomersPanel({
                       >
                         <Wallet className="w-3.5 h-3.5" />
                         Carteira
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void togglePeptideAccess(c); }}
+                        disabled={!canGrantPeptideAccess || !c.hasAccount || peptideAccessId === c.id}
+                        className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed ${
+                          c.peptideAccessGranted
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                            : "border-border bg-white hover:bg-muted"
+                        }`}
+                        title={
+                          !canGrantPeptideAccess
+                            ? "Apenas administrador principal pode liberar os protocolos"
+                            : !c.hasAccount
+                              ? "Comprador sem cadastro (convidado)"
+                              : c.peptideAccessGranted
+                                ? "Tirar o acesso aos protocolos"
+                                : "Liberar o menu de protocolos sem cobrança"
+                        }
+                      >
+                        {peptideAccessId === c.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Protocolos...
+                          </>
+                        ) : c.peptideAccessGranted ? (
+                          <>
+                            <Lock className="w-3.5 h-3.5" />
+                            Tirar acesso
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            Liberar protocolos
+                          </>
+                        )}
                       </button>
                       <button
                         type="button"

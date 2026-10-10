@@ -60,6 +60,7 @@ type PendingPix = {
 type SubscriptionState = {
   amount: number;
   active: boolean;
+  granted?: boolean;
   expiresAt: string | null;
   needsPayer: boolean;
   pending: PendingPix | null;
@@ -118,6 +119,7 @@ export default function PeptideToolsMenu({
   const [subscription, setSubscription] = useState<SubscriptionState>({
     amount: 19.9,
     active: false,
+    granted: false,
     expiresAt: null,
     needsPayer: false,
     pending: null,
@@ -231,6 +233,11 @@ export default function PeptideToolsMenu({
   const activeUntil = subscription.expiresAt
     ? new Date(subscription.expiresAt).toLocaleDateString("pt-BR")
     : "";
+  const accessLabel = subscription.granted
+    ? "Acesso liberado."
+    : activeUntil
+      ? `Assinatura ativa até ${activeUntil}.`
+      : "Assinatura ativa.";
   const qrSrc = pixImageSrc(subscription.pending?.pixBase64 || "");
 
   return (
@@ -248,7 +255,7 @@ export default function PeptideToolsMenu({
         </nav>
         <div className="px-3 pb-1 pt-4">
           {subscription.active ? (
-            <p className="text-xs text-muted-foreground">Assinatura ativa até {activeUntil}.</p>
+            <p className="text-xs text-muted-foreground">{accessLabel}</p>
           ) : (
             <button
               type="button"
@@ -276,7 +283,7 @@ export default function PeptideToolsMenu({
           </DialogHeader>
 
           {subscription.active ? (
-            <p className="text-sm text-foreground">Sua assinatura está ativa até {activeUntil}.</p>
+            <p className="text-sm text-foreground">{accessLabel}</p>
           ) : subscription.pending ? (
             <div className="space-y-3">
               {qrSrc ? (

@@ -13,6 +13,11 @@ export function isSubscriptionActive(periodEndMs: number | null, now: number): b
   return periodEndMs != null && periodEndMs > now;
 }
 
+/** Cortesia do admin não tem data de fim. O PIX pago continua valendo só o período dele. */
+export function isPeptideMenuOpen(periodEndMs: number | null, granted: boolean, now: number): boolean {
+  return granted || isSubscriptionActive(periodEndMs, now);
+}
+
 export function isPendingPixUsable(expiresAtMs: number | null, now: number): boolean {
   return expiresAtMs != null && expiresAtMs > now;
 }
