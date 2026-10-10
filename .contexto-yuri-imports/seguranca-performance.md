@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-09-17
+> **Última atualização:** 2026-10-10
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-10 | `POST /api/whatsapp/support/inbound` exige token (`n8n_whatsapp_support_token` ou `N8N_WHATSAPP_SUPPORT_TOKEN`, mínimo 8) | Busca de pedido por número ou CPF no WhatsApp não fica aberta. 20 mensagens / 10 min por telefone | Checkout token e a lista de writes públicos iguais. O token não vai em `PUBLIC_KEYS` |
 | 2026-09-17 | Admin fila: `GET /api/admin/shipping-queue` devolve todas as alocações ativas; o FE parou o N+1 por pedido pago (poll 20 s) | Menos carga no Railway; fallback em lote de 8 se a rota nova ainda não existir | Slot/prazo iguais; GET `/:orderId` permanece |
 | 2026-09-11 | Admin: busca de pedidos/clientes fora do estado do pai; poll visitantes 5 s em `AdminLiveVisitorStats`; `startTransition` no refresh silencioso (~20 s) | Digitação tem prioridade sobre re-render pesado | Filtro local igual; SSE e GET de período iguais |
 | 2026-08-30 | `POST /api/admin/products/export-backup` exporta só `ids` (admin primário, máx. 500) | Backup parcial sem baixar o catálogo todo | GET sem ids = catálogo inteiro; restore igual |
@@ -31,6 +32,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 - Rate limit **em memória** para POSTs públicos sensíveis (pedidos, checkout PIX, cobranças, suporte, KYC, rifa, etc.).
 - Chat de compostos: limiter **próprio** em `routes/peptide-chat.ts` (20 / 10 min / IP); fora da lista de writes que exigem checkout token. Sem chave OpenAI o POST ainda responde (ficha local).
+- Atendimento WhatsApp: `POST /api/whatsapp/support/inbound` fica fora do checkout token. Exige o token do atendimento (mínimo 8 caracteres) na query ou no header `x-whatsapp-support-token`. 20 mensagens a cada 10 minutos por telefone.
 - `GET /api/security/checkout-token` → HMAC; writes exigem `x-checkout-token` (com exceções: Authorization presente; `/api/orders` com origem oficial por compatibilidade).
 - Env: segredo de checkout / `SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET`.
 

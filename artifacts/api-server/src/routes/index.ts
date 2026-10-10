@@ -45,6 +45,7 @@ import peptideChatRouter from "./peptide-chat";
 import insuranceRouter from "./insurance";
 import subscriptionRouter from "./subscription";
 import supplierPurchasesRouter from "./supplier-purchases";
+import whatsappSupportRouter from "./whatsapp-support";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -92,5 +93,6 @@ router.use(peptideChatRouter);
 router.use(insuranceRouter);
 router.use(subscriptionRouter);
 router.use(supplierPurchasesRouter);
+router.use(whatsappSupportRouter);
 
 export default router;
