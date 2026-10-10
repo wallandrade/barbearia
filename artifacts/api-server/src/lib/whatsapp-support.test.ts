@@ -40,6 +40,34 @@ test("oi abre a lista e o pedido só entra depois do toque", () => {
   if (found.kind === "lookup") assert.equal(found.intent.orderNumber, 1782);
 });
 
+test("falar com atendente cala o menu até a sessão acabar", () => {
+  const handoff = decideSupportTurn({ choiceId: "atendente" });
+  assert.equal(handoff.kind, "text");
+  assert.equal(handoff.session.step, "human");
+
+  const chatting = decideSupportTurn({ text: "oi, meu pedido atrasou", session: { step: "human", problem: null } });
+  assert.equal(chatting.kind, "silent");
+  assert.equal(chatting.session.step, "human");
+
+  const greeting = decideSupportTurn({ text: "Oi!", session: { step: "human", problem: null } });
+  assert.equal(greeting.kind, "silent");
+
+  const again = decideSupportTurn({ text: "Oi!" });
+  assert.equal(again.kind, "list");
+});
+
+test("problema passado ao atendente também cala o menu", () => {
+  const found = decideSupportTurn({ text: "1782", session: { step: "await_problem", problem: "atrasado" } });
+  assert.equal(found.kind, "lookup");
+  if (found.kind !== "lookup") return;
+  assert.match(found.followup, /atendente/);
+  assert.equal(found.session.step, "human");
+
+  const lookup = decideSupportTurn({ text: "1782", session: { step: "await_lookup", problem: null } });
+  assert.equal(lookup.kind, "lookup");
+  assert.equal(lookup.session.step, "menu");
+});
+
 test("problema abre o segundo menu", () => {
   const problems = decideSupportTurn({ choiceId: "problema" });
   assert.equal(problems.kind, "list");

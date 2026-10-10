@@ -32,7 +32,7 @@ export type SupportInbound = {
   skip: boolean;
 };
 
-export type SupportStep = "menu" | "problem_menu" | "await_lookup" | "await_problem";
+export type SupportStep = "menu" | "problem_menu" | "await_lookup" | "await_problem" | "human";
 
 export type SupportSession = {
   step: SupportStep;
@@ -48,7 +48,8 @@ export type SupportOption = {
 export type SupportTurn =
   | { kind: "text"; message: string; session: SupportSession }
   | { kind: "list"; message: string; buttonLabel: string; title: string; options: SupportOption[]; session: SupportSession }
-  | { kind: "lookup"; intent: Extract<SupportIntent, { kind: "order" | "document" }>; followup: string; session: SupportSession };
+  | { kind: "lookup"; intent: Extract<SupportIntent, { kind: "order" | "document" }>; followup: string; session: SupportSession }
+  | { kind: "silent"; session: SupportSession };
 
 export type SupportOrderView = {
   orderNumber?: number | null;
@@ -197,6 +198,10 @@ function menuSession(): SupportSession {
   return { step: "menu", problem: null };
 }
 
+function humanSession(): SupportSession {
+  return { step: "human", problem: null };
+}
+
 function mainList(): SupportTurn {
   return {
     kind: "list",
@@ -219,7 +224,7 @@ function problemList(): SupportTurn {
   };
 }
 
-/** Oi abre o menu. Número e CPF só depois de Meu pedido. */
+/** Oi abre o menu. Número e CPF só depois de Meu pedido. Atendente cala o menu por 2 horas. */
 export function decideSupportTurn(input: {
   text?: string | null;
   choiceId?: string | null;
@@ -228,6 +233,11 @@ export function decideSupportTurn(input: {
   const session = input.session?.step ? input.session : menuSession();
   const text = String(input.text || "");
   const choiceId = String(input.choiceId || "");
+  if (session.step === "human") {
+    const tapped = choiceId.trim();
+    const known = MAIN_OPTIONS.some((option) => option.id === tapped) || PROBLEM_OPTIONS.some((option) => option.id === tapped);
+    if (!known) return { kind: "silent", session: humanSession() };
+  }
   if (!choiceId && isGreeting(text)) return mainList();
 
   const choice = resolveChoice(choiceId, text, session.step);
@@ -250,7 +260,7 @@ export function decideSupportTurn(input: {
     return {
       kind: "text",
       message: "Certo. Vou chamar um atendente para continuar por aqui.",
-      session: menuSession(),
+      session: humanSession(),
     };
   }
   if (choice && PROBLEM_LABELS[choice]) {
@@ -267,7 +277,12 @@ export function decideSupportTurn(input: {
       const followup = session.step === "await_problem"
         ? "\n\nVou passar para o atendente olhar esse caso."
         : "";
-      return { kind: "lookup", intent, followup, session: menuSession() };
+      return {
+        kind: "lookup",
+        intent,
+        followup,
+        session: session.step === "await_problem" ? humanSession() : menuSession(),
+      };
     }
     return {
       kind: "text",
@@ -497,7 +512,7 @@ export async function supportMenuWebhookUrl(): Promise<string> {
 }
 
 function isSupportStep(value: string): value is SupportStep {
-  return value === "menu" || value === "problem_menu" || value === "await_lookup" || value === "await_problem";
+  return value === "menu" || value === "problem_menu" || value === "await_lookup" || value === "await_problem" || value === "human";
 }
 
 async function loadSession(phone: string): Promise<SupportSession | null> {
@@ -654,6 +669,10 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
 
   const session = await loadSession(inbound.phone);
   const turn = decideSupportTurn({ text: inbound.text, choiceId: inbound.choiceId, session });
+  if (turn.kind === "silent") {
+    await saveSession(inbound.phone, turn.session);
+    return { ok: true };
+  }
   let nextSession = turn.session;
   let sent = false;
   if (turn.kind === "list") {
