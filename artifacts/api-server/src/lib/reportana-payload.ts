@@ -1,3 +1,5 @@
+import { postPaymentInsuranceNotice } from "./checkout-insurance";
+
 export type ReportanaOrderSource = {
   id: string;
   orderNumber: number | null;
@@ -24,6 +26,9 @@ export type ReportanaOrderSource = {
   trackingCode?: string | null;
   envioecomBarcode?: string | null;
   superfreteTracking?: string | null;
+  includeInsurance?: boolean | null;
+  insurancePlan?: string | null;
+  insuranceAmount?: string | number | null;
   createdAt: Date | string;
 };
 
@@ -36,6 +41,7 @@ export type ReportanaAddress = {
   name: string;
   first_name: string;
   last_name: string;
+  company: string;
   phone: string;
   address1: string;
   address2: string;
@@ -201,7 +207,11 @@ function httpUrl(raw: unknown): string {
   return "";
 }
 
-export function buildReportanaAddress(order: ReportanaOrderSource, phone: string): ReportanaAddress {
+export function buildReportanaAddress(
+  order: ReportanaOrderSource,
+  phone: string,
+  company = "",
+): ReportanaAddress {
   const { first, last } = splitPersonName(order.clientName);
   const street = String(order.addressStreet || "").trim();
   const number = String(order.addressNumber || "").trim();
@@ -212,6 +222,7 @@ export function buildReportanaAddress(order: ReportanaOrderSource, phone: string
     name: String(order.clientName || "").trim(),
     first_name: first,
     last_name: last,
+    company,
     phone,
     address1,
     address2: String(order.addressNeighborhood || "").trim(),
@@ -230,7 +241,12 @@ export function buildReportanaOrderPayload(
   storefrontOrigin: string,
 ): Record<string, unknown> {
   const phone = toReportanaPhone(order.clientPhone);
-  const address = buildReportanaAddress(order, phone);
+  const insuranceNotice = postPaymentInsuranceNotice({
+    includeInsurance: order.includeInsurance,
+    insurancePlan: order.insurancePlan,
+    insuranceAmount: order.insuranceAmount,
+  });
+  const address = buildReportanaAddress(order, phone, insuranceNotice);
   const origin = storefrontOrigin.replace(/\/$/, "");
   const tracking = collectTrackingNumbers(order, packages);
   const lineItems = readProducts(order.products).map((item) => {

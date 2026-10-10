@@ -262,6 +262,29 @@ export function resolveCheckoutInsurance(input: {
   return { includeInsurance: false, insuranceAmount: 0, insurancePlan: "none" };
 }
 
+/** Mesmo texto do Copiar pós-pagamento. O 10% e o 20% são o nome do aviso. */
+export const POST_PAYMENT_INSURANCE_REDUCED_NOTICE =
+  "⚠️ **Produto com seguro 10%**\nVocê está ciente de que este seguro só vale contra roubo e extravio. O ressarcimento é outro produto igual, e só depois que constar no sistema que o pedido foi extraviado ou roubado.";
+
+export const POST_PAYMENT_INSURANCE_FULL_NOTICE =
+  "⚠️ **Seguro 20%**\nVocê está ciente de que este seguro é válido 100%. O ressarcimento só acontece depois que constar no sistema que o ocorrido foi registrado.";
+
+export const POST_PAYMENT_INSURANCE_NONE_NOTICE =
+  "⚠️ **Compra sem seguro**\nVocê está ciente de que comprou sem seguro. Se acontecer roubo, extravio, danificação ou apreensão, não há direito a ressarcimento, porque a compra foi feita sem seguro.";
+
+export function postPaymentInsuranceNotice(input: {
+  includeInsurance?: boolean | null;
+  insurancePlan?: unknown;
+  insuranceAmount?: number | string | null;
+}): string {
+  const amount = Math.max(0, Number(input.insuranceAmount) || 0);
+  const bought = Boolean(input.includeInsurance) || amount > 0;
+  if (!bought) return POST_PAYMENT_INSURANCE_NONE_NOTICE;
+  const plan = parseInsurancePlan(input.insurancePlan, true);
+  if (plan === "reduced") return POST_PAYMENT_INSURANCE_REDUCED_NOTICE;
+  return POST_PAYMENT_INSURANCE_FULL_NOTICE;
+}
+
 function uniqueIds(values: unknown[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();

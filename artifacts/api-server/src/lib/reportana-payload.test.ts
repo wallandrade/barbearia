@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  POST_PAYMENT_INSURANCE_FULL_NOTICE,
+  POST_PAYMENT_INSURANCE_NONE_NOTICE,
+  POST_PAYMENT_INSURANCE_REDUCED_NOTICE,
+} from "./checkout-insurance";
+import {
   buildReportanaOrderPayload,
   collectTrackingNumbers,
   reportanaPaymentMethod,
@@ -84,15 +89,40 @@ test("payload do pedido usa número visível, PIX e endereço", () => {
   assert.equal(payload.currency, "BRL");
   assert.equal(payload.total_price, 74.9);
   assert.equal(payload.delivery_price, 15);
-  const address = payload.shipping_address as { address1: string; address2: string; province: string; zip: string };
+  const address = payload.shipping_address as { address1: string; address2: string; province: string; zip: string; company: string };
   assert.equal(address.address1, "Rua Flores, 456, Apto 31");
   assert.equal(address.address2, "Centro");
   assert.equal(address.province, "Santa Catarina");
   assert.equal(address.zip, "06970000");
+  assert.equal(address.company, POST_PAYMENT_INSURANCE_NONE_NOTICE);
+  assert.equal((payload.billing_address as { company: string }).company, POST_PAYMENT_INSURANCE_NONE_NOTICE);
   const items = payload.line_items as Array<Record<string, unknown>>;
   assert.equal(items[0]?.variant_title, "Azul");
   assert.equal(items[0]?.path, "https://www.yury-imports.com/produto/p1");
   assert.equal(items[0]?.image_url, "https://cdn.example/p.png");
   assert.equal(items[1]?.image_url, undefined);
   assert.equal("shopify_order_id" in payload, false);
+});
+
+test("aviso de seguro do pós-pagamento vai no company do endereço", () => {
+  const reduced = buildReportanaOrderPayload(
+    { ...order, includeInsurance: true, insurancePlan: "reduced", insuranceAmount: "10.00" },
+    [],
+    "https://www.yury-imports.com/",
+  );
+  assert.equal((reduced.shipping_address as { company: string }).company, POST_PAYMENT_INSURANCE_REDUCED_NOTICE);
+
+  const full = buildReportanaOrderPayload(
+    { ...order, includeInsurance: true, insurancePlan: "full", insuranceAmount: "20.00" },
+    [],
+    "https://www.yury-imports.com/",
+  );
+  assert.equal((full.shipping_address as { company: string }).company, POST_PAYMENT_INSURANCE_FULL_NOTICE);
+
+  const legacy = buildReportanaOrderPayload(
+    { ...order, includeInsurance: true, insurancePlan: null, insuranceAmount: "15.00" },
+    [],
+    "https://www.yury-imports.com/",
+  );
+  assert.equal((legacy.shipping_address as { company: string }).company, POST_PAYMENT_INSURANCE_FULL_NOTICE);
 });

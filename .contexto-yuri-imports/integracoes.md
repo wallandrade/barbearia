@@ -1,11 +1,12 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-10-09
+> **Última atualização:** 2026-10-10
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-10 | Reportana recebe o aviso de seguro do pós-pagamento em `shipping_address.company` | Reduzido: texto do seguro 10%. Completo e pedido antigo só com checkbox: seguro 20%. Sem seguro: texto de compra sem seguro. Carrinho abandonado não leva esse texto | Rastreio, PIX, lead e o restante do pedido iguais |
 | 2026-10-09 | Reportana (`POST https://api.reportana.com/2022-05/orders`, carrinho e lead) | Pedido sai ao criar, pagar, cancelar, editar e quando o rastreio muda. Carrinho abandonado usa `checkout_drafts`. Lead só com `reportana_segment_id` | Pushcut e Brevo iguais. Sem interruptor, nada sai. Código `EC…` não vai no rastreio |
 | 2026-10-09 | Aba **Lista negra** no admin (`GET /api/admin/envioecom/loss-blacklist`) | Lista o que já está em `carrier_loss_incidents`. Busca, mostrar retirados, teto de 500 e histórico já salvo. Tirar da lista usa o DELETE do card | Só admin com acesso global. Cotação, checkout, Motoboy e a cópia 48h iguais |
 | 2026-10-08 | Admin Rastreios: **Usar 20 sugestões** lista peça pequena de carro de luxo | Nomes em `SUGGESTED_LABEL_OPTIONS`. Sem `valueMin`/`valueMax`, cada linha fica com o preço fixo da lista (R$ 806,42 a R$ 993,80) | Com a faixa preenchida, o valor continua sorteado. Create, GET e envio já gerado iguais |
@@ -249,7 +250,7 @@ Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha
 - SSE admin: `routes/notifications.ts` (`text/event-stream`).
 - Service Worker: notificações only — `artifacts/ka-imports/public/sw.js`.
 - **Webhook de saída (Pushcut):** `lib/outbound-webhook.ts` + settings `outbound_webhook_*`. **Ativar envio** default off. Eventos **gerado / pago / cancelado** default **on** se a chave não existir. URL por evento (`outbound_webhook_url`, `_order_paid`, `_order_cancelled`); pago/cancelado vazio cai na URL de gerado. Nome da notificação **preserva espaço** (`Pedido feito `). POST Pushcut manda `title` + `text` (cliente — R$ valor). Teste (`POST /admin/outbound-webhook/test` com `{ event }`) ignora os flags. `new_order` no create/checkout PIX; `order_paid` no PIX e no Admin (primeira vez); `order_cancelled` no Admin (primeira vez).
-- **Reportana** (`lib/reportana.ts`, `lib/reportana-payload.ts`, rotas `routes/reportana.ts`). Basic Auth. Settings `reportana_enabled` (default off), `reportana_client_id`, `reportana_client_secret` (GET só hint), `reportana_segment_id`. `POST /2022-05/orders` no criar, pagar, cancelar, editar, comprovante, rastreio (EnvioEcom, SuperFrete, código manual) e reenvio filho. Telefone `+55`. `payment_status` `PAID` / `PENDING` / `NOT_PAID` (`awaiting_payment` = PENDING). PIX vai em `billet_line` (`orders.pixCode`, gravado no checkout e no `/api/pix/generate`). `tracking_numbers` é texto com vírgula; código que começa com `EC` fica de fora. Carrinho: `checkout_drafts` + `POST /api/checkout/draft` e `GET /api/checkout/draft/:id`; ao criar o pedido manda `completed_at`. Lead: upsert no pago e botões admin de sync/remoção. Falha da Reportana não segura checkout, PIX nem etiqueta.
+- **Reportana** (`lib/reportana.ts`, `lib/reportana-payload.ts`, rotas `routes/reportana.ts`). Basic Auth. Settings `reportana_enabled` (default off), `reportana_client_id`, `reportana_client_secret` (GET só hint), `reportana_segment_id`. `POST /2022-05/orders` no criar, pagar, cancelar, editar, comprovante, rastreio (EnvioEcom, SuperFrete, código manual) e reenvio filho. Telefone `+55`. `payment_status` `PAID` / `PENDING` / `NOT_PAID` (`awaiting_payment` = PENDING). PIX vai em `billet_line` (`orders.pixCode`, gravado no checkout e no `/api/pix/generate`). `tracking_numbers` é texto com vírgula; código que começa com `EC` fica de fora. O aviso do Copiar pós-pagamento vai em `shipping_address.company` e `billing_address.company` (`postPaymentInsuranceNotice`): reduzido = seguro 10%, completo ou pedido antigo só com checkbox = seguro 20%, sem compra de seguro = compra sem seguro. Carrinho abandonado deixa `company` vazio. Carrinho: `checkout_drafts` + `POST /api/checkout/draft` e `GET /api/checkout/draft/:id`; ao criar o pedido manda `completed_at`. Lead: upsert no pago e botões admin de sync/remoção. Falha da Reportana não segura checkout, PIX nem etiqueta.
 
 ## Outros
 
