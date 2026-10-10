@@ -21,7 +21,7 @@ export function reportanaStorefrontOrigin(): string {
     process.env.STOREFRONT_URL ||
     process.env.FRONTEND_URL ||
     process.env.PUBLIC_SITE_URL ||
-    "https://www.ka-imports.com";
+    "https://www.yury-imports.com";
   return String(explicit).trim().replace(/\/$/, "");
 }
 

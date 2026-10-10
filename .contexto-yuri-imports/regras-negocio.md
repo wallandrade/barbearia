@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-10-09
+> **Última atualização:** 2026-10-10
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -44,6 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-10 | Link de divulgação do afiliado usa `yury-imports.com` | Sem `STOREFRONT_URL` / `FRONTEND_URL` / `PUBLIC_SITE_URL`, o dashboard devolve `https://www.yury-imports.com/r/{código}`. A tela troca host `ka-imports.com` pelo domínio aberto | Código, comissão, pixel e crédito iguais |
 | 2026-10-09 | Aba Lista negra ao lado de Rastreios | Admin primário vê os extravios já gravados, com busca, retirados e o caminho salvo. Tirar da lista preenche `removed_at` | O aviso de 180 dias continua só na cotação. Checkout, Motoboy, cópia 48h, estoque e seguro iguais |
 | 2026-10-09 | Copiar **Pós-pagamento** inclui o aviso do seguro (`postPaymentInsuranceNotice`) | Reduzido: seguro 10%, só roubo/extravio, outro produto igual depois do registro no sistema. Completo (e pedido antigo só com checkbox): seguro 20%, válido 100%, ressarcimento só depois do registro. Sem seguro: roubo, extravio, danificação ou apreensão não têm ressarcimento | Checkout, reenvio e o % cobrado na aba Seguro iguais |
 | 2026-10-08 | Admin, resultado da rifa mostra o celular do ganhador | No card Resultado da rifa, o telefone da reserva paga fica embaixo do nome | Página pública continua com o telefone mascarado. Ranking, publicar e PIX iguais |
@@ -435,6 +436,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 ## Afiliados
 
 - Cadastro, código, referrals, comissões e uso de crédito — `routes/affiliate.ts`, `lib/affiliates.ts`, schemas `affiliates*`.
+- Link de divulgação (`GET /api/me/affiliate/dashboard`): `STOREFRONT_URL`, senão `FRONTEND_URL`, senão `PUBLIC_SITE_URL`, senão `https://www.yury-imports.com`, no formato `/r/{código}`. Na Minha conta, host `ka-imports.com` ou `www.ka-imports.com` vira o domínio da página aberta, com o mesmo caminho.
 
 ## Cobranças customizadas
 
