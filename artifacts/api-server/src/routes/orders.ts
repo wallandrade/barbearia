@@ -65,6 +65,7 @@ import {
 import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from "../lib/r2";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { queueReportanaDraftComplete, queueReportanaOrderSync } from "../lib/reportana";
+import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { formatShippingForecastDateBR, normalizeShippingForecastDate } from "../lib/shipping-forecast";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
@@ -1887,6 +1888,7 @@ router.post("/admin/orders/:id/apply-store-credit", requireAdminAuth, async (req
         source: "admin_store_credit",
         coveredByStoreCredit: true,
       });
+      queueOrderPaidWhatsapp(id);
     }
     queueReportanaOrderSync(id);
 
@@ -2072,6 +2074,7 @@ router.patch("/admin/orders/:id/status", requireAdminAuth, async (req, res) => {
         total: existing[0]?.total,
         source: "admin_manual",
       });
+      queueOrderPaidWhatsapp(id);
     }
     if (isBeingCancelled && !wasAlreadyCancelled) {
       void sendOutboundWebhook("order_cancelled", {
@@ -2258,6 +2261,7 @@ router.patch("/admin/orders/:id/proof", requireAdminAuth, async (req, res) => {
         total: existing[0]?.total,
         source: "admin_proof",
       });
+      queueOrderPaidWhatsapp(id);
     }
     recordAdminActivity(req, id, "proof", "Enviou comprovante");
     queueReportanaOrderSync(id);

@@ -14,6 +14,7 @@ import { getCustomerSession } from "../middlewares/customer-auth";
 import { applyAffiliateCreditToOrder, ensureOrderCommission, normalizeAffiliateCode, registerAffiliateLead, resolveAffiliateByCode } from "../lib/affiliates";
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { queueReportanaDraftComplete, queueReportanaOrderSync } from "../lib/reportana";
+import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { recordOrderActivity } from "../lib/order-activity";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
@@ -616,6 +617,7 @@ router.post("/checkout/pix", async (req, res) => {
         coveredByAffiliateCredit: affiliateCreditUsed > 0,
         coveredByStoreCredit: storeCreditUsed > 0,
       });
+      queueOrderPaidWhatsapp(orderId);
       void recordOrderActivity({
         orderId,
         type: "status",

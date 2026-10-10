@@ -19474,6 +19474,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [outboundUrl, setOutboundUrl] = useState(settings["outbound_webhook_url"] ?? "");
   const [outboundUrlPaid, setOutboundUrlPaid] = useState(settings["outbound_webhook_url_order_paid"] ?? "");
   const [outboundUrlCancelled, setOutboundUrlCancelled] = useState(settings["outbound_webhook_url_order_cancelled"] ?? "");
+  const [n8nOrderPaidUrl, setN8nOrderPaidUrl] = useState(settings["n8n_order_paid_webhook_url"] ?? "");
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
@@ -20491,6 +20492,41 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
 
         <p className="text-xs text-muted-foreground">
           Pedido real só sai com <strong>Ativar envio</strong> ligado. Cole a URL exatamente como o Pushcut mostra (espaço no nome conta). Teste envia “Cliente teste — R$ 150,00”.
+        </p>
+      </div>
+
+      <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+        <div>
+          <h2 className="text-lg font-bold mb-1">WhatsApp do pedido pago</h2>
+          <p className="text-muted-foreground text-sm">
+            Quando o pedido fica pago pela primeira vez, a loja manda o telefone do cliente e o texto do pós-pagamento para o n8n. O n8n envia pela Z-API. Sem essa URL, nada sai.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">URL de produção do webhook</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={n8nOrderPaidUrl}
+              onChange={(e) => setN8nOrderPaidUrl(e.target.value)}
+              placeholder="https://….app.n8n.cloud/webhook/…"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const value = n8nOrderPaidUrl.trim();
+                if (!value) { onDelete("n8n_order_paid_webhook_url"); return; }
+                onSave("n8n_order_paid_webhook_url", value);
+              }}
+              disabled={!!loading["n8n_order_paid_webhook_url"]}
+            >
+              {loading["n8n_order_paid_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          No n8n, os campos phone e message do HTTP Request precisam ser expressão: {`{{ $json.body.phone }}`} e {`{{ $json.body.message }}`}. Se continuarem fixos, todo pedido pago repete a mensagem de teste.
         </p>
       </div>
 

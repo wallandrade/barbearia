@@ -13,6 +13,7 @@ import {
 } from "../gateway";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
 import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
+import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 
 const router: IRouter = Router();
 
@@ -494,6 +495,9 @@ router.patch("/admin/custom-charges/:id/status", requireAdminAuth, async (req, r
             type: newOrderStatus === "paid" || newOrderStatus === "completed" ? "order_paid" : "order_status_updated",
             data: { id: existing.orderId, status: newOrderStatus },
           });
+          if (newOrderStatus === "paid" || newOrderStatus === "completed") {
+            queueOrderPaidWhatsapp(existing.orderId);
+          }
         }
       }
     }
@@ -566,6 +570,9 @@ router.patch("/admin/custom-charges/:id/proof", requireAdminAuth, async (req, re
           type: newOrderStatus === "paid" || newOrderStatus === "completed" ? "order_paid" : "order_status_updated",
           data: { id: existing.orderId, status: newOrderStatus },
         });
+        if (newOrderStatus === "paid" || newOrderStatus === "completed") {
+          queueOrderPaidWhatsapp(existing.orderId);
+        }
       }
     }
 

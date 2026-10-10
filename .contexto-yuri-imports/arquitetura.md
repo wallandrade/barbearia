@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-10-09
+> **Última atualização:** 2026-10-10
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-10 | Coluna `orders.paid_whatsapp_sent_at` (+ runtime) | Marca que o WhatsApp do pedido pago já foi para o n8n | Demais colunas de `orders` iguais |
 | 2026-10-09 | Tabela `checkout_drafts` (+ runtime) | Rascunho do checkout para a Reportana retomar em `/checkout?draft=` | Pedido e PIX iguais; o rascunho não guarda cartão |
 | 2026-10-06 | Tabela `customer_subscriptions` (+ runtime) | PIX da mensalidade de protocolos (R$ 19,90) e `period_end` | `orders` e `custom_charges` iguais |
 | 2026-10-02 | Colunas `shipping_forecast_date` em `orders` e `order_shipments` (+ runtime) | `PATCH /api/admin/orders/:id/shipping-forecast` grava YYYY-MM-DD. No split, `packageId` aponta o pacote | `enviado`, baixa de estoque e `shipping_queue` iguais |
