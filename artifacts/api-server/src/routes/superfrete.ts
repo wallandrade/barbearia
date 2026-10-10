@@ -8,6 +8,7 @@ import { queueReportanaOrderSync } from "../lib/reportana";
 import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import { announcePosted } from "../lib/order-posted-whatsapp";
 import { announceDelivered } from "../lib/order-delivered-whatsapp";
+import { announceOutForDelivery } from "../lib/order-out-for-delivery-whatsapp";
 import {
   getOrderShipment,
   listOrderShipments,
@@ -246,6 +247,13 @@ async function applySuperfreteSnapshot(input: {
       nextStatus: status,
       trackingCode: tracking || pkg?.superfreteTracking,
     });
+    announceOutForDelivery({
+      orderId: input.order.id,
+      packageKey: input.packageId,
+      previousStatus: pkg?.superfreteStatus,
+      nextStatus: status,
+      trackingCode: tracking || pkg?.superfreteTracking,
+    });
   } else {
     const currentEnviado = Boolean(input.order.enviado);
     await db
@@ -271,6 +279,13 @@ async function applySuperfreteSnapshot(input: {
       trackingCode: tracking || input.order.superfreteTracking,
     });
     announceDelivered({
+      orderId: input.order.id,
+      packageKey: "order",
+      previousStatus: input.order.superfreteStatus,
+      nextStatus: status,
+      trackingCode: tracking || input.order.superfreteTracking,
+    });
+    announceOutForDelivery({
       orderId: input.order.id,
       packageKey: "order",
       previousStatus: input.order.superfreteStatus,

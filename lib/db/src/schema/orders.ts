@@ -88,6 +88,8 @@ export const ordersTable = mysqlTable("orders", {
   postedWhatsappKeys: text("posted_whatsapp_keys"),
   /** Pacotes que já receberam o WhatsApp de entregue. JSON. */
   deliveredWhatsappKeys: text("delivered_whatsapp_keys"),
+  /** Pacotes que já receberam o WhatsApp de saiu para entrega. JSON. */
+  outForDeliveryWhatsappKeys: text("out_for_delivery_whatsapp_keys"),
   trackingCode: varchar("tracking_code", { length: 255 }),
   trackingLabelUrl: mediumtext("tracking_label_url"),
   trackingLabelText: mediumtext("tracking_label_text"),

@@ -10,6 +10,7 @@ import { queueReportanaOrderSync } from "../lib/reportana";
 import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import { announcePosted } from "../lib/order-posted-whatsapp";
 import { announceDelivered } from "../lib/order-delivered-whatsapp";
+import { announceOutForDelivery } from "../lib/order-out-for-delivery-whatsapp";
 import {
   CarrierLossError,
   clearCarrierLoss,
@@ -572,6 +573,13 @@ async function applyShipmentStatusToOrder(params: {
       nextStatus: params.status,
       trackingCode: params.barcode || pkg.envioecomBarcode,
     });
+    announceOutForDelivery({
+      orderId: order.id,
+      packageKey: pkg.id,
+      previousStatus: pkg.envioecomStatus,
+      nextStatus: params.status,
+      trackingCode: params.barcode || pkg.envioecomBarcode,
+    });
     queueReportanaOrderSync(order.id);
     return { updated: true };
   }
@@ -658,6 +666,13 @@ async function applyShipmentStatusToOrder(params: {
     trackingCode: params.barcode || order.envioecomBarcode || order.trackingCode,
   });
   announceDelivered({
+    orderId: order.id,
+    packageKey: "order",
+    previousStatus: order.envioecomStatus,
+    nextStatus: params.status,
+    trackingCode: params.barcode || order.envioecomBarcode || order.trackingCode,
+  });
+  announceOutForDelivery({
     orderId: order.id,
     packageKey: "order",
     previousStatus: order.envioecomStatus,

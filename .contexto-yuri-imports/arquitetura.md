@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-10 | Coluna `orders.out_for_delivery_whatsapp_keys` (+ runtime) | Guarda os pacotes que já receberam o WhatsApp de saiu para entrega | Demais colunas de `orders` iguais |
 | 2026-10-10 | Coluna `orders.delivered_whatsapp_keys` (+ runtime) | Guarda os pacotes que já receberam o WhatsApp de entregue | Demais colunas de `orders` iguais |
 | 2026-10-10 | Coluna `orders.posted_whatsapp_keys` (+ runtime) | Guarda os pacotes que já receberam o WhatsApp de postado | Demais colunas de `orders` iguais |
 | 2026-10-10 | Coluna `orders.tracking_whatsapp_codes` (+ runtime) | Guarda os códigos de rastreio que já saíram no WhatsApp | Demais colunas de `orders` iguais |
