@@ -69,6 +69,7 @@ const ALLOWED_KEYS = [
   "outbound_webhook_event_order_paid",
   "outbound_webhook_event_order_cancelled",
   "n8n_order_paid_webhook_url",
+  "n8n_tracking_webhook_url",
   // Admin helpers
   "admin_saved_brands",
   // EnvioEcom: nome genérico dos itens no create (nunca nome do catálogo)

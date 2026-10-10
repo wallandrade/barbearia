@@ -5,6 +5,7 @@ import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-au
 import { broadcastNotification } from "./notifications";
 import { recordAdminActivity } from "../lib/order-activity";
 import { queueReportanaOrderSync } from "../lib/reportana";
+import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import {
   getOrderShipment,
   listOrderShipments,
@@ -228,6 +229,7 @@ async function applySuperfreteSnapshot(input: {
       ...(enviado && !pkg?.enviado ? { enviado: true, enviadoAt: now } : {}),
     });
     await rollupOrderFromPackages(input.order.id);
+    announceTrackingCode(input.order.id, pkg?.superfreteTracking, tracking || pkg?.superfreteTracking);
   } else {
     const currentEnviado = Boolean(input.order.enviado);
     await db
@@ -244,6 +246,7 @@ async function applySuperfreteSnapshot(input: {
         updatedAt: now,
       })
       .where(eq(ordersTable.id, input.order.id));
+    announceTrackingCode(input.order.id, input.order.superfreteTracking, tracking || input.order.superfreteTracking);
   }
 
   const beforeStatus = input.packageId ? "" : String(input.order.superfreteStatus || "");

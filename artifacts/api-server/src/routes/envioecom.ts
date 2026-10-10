@@ -7,6 +7,7 @@ import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
 import { queueReportanaOrderSync } from "../lib/reportana";
+import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import {
   CarrierLossError,
   clearCarrierLoss,
@@ -552,6 +553,9 @@ async function applyShipmentStatusToOrder(params: {
     }
     if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
     await noteCarrierLoss(order, params, pkg.id, pkg.envioecomDeliveryMode);
+    if (params.source !== "create-refresh") {
+      announceTrackingCode(order.id, pkg.envioecomBarcode, params.barcode);
+    }
     queueReportanaOrderSync(order.id);
     return { updated: true };
   }
@@ -627,6 +631,9 @@ async function applyShipmentStatusToOrder(params: {
   }
   if (params.source !== "cancel") await closeReshipmentAfterLabelTracking(order.id);
   await noteCarrierLoss(order, params, null, order.envioecomDeliveryMode);
+  if (params.source !== "create-refresh") {
+    announceTrackingCode(order.id, order.envioecomBarcode || order.trackingCode, params.barcode);
+  }
   queueReportanaOrderSync(order.id);
   return { updated: true };
 }
@@ -1212,6 +1219,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     }
 
     recordAdminActivity(req, order.id, "envioecom", "Criou envio EnvioEcom", shippingCompany);
+    announceTrackingCode(order.id, targetPackage?.envioecomBarcode || order.envioecomBarcode, finalBarcode);
     queueReportanaOrderSync(order.id);
     const packages = await listOrderShipments(order.id);
     res.json({
@@ -1628,6 +1636,7 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
           .where(eq(ordersTable.id, order.id));
       }
       await closeReshipmentAfterLabelTracking(order.id);
+      announceTrackingCode(order.id, targetPackage?.envioecomBarcode || order.envioecomBarcode, live.barcode);
       queueReportanaOrderSync(order.id);
     }
 

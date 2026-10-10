@@ -19475,6 +19475,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [outboundUrlPaid, setOutboundUrlPaid] = useState(settings["outbound_webhook_url_order_paid"] ?? "");
   const [outboundUrlCancelled, setOutboundUrlCancelled] = useState(settings["outbound_webhook_url_order_cancelled"] ?? "");
   const [n8nOrderPaidUrl, setN8nOrderPaidUrl] = useState(settings["n8n_order_paid_webhook_url"] ?? "");
+  const [n8nTrackingUrl, setN8nTrackingUrl] = useState(settings["n8n_tracking_webhook_url"] ?? "");
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
@@ -20527,6 +20528,32 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         </div>
         <p className="text-xs text-muted-foreground">
           No n8n, os campos phone e message do HTTP Request precisam ser expressão: {`{{ $json.body.phone }}`} e {`{{ $json.body.message }}`}. Se continuarem fixos, todo pedido pago repete a mensagem de teste.
+        </p>
+        <div>
+          <label className="block text-xs font-medium mb-1">URL do rastreio</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={n8nTrackingUrl}
+              onChange={(e) => setN8nTrackingUrl(e.target.value)}
+              placeholder="https://….app.n8n.cloud/webhook/rastreio"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const value = n8nTrackingUrl.trim();
+                if (!value) { onDelete("n8n_tracking_webhook_url"); return; }
+                onSave("n8n_tracking_webhook_url", value);
+              }}
+              disabled={!!loading["n8n_tracking_webhook_url"]}
+            >
+              {loading["n8n_tracking_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Sai quando o código de rastreio muda para um código de verdade. Código que começa com EC não entra. O mesmo código não é enviado de novo.
         </p>
       </div>
 

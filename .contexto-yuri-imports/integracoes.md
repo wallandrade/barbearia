@@ -6,6 +6,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 ## Changelog
 
+| 2026-10-10 | WhatsApp do rastreio via n8n | Quando o código muda para um rastreio de verdade, POST `{ phone, message }` em `n8n_tracking_webhook_url` ou `N8N_TRACKING_WEBHOOK_URL`. Código `EC` não entra. O mesmo código não sai de novo (`orders.tracking_whatsapp_codes`). Pedido dividido avisa o código daquele pacote | Pedido pago, Reportana, Pushcut e a cópia 48h iguais |
 | 2026-10-10 | WhatsApp do pedido pago via n8n | Na primeira vez que o pedido fica pago, a API faz POST `{ phone, message }` na URL `n8n_order_paid_webhook_url` ou `N8N_ORDER_PAID_WEBHOOK_URL`. Texto igual ao Copiar pós-pagamento, com um aviso de seguro. `orders.paid_whatsapp_sent_at` impede o segundo envio. Sem URL, nada sai | Reportana, Pushcut, rastreio e a cópia 48h iguais |
 | 2026-10-10 | Origem da loja na Reportana e no link de afiliado | Sem `STOREFRONT_URL` / `FRONTEND_URL` / `PUBLIC_SITE_URL`, os links usam `https://www.yury-imports.com` | Payload do pedido, PIX, lead e carrinho iguais |
 | 2026-10-10 | Reportana recebe o aviso de seguro do pós-pagamento em `shipping_address.company` | Reduzido: texto do seguro 10%. Completo e pedido antigo só com checkbox: seguro 20%. Sem seguro: texto de compra sem seguro. Carrinho abandonado não leva esse texto | Rastreio, PIX, lead e o restante do pedido iguais |
@@ -246,6 +247,7 @@ Yury = **fonte da verdade**. Snapshot é leitura. Baixa do espelho exige **senha
 ## WhatsApp
 
 - Links e números via settings/FE (`WHATSAPP_NUMBER` e configs por canal/seller); não é API oficial WhatsApp Business no núcleo observado.
+- **Rastreio (n8n + Z-API):** `lib/order-tracking-whatsapp.ts`. Dispara quando o barcode/rastreio gravado muda para um código que não começa com `EC` (EnvioEcom, SuperFrete e código manual). POST `{ phone, message }` em `N8N_TRACKING_WEBHOOK_URL` ou `n8n_tracking_webhook_url`. Um código por mensagem. `orders.tracking_whatsapp_codes` guarda os já enviados. O mesmo código, ou só uma atualização de status, não manda de novo. Falha não segura etiqueta nem sync.
 - **Pedido pago (n8n + Z-API):** `lib/order-paid-whatsapp.ts`. Dispara junto com o webhook `order_paid` (PIX, admin ao marcar pago, comprovante, saldo que quita o pedido, cobrança de diferença que quita). POST `{ phone, message }` na URL https de `N8N_ORDER_PAID_WEBHOOK_URL` ou da setting `n8n_order_paid_webhook_url` (Admin → Configurações). `phone` é só dígito com `55`. `message` é o Copiar pós-pagamento (`**` vira `*` para o WhatsApp) e um único aviso de seguro. `orders.paid_whatsapp_sent_at` marca o envio; se o n8n não responder, a marca sai e o próximo pagamento pode tentar de novo. Falha não segura checkout, PIX nem o admin. O HTTP Request do n8n precisa ler `{{ $json.body.phone }}` e `{{ $json.body.message }}`. A Z-API (token da instância e `Client-Token`) fica no n8n, não na loja.
 
 ## Tempo real / push

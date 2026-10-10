@@ -82,6 +82,8 @@ export const ordersTable = mysqlTable("orders", {
   promoStockConsumed: boolean("promo_stock_consumed").notNull().default(false),
   /** WhatsApp do pedido pago já foi entregue ao n8n. Um retry de PIX não manda de novo. */
   paidWhatsappSentAt: timestamp("paid_whatsapp_sent_at"),
+  /** Códigos de rastreio que já saíram no WhatsApp. JSON. EC não entra. */
+  trackingWhatsappCodes: text("tracking_whatsapp_codes"),
   trackingCode: varchar("tracking_code", { length: 255 }),
   trackingLabelUrl: mediumtext("tracking_label_url"),
   trackingLabelText: mediumtext("tracking_label_text"),

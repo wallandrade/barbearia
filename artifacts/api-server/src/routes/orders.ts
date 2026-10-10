@@ -66,6 +66,7 @@ import { getR2MissingConfig, isR2Configured, uploadOrderTrackingLabelToR2 } from
 import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { queueReportanaDraftComplete, queueReportanaOrderSync } from "../lib/reportana";
 import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
+import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { formatShippingForecastDateBR, normalizeShippingForecastDate } from "../lib/shipping-forecast";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
@@ -3990,6 +3991,7 @@ router.patch("/admin/orders/:id/tracking-code", requireAdminAuth, async (req, re
       .limit(1);
 
     broadcastNotification({ type: "order_tracking_updated", data: { id, trackingCode: normalized } });
+    announceTrackingCode(id, currentTracking, normalized);
     queueReportanaOrderSync(id);
     recordAdminActivity(req, id, "tracking", "Atualizou código de rastreio", normalized);
     res.json({ ok: true, order: updated[0] ? mapOrder(updated[0]) : null });
