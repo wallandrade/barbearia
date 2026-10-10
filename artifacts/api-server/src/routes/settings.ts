@@ -71,6 +71,7 @@ const ALLOWED_KEYS = [
   "n8n_order_paid_webhook_url",
   "n8n_tracking_webhook_url",
   "n8n_posted_webhook_url",
+  "n8n_delivered_webhook_url",
   // Admin helpers
   "admin_saved_brands",
   // EnvioEcom: nome genérico dos itens no create (nunca nome do catálogo)

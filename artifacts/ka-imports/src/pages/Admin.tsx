@@ -19477,6 +19477,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [n8nOrderPaidUrl, setN8nOrderPaidUrl] = useState(settings["n8n_order_paid_webhook_url"] ?? "");
   const [n8nTrackingUrl, setN8nTrackingUrl] = useState(settings["n8n_tracking_webhook_url"] ?? "");
   const [n8nPostedUrl, setN8nPostedUrl] = useState(settings["n8n_posted_webhook_url"] ?? "");
+  const [n8nDeliveredUrl, setN8nDeliveredUrl] = useState(settings["n8n_delivered_webhook_url"] ?? "");
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
@@ -20581,6 +20582,32 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         </div>
         <p className="text-xs text-muted-foreground">
           Sai quando o pacote é coletado ou postado. Etiqueta pronta e Aguardando coleta não entram. Cada pacote avisa uma vez.
+        </p>
+        <div>
+          <label className="block text-xs font-medium mb-1">URL do pedido entregue</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={n8nDeliveredUrl}
+              onChange={(e) => setN8nDeliveredUrl(e.target.value)}
+              placeholder="https://….app.n8n.cloud/webhook/entregue"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const value = n8nDeliveredUrl.trim();
+                if (!value) { onDelete("n8n_delivered_webhook_url"); return; }
+                onSave("n8n_delivered_webhook_url", value);
+              }}
+              disabled={!!loading["n8n_delivered_webhook_url"]}
+            >
+              {loading["n8n_delivered_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Sai quando o status vira Entregue. Cada pacote avisa uma vez.
         </p>
       </div>
 
