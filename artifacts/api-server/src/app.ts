@@ -346,17 +346,32 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (isOriginAllowed(origin)) {
-      callback(null, true);
-      return;
-    }
-    callback(new Error("CORS_ORIGIN_DENIED"));
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+const corsMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+const corsAllowedHeaders = ["Content-Type", "Authorization"];
+
+app.use(cors((req, callback) => {
+  // A Z-API chama este webhook de servidor e manda Origin. A senha da rota valida a chamada.
+  if (req.path === "/api/whatsapp/support/inbound") {
+    callback(null, {
+      origin: true,
+      credentials: true,
+      methods: corsMethods,
+      allowedHeaders: corsAllowedHeaders,
+    });
+    return;
+  }
+  callback(null, {
+    origin: (origin, originCallback) => {
+      if (isOriginAllowed(origin)) {
+        originCallback(null, true);
+        return;
+      }
+      originCallback(new Error("CORS_ORIGIN_DENIED"));
+    },
+    credentials: true,
+    methods: corsMethods,
+    allowedHeaders: corsAllowedHeaders,
+  });
 }));
 
 app.use((req, res, next) => {

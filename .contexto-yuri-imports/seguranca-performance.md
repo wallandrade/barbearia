@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-10 | `POST /api/whatsapp/support/inbound` não é barrado pelo CORS | A Z-API manda `Origin` e a loja respondia 500 antes da rota. A senha do atendimento continua obrigatória | Demais rotas seguem na allowlist |
 | 2026-10-10 | `POST /api/whatsapp/support/inbound` exige token (`n8n_whatsapp_support_token` ou `N8N_WHATSAPP_SUPPORT_TOKEN`, mínimo 8) | Busca de pedido por número ou CPF no WhatsApp não fica aberta. 20 mensagens / 10 min por telefone | Checkout token e a lista de writes públicos iguais. O token não vai em `PUBLIC_KEYS` |
 | 2026-09-17 | Admin fila: `GET /api/admin/shipping-queue` devolve todas as alocações ativas; o FE parou o N+1 por pedido pago (poll 20 s) | Menos carga no Railway; fallback em lote de 8 se a rota nova ainda não existir | Slot/prazo iguais; GET `/:orderId` permanece |
 | 2026-09-11 | Admin: busca de pedidos/clientes fora do estado do pai; poll visitantes 5 s em `AdminLiveVisitorStats`; `startTransition` no refresh silencioso (~20 s) | Digitação tem prioridade sobre re-render pesado | Filtro local igual; SSE e GET de período iguais |
@@ -18,7 +19,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 ## CORS e headers
 
-- CORS com allowlist de origens oficiais (domínios Yury/KA/Vercel + `CORS_ALLOWED_ORIGINS`).
+- CORS com allowlist de origens oficiais (domínios Yury/KA/Vercel + `CORS_ALLOWED_ORIGINS`). Exceção: `POST /api/whatsapp/support/inbound` aceita a origem da Z-API; a senha da rota é o controle.
 - `credentials: true`; métodos REST padrão; `allowedHeaders`: `Content-Type`, `Authorization`.
 - Headers: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`.
 - Body JSON/urlencoded até ~15mb (uploads/base64).
