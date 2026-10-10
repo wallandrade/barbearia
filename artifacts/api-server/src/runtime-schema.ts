@@ -1319,6 +1319,18 @@ async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<v
   }
 }
 
+async function ensureWhatsappSupportSessionsTable(databaseName: string): Promise<void> {
+  if (await tableExists("whatsapp_support_sessions", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE whatsapp_support_sessions (
+      phone VARCHAR(20) NOT NULL PRIMARY KEY,
+      step VARCHAR(32) NOT NULL,
+      problem VARCHAR(32) NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
 async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   if (await tableExists("checkout_drafts", databaseName)) return;
   await pool.query(`
@@ -1380,6 +1392,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureStoreCreditTables(databaseName);
     await ensureCustomerSubscriptionsTable(databaseName);
     await ensureCheckoutDraftsTable(databaseName);
+    await ensureWhatsappSupportSessionsTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

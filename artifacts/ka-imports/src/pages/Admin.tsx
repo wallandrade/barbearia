@@ -19480,6 +19480,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [n8nDeliveredUrl, setN8nDeliveredUrl] = useState(settings["n8n_delivered_webhook_url"] ?? "");
   const [n8nOutForDeliveryUrl, setN8nOutForDeliveryUrl] = useState(settings["n8n_out_for_delivery_webhook_url"] ?? "");
   const [n8nSupportUrl, setN8nSupportUrl] = useState(settings["n8n_support_webhook_url"] ?? "");
+  const [n8nSupportMenuUrl, setN8nSupportMenuUrl] = useState(settings["n8n_support_menu_webhook_url"] ?? "");
   const [n8nSupportToken, setN8nSupportToken] = useState(settings["n8n_whatsapp_support_token"] ?? "");
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
@@ -20661,6 +20662,32 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             </Button>
           </div>
         </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">URL do menu do atendimento</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={n8nSupportMenuUrl}
+              onChange={(e) => setN8nSupportMenuUrl(e.target.value)}
+              placeholder="https://….app.n8n.cloud/webhook/atendimento-menu"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const value = n8nSupportMenuUrl.trim();
+                if (!value) { onDelete("n8n_support_menu_webhook_url"); return; }
+                onSave("n8n_support_menu_webhook_url", value);
+              }}
+              disabled={!!loading["n8n_support_menu_webhook_url"]}
+            >
+              {loading["n8n_support_menu_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Esse webhook chama a Z-API em send-option-list, não em send-text. O corpo leva phone, message e optionList, os três em expressão.
+        </p>
         <div>
           <label className="block text-xs font-medium mb-1">Token do atendimento</label>
           <div className="flex gap-2">

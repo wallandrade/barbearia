@@ -2,16 +2,19 @@ import { timingSafeEqual } from "crypto";
 import { desc, eq, sql } from "drizzle-orm";
 import { isDeliveredStatus, isInTransitStatus } from "./envioecom";
 import { isOutForDeliveryStatus } from "./order-out-for-delivery-whatsapp";
-import { normalizeN8nWebhookUrl, toWhatsappMarkup, toWhatsappPhone } from "./order-paid-whatsapp";
+import { normalizeN8nWebhookUrl, toWhatsappPhone } from "./order-paid-whatsapp";
 import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
 
 export const N8N_SUPPORT_WEBHOOK_SETTING = "n8n_support_webhook_url";
+export const N8N_SUPPORT_MENU_WEBHOOK_SETTING = "n8n_support_menu_webhook_url";
 export const N8N_SUPPORT_TOKEN_SETTING = "n8n_whatsapp_support_token";
+const STORE_URL = "https://www.yury-imports.com";
 const TIMEOUT_MS = 8000;
 const MAX_ORDERS = 3;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 20;
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -24,8 +27,27 @@ export type SupportIntent =
 export type SupportInbound = {
   phone: string;
   text: string;
+  choiceId: string;
   skip: boolean;
 };
+
+export type SupportStep = "menu" | "problem_menu" | "await_lookup" | "await_problem";
+
+export type SupportSession = {
+  step: SupportStep;
+  problem: string | null;
+};
+
+export type SupportOption = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+export type SupportTurn =
+  | { kind: "text"; message: string; session: SupportSession }
+  | { kind: "list"; message: string; buttonLabel: string; title: string; options: SupportOption[]; session: SupportSession }
+  | { kind: "lookup"; intent: Extract<SupportIntent, { kind: "order" | "document" }>; followup: string; session: SupportSession };
 
 export type SupportOrderView = {
   orderNumber?: number | null;
@@ -61,6 +83,20 @@ function readText(body: Record<string, unknown>): string {
   return "";
 }
 
+function readChoiceId(body: Record<string, unknown>): string {
+  const list = body.listResponseMessage;
+  if (list && typeof list === "object") {
+    const row = list as { selectedRowId?: unknown; title?: unknown; message?: unknown };
+    return String(row.selectedRowId || row.title || row.message || "").trim();
+  }
+  const buttons = body.buttonsResponseMessage;
+  if (buttons && typeof buttons === "object") {
+    const row = buttons as { buttonId?: unknown; message?: unknown };
+    return String(row.buttonId || row.message || "").trim();
+  }
+  return "";
+}
+
 /** Mensagem recebida da Z-API, ou um corpo simples { phone, text }. */
 export function readSupportInbound(body: unknown): SupportInbound {
   const row = body && typeof body === "object" ? body as Record<string, unknown> : {};
@@ -70,7 +106,157 @@ export function readSupportInbound(body: unknown): SupportInbound {
     || row.isGroup === true
     || row.isNewsletter === true
     || (type.length > 0 && !/received/i.test(type));
-  return { phone, text: readText(row), skip };
+  return { phone, text: readText(row), choiceId: readChoiceId(row), skip };
+}
+
+const MAIN_OPTIONS: SupportOption[] = [
+  { id: "meu-pedido", title: "Meu pedido", description: "Status, prazo e rastreio" },
+  { id: "comprar", title: "Quero comprar", description: "Abrir o site" },
+  { id: "problema", title: "Problemas com pedido", description: "Atraso, falta ou extravio" },
+  { id: "atendente", title: "Falar com atendente", description: "Uma pessoa responde" },
+];
+
+const PROBLEM_OPTIONS: SupportOption[] = [
+  { id: "atrasado", title: "Pedido atrasado", description: "Não chegou no prazo" },
+  { id: "faltando", title: "Veio faltando", description: "Um item não veio" },
+  { id: "sumiu", title: "Sumiu no correio", description: "Roubo ou extravio" },
+  { id: "quebrado", title: "Apreensão ou quebra", description: "Receita ou produto quebrado" },
+  { id: "voltou", title: "Voltou ao vendedor", description: "O correio devolveu" },
+  { id: "outro", title: "Outro problema", description: "Outro caso" },
+];
+
+const PROBLEM_LABELS: Record<string, string> = {
+  atrasado: "pedido atrasado",
+  faltando: "veio faltando produto",
+  sumiu: "sumiu no correio",
+  quebrado: "apreensão ou quebra",
+  voltou: "voltou ao vendedor",
+  outro: "outro problema",
+};
+
+function plain(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[!?.]+/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isGreeting(raw: string): boolean {
+  return /^(oi|ola|menu|bom dia|boa tarde|boa noite|ajuda|inicio|hi|hello)$/.test(plain(raw));
+}
+
+function optionByLooseText(raw: string, options: SupportOption[]): string | null {
+  const value = plain(raw).replace(/^\d+\s*-\s*/, "");
+  const hit = options.find((option) => plain(option.title) === value || option.id === value);
+  if (hit) return hit.id;
+  const number = plain(raw).match(/^(\d+)\b/);
+  if (!number) return null;
+  const index = Number(number[1]) - 1;
+  return options[index]?.id || null;
+}
+
+function resolveChoice(choiceId: string, text: string, step: SupportStep): string | null {
+  const direct = String(choiceId || "").trim();
+  if (direct && (MAIN_OPTIONS.some((option) => option.id === direct) || PROBLEM_OPTIONS.some((option) => option.id === direct))) {
+    return direct;
+  }
+  if (step === "await_lookup" || step === "await_problem") return null;
+  const source = direct || text;
+  if (step === "problem_menu") return optionByLooseText(source, PROBLEM_OPTIONS);
+  return optionByLooseText(source, MAIN_OPTIONS);
+}
+
+function menuSession(): SupportSession {
+  return { step: "menu", problem: null };
+}
+
+function mainList(): SupportTurn {
+  return {
+    kind: "list",
+    title: "Atendimento",
+    buttonLabel: "Ver opções",
+    message: "Olá! Você entrou em contato com o suporte da Yury Imports.\n\nPara agilizar o seu atendimento, escolha uma das opções abaixo.",
+    options: MAIN_OPTIONS,
+    session: menuSession(),
+  };
+}
+
+function problemList(): SupportTurn {
+  return {
+    kind: "list",
+    title: "O que houve",
+    buttonLabel: "Ver opções",
+    message: "Certo. Me conta o que aconteceu com o seu pedido.",
+    options: PROBLEM_OPTIONS,
+    session: { step: "problem_menu", problem: null },
+  };
+}
+
+/** Oi abre o menu. Número e CPF só depois de Meu pedido. */
+export function decideSupportTurn(input: {
+  text?: string | null;
+  choiceId?: string | null;
+  session?: SupportSession | null;
+}): SupportTurn {
+  const session = input.session?.step ? input.session : menuSession();
+  const text = String(input.text || "");
+  const choiceId = String(input.choiceId || "");
+  if (!choiceId && isGreeting(text)) return mainList();
+
+  const choice = resolveChoice(choiceId, text, session.step);
+  if (choice === "meu-pedido") {
+    return {
+      kind: "text",
+      message: "Me envia o número do pedido ou o CPF da compra, só os números.\n\nO número do pedido está no WhatsApp ou no e-mail da compra.",
+      session: { step: "await_lookup", problem: null },
+    };
+  }
+  if (choice === "comprar") {
+    return {
+      kind: "text",
+      message: `Pode comprar em ${STORE_URL}`,
+      session: menuSession(),
+    };
+  }
+  if (choice === "problema") return problemList();
+  if (choice === "atendente") {
+    return {
+      kind: "text",
+      message: "Certo. Vou chamar um atendente para continuar por aqui.",
+      session: menuSession(),
+    };
+  }
+  if (choice && PROBLEM_LABELS[choice]) {
+    return {
+      kind: "text",
+      message: `Anotei: ${PROBLEM_LABELS[choice]}.\n\nMe envia o número do pedido ou o CPF, só os números.`,
+      session: { step: "await_problem", problem: choice },
+    };
+  }
+
+  if (session.step === "await_lookup" || session.step === "await_problem") {
+    const intent = classifySupportText(text);
+    if (intent.kind === "order" || intent.kind === "document") {
+      const followup = session.step === "await_problem"
+        ? "\n\nVou passar para o atendente olhar esse caso."
+        : "";
+      return { kind: "lookup", intent, followup, session: menuSession() };
+    }
+    return {
+      kind: "text",
+      message: buildSupportUnknownMessage(),
+      session,
+    };
+  }
+
+  return mainList();
+}
+
+export function supportListText(turn: Extract<SupportTurn, { kind: "list" }>): string {
+  const lines = turn.options.map((option, index) => `${index + 1} - ${option.title}`);
+  return `${turn.message}\n\n${lines.join("\n")}`;
 }
 
 export function classifySupportText(raw: string | null | undefined): SupportIntent {
@@ -196,16 +382,6 @@ export function supportSituationLabel(order: SupportOrderView): string {
   return "Aguardando pagamento";
 }
 
-export function buildSupportMenuMessage(): string {
-  return toWhatsappMarkup([
-    "Olá! Você entrou em contato com o suporte da Yury Imports.",
-    "",
-    "Me envia o *número do pedido* ou o *CPF* da compra, só os números.",
-    "",
-    "O número do pedido está no WhatsApp ou no e-mail da compra.",
-  ].join("\n"));
-}
-
 export function buildSupportNotFoundMessage(): string {
   return "Não achei pedido com esse dado. Confere o número do pedido ou o CPF e envia de novo, só os números.";
 }
@@ -257,8 +433,8 @@ function allowPhone(phone: string, now = Date.now()): boolean {
 }
 
 async function database() {
-  const { db, ordersTable, siteSettingsTable } = await import("@workspace/db");
-  return { db, ordersTable, siteSettingsTable };
+  const { db, ordersTable, siteSettingsTable, whatsappSupportSessionsTable } = await import("@workspace/db");
+  return { db, ordersTable, siteSettingsTable, whatsappSupportSessionsTable };
 }
 
 async function settingValue(key: string): Promise<string> {
@@ -281,6 +457,41 @@ export async function supportWebhookUrl(): Promise<string> {
   const fromEnv = normalizeN8nWebhookUrl(process.env.N8N_SUPPORT_WEBHOOK_URL);
   if (fromEnv) return fromEnv;
   return normalizeN8nWebhookUrl(await settingValue(N8N_SUPPORT_WEBHOOK_SETTING));
+}
+
+export async function supportMenuWebhookUrl(): Promise<string> {
+  const fromEnv = normalizeN8nWebhookUrl(process.env.N8N_SUPPORT_MENU_WEBHOOK_URL);
+  if (fromEnv) return fromEnv;
+  return normalizeN8nWebhookUrl(await settingValue(N8N_SUPPORT_MENU_WEBHOOK_SETTING));
+}
+
+function isSupportStep(value: string): value is SupportStep {
+  return value === "menu" || value === "problem_menu" || value === "await_lookup" || value === "await_problem";
+}
+
+async function loadSession(phone: string): Promise<SupportSession | null> {
+  const { db, whatsappSupportSessionsTable } = await database();
+  const rows = await db
+    .select()
+    .from(whatsappSupportSessionsTable)
+    .where(eq(whatsappSupportSessionsTable.phone, phone))
+    .limit(1);
+  const row = rows[0];
+  if (!row || !isSupportStep(row.step)) return null;
+  const updated = row.updatedAt instanceof Date ? row.updatedAt.getTime() : 0;
+  if (!updated || Date.now() - updated > SESSION_TTL_MS) return null;
+  return { step: row.step, problem: row.problem || null };
+}
+
+async function saveSession(phone: string, session: SupportSession): Promise<void> {
+  const { db, whatsappSupportSessionsTable } = await database();
+  const now = new Date();
+  await db
+    .insert(whatsappSupportSessionsTable)
+    .values({ phone, step: session.step, problem: session.problem, updatedAt: now })
+    .onDuplicateKeyUpdate({
+      set: { step: session.step, problem: session.problem, updatedAt: now },
+    });
 }
 
 async function withPackages(rows: Array<{
@@ -360,16 +571,7 @@ export async function findSupportOrders(intent: SupportIntent): Promise<{ orders
   };
 }
 
-export async function supportReply(text: string): Promise<string> {
-  const intent = classifySupportText(text);
-  if (intent.kind === "menu") return buildSupportMenuMessage();
-  if (intent.kind === "unknown") return buildSupportUnknownMessage();
-  const found = await findSupportOrders(intent);
-  if (found.orders.length === 0) return buildSupportNotFoundMessage();
-  return buildSupportOrdersMessage(found.orders, found.truncated);
-}
-
-async function postWebhook(url: string, body: { phone: string; message: string }): Promise<boolean> {
+async function postWebhook(url: string, body: Record<string, unknown>): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -388,22 +590,57 @@ async function postWebhook(url: string, body: { phone: string; message: string }
   }
 }
 
+async function sendText(phone: string, message: string): Promise<boolean> {
+  const url = await supportWebhookUrl();
+  if (!url) return false;
+  return postWebhook(url, { phone, message });
+}
+
+async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list" }>): Promise<boolean> {
+  const url = await supportMenuWebhookUrl();
+  if (!url) return sendText(phone, supportListText(turn));
+  const sent = await postWebhook(url, {
+    phone,
+    message: turn.message,
+    optionList: {
+      title: turn.title,
+      buttonLabel: turn.buttonLabel,
+      options: turn.options,
+    },
+  });
+  if (sent) return true;
+  return sendText(phone, supportListText(turn));
+}
+
 /** Responde uma mensagem recebida. Não manda de novo o que a própria loja enviou. */
 export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
   const inbound = readSupportInbound(body);
   if (inbound.skip || !inbound.phone) return { ok: true, skipped: true };
   if (!allowPhone(inbound.phone)) {
-    const url = await supportWebhookUrl();
-    if (!url) return { ok: false, error: "not_configured" };
-    const sent = await postWebhook(url, {
-      phone: inbound.phone,
-      message: "Recebi muitas mensagens agora. Espera um minuto e envia o número do pedido ou o CPF de novo.",
-    });
+    const sent = await sendText(inbound.phone, "Recebi muitas mensagens agora. Espera um minuto e tenta de novo.");
     return sent ? { ok: true } : { ok: false, error: "send_failed" };
   }
-  const url = await supportWebhookUrl();
-  if (!url) return { ok: false, error: "not_configured" };
-  const message = await supportReply(inbound.text);
-  const sent = await postWebhook(url, { phone: inbound.phone, message });
-  return sent ? { ok: true } : { ok: false, error: "send_failed" };
+
+  const session = await loadSession(inbound.phone);
+  const turn = decideSupportTurn({ text: inbound.text, choiceId: inbound.choiceId, session });
+  let nextSession = turn.session;
+  let sent = false;
+  if (turn.kind === "list") {
+    sent = await sendList(inbound.phone, turn);
+  } else if (turn.kind === "text") {
+    sent = await sendText(inbound.phone, turn.message);
+  } else {
+    const found = await findSupportOrders(turn.intent);
+    if (found.orders.length === 0) {
+      sent = await sendText(inbound.phone, buildSupportNotFoundMessage());
+      nextSession = session?.step === "await_problem" || session?.step === "await_lookup"
+        ? session
+        : turn.session;
+    } else {
+      sent = await sendText(inbound.phone, `${buildSupportOrdersMessage(found.orders, found.truncated)}${turn.followup}`);
+    }
+  }
+  if (!sent) return { ok: false, error: "not_configured" };
+  await saveSession(inbound.phone, nextSession);
+  return { ok: true };
 }

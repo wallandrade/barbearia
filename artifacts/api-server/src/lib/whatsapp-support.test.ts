@@ -5,6 +5,7 @@ import {
   buildSupportOrderMessage,
   buildSupportOrdersMessage,
   classifySupportText,
+  decideSupportTurn,
   readSupportInbound,
   supportPaymentLabel,
   supportSituationLabel,
@@ -19,6 +20,35 @@ test("oi abre o menu e número ou CPF viram busca", () => {
   assert.equal(classifySupportText("quero falar").kind, "unknown");
 });
 
+test("oi abre a lista e o pedido só entra depois do toque", () => {
+  const menu = decideSupportTurn({ text: "Oi!" });
+  assert.equal(menu.kind, "list");
+  if (menu.kind !== "list") return;
+  assert.equal(menu.message.includes("CPF"), false);
+  assert.equal(menu.options[0]?.id, "meu-pedido");
+
+  const looseNumber = decideSupportTurn({ text: "1782" });
+  assert.equal(looseNumber.kind, "list");
+
+  const asked = decideSupportTurn({ choiceId: "meu-pedido" });
+  assert.equal(asked.kind, "text");
+  assert.equal(asked.session.step, "await_lookup");
+
+  const found = decideSupportTurn({ text: "1782", session: { step: "await_lookup", problem: null } });
+  assert.equal(found.kind, "lookup");
+  if (found.kind === "lookup") assert.equal(found.intent.orderNumber, 1782);
+});
+
+test("problema abre o segundo menu", () => {
+  const problems = decideSupportTurn({ choiceId: "problema" });
+  assert.equal(problems.kind, "list");
+  assert.equal(problems.session.step, "problem_menu");
+  const picked = decideSupportTurn({ text: "1", session: { step: "problem_menu", problem: null } });
+  assert.equal(picked.kind, "text");
+  assert.equal(picked.session.step, "await_problem");
+  assert.equal(picked.session.problem, "atrasado");
+});
+
 test("ignora mensagem da própria loja e de grupo", () => {
   assert.equal(readSupportInbound({ phone: "35992420559", text: { message: "oi" }, fromMe: true }).skip, true);
   assert.equal(readSupportInbound({ phone: "5535992420559", text: { message: "1782" }, isGroup: true }).skip, true);
@@ -26,6 +56,12 @@ test("ignora mensagem da própria loja e de grupo", () => {
   assert.equal(inbound.skip, false);
   assert.equal(inbound.phone, "5535992420559");
   assert.equal(inbound.text, "1782");
+  const tapped = readSupportInbound({
+    phone: "5535992420559",
+    type: "ReceivedCallback",
+    listResponseMessage: { selectedRowId: "meu-pedido", title: "Meu pedido" },
+  });
+  assert.equal(tapped.choiceId, "meu-pedido");
 });
 
 test("token curto ou diferente não passa", () => {
