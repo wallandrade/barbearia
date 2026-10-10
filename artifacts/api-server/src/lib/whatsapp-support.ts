@@ -97,16 +97,40 @@ function readChoiceId(body: Record<string, unknown>): string {
   return "";
 }
 
+function readPhone(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return toWhatsappPhone(String(value));
+  return "";
+}
+
 /** Mensagem recebida da Z-API, ou um corpo simples { phone, text }. */
 export function readSupportInbound(body: unknown): SupportInbound {
   const row = body && typeof body === "object" ? body as Record<string, unknown> : {};
-  const phone = toWhatsappPhone(typeof row.phone === "string" ? row.phone : "");
+  const phone = readPhone(row.phone);
   const type = String(row.type || "").trim();
   const skip = row.fromMe === true
     || row.isGroup === true
     || row.isNewsletter === true
     || (type.length > 0 && !/received/i.test(type));
   return { phone, text: readText(row), choiceId: readChoiceId(row), skip };
+}
+
+/** Resumo seguro para o log. Não inclui token, texto nem o telefone inteiro. */
+export function supportInboundLog(body: unknown, tokenOk: boolean): Record<string, unknown> {
+  const row = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const inbound = readSupportInbound(body);
+  return {
+    tokenOk,
+    keys: Object.keys(row).slice(0, 20),
+    phoneType: row.phone == null ? "missing" : typeof row.phone,
+    phoneTail: inbound.phone ? inbound.phone.slice(-4) : "",
+    type: String(row.type || ""),
+    fromMe: row.fromMe === true,
+    isGroup: row.isGroup === true,
+    isNewsletter: row.isNewsletter === true,
+    skip: inbound.skip || !inbound.phone,
+    textLen: inbound.text.length,
+    choice: inbound.choiceId ? "yes" : "",
+  };
 }
 
 const MAIN_OPTIONS: SupportOption[] = [

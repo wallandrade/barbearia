@@ -7,6 +7,7 @@ import {
   classifySupportText,
   decideSupportTurn,
   readSupportInbound,
+  supportInboundLog,
   supportPaymentLabel,
   supportSituationLabel,
   supportTokensMatch,
@@ -62,6 +63,15 @@ test("ignora mensagem da própria loja e de grupo", () => {
     listResponseMessage: { selectedRowId: "meu-pedido", title: "Meu pedido" },
   });
   assert.equal(tapped.choiceId, "meu-pedido");
+  const numeric = readSupportInbound({ phone: 5535992420559, text: { message: "oi" }, type: "ReceivedCallback" });
+  assert.equal(numeric.skip, false);
+  assert.equal(numeric.phone, "5535992420559");
+  const logged = supportInboundLog({ phone: "5535992420559", text: { message: "oi" }, type: "ReceivedCallback" }, true);
+  assert.equal(logged.tokenOk, true);
+  assert.equal(logged.phoneTail, "0559");
+  assert.equal(logged.skip, false);
+  assert.equal(logged.textLen, 2);
+  assert.equal("text" in logged, false);
 });
 
 test("token curto ou diferente não passa", () => {
