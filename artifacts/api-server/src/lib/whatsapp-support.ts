@@ -6,11 +6,20 @@ import { normalizeN8nWebhookUrl, toWhatsappPhone } from "./order-paid-whatsapp";
 import { envioecomTrackingUrl } from "./order-tracking-whatsapp";
 import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
+import {
+  defaultSupportMenu,
+  parseSupportMenu,
+  supportMenuFollowup,
+  supportMenuItems,
+  supportMenuSaveError,
+  WHATSAPP_SUPPORT_MENU_SETTING,
+  type SupportMenuConfig,
+  type SupportMenuItem,
+} from "./whatsapp-support-menu";
 
 export const N8N_SUPPORT_WEBHOOK_SETTING = "n8n_support_webhook_url";
 export const N8N_SUPPORT_MENU_WEBHOOK_SETTING = "n8n_support_menu_webhook_url";
 export const N8N_SUPPORT_TOKEN_SETTING = "n8n_whatsapp_support_token";
-const STORE_URL = "https://www.yury-imports.com";
 const TIMEOUT_MS = 8000;
 const MAX_ORDERS = 3;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -135,31 +144,6 @@ export function supportInboundLog(body: unknown, tokenOk: boolean): Record<strin
   };
 }
 
-const MAIN_OPTIONS: SupportOption[] = [
-  { id: "meu-pedido", title: "Meu pedido", description: "Status, prazo e rastreio" },
-  { id: "comprar", title: "Quero comprar", description: "Abrir o site" },
-  { id: "problema", title: "Problemas com pedido", description: "Atraso, falta ou extravio" },
-  { id: "atendente", title: "Falar com atendente", description: "Uma pessoa responde" },
-];
-
-const PROBLEM_OPTIONS: SupportOption[] = [
-  { id: "atrasado", title: "Pedido atrasado", description: "Não chegou no prazo" },
-  { id: "faltando", title: "Veio faltando", description: "Um item não veio" },
-  { id: "sumiu", title: "Sumiu no correio", description: "Roubo ou extravio" },
-  { id: "quebrado", title: "Apreensão ou quebra", description: "Receita ou produto quebrado" },
-  { id: "voltou", title: "Voltou ao vendedor", description: "O correio devolveu" },
-  { id: "outro", title: "Outro problema", description: "Outro caso" },
-];
-
-const PROBLEM_LABELS: Record<string, string> = {
-  atrasado: "pedido atrasado",
-  faltando: "veio faltando produto",
-  sumiu: "sumiu no correio",
-  quebrado: "apreensão ou quebra",
-  voltou: "voltou ao vendedor",
-  outro: "outro problema",
-};
-
 function plain(value: string): string {
   return value
     .normalize("NFD")
@@ -183,15 +167,29 @@ function optionByLooseText(raw: string, options: SupportOption[]): string | null
   return options[index]?.id || null;
 }
 
-function resolveChoice(choiceId: string, text: string, step: SupportStep): string | null {
+function toOption(item: SupportMenuItem): SupportOption {
+  return { id: item.id, title: item.title, description: item.description };
+}
+
+function findMenuItem(menu: SupportMenuConfig, id: string | null | undefined): SupportMenuItem | null {
+  const target = String(id || "").trim();
+  if (!target) return null;
+  return supportMenuItems(menu).find((item) => item.id === target) || null;
+}
+
+function activeItems(menu: SupportMenuConfig, session: SupportSession): SupportMenuItem[] {
+  if (session.step !== "problem_menu") return menu.items;
+  const parent = findMenuItem(menu, session.problem);
+  if (parent?.action === "list" && parent.items?.length) return parent.items;
+  const firstList = menu.items.find((item) => item.action === "list" && item.items?.length);
+  return firstList?.items || menu.items;
+}
+
+function resolveChoice(choiceId: string, text: string, step: SupportStep, menu: SupportMenuConfig, session: SupportSession): string | null {
   const direct = String(choiceId || "").trim();
-  if (direct && (MAIN_OPTIONS.some((option) => option.id === direct) || PROBLEM_OPTIONS.some((option) => option.id === direct))) {
-    return direct;
-  }
-  if (step === "await_lookup" || step === "await_problem") return null;
-  const source = direct || text;
-  if (step === "problem_menu") return optionByLooseText(source, PROBLEM_OPTIONS);
-  return optionByLooseText(source, MAIN_OPTIONS);
+  if (direct && supportMenuItems(menu).some((item) => item.id === direct)) return direct;
+  if (step === "await_lookup" || step === "await_problem" || step === "human") return null;
+  return optionByLooseText(direct || text, activeItems(menu, session).map(toOption));
 }
 
 function menuSession(): SupportSession {
@@ -202,25 +200,37 @@ function humanSession(): SupportSession {
   return { step: "human", problem: null };
 }
 
-function mainList(): SupportTurn {
+function mainList(menu: SupportMenuConfig): SupportTurn {
   return {
     kind: "list",
-    title: "Atendimento",
-    buttonLabel: "Ver opções",
-    message: "Olá! Você entrou em contato com o suporte da Yury Imports.\n\nPara agilizar o seu atendimento, escolha uma das opções abaixo.",
-    options: MAIN_OPTIONS,
+    title: menu.listTitle,
+    buttonLabel: menu.buttonLabel,
+    message: menu.greeting,
+    options: menu.items.map(toOption),
     session: menuSession(),
   };
 }
 
-function problemList(): SupportTurn {
+function turnForItem(item: SupportMenuItem): SupportTurn {
+  if (item.action === "lookup") {
+    return { kind: "text", message: item.message, session: { step: "await_lookup", problem: null } };
+  }
+  if (item.action === "text") {
+    return { kind: "text", message: item.message, session: menuSession() };
+  }
+  if (item.action === "human") {
+    return { kind: "text", message: item.message, session: humanSession() };
+  }
+  if (item.action === "handoff") {
+    return { kind: "text", message: item.message, session: { step: "await_problem", problem: item.id } };
+  }
   return {
     kind: "list",
-    title: "O que houve",
-    buttonLabel: "Ver opções",
-    message: "Certo. Me conta o que aconteceu com o seu pedido.",
-    options: PROBLEM_OPTIONS,
-    session: { step: "problem_menu", problem: null },
+    title: item.listTitle || item.title,
+    buttonLabel: item.buttonLabel || "Ver opções",
+    message: item.message,
+    options: (item.items || []).map(toOption),
+    session: { step: "problem_menu", problem: item.id },
   };
 }
 
@@ -229,54 +239,32 @@ export function decideSupportTurn(input: {
   text?: string | null;
   choiceId?: string | null;
   session?: SupportSession | null;
-}): SupportTurn {
+}, menu?: SupportMenuConfig | null): SupportTurn {
+  const config = menu ? (supportMenuSaveError(menu).menu ?? defaultSupportMenu()) : defaultSupportMenu();
   const session = input.session?.step ? input.session : menuSession();
   const text = String(input.text || "");
   const choiceId = String(input.choiceId || "");
   if (session.step === "human") {
     const tapped = choiceId.trim();
-    const known = MAIN_OPTIONS.some((option) => option.id === tapped) || PROBLEM_OPTIONS.some((option) => option.id === tapped);
-    if (!known) return { kind: "silent", session: humanSession() };
+    if (!supportMenuItems(config).some((item) => item.id === tapped)) {
+      return { kind: "silent", session: humanSession() };
+    }
   }
-  if (!choiceId && isGreeting(text)) return mainList();
+  if (!choiceId && isGreeting(text)) return mainList(config);
 
-  const choice = resolveChoice(choiceId, text, session.step);
-  if (choice === "meu-pedido") {
-    return {
-      kind: "text",
-      message: "Me envia o número do pedido ou o CPF da compra, só os números.\n\nO número do pedido está no WhatsApp ou no e-mail da compra.",
-      session: { step: "await_lookup", problem: null },
-    };
-  }
-  if (choice === "comprar") {
-    return {
-      kind: "text",
-      message: `Pode comprar em ${STORE_URL}`,
-      session: menuSession(),
-    };
-  }
-  if (choice === "problema") return problemList();
-  if (choice === "atendente") {
-    return {
-      kind: "text",
-      message: "Certo. Vou chamar um atendente para continuar por aqui.",
-      session: humanSession(),
-    };
-  }
-  if (choice && PROBLEM_LABELS[choice]) {
-    return {
-      kind: "text",
-      message: `Anotei: ${PROBLEM_LABELS[choice]}.\n\nMe envia o número do pedido ou o CPF, só os números.`,
-      session: { step: "await_problem", problem: choice },
-    };
-  }
+  const choice = resolveChoice(choiceId, text, session.step, config, session);
+  const picked = choice ? findMenuItem(config, choice) : null;
+  if (picked) return turnForItem(picked);
 
   if (session.step === "await_lookup" || session.step === "await_problem") {
     const intent = classifySupportText(text);
     if (intent.kind === "order" || intent.kind === "document") {
-      const followup = session.step === "await_problem"
-        ? "\n\nVou passar para o atendente olhar esse caso."
-        : "";
+      const handoffItem = session.step === "await_problem" ? findMenuItem(config, session.problem) : null;
+      const followup = session.step !== "await_problem"
+        ? ""
+        : handoffItem
+          ? supportMenuFollowup(handoffItem)
+          : "\n\nVou passar para o atendente olhar esse caso.";
       return {
         kind: "lookup",
         intent,
@@ -291,7 +279,7 @@ export function decideSupportTurn(input: {
     };
   }
 
-  return mainList();
+  return mainList(config);
 }
 
 export function supportListText(turn: Extract<SupportTurn, { kind: "list" }>): string {
@@ -667,8 +655,11 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
     return sent ? { ok: true } : { ok: false, error: "send_failed" };
   }
 
-  const session = await loadSession(inbound.phone);
-  const turn = decideSupportTurn({ text: inbound.text, choiceId: inbound.choiceId, session });
+  const [session, menu] = await Promise.all([
+    loadSession(inbound.phone),
+    settingValue(WHATSAPP_SUPPORT_MENU_SETTING).then(parseSupportMenu),
+  ]);
+  const turn = decideSupportTurn({ text: inbound.text, choiceId: inbound.choiceId, session }, menu);
   if (turn.kind === "silent") {
     await saveSession(inbound.phone, turn.session);
     return { ok: true };

@@ -12,6 +12,7 @@ import {
   supportSituationLabel,
   supportTokensMatch,
 } from "./whatsapp-support";
+import { defaultSupportMenu, supportMenuSaveError } from "./whatsapp-support-menu";
 
 test("oi abre o menu e número ou CPF viram busca", () => {
   assert.equal(classifySupportText("Oi!").kind, "menu");
@@ -66,6 +67,38 @@ test("problema passado ao atendente também cala o menu", () => {
   const lookup = decideSupportTurn({ text: "1782", session: { step: "await_lookup", problem: null } });
   assert.equal(lookup.kind, "lookup");
   assert.equal(lookup.session.step, "menu");
+});
+
+test("menu salvo no admin troca o texto e aceita opção nova", () => {
+  const custom = {
+    greeting: "Oi da loja",
+    listTitle: "Menu",
+    buttonLabel: "Abrir",
+    items: [
+      { id: "pix", title: "Pagar agora", description: "Link da loja", action: "text", message: "Pague em https://www.yury-imports.com" },
+      {
+        id: "troca",
+        title: "Quero trocar",
+        description: "Chama uma pessoa",
+        action: "handoff",
+        message: "Me envia o número do pedido.",
+        followup: "Vou chamar o atendente para a troca.",
+      },
+    ],
+  };
+  const saved = supportMenuSaveError(custom);
+  assert.equal(saved.error, "");
+  const pay = decideSupportTurn({ choiceId: "pix" }, saved.menu);
+  assert.equal(pay.kind, "text");
+  if (pay.kind === "text") assert.match(pay.message, /Pague em/);
+  const exchange = decideSupportTurn({ text: "1782", session: { step: "await_problem", problem: "troca" } }, saved.menu);
+  assert.equal(exchange.kind, "lookup");
+  if (exchange.kind === "lookup") assert.match(exchange.followup, /troca/);
+
+  assert.equal(supportMenuSaveError({ ...custom, items: [] }).error.includes("1 a 10"), true);
+  const base = defaultSupportMenu();
+  assert.equal(base.items[0]?.id, "meu-pedido");
+  assert.equal(base.items[2]?.action, "list");
 });
 
 test("problema abre o segundo menu", () => {

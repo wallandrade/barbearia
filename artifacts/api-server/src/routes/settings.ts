@@ -13,6 +13,7 @@ import {
   SHIPPING_QUEUE_MANUAL_HOURS_KEY,
 } from "../lib/shipping-queue-deadline";
 import { MOTOBOY_SLOT_HOURS_KEY, motoboySlotHoursSaveError } from "../lib/motoboy-slot-window";
+import { supportMenuSaveError, WHATSAPP_SUPPORT_MENU_SETTING } from "../lib/whatsapp-support-menu";
 
 const router: IRouter = Router();
 
@@ -76,6 +77,7 @@ const ALLOWED_KEYS = [
   "n8n_support_webhook_url",
   "n8n_support_menu_webhook_url",
   "n8n_whatsapp_support_token",
+  WHATSAPP_SUPPORT_MENU_SETTING,
   // Admin helpers
   "admin_saved_brands",
   // EnvioEcom: nome genérico dos itens no create (nunca nome do catálogo)
@@ -193,6 +195,14 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
           return;
         }
         storedValue = JSON.stringify(parseCheckoutCarrierPriority(value));
+      }
+      if (key === WHATSAPP_SUPPORT_MENU_SETTING) {
+        const parsed = supportMenuSaveError(value);
+        if (!parsed.menu) {
+          res.status(400).json({ error: "INVALID_VALUE", message: parsed.error || "Menu inválido." });
+          return;
+        }
+        storedValue = JSON.stringify(parsed.menu);
       }
       if (IMAGE_SETTING_KEYS.has(key) && value.startsWith("data:image/")) {
         if (isR2Configured()) {

@@ -754,6 +754,7 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import LossBlacklistBoard from "@/components/admin/LossBlacklistBoard";
+import WhatsAppSupportMenuCard from "@/components/admin/WhatsAppSupportMenuCard";
 import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
 import AdminSuperfreteAccountsPanel, { type SuperfreteAccountPublic } from "@/pages/AdminSuperfreteAccountsPanel";
 import { superfreteServiceName } from "@/lib/superfrete-status";
@@ -20715,6 +20716,12 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           Meu pedido: o cliente manda o número ou o CPF e recebe situação, produtos e rastreio. No n8n, o webhook atendimento fica igual aos outros, com phone e message em expressão. Na Z-API, em Ao receber, cole {n8nSupportToken.trim().length >= 8 ? `https://api.yury-imports.com/api/whatsapp/support/inbound?token=${n8nSupportToken.trim()}` : "https://api.yury-imports.com/api/whatsapp/support/inbound?token=SEU_TOKEN"}.
         </p>
       </div>
+
+      <WhatsAppSupportMenuCard
+        saved={settings["whatsapp_support_menu"] ?? ""}
+        saving={!!loading["whatsapp_support_menu"]}
+        onSave={(value) => onSave("whatsapp_support_menu", value)}
+      />
 
       <ReportanaSettingsCard />
 
