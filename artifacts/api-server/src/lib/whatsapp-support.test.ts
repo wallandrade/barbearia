@@ -96,7 +96,9 @@ test("mensagem do pedido mostra situação e omite código EC", () => {
   assert.match(message, /Pagamento: pago/);
   assert.match(message, /Situação: Saiu para entrega/);
   assert.match(message, /8880111/);
+  assert.match(message, /https:\/\/envioecomrastreio.com.br\/8880111/);
   assert.equal(message.includes("EC123"), false);
+  assert.equal(message.includes("envioecomrastreio.com.br/EC"), false);
   assert.equal(supportPaymentLabel("awaiting_payment"), "pendente");
   assert.equal(supportSituationLabel({ status: "paid", superfreteStatus: "posted" }), "Postado");
   assert.equal(supportSituationLabel({ status: "paid", envioecomStatus: "Entregue" }), "Entregue");

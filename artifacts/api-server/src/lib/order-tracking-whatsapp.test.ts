@@ -24,6 +24,7 @@ test("mensagem leva o número do pedido e um código", () => {
   assert.match(message, /Ivan, seu código de rastreio chegou/);
   assert.match(message, /Pedido #1782/);
   assert.match(message, /8880111/);
+  assert.match(message, /https:\/\/envioecomrastreio.com.br\/8880111/);
   assert.equal(message.includes("**"), false);
   assert.equal(message.includes("EC"), false);
 });

@@ -3,6 +3,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { isDeliveredStatus, isInTransitStatus } from "./envioecom";
 import { isOutForDeliveryStatus } from "./order-out-for-delivery-whatsapp";
 import { normalizeN8nWebhookUrl, toWhatsappPhone } from "./order-paid-whatsapp";
+import { envioecomTrackingUrl } from "./order-tracking-whatsapp";
 import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
 
@@ -421,6 +422,12 @@ export function buildSupportOrderMessage(order: SupportOrderView): string {
   const name = String(order.clientName || "").trim().split(/\s+/)[0] || "Cliente";
   const total = money(order.total);
   const codes = trackingCodes(order);
+  const trackingLines = codes.length === 0
+    ? ["Rastreio: ainda não saiu"]
+    : codes.flatMap((code) => {
+        const link = envioecomTrackingUrl(code);
+        return [`Rastreio: ${code}`, link].filter(Boolean);
+      });
   const lines = [
     `*Pedido #${reference}*`,
     name,
@@ -431,7 +438,7 @@ export function buildSupportOrderMessage(order: SupportOrderView): string {
     total ? `Total: ${total}` : "",
     `Pagamento: ${supportPaymentLabel(order.status)}`,
     `Situação: ${supportSituationLabel(order)}`,
-    codes.length > 0 ? `Rastreio: ${codes.join(", ")}` : "Rastreio: ainda não saiu",
+    ...trackingLines,
   ].filter((line) => line !== "");
   return lines.join("\n");
 }

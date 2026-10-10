@@ -3,6 +3,14 @@ import { isCustomerTrackingCode } from "./reportana-payload";
 import { normalizeN8nWebhookUrl, toWhatsappMarkup, toWhatsappPhone } from "./order-paid-whatsapp";
 
 export const N8N_TRACKING_WEBHOOK_SETTING = "n8n_tracking_webhook_url";
+const ENVIOECOM_TRACKING_ORIGIN = "https://envioecomrastreio.com.br";
+
+/** Página pública da EnvioEcom. Código EC não vira link. */
+export function envioecomTrackingUrl(code: string | null | undefined): string {
+  const value = String(code || "").trim();
+  if (!isCustomerTrackingCode(value)) return "";
+  return `${ENVIOECOM_TRACKING_ORIGIN}/${encodeURIComponent(value)}`;
+}
 const TIMEOUT_MS = 8000;
 
 async function database() {
@@ -47,14 +55,16 @@ export function buildTrackingWhatsappMessage(input: {
     ? String(input.orderNumber)
     : String(input.orderId || "").trim() || "-";
   const code = String(input.trackingCode || "").trim();
-  return toWhatsappMarkup([
+  const link = envioecomTrackingUrl(code);
+  const lines = [
     `📦 **${firstName}, seu código de rastreio chegou!**`,
     "",
     `Pedido #${reference}`,
     `Código: **${code}**`,
-    "",
-    "Você já pode acompanhar a movimentação do seu pedido. 📲",
-  ].join("\n"));
+  ];
+  if (link) lines.push(link);
+  lines.push("", "Você já pode acompanhar a movimentação do seu pedido. 📲");
+  return toWhatsappMarkup(lines.join("\n"));
 }
 
 async function webhookUrl(): Promise<string> {
