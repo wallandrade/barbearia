@@ -162,6 +162,7 @@ export type SchedulePlan = {
   scheduledAt: string;
   times: string[];
   intervalHours: number;
+  durationDays: number;
 };
 
 export function parseScheduleTimes(raw: unknown): string[] {
@@ -176,23 +177,45 @@ export function parseScheduleTimes(raw: unknown): string[] {
   return [...new Set(times)].sort().slice(0, 12);
 }
 
+export function planDurationDays(plan: SchedulePlan): number {
+  const days = Math.round(Number(plan.durationDays) || 1);
+  if (days < 1) return 1;
+  return Math.min(30, days);
+}
+
+function addDayKey(dayKey: string, days: number): string {
+  const base = saoPauloInstant(`${dayKey}T12:00`);
+  if (!base) return dayKey;
+  return saoPauloParts(new Date(base.getTime() + days * 24 * 60 * 60 * 1000)).dayKey;
+}
+
+function periodEnd(plan: SchedulePlan): Date | null {
+  const startDay = plan.scheduledAt.slice(0, 10);
+  return saoPauloInstant(`${addDayKey(startDay, planDurationDays(plan) - 1)}T23:59`);
+}
+
 export function schedulePlanSignature(plan: SchedulePlan): string {
-  return `${plan.mode}|${plan.scheduledAt}|${plan.times.join(",")}|${plan.intervalHours}`;
+  return `${plan.mode}|${plan.scheduledAt}|${plan.times.join(",")}|${plan.intervalHours}|${planDurationDays(plan)}`;
 }
 
 export function schedulePlanError(plan: SchedulePlan, now: Date, keepPast: boolean): string | null {
   if (plan.mode === "times") {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.scheduledAt.slice(0, 10))) return "Escolha a data.";
     if (plan.times.length === 0) return "Escolha pelo menos um horário.";
-    const allPast = plan.times.every((time) => {
-      const when = saoPauloInstant(`${plan.scheduledAt.slice(0, 10)}T${time}`);
-      return Boolean(when && when.getTime() < now.getTime() - 60 * 1000);
+    const lastDay = addDayKey(plan.scheduledAt.slice(0, 10), planDurationDays(plan) - 1);
+    const stillOpen = plan.times.some((time) => {
+      const when = saoPauloInstant(`${lastDay}T${time}`);
+      return Boolean(when && when.getTime() >= now.getTime() - 60 * 1000);
     });
-    if (!keepPast && allPast) return "Esses horários já passaram.";
+    if (!keepPast && !stillOpen) return "Esses horários já passaram.";
     return null;
   }
-  if (plan.mode === "interval" && (plan.intervalHours < 1 || plan.intervalHours > 12)) {
-    return "O intervalo fica entre 1 e 12 horas.";
+  if (plan.mode === "interval") {
+    if (plan.intervalHours < 1 || plan.intervalHours > 12) return "O intervalo fica entre 1 e 12 horas.";
+    if (!saoPauloInstant(plan.scheduledAt)) return "Escolha data e hora.";
+    const end = periodEnd(plan);
+    if (!keepPast && end && end.getTime() < now.getTime() - 60 * 1000) return "Esses horários já passaram.";
+    return null;
   }
   return scheduleTimeError(plan.scheduledAt, now, keepPast);
 }
@@ -207,24 +230,29 @@ function localFromDate(date: Date): string {
 /** Chave do envio se este grupo está na janela. `once` mantém o aviso de um horário só. */
 export function customSlotKey(plan: SchedulePlan, now: Date, groupIndex: number): string | null {
   if (plan.mode === "times") {
-    const date = plan.scheduledAt.slice(0, 10);
+    const today = saoPauloParts(now).dayKey;
+    const startDay = plan.scheduledAt.slice(0, 10);
+    const endDay = addDayKey(startDay, planDurationDays(plan) - 1);
+    if (today < startDay || today > endDay) return null;
     for (const time of plan.times) {
-      const local = `${date}T${time}`;
+      const local = `${today}T${time}`;
       if (customGroupDue(local, now, groupIndex)) return `times:${local}`;
     }
     return null;
   }
   if (plan.mode === "interval") {
     const start = saoPauloInstant(plan.scheduledAt);
-    const dayEnd = saoPauloInstant(`${plan.scheduledAt.slice(0, 10)}T23:59`);
-    if (!start || !dayEnd || plan.intervalHours < 1) return null;
+    const end = periodEnd(plan);
+    if (!start || !end || plan.intervalHours < 1) return null;
+    const probe = now.getTime() - groupIndex * GROUP_STAGGER_MINUTES * 60 * 1000;
+    if (probe < start.getTime()) return null;
     const step = plan.intervalHours * 60 * 60 * 1000;
-    for (let index = 0; index < 12; index += 1) {
-      const at = start.getTime() + index * step;
-      if (at > dayEnd.getTime()) break;
-      const local = localFromDate(new Date(at));
-      if (customGroupDue(local, now, groupIndex)) return `interval:${local}`;
-    }
+    const index = Math.floor((probe - start.getTime()) / step);
+    if (index < 0) return null;
+    const slot = start.getTime() + index * step;
+    if (slot > end.getTime()) return null;
+    const local = localFromDate(new Date(slot));
+    if (customGroupDue(local, now, groupIndex)) return `interval:${local}`;
     return null;
   }
   return customGroupDue(plan.scheduledAt, now, groupIndex) ? "once" : null;

@@ -1360,6 +1360,7 @@ async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<
         schedule_mode VARCHAR(16) NOT NULL DEFAULT 'once',
         schedule_times TEXT NULL,
         interval_hours INT NULL,
+        duration_days INT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -1375,6 +1376,9 @@ async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<
   }
   if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "interval_hours", databaseName))) {
     await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN interval_hours INT NULL");
+  }
+  if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "duration_days", databaseName))) {
+    await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN duration_days INT NULL");
   }
   if (!(await tableExists("whatsapp_group_send_log", databaseName))) {
     await pool.query(`

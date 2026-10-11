@@ -24,11 +24,13 @@ type CustomPost = {
   scheduleMode?: ScheduleMode;
   times?: string[];
   intervalHours?: number;
+  durationDays?: number;
 };
 
 function postWhen(post: CustomPost): string {
-  if (post.scheduleMode === "times") return `${post.scheduledAt.slice(0, 10)} · ${(post.times || []).join(", ")}`;
-  if (post.scheduleMode === "interval") return `${post.scheduledAt.replace("T", " ")} · de ${post.intervalHours} em ${post.intervalHours} horas`;
+  const days = post.durationDays && post.durationDays > 1 ? ` · ${post.durationDays} dias` : "";
+  if (post.scheduleMode === "times") return `${post.scheduledAt.slice(0, 10)} · ${(post.times || []).join(", ")}${days}`;
+  if (post.scheduleMode === "interval") return `${post.scheduledAt.replace("T", " ")} · de ${post.intervalHours} em ${post.intervalHours} horas${days}`;
   return post.scheduledAt.replace("T", " ");
 }
 
@@ -46,6 +48,7 @@ export default function WhatsAppGroupCampaignCard() {
   const [scheduleDate, setScheduleDate] = useState("");
   const [times, setTimes] = useState<string[]>(["09:00"]);
   const [intervalHours, setIntervalHours] = useState(4);
+  const [durationDays, setDurationDays] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -154,6 +157,7 @@ export default function WhatsAppGroupCampaignCard() {
     setScheduleDate("");
     setTimes(["09:00"]);
     setIntervalHours(4);
+    setDurationDays(1);
   };
 
   const addPost = async () => {
@@ -163,7 +167,7 @@ export default function WhatsAppGroupCampaignCard() {
         method: editingId ? "PUT" : "POST",
         headers: authHeaders(),
         credentials: "include",
-        body: JSON.stringify({ imageUrl, caption, linkUrl, scheduledAt, scheduleDate, scheduleMode, times, intervalHours }),
+        body: JSON.stringify({ imageUrl, caption, linkUrl, scheduledAt, scheduleDate, scheduleMode, times, intervalHours, durationDays }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
@@ -190,6 +194,7 @@ export default function WhatsAppGroupCampaignCard() {
     setScheduleMode(post.scheduleMode === "times" || post.scheduleMode === "interval" ? post.scheduleMode : "once");
     setTimes(post.times && post.times.length > 0 ? post.times : ["09:00"]);
     setIntervalHours(post.intervalHours && post.intervalHours > 0 ? post.intervalHours : 4);
+    setDurationDays(post.durationDays && post.durationDays > 0 ? post.durationDays : 1);
   };
 
   const removePost = async (id: string) => {
@@ -332,7 +337,12 @@ export default function WhatsAppGroupCampaignCard() {
               </div>
             ))}
             <Button type="button" variant="outline" disabled={times.length >= 12} onClick={() => setTimes((current) => [...current, "12:00"])}>Adicionar horário</Button>
-            <p className="text-xs text-muted-foreground">Nesse dia, a mensagem sai em cada horário, com 3 minutos entre os grupos. No máximo 12 horários.</p>
+            <label className="flex items-center gap-2 text-sm">
+              Permanece
+              <input type="number" min={1} max={30} value={durationDays} onChange={(event) => setDurationDays(Number(event.target.value) || 1)} className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm" />
+              dias
+            </label>
+            <p className="text-xs text-muted-foreground">Esses horários se repetem por esses dias, com 3 minutos entre os grupos. No máximo 12 horários e 30 dias.</p>
           </div>
         ) : scheduleMode === "interval" ? (
           <div className="space-y-2">
@@ -342,7 +352,12 @@ export default function WhatsAppGroupCampaignCard() {
               <input type="number" min={1} max={12} value={intervalHours} onChange={(event) => setIntervalHours(Number(event.target.value) || 1)} className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm" />
               em {intervalHours} horas
             </label>
-            <p className="text-xs text-muted-foreground">Vale até o fim desse dia, no máximo 12 vezes, com 3 minutos entre os grupos.</p>
+            <label className="flex items-center gap-2 text-sm">
+              Permanece
+              <input type="number" min={1} max={30} value={durationDays} onChange={(event) => setDurationDays(Number(event.target.value) || 1)} className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm" />
+              dias
+            </label>
+            <p className="text-xs text-muted-foreground">A partir desse horário, de {intervalHours} em {intervalHours} horas, por {durationDays} {durationDays === 1 ? "dia" : "dias"}. No máximo 30 dias, com 3 minutos entre os grupos.</p>
           </div>
         ) : (
           <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="h-10 px-3 rounded-xl border-2 border-border text-sm" />

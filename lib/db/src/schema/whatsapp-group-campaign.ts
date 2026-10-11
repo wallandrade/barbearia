@@ -10,6 +10,7 @@ export const whatsappGroupCustomPostsTable = mysqlTable("whatsapp_group_custom_p
   scheduleMode: varchar("schedule_mode", { length: 16 }).notNull().default("once"),
   scheduleTimes: text("schedule_times"),
   intervalHours: int("interval_hours"),
+  durationDays: int("duration_days"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

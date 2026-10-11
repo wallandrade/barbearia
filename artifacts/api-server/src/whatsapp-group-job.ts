@@ -155,6 +155,7 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
         scheduledAt: post.scheduledAt,
         times,
         intervalHours: Number(post.intervalHours) || 0,
+        durationDays: Number(post.durationDays) || 1,
       }, now, index);
       if (!chat || !slot) continue;
       const claimId = slot === "once" ? `c:${post.id}:${chat.phone}` : `c:${post.id}:${slot}:${chat.phone}`;

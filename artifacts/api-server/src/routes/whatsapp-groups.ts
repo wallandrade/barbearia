@@ -66,6 +66,7 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
       scheduleMode: post.scheduleMode === "times" || post.scheduleMode === "interval" ? post.scheduleMode : "once",
       times: parseScheduleTimes(safeJson(post.scheduleTimes)),
       intervalHours: Number(post.intervalHours) || 0,
+      durationDays: Number(post.durationDays) || 1,
     })),
   });
 });
@@ -127,10 +128,11 @@ function readCustomPost(
     scheduleMode?: unknown;
     times?: unknown;
     intervalHours?: unknown;
+    durationDays?: unknown;
   },
   previous: SchedulePlan | null = null,
 ):
-  | { imageUrl: string; caption: string; linkUrl: string; scheduledAt: string; scheduleMode: string; scheduleTimes: string | null; intervalHours: number | null }
+  | { imageUrl: string; caption: string; linkUrl: string; scheduledAt: string; scheduleMode: string; scheduleTimes: string | null; intervalHours: number | null; durationDays: number | null }
   | { error: string } {
   const imageUrl = String(body.imageUrl || "").trim();
   const caption = String(body.caption || "").trim().slice(0, 1000);
@@ -138,12 +140,19 @@ function readCustomPost(
   const mode = body.scheduleMode === "times" || body.scheduleMode === "interval" ? body.scheduleMode : "once";
   const times = parseScheduleTimes(body.times);
   const intervalHours = Math.min(12, Math.max(0, Math.round(Number(body.intervalHours) || 0)));
+  const durationDays = Math.min(30, Math.max(1, Math.round(Number(body.durationDays) || 1)));
   const typedAt = scheduleLocal(String(body.scheduledAt || ""));
   const date = String(body.scheduleDate || typedAt || previous?.scheduledAt || "").slice(0, 10);
   const scheduledAt = mode === "times"
     ? scheduleLocal(`${date}T${times[0] || "00:00"}`)
     : typedAt || (previous?.scheduledAt || "");
-  const plan: SchedulePlan = { mode, scheduledAt, times, intervalHours: mode === "interval" ? intervalHours : 0 };
+  const plan: SchedulePlan = {
+    mode,
+    scheduledAt,
+    times,
+    intervalHours: mode === "interval" ? intervalHours : 0,
+    durationDays: mode === "once" ? 1 : durationDays,
+  };
   const imageError = httpsUrlError(imageUrl, "A imagem", 2000);
   const captionError = customCaptionError(caption);
   const linkError = linkUrl ? httpsUrlError(linkUrl, "O link", 500) : "Coloque um link https no texto.";
@@ -159,6 +168,7 @@ function readCustomPost(
     scheduleMode: mode,
     scheduleTimes: mode === "times" ? JSON.stringify(times) : null,
     intervalHours: mode === "interval" ? intervalHours : null,
+    durationDays: mode === "once" ? null : durationDays,
   };
 }
 
@@ -183,6 +193,7 @@ router.put("/admin/whatsapp/groups/custom/:id", requirePrimaryAdmin, async (req,
     scheduleMode: whatsappGroupCustomPostsTable.scheduleMode,
     scheduleTimes: whatsappGroupCustomPostsTable.scheduleTimes,
     intervalHours: whatsappGroupCustomPostsTable.intervalHours,
+    durationDays: whatsappGroupCustomPostsTable.durationDays,
   }).from(whatsappGroupCustomPostsTable).where(eq(whatsappGroupCustomPostsTable.id, id)).limit(1);
   if (!existing[0]) {
     res.status(404).json({ error: "Aviso não encontrado." });
@@ -194,6 +205,7 @@ router.put("/admin/whatsapp/groups/custom/:id", requirePrimaryAdmin, async (req,
     scheduledAt: existing[0].scheduledAt,
     times: parseScheduleTimes(safeJson(existing[0].scheduleTimes)),
     intervalHours: Number(existing[0].intervalHours) || 0,
+    durationDays: Number(existing[0].durationDays) || 1,
   });
   if ("error" in parsed) {
     res.status(400).json({ error: parsed.error });

@@ -56,10 +56,12 @@ test("o texto do aviso vai junto com o link", () => {
 test("o aviso aceita vários horários ou um intervalo", () => {
   const morning = new Date("2026-10-12T12:00:30.000Z");
   const afternoon = new Date("2026-10-12T16:00:30.000Z");
-  const times = { mode: "times" as const, scheduledAt: "2026-10-12T09:00", times: ["09:00", "15:00"], intervalHours: 0 };
+  const times = { mode: "times" as const, scheduledAt: "2026-10-12T09:00", times: ["09:00", "15:00"], intervalHours: 0, durationDays: 2 };
   assert.equal(customSlotKey(times, morning, 0), "times:2026-10-12T09:00");
   assert.equal(customSlotKey(times, morning, 1), null);
-  assert.equal(customSlotKey({ mode: "interval", scheduledAt: "2026-10-12T09:00", times: [], intervalHours: 4 }, afternoon, 0), "interval:2026-10-12T13:00");
+  assert.equal(customSlotKey(times, new Date("2026-10-13T12:00:30.000Z"), 0), "times:2026-10-13T09:00");
+  assert.equal(customSlotKey({ mode: "interval", scheduledAt: "2026-10-12T09:00", times: [], intervalHours: 4, durationDays: 2 }, afternoon, 0), "interval:2026-10-12T13:00");
+  assert.equal(customSlotKey({ mode: "interval", scheduledAt: "2026-10-12T09:00", times: [], intervalHours: 4, durationDays: 2 }, new Date("2026-10-13T12:00:30.000Z"), 0), "interval:2026-10-13T09:00");
   assert.equal(parseScheduleTimes(["9:00", "15:00", "15:00", "25:00"]).join(","), "15:00");
 });
 
