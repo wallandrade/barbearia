@@ -13,7 +13,8 @@ import {
   groupChatsSaveError,
   httpsUrlError,
   parseGroupChats,
-  saoPauloInstant,
+  scheduleLocal,
+  scheduleTimeError,
 } from "../lib/whatsapp-group-campaign";
 
 const router: IRouter = Router();
@@ -102,20 +103,23 @@ router.post("/admin/whatsapp/groups/upload-image", requirePrimaryAdmin, async (r
   }
 });
 
-function readCustomPost(body: { imageUrl?: unknown; caption?: unknown; linkUrl?: unknown; scheduledAt?: unknown }):
+function readCustomPost(
+  body: { imageUrl?: unknown; caption?: unknown; linkUrl?: unknown; scheduledAt?: unknown },
+  previousScheduledAt = "",
+):
   | { imageUrl: string; caption: string; linkUrl: string; scheduledAt: string }
   | { error: string } {
   const imageUrl = String(body.imageUrl || "").trim();
   const caption = String(body.caption || "").trim().slice(0, 1000);
   const linkUrl = customLink(caption, String(body.linkUrl || "")) || "";
-  const scheduledAt = String(body.scheduledAt || "").trim().slice(0, 16);
+  const previous = scheduleLocal(previousScheduledAt);
+  const scheduledAt = scheduleLocal(String(body.scheduledAt || "")) || previous;
   const imageError = httpsUrlError(imageUrl, "A imagem", 2000);
   const captionError = customCaptionError(caption);
   const linkError = linkUrl ? httpsUrlError(linkUrl, "O link", 500) : "Coloque um link https no texto.";
   if (imageError || captionError || linkError) return { error: imageError || captionError || linkError || "Confira o aviso." };
-  const when = saoPauloInstant(scheduledAt);
-  if (!when) return { error: "Escolha data e hora." };
-  if (when.getTime() < Date.now() - 60 * 1000) return { error: "Esse horário já passou." };
+  const timeError = scheduleTimeError(scheduledAt, new Date(), Boolean(previous) && scheduledAt === previous);
+  if (timeError) return { error: timeError };
   return { imageUrl, caption, linkUrl, scheduledAt };
 }
 
@@ -132,16 +136,19 @@ router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, re
 });
 
 router.put("/admin/whatsapp/groups/custom/:id", requirePrimaryAdmin, async (req, res) => {
-  const parsed = readCustomPost(req.body || {});
-  if ("error" in parsed) {
-    res.status(400).json({ error: parsed.error });
-    return;
-  }
   const id = String(req.params.id || "");
   const { db, whatsappGroupCustomPostsTable } = await import("@workspace/db");
-  const existing = await db.select({ id: whatsappGroupCustomPostsTable.id }).from(whatsappGroupCustomPostsTable).where(eq(whatsappGroupCustomPostsTable.id, id)).limit(1);
+  const existing = await db.select({
+    id: whatsappGroupCustomPostsTable.id,
+    scheduledAt: whatsappGroupCustomPostsTable.scheduledAt,
+  }).from(whatsappGroupCustomPostsTable).where(eq(whatsappGroupCustomPostsTable.id, id)).limit(1);
   if (!existing[0]) {
     res.status(404).json({ error: "Aviso não encontrado." });
+    return;
+  }
+  const parsed = readCustomPost(req.body || {}, existing[0].scheduledAt);
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
   await db.update(whatsappGroupCustomPostsTable).set(parsed).where(eq(whatsappGroupCustomPostsTable.id, id));

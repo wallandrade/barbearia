@@ -156,11 +156,12 @@ export default function WhatsAppGroupCampaignCard() {
   };
 
   const startEdit = (post: CustomPost) => {
+    const match = post.scheduledAt.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
     setEditingId(post.id);
     setImageUrl(post.imageUrl);
     setCaption(post.caption || "");
     setLinkUrl(post.caption?.includes(post.linkUrl) ? "" : post.linkUrl);
-    setScheduledAt(post.scheduledAt.slice(0, 16));
+    setScheduledAt(match ? `${match[1]}T${match[2]}` : post.scheduledAt.slice(0, 16));
   };
 
   const removePost = async (id: string) => {

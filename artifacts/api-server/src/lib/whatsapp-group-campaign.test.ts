@@ -5,6 +5,8 @@ import {
   customCaption,
   customCaptionError,
   customLink,
+  scheduleLocal,
+  scheduleTimeError,
   customGroupDue,
   groupChatsSaveError,
   groupSlotDue,
@@ -43,6 +45,10 @@ test("o texto do aviso vai junto com o link", () => {
   assert.equal(customCaptionError("  "), "Escreva o texto da mensagem.");
   assert.equal(customLink("Compre por aqui:https://www.yury-imports.com/yuri", ""), "https://www.yury-imports.com/yuri");
   assert.equal(customLink("sem link", ""), null);
+  assert.equal(scheduleLocal("2026-10-11 19:21"), "2026-10-11T19:21");
+  const past = new Date("2026-10-11T22:26:00.000Z");
+  assert.equal(scheduleTimeError("2026-10-11T19:21", past, true), null);
+  assert.equal(scheduleTimeError("2026-10-11T19:21", past, false), "Esse horário já passou.");
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

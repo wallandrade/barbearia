@@ -130,6 +130,18 @@ export function httpsUrlError(value: string, label: string, max = 2000): string 
   return null;
 }
 
+export function scheduleLocal(value: string): string {
+  const match = String(value || "").trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  return match ? `${match[1]}T${match[2]}` : "";
+}
+
+export function scheduleTimeError(local: string, now: Date, keepPast: boolean): string | null {
+  const when = saoPauloInstant(local);
+  if (!when) return "Escolha data e hora.";
+  if (!keepPast && when.getTime() < now.getTime() - 60 * 1000) return "Esse horário já passou.";
+  return null;
+}
+
 /** `2026-10-12T09:00` no horário de São Paulo. */
 export function saoPauloInstant(local: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) return null;
