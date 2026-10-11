@@ -1354,11 +1354,15 @@ async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<
       CREATE TABLE whatsapp_group_custom_posts (
         id VARCHAR(64) NOT NULL PRIMARY KEY,
         image_url TEXT NOT NULL,
+        caption TEXT NULL,
         link_url VARCHAR(500) NOT NULL,
         scheduled_at VARCHAR(16) NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
+  }
+  if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "caption", databaseName))) {
+    await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN caption TEXT NULL");
   }
   if (!(await tableExists("whatsapp_group_send_log", databaseName))) {
     await pool.query(`

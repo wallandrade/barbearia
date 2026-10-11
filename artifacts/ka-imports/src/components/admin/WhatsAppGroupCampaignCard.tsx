@@ -14,7 +14,7 @@ function authHeaders(): Record<string, string> {
 
 type GroupChat = { name: string; phone: string };
 type ProductRow = { id: string; name: string; image: string | null; isActive: boolean; isSoldOut: boolean };
-type CustomPost = { id: string; imageUrl: string; linkUrl: string; scheduledAt: string };
+type CustomPost = { id: string; imageUrl: string; caption: string; linkUrl: string; scheduledAt: string };
 
 export default function WhatsAppGroupCampaignCard() {
   const [enabled, setEnabled] = useState(false);
@@ -23,6 +23,7 @@ export default function WhatsAppGroupCampaignCard() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [posts, setPosts] = useState<CustomPost[]>([]);
   const [imageUrl, setImageUrl] = useState("");
+  const [caption, setCaption] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -129,7 +130,7 @@ export default function WhatsAppGroupCampaignCard() {
         method: "POST",
         headers: authHeaders(),
         credentials: "include",
-        body: JSON.stringify({ imageUrl, linkUrl, scheduledAt }),
+        body: JSON.stringify({ imageUrl, caption, linkUrl, scheduledAt }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
@@ -137,6 +138,7 @@ export default function WhatsAppGroupCampaignCard() {
         return;
       }
       setImageUrl("");
+      setCaption("");
       setLinkUrl("");
       setScheduledAt("");
       toast.success("Aviso agendado.");
@@ -211,7 +213,7 @@ export default function WhatsAppGroupCampaignCard() {
       <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold">Imagem e link avulso</h2>
         <p className="text-xs text-muted-foreground">
-          Carregue a foto aqui. Ela fica salva e a URL aparece no campo. No horário escolhido, a imagem sai para os mesmos grupos, com 3 minutos entre cada um. O horário é o de São Paulo.
+          Carregue a foto e escreva o texto. Os dois saem juntos, com o link no final. No horário escolhido, a mensagem vai para os mesmos grupos, com 3 minutos entre cada um. O horário é o de São Paulo.
         </p>
         <input
           ref={fileRef}
@@ -250,13 +252,14 @@ export default function WhatsAppGroupCampaignCard() {
             Copiar URL
           </Button>
         </div>
+        <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Texto que vai junto com a imagem" rows={4} maxLength={1000} className="w-full px-3 py-2 rounded-xl border-2 border-border text-sm" />
         <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://… link da mensagem" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <Button type="button" variant="outline" onClick={() => void addPost()} disabled={loading}>Agendar</Button>
         <ul className="space-y-2">
           {posts.map((post) => (
             <li key={post.id} className="flex items-center justify-between gap-2 text-sm">
-              <span>{post.scheduledAt.replace("T", " ")} · {post.linkUrl}</span>
+              <span>{post.scheduledAt.replace("T", " ")} · {post.caption || post.linkUrl}</span>
               <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => void removePost(post.id)} aria-label="Remover">
                 <Trash2 className="w-4 h-4" />
               </Button>

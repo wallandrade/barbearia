@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  customCaption,
+  customCaptionError,
   customGroupDue,
   groupChatsSaveError,
   groupSlotDue,
@@ -32,6 +34,12 @@ test("cada grupo sai 3 minutos depois do anterior", () => {
   assert.equal(groupSlotDue(10, 0, 0), null);
   assert.equal("error" in groupChatsSaveError([{ name: "1", phone: "abc" }]), true);
   assert.equal("error" in groupChatsSaveError(Array.from({ length: 7 }, (_, index) => ({ name: String(index), phone: `551199999999${index}` }))), true);
+});
+
+test("o texto do aviso vai junto com o link", () => {
+  assert.equal(customCaption("Chegou reposição", "https://www.yury-imports.com/yuri"), "Chegou reposição\nhttps://www.yury-imports.com/yuri");
+  assert.equal(customCaption("Veja https://www.yury-imports.com/yuri", "https://www.yury-imports.com/yuri"), "Veja https://www.yury-imports.com/yuri");
+  assert.equal(customCaptionError("  "), "Escreva o texto da mensagem.");
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

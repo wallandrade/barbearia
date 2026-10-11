@@ -8,6 +8,7 @@ import {
   GROUP_CAMPAIGN_ENABLED_SETTING,
   GROUP_CHATS_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
+  customCaptionError,
   groupChatsSaveError,
   httpsUrlError,
   parseGroupChats,
@@ -54,6 +55,7 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
     posts: posts.map((post) => ({
       id: post.id,
       imageUrl: post.imageUrl,
+      caption: post.caption || "",
       linkUrl: post.linkUrl,
       scheduledAt: post.scheduledAt,
     })),
@@ -101,12 +103,14 @@ router.post("/admin/whatsapp/groups/upload-image", requirePrimaryAdmin, async (r
 
 router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, res) => {
   const imageUrl = String(req.body?.imageUrl || "").trim();
+  const caption = String(req.body?.caption || "").trim().slice(0, 1000);
   const linkUrl = String(req.body?.linkUrl || "").trim();
   const scheduledAt = String(req.body?.scheduledAt || "").trim().slice(0, 16);
   const imageError = httpsUrlError(imageUrl, "A imagem", 2000);
+  const captionError = customCaptionError(caption);
   const linkError = httpsUrlError(linkUrl, "O link", 500);
-  if (imageError || linkError) {
-    res.status(400).json({ error: imageError || linkError });
+  if (imageError || captionError || linkError) {
+    res.status(400).json({ error: imageError || captionError || linkError });
     return;
   }
   const when = saoPauloInstant(scheduledAt);
@@ -120,7 +124,7 @@ router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, re
   }
   const { db, whatsappGroupCustomPostsTable } = await import("@workspace/db");
   const id = randomBytes(12).toString("hex");
-  await db.insert(whatsappGroupCustomPostsTable).values({ id, imageUrl, linkUrl, scheduledAt });
+  await db.insert(whatsappGroupCustomPostsTable).values({ id, imageUrl, caption, linkUrl, scheduledAt });
   res.json({ ok: true, id });
 });
 

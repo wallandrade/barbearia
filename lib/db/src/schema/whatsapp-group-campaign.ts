@@ -4,6 +4,7 @@ import { mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 export const whatsappGroupCustomPostsTable = mysqlTable("whatsapp_group_custom_posts", {
   id: varchar("id", { length: 64 }).primaryKey(),
   imageUrl: text("image_url").notNull(),
+  caption: text("caption"),
   linkUrl: varchar("link_url", { length: 500 }).notNull(),
   scheduledAt: varchar("scheduled_at", { length: 16 }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),

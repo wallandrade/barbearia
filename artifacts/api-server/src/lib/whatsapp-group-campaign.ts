@@ -75,6 +75,21 @@ export function productCaption(name: string, productId: string): string {
   return `${name}\nhttps://www.yury-imports.com/produto/${encodeURIComponent(productId)}`;
 }
 
+export function customCaption(text: string, link: string): string {
+  const message = text.trim().slice(0, 1000);
+  const url = link.trim();
+  if (!message) return url;
+  if (url && message.includes(url)) return message;
+  return url ? `${message}\n${url}` : message;
+}
+
+export function customCaptionError(text: string): string | null {
+  const message = text.trim();
+  if (!message) return "Escreva o texto da mensagem.";
+  if (message.length > 1000) return "O texto está longo demais.";
+  return null;
+}
+
 export function parseGroupChats(raw: string): GroupChat[] {
   try {
     const parsed = JSON.parse(raw) as unknown;

@@ -5,6 +5,7 @@ import {
   GROUP_CAMPAIGN_ENABLED_SETTING,
   GROUP_CHATS_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
+  customCaption,
   customGroupDue,
   groupSlotDue,
   parseGroupChats,
@@ -142,7 +143,7 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
     for (let index = 0; index < chats.length; index += 1) {
       const chat = chats[index];
       if (!chat || !customGroupDue(post.scheduledAt, now, index)) continue;
-      await deliver(creds, `c:${post.id}:${chat.phone}`, chat.phone, post.imageUrl, post.linkUrl, `${chat.name} avulso`);
+      await deliver(creds, `c:${post.id}:${chat.phone}`, chat.phone, post.imageUrl, customCaption(post.caption || "", post.linkUrl), `${chat.name} avulso`);
     }
   }
 }
