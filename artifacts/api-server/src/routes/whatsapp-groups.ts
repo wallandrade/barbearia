@@ -13,8 +13,11 @@ import {
   groupChatsSaveError,
   httpsUrlError,
   parseGroupChats,
+  parseScheduleTimes,
   scheduleLocal,
-  scheduleTimeError,
+  schedulePlanError,
+  schedulePlanSignature,
+  type SchedulePlan,
 } from "../lib/whatsapp-group-campaign";
 
 const router: IRouter = Router();
@@ -60,6 +63,9 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
       caption: post.caption || "",
       linkUrl: post.linkUrl,
       scheduledAt: post.scheduledAt,
+      scheduleMode: post.scheduleMode === "times" || post.scheduleMode === "interval" ? post.scheduleMode : "once",
+      times: parseScheduleTimes(safeJson(post.scheduleTimes)),
+      intervalHours: Number(post.intervalHours) || 0,
     })),
   });
 });
@@ -103,24 +109,57 @@ router.post("/admin/whatsapp/groups/upload-image", requirePrimaryAdmin, async (r
   }
 });
 
+function safeJson(raw: string | null | undefined): unknown {
+  try {
+    return JSON.parse(String(raw || "null"));
+  } catch {
+    return null;
+  }
+}
+
 function readCustomPost(
-  body: { imageUrl?: unknown; caption?: unknown; linkUrl?: unknown; scheduledAt?: unknown },
-  previousScheduledAt = "",
+  body: {
+    imageUrl?: unknown;
+    caption?: unknown;
+    linkUrl?: unknown;
+    scheduledAt?: unknown;
+    scheduleDate?: unknown;
+    scheduleMode?: unknown;
+    times?: unknown;
+    intervalHours?: unknown;
+  },
+  previous: SchedulePlan | null = null,
 ):
-  | { imageUrl: string; caption: string; linkUrl: string; scheduledAt: string }
+  | { imageUrl: string; caption: string; linkUrl: string; scheduledAt: string; scheduleMode: string; scheduleTimes: string | null; intervalHours: number | null }
   | { error: string } {
   const imageUrl = String(body.imageUrl || "").trim();
   const caption = String(body.caption || "").trim().slice(0, 1000);
   const linkUrl = customLink(caption, String(body.linkUrl || "")) || "";
-  const previous = scheduleLocal(previousScheduledAt);
-  const scheduledAt = scheduleLocal(String(body.scheduledAt || "")) || previous;
+  const mode = body.scheduleMode === "times" || body.scheduleMode === "interval" ? body.scheduleMode : "once";
+  const times = parseScheduleTimes(body.times);
+  const intervalHours = Math.min(12, Math.max(0, Math.round(Number(body.intervalHours) || 0)));
+  const typedAt = scheduleLocal(String(body.scheduledAt || ""));
+  const date = String(body.scheduleDate || typedAt || previous?.scheduledAt || "").slice(0, 10);
+  const scheduledAt = mode === "times"
+    ? scheduleLocal(`${date}T${times[0] || "00:00"}`)
+    : typedAt || (previous?.scheduledAt || "");
+  const plan: SchedulePlan = { mode, scheduledAt, times, intervalHours: mode === "interval" ? intervalHours : 0 };
   const imageError = httpsUrlError(imageUrl, "A imagem", 2000);
   const captionError = customCaptionError(caption);
   const linkError = linkUrl ? httpsUrlError(linkUrl, "O link", 500) : "Coloque um link https no texto.";
   if (imageError || captionError || linkError) return { error: imageError || captionError || linkError || "Confira o aviso." };
-  const timeError = scheduleTimeError(scheduledAt, new Date(), Boolean(previous) && scheduledAt === previous);
+  const keepPast = Boolean(previous) && schedulePlanSignature(plan) === schedulePlanSignature(previous as SchedulePlan);
+  const timeError = schedulePlanError(plan, new Date(), keepPast);
   if (timeError) return { error: timeError };
-  return { imageUrl, caption, linkUrl, scheduledAt };
+  return {
+    imageUrl,
+    caption,
+    linkUrl,
+    scheduledAt,
+    scheduleMode: mode,
+    scheduleTimes: mode === "times" ? JSON.stringify(times) : null,
+    intervalHours: mode === "interval" ? intervalHours : null,
+  };
 }
 
 router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, res) => {
@@ -141,12 +180,21 @@ router.put("/admin/whatsapp/groups/custom/:id", requirePrimaryAdmin, async (req,
   const existing = await db.select({
     id: whatsappGroupCustomPostsTable.id,
     scheduledAt: whatsappGroupCustomPostsTable.scheduledAt,
+    scheduleMode: whatsappGroupCustomPostsTable.scheduleMode,
+    scheduleTimes: whatsappGroupCustomPostsTable.scheduleTimes,
+    intervalHours: whatsappGroupCustomPostsTable.intervalHours,
   }).from(whatsappGroupCustomPostsTable).where(eq(whatsappGroupCustomPostsTable.id, id)).limit(1);
   if (!existing[0]) {
     res.status(404).json({ error: "Aviso não encontrado." });
     return;
   }
-  const parsed = readCustomPost(req.body || {}, existing[0].scheduledAt);
+  const previousMode = existing[0].scheduleMode === "times" || existing[0].scheduleMode === "interval" ? existing[0].scheduleMode : "once";
+  const parsed = readCustomPost(req.body || {}, {
+    mode: previousMode,
+    scheduledAt: existing[0].scheduledAt,
+    times: parseScheduleTimes(safeJson(existing[0].scheduleTimes)),
+    intervalHours: Number(existing[0].intervalHours) || 0,
+  });
   if ("error" in parsed) {
     res.status(400).json({ error: parsed.error });
     return;

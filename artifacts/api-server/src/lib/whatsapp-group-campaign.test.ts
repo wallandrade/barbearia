@@ -5,6 +5,8 @@ import {
   customCaption,
   customCaptionError,
   customLink,
+  customSlotKey,
+  parseScheduleTimes,
   scheduleLocal,
   scheduleTimeError,
   customGroupDue,
@@ -49,6 +51,16 @@ test("o texto do aviso vai junto com o link", () => {
   const past = new Date("2026-10-11T22:26:00.000Z");
   assert.equal(scheduleTimeError("2026-10-11T19:21", past, true), null);
   assert.equal(scheduleTimeError("2026-10-11T19:21", past, false), "Esse horário já passou.");
+});
+
+test("o aviso aceita vários horários ou um intervalo", () => {
+  const morning = new Date("2026-10-12T12:00:30.000Z");
+  const afternoon = new Date("2026-10-12T16:00:30.000Z");
+  const times = { mode: "times" as const, scheduledAt: "2026-10-12T09:00", times: ["09:00", "15:00"], intervalHours: 0 };
+  assert.equal(customSlotKey(times, morning, 0), "times:2026-10-12T09:00");
+  assert.equal(customSlotKey(times, morning, 1), null);
+  assert.equal(customSlotKey({ mode: "interval", scheduledAt: "2026-10-12T09:00", times: [], intervalHours: 4 }, afternoon, 0), "interval:2026-10-12T13:00");
+  assert.equal(parseScheduleTimes(["9:00", "15:00", "15:00", "25:00"]).join(","), "15:00");
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

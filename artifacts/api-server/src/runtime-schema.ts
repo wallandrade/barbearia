@@ -1357,12 +1357,24 @@ async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<
         caption TEXT NULL,
         link_url VARCHAR(500) NOT NULL,
         scheduled_at VARCHAR(16) NOT NULL,
+        schedule_mode VARCHAR(16) NOT NULL DEFAULT 'once',
+        schedule_times TEXT NULL,
+        interval_hours INT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
   }
   if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "caption", databaseName))) {
     await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN caption TEXT NULL");
+  }
+  if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "schedule_mode", databaseName))) {
+    await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN schedule_mode VARCHAR(16) NOT NULL DEFAULT 'once'");
+  }
+  if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "schedule_times", databaseName))) {
+    await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN schedule_times TEXT NULL");
+  }
+  if (await tableExists("whatsapp_group_custom_posts", databaseName) && !(await columnExists("whatsapp_group_custom_posts", "interval_hours", databaseName))) {
+    await pool.query("ALTER TABLE whatsapp_group_custom_posts ADD COLUMN interval_hours INT NULL");
   }
   if (!(await tableExists("whatsapp_group_send_log", databaseName))) {
     await pool.query(`

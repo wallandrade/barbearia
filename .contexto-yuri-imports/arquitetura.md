@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-11 | Colunas `schedule_mode`, `schedule_times` e `interval_hours` em `whatsapp_group_custom_posts` | O aviso avulso guarda vários horários ou o intervalo | A rodada de produtos igual |
 | 2026-10-11 | Coluna `whatsapp_group_custom_posts.caption` (+ runtime) | Guarda o texto que sai junto com a foto do aviso avulso | A rodada de produtos igual |
 | 2026-10-11 | Tabelas `whatsapp_group_custom_posts` e `whatsapp_group_send_log` (+ runtime) | Agenda imagem e link dos grupos e marca o que já foi enviado | Pedidos e o menu de atendimento iguais |
 | 2026-10-11 | Tabela `whatsapp_support_examples` (+ runtime) | Guarda pergunta e resposta do atendimento, sem telefone | Sessão do menu e os avisos de pedido iguais |

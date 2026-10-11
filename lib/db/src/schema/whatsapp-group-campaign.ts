@@ -1,4 +1,4 @@
-import { mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /** Aviso avulso de imagem e link para os grupos do WhatsApp. */
 export const whatsappGroupCustomPostsTable = mysqlTable("whatsapp_group_custom_posts", {
@@ -7,6 +7,9 @@ export const whatsappGroupCustomPostsTable = mysqlTable("whatsapp_group_custom_p
   caption: text("caption"),
   linkUrl: varchar("link_url", { length: 500 }).notNull(),
   scheduledAt: varchar("scheduled_at", { length: 16 }).notNull(),
+  scheduleMode: varchar("schedule_mode", { length: 16 }).notNull().default("once"),
+  scheduleTimes: text("schedule_times"),
+  intervalHours: int("interval_hours"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -6,7 +6,8 @@ import {
   GROUP_CHATS_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
   customCaption,
-  customGroupDue,
+  customSlotKey,
+  parseScheduleTimes,
   groupSlotDue,
   parseGroupChats,
   pickGroupProduct,
@@ -142,8 +143,22 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
   for (const post of posts) {
     for (let index = 0; index < chats.length; index += 1) {
       const chat = chats[index];
-      if (!chat || !customGroupDue(post.scheduledAt, now, index)) continue;
-      await deliver(creds, `c:${post.id}:${chat.phone}`, chat.phone, post.imageUrl, customCaption(post.caption || "", post.linkUrl), `${chat.name} avulso`);
+      const mode = post.scheduleMode === "times" || post.scheduleMode === "interval" ? post.scheduleMode : "once";
+      let times: string[] = [];
+      try {
+        times = parseScheduleTimes(JSON.parse(post.scheduleTimes || "null"));
+      } catch {
+        times = [];
+      }
+      const slot = !chat ? null : customSlotKey({
+        mode,
+        scheduledAt: post.scheduledAt,
+        times,
+        intervalHours: Number(post.intervalHours) || 0,
+      }, now, index);
+      if (!chat || !slot) continue;
+      const claimId = slot === "once" ? `c:${post.id}:${chat.phone}` : `c:${post.id}:${slot}:${chat.phone}`;
+      await deliver(creds, claimId, chat.phone, post.imageUrl, customCaption(post.caption || "", post.linkUrl), `${chat.name} avulso`);
     }
   }
 }

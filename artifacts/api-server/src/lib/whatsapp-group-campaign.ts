@@ -156,3 +156,76 @@ export function customGroupDue(scheduledLocal: string, now: Date, groupIndex: nu
   const delta = now.getTime() - due;
   return delta >= 0 && delta < 2 * 60 * 1000;
 }
+
+export type SchedulePlan = {
+  mode: "once" | "times" | "interval";
+  scheduledAt: string;
+  times: string[];
+  intervalHours: number;
+};
+
+export function parseScheduleTimes(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const times = list.flatMap((item) => {
+    const time = String(item || "").trim().match(/^(\d{2}:\d{2})/)?.[1] || "";
+    if (!time) return [];
+    const [hour, minute] = time.split(":").map(Number);
+    if (hour > 23 || minute > 59) return [];
+    return [time];
+  });
+  return [...new Set(times)].sort().slice(0, 12);
+}
+
+export function schedulePlanSignature(plan: SchedulePlan): string {
+  return `${plan.mode}|${plan.scheduledAt}|${plan.times.join(",")}|${plan.intervalHours}`;
+}
+
+export function schedulePlanError(plan: SchedulePlan, now: Date, keepPast: boolean): string | null {
+  if (plan.mode === "times") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.scheduledAt.slice(0, 10))) return "Escolha a data.";
+    if (plan.times.length === 0) return "Escolha pelo menos um horário.";
+    const allPast = plan.times.every((time) => {
+      const when = saoPauloInstant(`${plan.scheduledAt.slice(0, 10)}T${time}`);
+      return Boolean(when && when.getTime() < now.getTime() - 60 * 1000);
+    });
+    if (!keepPast && allPast) return "Esses horários já passaram.";
+    return null;
+  }
+  if (plan.mode === "interval" && (plan.intervalHours < 1 || plan.intervalHours > 12)) {
+    return "O intervalo fica entre 1 e 12 horas.";
+  }
+  return scheduleTimeError(plan.scheduledAt, now, keepPast);
+}
+
+function localFromDate(date: Date): string {
+  const parts = saoPauloParts(date);
+  const hour = String(parts.hour).padStart(2, "0");
+  const minute = String(parts.minute).padStart(2, "0");
+  return `${parts.dayKey}T${hour}:${minute}`;
+}
+
+/** Chave do envio se este grupo está na janela. `once` mantém o aviso de um horário só. */
+export function customSlotKey(plan: SchedulePlan, now: Date, groupIndex: number): string | null {
+  if (plan.mode === "times") {
+    const date = plan.scheduledAt.slice(0, 10);
+    for (const time of plan.times) {
+      const local = `${date}T${time}`;
+      if (customGroupDue(local, now, groupIndex)) return `times:${local}`;
+    }
+    return null;
+  }
+  if (plan.mode === "interval") {
+    const start = saoPauloInstant(plan.scheduledAt);
+    const dayEnd = saoPauloInstant(`${plan.scheduledAt.slice(0, 10)}T23:59`);
+    if (!start || !dayEnd || plan.intervalHours < 1) return null;
+    const step = plan.intervalHours * 60 * 60 * 1000;
+    for (let index = 0; index < 12; index += 1) {
+      const at = start.getTime() + index * step;
+      if (at > dayEnd.getTime()) break;
+      const local = localFromDate(new Date(at));
+      if (customGroupDue(local, now, groupIndex)) return `interval:${local}`;
+    }
+    return null;
+  }
+  return customGroupDue(plan.scheduledAt, now, groupIndex) ? "once" : null;
+}
