@@ -1305,7 +1305,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "socialProof" | "raffles" | "checkout" | "seguro";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "socialProof" | "raffles" | "checkout" | "seguro";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1368,6 +1368,7 @@ const PRIMARY_ONLY_TABS = new Set<TabType>([
   "socialProof",
   "raffles",
   "configuracoes",
+  "atendimento",
   "checkout",
   "seguro",
   "listaNegra",
@@ -3156,6 +3157,7 @@ export default function Admin() {
     else if (tab === "coupons")    { fetchCoupons(); fetchProducts(); }
     else if (tab === "products")   fetchProducts();
     else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); fetchBrevoStatus(); }
+    else if (tab === "atendimento") { fetchSettings(); setLoading(false); }
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
     else if (tab === "expenses")   fetchExpenses();
@@ -5274,6 +5276,7 @@ export default function Admin() {
             ] : []),
             ...(isPrimary ? [
               { key: "configuracoes", label: "Configuração",     icon: "Settings" },
+              { key: "atendimento",   label: "Atendimento",      icon: "MessageCircle" },
               { key: "fretes",        label: "Fretes",           icon: "Truck",       count: shippingOptions.length },
             ] : []),
             { key: "extrato",       label: "Extrato",          icon: "Landmark" },
@@ -8006,6 +8009,12 @@ export default function Admin() {
               isActive: p.isActive !== false,
             }))}
             onSave={saveSetting}
+          />
+        ) : tab === "atendimento" ? (
+          <WhatsAppSupportMenuCard
+            saved={settings["whatsapp_support_menu"] ?? ""}
+            saving={!!settingsLoading["whatsapp_support_menu"]}
+            onSave={(value) => saveSetting("whatsapp_support_menu", value)}
           />
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
@@ -20716,12 +20725,6 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           Meu pedido: o cliente manda o número ou o CPF e recebe situação, produtos e rastreio. No n8n, o webhook atendimento fica igual aos outros, com phone e message em expressão. Na Z-API, em Ao receber, cole {n8nSupportToken.trim().length >= 8 ? `https://api.yury-imports.com/api/whatsapp/support/inbound?token=${n8nSupportToken.trim()}` : "https://api.yury-imports.com/api/whatsapp/support/inbound?token=SEU_TOKEN"}.
         </p>
       </div>
-
-      <WhatsAppSupportMenuCard
-        saved={settings["whatsapp_support_menu"] ?? ""}
-        saving={!!loading["whatsapp_support_menu"]}
-        onSave={(value) => onSave("whatsapp_support_menu", value)}
-      />
 
       <ReportanaSettingsCard />
 
