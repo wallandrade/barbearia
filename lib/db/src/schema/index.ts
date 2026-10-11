@@ -20,6 +20,7 @@ export * from "./raffles";
 export * from "./admin-sessions";
 export * from "./support-tickets";
 export * from "./whatsapp-support-sessions";
+export * from "./whatsapp-support-examples";
 export * from "./reshipments";
 export * from "./manual-reshipments";
 export * from "./inventory";

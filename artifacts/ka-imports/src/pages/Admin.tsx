@@ -754,6 +754,7 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import LossBlacklistBoard from "@/components/admin/LossBlacklistBoard";
+import WhatsAppSupportAiCard from "@/components/admin/WhatsAppSupportAiCard";
 import WhatsAppSupportMenuCard from "@/components/admin/WhatsAppSupportMenuCard";
 import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/pages/AdminEnvioEcomAccountsPanel";
 import AdminSuperfreteAccountsPanel, { type SuperfreteAccountPublic } from "@/pages/AdminSuperfreteAccountsPanel";
@@ -8011,11 +8012,14 @@ export default function Admin() {
             onSave={saveSetting}
           />
         ) : tab === "atendimento" ? (
-          <WhatsAppSupportMenuCard
-            saved={settings["whatsapp_support_menu"] ?? ""}
-            saving={!!settingsLoading["whatsapp_support_menu"]}
-            onSave={(value) => saveSetting("whatsapp_support_menu", value)}
-          />
+          <div className="space-y-6">
+            <WhatsAppSupportMenuCard
+              saved={settings["whatsapp_support_menu"] ?? ""}
+              saving={!!settingsLoading["whatsapp_support_menu"]}
+              onSave={(value) => saveSetting("whatsapp_support_menu", value)}
+            />
+            <WhatsAppSupportAiCard />
+          </div>
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
             <ConfiguracoesPanel

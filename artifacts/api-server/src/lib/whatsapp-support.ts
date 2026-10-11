@@ -6,6 +6,7 @@ import { toWhatsappPhone } from "./order-paid-whatsapp";
 import { envioecomTrackingUrl } from "./order-tracking-whatsapp";
 import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
+import { trySupportAiReply } from "./whatsapp-support-ai";
 import {
   defaultSupportMenu,
   parseSupportMenu,
@@ -169,6 +170,17 @@ function plain(value: string): string {
 
 function isGreeting(raw: string): boolean {
   return /^(oi|ola|menu|bom dia|boa tarde|boa noite|ajuda|inicio|hi|hello)$/.test(plain(raw));
+}
+
+/** Frase solta no menu inicial. Saudação, opção, CPF e atendente ficam de fora. */
+export function isSupportAiCandidate(input: { text?: string | null; choiceId?: string | null; session?: SupportSession | null }): boolean {
+  const text = String(input.text || "").trim();
+  if (text.length < 8) return false;
+  if (String(input.choiceId || "").trim()) return false;
+  if (isGreeting(text)) return false;
+  const step = input.session?.step;
+  if (step && step !== "menu") return false;
+  return true;
 }
 
 function optionByLooseText(raw: string, options: SupportOption[]): string | null {
@@ -754,6 +766,19 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
   }
   let nextSession = turn.session;
   let sent = false;
+  if (
+    turn.kind === "list"
+    && isSupportAiCandidate({ text: inbound.text, choiceId: inbound.choiceId, session })
+  ) {
+    const aiText = await trySupportAiReply(inbound.text, line);
+    if (aiText) {
+      sent = await sendText(inbound.phone, aiText, line);
+      if (sent) {
+        await saveSession(inbound.phone, turn.session);
+        return { ok: true, line };
+      }
+    }
+  }
   if (turn.kind === "list") {
     sent = await sendList(inbound.phone, turn, line);
   } else if (turn.kind === "text") {
