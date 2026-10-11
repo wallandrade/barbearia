@@ -4,6 +4,7 @@ import { ensureRuntimeSchema } from "./runtime-schema";
 import { startRaffleExpiryJob } from "./raffle-expiry";
 import { startEnvioEcomStatusSyncJob } from "./envioecom-status-job";
 import { startSuperfreteStatusSyncJob } from "./superfrete-status-job";
+import { startWhatsappGroupJob } from "./whatsapp-group-job";
 import { closeTrackedOpenReshipments } from "./lib/reshipment-label-tracked-apply";
 import { bootstrapShippingQueue } from "./lib/shipping-queue-allocator";
 
@@ -39,6 +40,7 @@ async function bootstrap(): Promise<void> {
     startRaffleExpiryJob();
     startEnvioEcomStatusSyncJob();
     startSuperfreteStatusSyncJob();
+    startWhatsappGroupJob();
     void bootstrapShippingQueue();
     void closeTrackedOpenReshipments()
       .then((closed) => {

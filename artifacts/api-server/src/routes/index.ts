@@ -46,6 +46,7 @@ import insuranceRouter from "./insurance";
 import subscriptionRouter from "./subscription";
 import supplierPurchasesRouter from "./supplier-purchases";
 import whatsappSupportRouter from "./whatsapp-support";
+import whatsappGroupsRouter from "./whatsapp-groups";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -94,5 +95,6 @@ router.use(insuranceRouter);
 router.use(subscriptionRouter);
 router.use(supplierPurchasesRouter);
 router.use(whatsappSupportRouter);
+router.use(whatsappGroupsRouter);
 
 export default router;

@@ -1348,6 +1348,28 @@ async function ensureWhatsappSupportExamplesTable(databaseName: string): Promise
   `);
 }
 
+async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<void> {
+  if (!(await tableExists("whatsapp_group_custom_posts", databaseName))) {
+    await pool.query(`
+      CREATE TABLE whatsapp_group_custom_posts (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        image_url TEXT NOT NULL,
+        link_url VARCHAR(500) NOT NULL,
+        scheduled_at VARCHAR(16) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  if (!(await tableExists("whatsapp_group_send_log", databaseName))) {
+    await pool.query(`
+      CREATE TABLE whatsapp_group_send_log (
+        id VARCHAR(191) NOT NULL PRIMARY KEY,
+        sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+}
+
 async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   if (await tableExists("checkout_drafts", databaseName)) return;
   await pool.query(`
@@ -1411,6 +1433,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureCheckoutDraftsTable(databaseName);
     await ensureWhatsappSupportSessionsTable(databaseName);
     await ensureWhatsappSupportExamplesTable(databaseName);
+    await ensureWhatsappGroupCampaignTables(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

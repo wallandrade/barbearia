@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-11 | Tabelas `whatsapp_group_custom_posts` e `whatsapp_group_send_log` (+ runtime) | Agenda imagem e link dos grupos e marca o que já foi enviado | Pedidos e o menu de atendimento iguais |
 | 2026-10-11 | Tabela `whatsapp_support_examples` (+ runtime) | Guarda pergunta e resposta do atendimento, sem telefone | Sessão do menu e os avisos de pedido iguais |
 | 2026-10-10 | Coluna `whatsapp_support_sessions.pending_order` (+ runtime) | Guarda o número do pedido enquanto o atendimento espera o CPF | O restante da sessão igual |
 | 2026-10-10 | Tabela `whatsapp_support_sessions` (+ runtime) | Guarda o passo do menu de atendimento por telefone | Pedidos e os avisos de WhatsApp iguais |
