@@ -85,29 +85,27 @@ export default function WhatsAppSupportAiCard() {
   };
 
   const total = status?.total ?? 0;
-  const canEnable = total > 0;
 
   return (
     <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
       <div>
         <h2 className="text-sm font-semibold">Resposta da frase solta</h2>
         <p className="text-xs text-muted-foreground mt-1">
-          O menu, o CPF e o atendente continuam iguais. A resposta automática só entra quando a pessoa escreve uma frase que não é opção do menu.
-          A carga lê o número de hoje e guarda pergunta e resposta, sem telefone. O número da Poly não é lido.
+          O menu, o CPF e o atendente continuam iguais. A resposta usa o site de hoje: produto, preço e estoque.
+          Sem o nome do produto, ela pergunta qual é. Pedido e rastreio continuam no menu.
         </p>
       </div>
-      <p className="text-sm">{total} pares gravados{status?.running ? ` · lendo, ${status.saved} novos, ${status.chatsRead} conversas` : ""}</p>
+      <p className="text-sm">{status?.enabled ? "Resposta ligada." : "Resposta desligada."} {total} pares gravados{status?.running ? ` · lendo, ${status.saved} novos, ${status.chatsRead} conversas` : ""}</p>
       {status?.error ? <p className="text-xs text-destructive">{status.error}</p> : null}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" onClick={() => void loadHistory()} disabled={loading || status?.running}>
           {status?.running ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Ler histórico
         </Button>
-        <Button type="button" onClick={() => void toggle(!status?.enabled)} disabled={loading || !canEnable}>
+        <Button type="button" onClick={() => void toggle(!status?.enabled)} disabled={loading}>
           {status?.enabled ? "Desligar resposta" : "Ligar resposta"}
         </Button>
       </div>
-      {!canEnable ? <p className="text-xs text-muted-foreground">A resposta só liga depois do primeiro par gravado.</p> : null}
     </section>
   );
 }

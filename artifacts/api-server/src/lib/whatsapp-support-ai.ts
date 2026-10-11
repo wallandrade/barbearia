@@ -1,4 +1,5 @@
 import { eq, or, sql } from "drizzle-orm";
+import { promoPriceStillApplies } from "./promo-stock-logic";
 import { whatsappSellerStoreUrl, type WhatsappLine } from "./whatsapp-line";
 
 export const WHATSAPP_SUPPORT_AI_SETTING = "whatsapp_support_ai_enabled";
@@ -12,6 +13,15 @@ export type SupportAiExample = {
   question: string;
   answer: string;
 };
+
+export type SupportCatalogProduct = {
+  id: string;
+  name: string;
+  price: number;
+  soldOut: boolean;
+};
+
+const PRICE_WORDS = new Set(["valor", "preco", "precos", "quanto", "custa", "fica", "produto", "saber", "qual"]);
 
 function fold(value: string): string {
   return value
@@ -44,8 +54,50 @@ export function rankSupportExamples(question: string, rows: SupportAiExample[], 
     .map((item) => item.row);
 }
 
-export function supportAiMayReply(enabled: boolean, exampleCount: number, candidate: boolean): boolean {
-  return enabled && exampleCount > 0 && candidate;
+export function supportAiMayReply(enabled: boolean, _exampleCount: number, candidate: boolean): boolean {
+  return enabled && candidate;
+}
+
+export function isSupportPriceQuestion(question: string): boolean {
+  const folded = fold(question);
+  return /\b(valor|preco|quanto custa|quanto fica|quanto sai|quanto esta|quanto e)\b/.test(folded);
+}
+
+export function matchSupportCatalog(question: string, products: SupportCatalogProduct[]): SupportCatalogProduct[] {
+  const folded = fold(question);
+  const words = (folded.match(/[a-z0-9]{3,}/g) || []).filter((word) => !PRICE_WORDS.has(word) && !STOP_WORDS.has(word));
+  const scored = products.map((product) => {
+    const name = fold(product.name);
+    let score = 0;
+    if (name.length >= 4 && folded.includes(name)) score += 10;
+    for (const word of words) {
+      if (word.length < 4 && !/\d/.test(word)) continue;
+      if (name.includes(word)) score += 1;
+    }
+    return { product, score };
+  });
+  return scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name))
+    .map((item) => item.product);
+}
+
+function money(price: number): string {
+  const [reais, cents] = price.toFixed(2).split(".");
+  const grouped = reais.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `R$ ${grouped},${cents}`;
+}
+
+/** Preço só sai do catálogo de agora. Sem produto, pergunta qual é. */
+export function supportPriceReply(question: string, products: SupportCatalogProduct[], line: WhatsappLine): string | null {
+  if (!isSupportPriceQuestion(question)) return null;
+  const matches = matchSupportCatalog(question, products);
+  if (matches.length === 0) return "Qual produto você quer saber o valor?";
+  if (matches.length > 4) {
+    return `Tem mais de um parecido. Qual produto você quer saber o valor? ${matches.slice(0, 4).map((product) => product.name).join(", ")}.`;
+  }
+  const lines = matches.map((product) => `${product.name} está ${money(product.price)}.`);
+  return `${lines.join(" ")} Pode ver em ${whatsappSellerStoreUrl(line)}.`;
 }
 
 export function acceptSupportAiReply(reply: string | null | undefined): string | null {
@@ -59,18 +111,29 @@ export function acceptSupportAiReply(reply: string | null | undefined): string |
   return text;
 }
 
-export function buildSupportAiMessages(question: string, line: WhatsappLine, examples: SupportAiExample[]): Array<{ role: "system" | "user"; content: string }> {
+export function buildSupportAiMessages(
+  question: string,
+  line: WhatsappLine,
+  examples: SupportAiExample[],
+  products: SupportCatalogProduct[] = [],
+): Array<{ role: "system" | "user"; content: string }> {
   const storeUrl = whatsappSellerStoreUrl(line);
   const sample = examples.length === 0
     ? "Nenhum exemplo parecido."
     : examples.map((example, index) => `${index + 1}. Pergunta: ${example.question}\nResposta: ${example.answer}`).join("\n");
+  const catalog = products.length === 0
+    ? "Nenhum produto do site combina com a pergunta."
+    : products.map((product) => {
+      return `- ${product.name}: ${money(product.price)}. https://www.yury-imports.com/produto/${product.id}`;
+    }).join("\n");
   return [
     {
       role: "system",
       content: [
         "Você responde clientes da Yury Imports no WhatsApp, em português do Brasil, em poucas frases.",
-        "Use só as regras e os exemplos. Se não souber, responda exatamente NAO_SEI.",
+        "Use só o site de agora, as regras e os exemplos. Se não souber, responda exatamente NAO_SEI.",
         "Não invente dose, preço, prazo, estoque, rastreio nem a situação de um pedido.",
+        "Só fale um preço se ele estiver na lista de produtos. Se a pessoa não disse o produto, pergunte qual produto ela quer saber o valor.",
         "Não peça CPF, não peça número de pedido e não repita CPF, telefone ou endereço.",
         "Não confirme pedido. Quem quiser pedido, rastreio ou problema deve usar o menu: Meu pedido, Quero comprar, Problemas com pedido ou Falar com atendente.",
         `O site deste número é ${storeUrl}.`,
@@ -78,7 +141,7 @@ export function buildSupportAiMessages(question: string, line: WhatsappLine, exa
     },
     {
       role: "user",
-      content: `Pergunta do cliente:\n${question}\n\nExemplos parecidos:\n${sample}`,
+      content: `Pergunta do cliente:\n${question}\n\nProdutos do site agora:\n${catalog}\n\nExemplos parecidos:\n${sample}`,
     },
   ];
 }
@@ -105,13 +168,32 @@ export async function supportAiEnabled(): Promise<boolean> {
 }
 
 export async function setSupportAiEnabled(enabled: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (enabled) {
-    const { supportExampleTotal } = await import("./whatsapp-history-import");
-    const total = await supportExampleTotal();
-    if (total < 1) return { ok: false, error: "Carregue o histórico antes de ligar a resposta." };
-  }
   await saveSetting(WHATSAPP_SUPPORT_AI_SETTING, enabled ? "1" : "0");
   return { ok: true };
+}
+
+async function loadSupportCatalog(): Promise<SupportCatalogProduct[]> {
+  const { db, productsTable } = await import("@workspace/db");
+  const rows = await db
+    .select({
+      id: productsTable.id,
+      name: productsTable.name,
+      price: productsTable.price,
+      promoPrice: productsTable.promoPrice,
+      promoEndsAt: productsTable.promoEndsAt,
+      promoUntilStock: productsTable.promoUntilStock,
+      promoStockLeft: productsTable.promoStockLeft,
+      isSoldOut: productsTable.isSoldOut,
+    })
+    .from(productsTable)
+    .where(eq(productsTable.isActive, true));
+  return rows.flatMap((row) => {
+    const promo = promoPriceStillApplies(row);
+    const price = promo ? Number(row.promoPrice) : Number(row.price);
+    const name = String(row.name || "").trim();
+    if (!name || !Number.isFinite(price)) return [];
+    return [{ id: String(row.id), name, price, soldOut: Boolean(row.isSoldOut) }];
+  });
 }
 
 async function similarExamples(question: string): Promise<SupportAiExample[]> {
@@ -166,12 +248,13 @@ async function completeSupportAi(messages: Array<{ role: "system" | "user"; cont
 export async function trySupportAiReply(question: string, line: WhatsappLine): Promise<string | null> {
   try {
     if (!await supportAiEnabled()) return null;
-    const { supportExampleTotal } = await import("./whatsapp-history-import");
-    if (await supportExampleTotal() < 1) return null;
+    const catalog = await loadSupportCatalog();
+    const priceReply = supportPriceReply(question, catalog, line);
+    if (priceReply) return priceReply;
     const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
     if (!apiKey) return null;
-    const examples = await similarExamples(question);
-    const messages = buildSupportAiMessages(question, line, examples);
+    const examples = await similarExamples(question).catch(() => []);
+    const messages = buildSupportAiMessages(question, line, examples, matchSupportCatalog(question, catalog).slice(0, 8));
     const accepted = acceptSupportAiReply(await completeSupportAi(messages, apiKey));
     if (!accepted) return null;
     return accepted.replace(

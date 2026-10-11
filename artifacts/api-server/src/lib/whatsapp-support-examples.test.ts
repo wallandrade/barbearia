@@ -9,7 +9,7 @@ import {
   zapiMessageRows,
   type SupportHistoryMessage,
 } from "./whatsapp-support-examples";
-import { acceptSupportAiReply, buildSupportAiMessages, rankSupportExamples, supportAiMayReply } from "./whatsapp-support-ai";
+import { acceptSupportAiReply, buildSupportAiMessages, rankSupportExamples, supportAiMayReply, supportPriceReply } from "./whatsapp-support-ai";
 import { decideSupportTurn, isSupportAiCandidate } from "./whatsapp-support";
 
 function message(partial: Partial<SupportHistoryMessage> & Pick<SupportHistoryMessage, "id" | "fromMe" | "text">): SupportHistoryMessage {
@@ -70,8 +70,8 @@ test("oi e o menu não chamam a IA; frase solta só com histórico e chave ligad
   assert.notEqual(decideSupportTurn({ text: "Quero comprar" }).kind, "list");
   assert.equal(decideSupportTurn({ text: "quero saber o prazo" }).kind, "list");
   assert.equal(supportAiMayReply(false, 3, true), false);
-  assert.equal(supportAiMayReply(true, 0, true), false);
-  assert.equal(supportAiMayReply(true, 2, true), true);
+  assert.equal(supportAiMayReply(true, 0, true), true);
+  assert.equal(supportAiMayReply(true, 2, false), false);
 
   const menu = isSupportAiCandidate({ text: "Oi!" });
   assert.equal(menu, false);
@@ -93,4 +93,19 @@ test("a resposta usa o exemplo e não devolve pedido", () => {
   assert.equal(messages[1]?.content.includes("o prazo depende da transportadora"), true);
   assert.equal(messages[0]?.content.includes("https://www.yury-imports.com/poly"), true);
   assert.equal(messages[0]?.content.includes("1782"), false);
+});
+
+test("qual valor sem produto pergunta qual é, e o preço sai do site", () => {
+  const products = [
+    { id: "t15", name: "Tirzepatida 15mg", price: 189.9, soldOut: false },
+    { id: "t30", name: "Tirzepatida 30mg", price: 299, soldOut: true },
+  ];
+  assert.equal(supportPriceReply("qual valor?", products, "main"), "Qual produto você quer saber o valor?");
+  const one = supportPriceReply("qual o valor da tirzepatida 15mg", products, "poly");
+  assert.equal(one?.includes("R$ 189,90"), true);
+  assert.equal(one?.includes("https://www.yury-imports.com/poly"), true);
+  assert.equal(one?.includes("1782"), false);
+  const gone = supportPriceReply("qual o valor da tirzepatida 30mg", products, "main");
+  assert.equal(gone?.includes("R$ 299,00"), true);
+  assert.equal(gone?.includes("esgotado"), false);
 });
