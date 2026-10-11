@@ -1,5 +1,12 @@
+import https from "node:https";
 import { pool } from "@workspace/db";
-import { zapiChatRows, zapiMessageRows, supportExamplePairs, type SupportHistoryMessage } from "./whatsapp-support-examples";
+import {
+  supportExamplePairs,
+  zapiChatRows,
+  zapiFailureMessage,
+  zapiMessageRows,
+  type SupportHistoryMessage,
+} from "./whatsapp-support-examples";
 
 const CHAT_PAGE_SIZE = 50;
 const MAX_CHAT_PAGES = 40;
@@ -29,10 +36,14 @@ type ZapiMainCredentials = {
   clientToken: string;
 };
 
+function envValue(name: string): string {
+  return String(process.env[name] || "").trim().replace(/^['"]|['"]$/g, "");
+}
+
 function credentials(): ZapiMainCredentials | null {
-  const instanceId = String(process.env.ZAPI_MAIN_INSTANCE_ID || "").trim();
-  const token = String(process.env.ZAPI_MAIN_TOKEN || "").trim();
-  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || "").trim();
+  const instanceId = envValue("ZAPI_MAIN_INSTANCE_ID");
+  const token = envValue("ZAPI_MAIN_TOKEN");
+  const clientToken = envValue("ZAPI_CLIENT_TOKEN");
   if (!instanceId || !token || !clientToken) return null;
   if (instanceId.includes("/") || token.includes("/")) return null;
   return { instanceId, token, clientToken };
@@ -42,22 +53,42 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function zapiGet(creds: ZapiMainCredentials, path: string): Promise<unknown> {
-  const url = `https://api.z-api.io/instances/${encodeURIComponent(creds.instanceId)}/token/${encodeURIComponent(creds.token)}${path}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-  try {
-    const response = await fetch(url, {
-      headers: { "Client-Token": creds.clientToken },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`zapi_${response.status}`);
-    }
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
+function zapiGet(creds: ZapiMainCredentials, path: string): Promise<unknown> {
+  const requestPath = `/instances/${encodeURIComponent(creds.instanceId)}/token/${encodeURIComponent(creds.token)}${path}`;
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: "api.z-api.io",
+        path: requestPath,
+        method: "GET",
+        headers: {
+          "Client-Token": creds.clientToken,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          const statusCode = res.statusCode || 500;
+          if (statusCode >= 400) {
+            reject(new Error(zapiFailureMessage(statusCode, body)));
+            return;
+          }
+          try {
+            resolve(body ? JSON.parse(body) : []);
+          } catch {
+            reject(new Error("A Z-API respondeu em um formato inesperado."));
+          }
+        });
+      },
+    );
+    req.setTimeout(20000, () => req.destroy(new Error("A Z-API demorou demais.")));
+    req.on("error", (err) => reject(err));
+    req.end();
+  });
 }
 
 async function savePair(sourceMessageId: string, question: string, answer: string): Promise<boolean> {
@@ -85,7 +116,7 @@ async function fetchMessages(creds: ZapiMainCredentials, phone: string, lastMess
   try {
     return await zapiGet(creds, path);
   } catch (err) {
-    if (messagePath === "chat-messages" && err instanceof Error && err.message === "zapi_404") {
+    if (messagePath === "chat-messages" && err instanceof Error && err.message.includes("zapi_404")) {
       messagePath = "messages";
       return zapiGet(creds, `/${messagePath}/${encodeURIComponent(phone)}?amount=${MESSAGE_AMOUNT}${older}`);
     }
@@ -117,21 +148,35 @@ async function readChat(creds: ZapiMainCredentials, phone: string): Promise<void
   }
 }
 
+async function loadChatPage(creds: ZapiMainCredentials, page: number): Promise<{ payload: unknown; bare: boolean }> {
+  try {
+    return { payload: await zapiGet(creds, `/chats?page=${page}&pageSize=${CHAT_PAGE_SIZE}`), bare: false };
+  } catch (err) {
+    if (page !== 1) throw err;
+    return { payload: await zapiGet(creds, "/chats"), bare: true };
+  }
+}
+
 async function runImport(creds: ZapiMainCredentials): Promise<void> {
   const seenPhones = new Set<string>();
   for (let page = 1; page <= MAX_CHAT_PAGES; page += 1) {
-    const payload = await zapiGet(creds, `/chats?page=${page}&pageSize=${CHAT_PAGE_SIZE}`);
-    const raw = zapiChatRows(payload);
+    const loaded = await loadChatPage(creds, page);
+    const raw = zapiChatRows(loaded.payload);
     if (raw.length === 0) break;
     const chats = raw.filter((chat) => !chat.isGroup && !seenPhones.has(chat.phone));
     for (const chat of chats) {
       seenPhones.add(chat.phone);
-      await readChat(creds, chat.phone);
-      status.chatsRead += 1;
+      try {
+        await readChat(creds, chat.phone);
+        status.chatsRead += 1;
+      } catch (err) {
+        status.error = err instanceof Error ? err.message : "falha";
+      }
       await sleep(PAUSE_MS);
     }
-    if (raw.length < CHAT_PAGE_SIZE) break;
+    if (loaded.bare || raw.length < CHAT_PAGE_SIZE) break;
   }
+  if (status.chatsRead > 0 || status.saved > 0) status.error = "";
   status.total = await supportExampleTotal();
 }
 

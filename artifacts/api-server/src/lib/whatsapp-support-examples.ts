@@ -144,9 +144,25 @@ export function zapiChatRows(payload: unknown): Array<{ phone: string; isGroup: 
       || row.isNewsletter === true
       || phone.includes("-group")
       || phone.includes("@g.us")
-      || phone.includes("broadcast");
+      || phone.includes("broadcast")
+      || /^\d+-\d+$/.test(phone);
     return { phone, isGroup };
   }).filter((chat) => chat.phone.length > 0);
+}
+
+export function zapiFailureMessage(status: number, body: string): string {
+  const text = String(body || "").replace(/\s+/g, " ").trim().slice(0, 240);
+  const lower = text.toLowerCase();
+  if (status === 400 || status === 401 || status === 403) {
+    if (lower.includes("null not allowed") || lower.includes("client-token") || lower.includes("client token")) {
+      return "A Z-API recusou o token da conta. No Railway, ZAPI_CLIENT_TOKEN tem que ser o Client-Token do n8n, sem aspas.";
+    }
+    if (lower.includes("not found") || lower.includes("instance") || lower.includes("instancia") || lower.includes("instância")) {
+      return "A Z-API não achou a instância. Confira o ID e o token em Dados da instância web, sem a URL.";
+    }
+  }
+  const safe = text.replace(/[A-Za-z0-9]{12,}/g, "…");
+  return safe ? `zapi_${status}: ${safe}` : `zapi_${status}`;
 }
 
 export function zapiMessageRows(payload: unknown): SupportHistoryMessage[] {

@@ -5,6 +5,7 @@ import {
   supportExamplePairs,
   supportHistoryTextBlocked,
   zapiChatRows,
+  zapiFailureMessage,
   zapiMessageRows,
   type SupportHistoryMessage,
 } from "./whatsapp-support-examples";
@@ -46,6 +47,8 @@ test("a carga lê chat e mensagem da Z-API sem guardar telefone", () => {
   ]);
   assert.equal(chats[0]?.isGroup, false);
   assert.equal(chats[1]?.isGroup, true);
+  assert.equal(zapiChatRows([{ phone: "558187853083-1608664005", isGroup: false }])[0]?.isGroup, true);
+  assert.equal(zapiFailureMessage(400, '{"error":"null not allowed"}').includes("token da conta"), true);
 
   const messages = zapiMessageRows([
     { messageId: "a", fromMe: false, momment: 1, phone: "5511999998888", text: { message: "vocês entregam no interior" } },
