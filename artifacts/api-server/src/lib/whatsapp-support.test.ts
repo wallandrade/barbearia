@@ -8,6 +8,7 @@ import {
   decideSupportTurn,
   readSupportInbound,
   supportInboundLog,
+  supportDocumentMatches,
   supportPaymentLabel,
   supportSituationLabel,
   supportTokensMatch,
@@ -36,9 +37,21 @@ test("oi abre a lista e o pedido só entra depois do toque", () => {
   assert.equal(asked.kind, "text");
   assert.equal(asked.session.step, "await_lookup");
 
-  const found = decideSupportTurn({ text: "1782", session: { step: "await_lookup", problem: null } });
-  assert.equal(found.kind, "lookup");
-  if (found.kind === "lookup") assert.equal(found.intent.orderNumber, 1782);
+  const askedNumber = decideSupportTurn({ text: "1782", session: { step: "await_lookup", problem: null } });
+  assert.equal(askedNumber.kind, "text");
+  if (askedNumber.kind === "text") assert.match(askedNumber.message, /CPF/);
+  assert.equal(askedNumber.session.step, "await_cpf");
+  assert.equal(askedNumber.session.orderNumber, 1782);
+
+  const confirmed = decideSupportTurn({ text: "123.456.789-09", session: askedNumber.session });
+  assert.equal(confirmed.kind, "lookup");
+  if (confirmed.kind === "lookup") {
+    assert.equal(confirmed.intent.kind, "confirm");
+    if (confirmed.intent.kind === "confirm") assert.equal(confirmed.intent.orderNumber, 1782);
+  }
+  assert.equal(supportDocumentMatches("123.456.789-09", "12345678909"), true);
+  assert.equal(supportDocumentMatches("123.456.789-09", "00000000000"), false);
+  assert.equal(supportDocumentMatches("", "12345678909"), false);
 });
 
 test("falar com atendente cala o menu até a sessão acabar", () => {
@@ -58,15 +71,19 @@ test("falar com atendente cala o menu até a sessão acabar", () => {
 });
 
 test("problema passado ao atendente também cala o menu", () => {
-  const found = decideSupportTurn({ text: "1782", session: { step: "await_problem", problem: "atrasado" } });
+  const asked = decideSupportTurn({ text: "1782", session: { step: "await_problem", problem: "atrasado" } });
+  assert.equal(asked.kind, "text");
+  assert.equal(asked.session.step, "await_cpf");
+  assert.equal(asked.session.problem, "atrasado");
+  const found = decideSupportTurn({ text: "12345678909", session: asked.session });
   assert.equal(found.kind, "lookup");
   if (found.kind !== "lookup") return;
   assert.match(found.followup, /atendente/);
   assert.equal(found.session.step, "human");
 
-  const lookup = decideSupportTurn({ text: "1782", session: { step: "await_lookup", problem: null } });
-  assert.equal(lookup.kind, "lookup");
-  assert.equal(lookup.session.step, "menu");
+  const byDocument = decideSupportTurn({ text: "12345678909", session: { step: "await_lookup", problem: null } });
+  assert.equal(byDocument.kind, "lookup");
+  if (byDocument.kind === "lookup") assert.equal(byDocument.intent.kind, "document");
 });
 
 test("menu salvo no admin troca o texto e aceita opção nova", () => {
@@ -91,7 +108,9 @@ test("menu salvo no admin troca o texto e aceita opção nova", () => {
   const pay = decideSupportTurn({ choiceId: "pix" }, saved.menu);
   assert.equal(pay.kind, "text");
   if (pay.kind === "text") assert.match(pay.message, /Pague em/);
-  const exchange = decideSupportTurn({ text: "1782", session: { step: "await_problem", problem: "troca" } }, saved.menu);
+  const askedExchange = decideSupportTurn({ text: "1782", session: { step: "await_problem", problem: "troca" } }, saved.menu);
+  assert.equal(askedExchange.session.step, "await_cpf");
+  const exchange = decideSupportTurn({ text: "12345678909", session: askedExchange.session }, saved.menu);
   assert.equal(exchange.kind, "lookup");
   if (exchange.kind === "lookup") assert.match(exchange.followup, /troca/);
 

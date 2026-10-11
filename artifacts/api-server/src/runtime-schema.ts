@@ -1320,15 +1320,20 @@ async function ensureMotoboyPriceProposalsTable(databaseName: string): Promise<v
 }
 
 async function ensureWhatsappSupportSessionsTable(databaseName: string): Promise<void> {
-  if (await tableExists("whatsapp_support_sessions", databaseName)) return;
-  await pool.query(`
-    CREATE TABLE whatsapp_support_sessions (
-      phone VARCHAR(20) NOT NULL PRIMARY KEY,
-      step VARCHAR(32) NOT NULL,
-      problem VARCHAR(32) NULL,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  if (!(await tableExists("whatsapp_support_sessions", databaseName))) {
+    await pool.query(`
+      CREATE TABLE whatsapp_support_sessions (
+        phone VARCHAR(20) NOT NULL PRIMARY KEY,
+        step VARCHAR(32) NOT NULL,
+        problem VARCHAR(32) NULL,
+        pending_order INT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  if (!(await columnExists("whatsapp_support_sessions", "pending_order", databaseName))) {
+    await pool.query(`ALTER TABLE whatsapp_support_sessions ADD COLUMN pending_order INT NULL`);
+  }
 }
 
 async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {

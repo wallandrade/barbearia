@@ -32,6 +32,7 @@ export type SupportIntent =
   | { kind: "menu" }
   | { kind: "order"; orderNumber: number }
   | { kind: "document"; document: string }
+  | { kind: "confirm"; orderNumber: number; document: string }
   | { kind: "unknown" };
 
 export type SupportInbound = {
@@ -41,11 +42,12 @@ export type SupportInbound = {
   skip: boolean;
 };
 
-export type SupportStep = "menu" | "problem_menu" | "await_lookup" | "await_problem" | "human";
+export type SupportStep = "menu" | "problem_menu" | "await_lookup" | "await_problem" | "await_cpf" | "human";
 
 export type SupportSession = {
   step: SupportStep;
   problem: string | null;
+  orderNumber?: number | null;
 };
 
 export type SupportOption = {
@@ -57,7 +59,7 @@ export type SupportOption = {
 export type SupportTurn =
   | { kind: "text"; message: string; session: SupportSession }
   | { kind: "list"; message: string; buttonLabel: string; title: string; options: SupportOption[]; session: SupportSession }
-  | { kind: "lookup"; intent: Extract<SupportIntent, { kind: "order" | "document" }>; followup: string; session: SupportSession }
+  | { kind: "lookup"; intent: Extract<SupportIntent, { kind: "order" | "document" | "confirm" }>; followup: string; session: SupportSession }
   | { kind: "silent"; session: SupportSession };
 
 export type SupportOrderView = {
@@ -80,7 +82,16 @@ export type SupportOrderView = {
 };
 
 function digitsOnly(value: string): string {
-  return value.replace(/\D/g, "");
+  return String(value || "").replace(/\D/g, "");
+}
+
+const ASK_CPF_MESSAGE = "Para eu localizar com segurança, me envia o CPF da compra, só os números.";
+
+/** CPF da compra, sem máscara. Outro documento não libera o pedido. */
+export function supportDocumentMatches(stored: string | null | undefined, given: string): boolean {
+  const left = digitsOnly(String(stored || ""));
+  const right = digitsOnly(given);
+  return left.length === 11 && left === right;
 }
 
 function readText(body: Record<string, unknown>): string {
@@ -188,16 +199,24 @@ function activeItems(menu: SupportMenuConfig, session: SupportSession): SupportM
 function resolveChoice(choiceId: string, text: string, step: SupportStep, menu: SupportMenuConfig, session: SupportSession): string | null {
   const direct = String(choiceId || "").trim();
   if (direct && supportMenuItems(menu).some((item) => item.id === direct)) return direct;
-  if (step === "await_lookup" || step === "await_problem" || step === "human") return null;
+  if (step === "await_lookup" || step === "await_problem" || step === "await_cpf" || step === "human") return null;
   return optionByLooseText(direct || text, activeItems(menu, session).map(toOption));
 }
 
 function menuSession(): SupportSession {
-  return { step: "menu", problem: null };
+  return { step: "menu", problem: null, orderNumber: null };
 }
 
 function humanSession(): SupportSession {
-  return { step: "human", problem: null };
+  return { step: "human", problem: null, orderNumber: null };
+}
+
+function askCpf(session: SupportSession, orderNumber: number): SupportTurn {
+  return {
+    kind: "text",
+    message: ASK_CPF_MESSAGE,
+    session: { step: "await_cpf", problem: session.problem, orderNumber },
+  };
 }
 
 function mainList(menu: SupportMenuConfig): SupportTurn {
@@ -256,11 +275,34 @@ export function decideSupportTurn(input: {
   const picked = choice ? findMenuItem(config, choice) : null;
   if (picked) return turnForItem(picked);
 
+  if (session.step === "await_cpf") {
+    const intent = classifySupportText(text);
+    if (intent.kind === "order") return askCpf(session, intent.orderNumber);
+    const orderNumber = Number(session.orderNumber);
+    if (intent.kind === "document" && Number.isSafeInteger(orderNumber) && orderNumber > 0) {
+      const handoffItem = session.problem ? findMenuItem(config, session.problem) : null;
+      const followup = handoffItem
+        ? supportMenuFollowup(handoffItem)
+        : session.problem
+          ? "\n\nVou passar para o atendente olhar esse caso."
+          : "";
+      return {
+        kind: "lookup",
+        intent: { kind: "confirm", orderNumber, document: intent.document },
+        followup,
+        session: session.problem ? humanSession() : menuSession(),
+      };
+    }
+    return { kind: "text", message: ASK_CPF_MESSAGE, session };
+  }
+
   if (session.step === "await_lookup" || session.step === "await_problem") {
     const intent = classifySupportText(text);
-    if (intent.kind === "order" || intent.kind === "document") {
-      const handoffItem = session.step === "await_problem" ? findMenuItem(config, session.problem) : null;
-      const followup = session.step !== "await_problem"
+    if (intent.kind === "order") return askCpf(session, intent.orderNumber);
+    if (intent.kind === "document") {
+      const handoff = session.step === "await_problem";
+      const handoffItem = handoff ? findMenuItem(config, session.problem) : null;
+      const followup = !handoff
         ? ""
         : handoffItem
           ? supportMenuFollowup(handoffItem)
@@ -269,7 +311,7 @@ export function decideSupportTurn(input: {
         kind: "lookup",
         intent,
         followup,
-        session: session.step === "await_problem" ? humanSession() : menuSession(),
+        session: handoff ? humanSession() : menuSession(),
       };
     }
     return {
@@ -500,7 +542,7 @@ export async function supportMenuWebhookUrl(): Promise<string> {
 }
 
 function isSupportStep(value: string): value is SupportStep {
-  return value === "menu" || value === "problem_menu" || value === "await_lookup" || value === "await_problem" || value === "human";
+  return value === "menu" || value === "problem_menu" || value === "await_lookup" || value === "await_problem" || value === "await_cpf" || value === "human";
 }
 
 async function loadSession(phone: string): Promise<SupportSession | null> {
@@ -514,7 +556,12 @@ async function loadSession(phone: string): Promise<SupportSession | null> {
   if (!row || !isSupportStep(row.step)) return null;
   const updated = row.updatedAt instanceof Date ? row.updatedAt.getTime() : 0;
   if (!updated || Date.now() - updated > SESSION_TTL_MS) return null;
-  return { step: row.step, problem: row.problem || null };
+  const pending = Number(row.pendingOrder);
+  return {
+    step: row.step,
+    problem: row.problem || null,
+    orderNumber: Number.isSafeInteger(pending) && pending > 0 ? pending : null,
+  };
 }
 
 async function saveSession(phone: string, session: SupportSession): Promise<void> {
@@ -522,9 +569,20 @@ async function saveSession(phone: string, session: SupportSession): Promise<void
   const now = new Date();
   await db
     .insert(whatsappSupportSessionsTable)
-    .values({ phone, step: session.step, problem: session.problem, updatedAt: now })
+    .values({
+      phone,
+      step: session.step,
+      problem: session.problem,
+      pendingOrder: session.orderNumber ?? null,
+      updatedAt: now,
+    })
     .onDuplicateKeyUpdate({
-      set: { step: session.step, problem: session.problem, updatedAt: now },
+      set: {
+        step: session.step,
+        problem: session.problem,
+        pendingOrder: session.orderNumber ?? null,
+        updatedAt: now,
+      },
     });
 }
 
@@ -568,7 +626,9 @@ async function withPackages(rows: Array<{
 }
 
 export async function findSupportOrders(intent: SupportIntent): Promise<{ orders: SupportOrderView[]; truncated: boolean }> {
-  if (intent.kind !== "order" && intent.kind !== "document") return { orders: [], truncated: false };
+  if (intent.kind !== "order" && intent.kind !== "document" && intent.kind !== "confirm") {
+    return { orders: [], truncated: false };
+  }
   const { db, ordersTable } = await database();
   const columns = {
     id: ordersTable.id,
@@ -583,6 +643,18 @@ export async function findSupportOrders(intent: SupportIntent): Promise<{ orders
     envioecomBarcode: ordersTable.envioecomBarcode,
     superfreteTracking: ordersTable.superfreteTracking,
   };
+  if (intent.kind === "confirm") {
+    const rows = await db
+      .select({ ...columns, clientDocument: ordersTable.clientDocument })
+      .from(ordersTable)
+      .where(eq(ordersTable.orderNumber, intent.orderNumber))
+      .limit(1);
+    const row = rows[0];
+    if (!row || !supportDocumentMatches(row.clientDocument, intent.document)) {
+      return { orders: [], truncated: false };
+    }
+    return { orders: await withPackages([row]), truncated: false };
+  }
   if (intent.kind === "order") {
     const rows = await db
       .select(columns)
@@ -674,7 +746,7 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
     const found = await findSupportOrders(turn.intent);
     if (found.orders.length === 0) {
       sent = await sendText(inbound.phone, buildSupportNotFoundMessage());
-      nextSession = session?.step === "await_problem" || session?.step === "await_lookup"
+      nextSession = session?.step === "await_problem" || session?.step === "await_lookup" || session?.step === "await_cpf"
         ? session
         : turn.session;
     } else {
