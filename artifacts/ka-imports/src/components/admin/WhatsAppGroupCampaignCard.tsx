@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Trash2 } from "lucide-react";
+import { Copy, Loader2, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -26,6 +26,8 @@ export default function WhatsAppGroupCampaignCard() {
   const [linkUrl, setLinkUrl] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     const [configRes, productsRes] = await Promise.all([
@@ -68,6 +70,56 @@ export default function WhatsAppGroupCampaignCard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const uploadImage = (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Imagem muito grande. Máximo 10MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = String(reader.result || "");
+      if (!src.startsWith("data:image/")) {
+        toast.error("Envie uma imagem JPG, PNG, WebP ou GIF.");
+        return;
+      }
+      const img = new Image();
+      img.onload = async () => {
+        const max = 1280;
+        const scale = img.width > max ? max / img.width : 1;
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = ctx ? canvas.toDataURL("image/jpeg", 0.85) : src;
+        setUploading(true);
+        try {
+          const res = await fetch(`${BASE}/api/admin/whatsapp/groups/upload-image`, {
+            method: "POST",
+            headers: authHeaders(),
+            credentials: "include",
+            body: JSON.stringify({ imageData: compressed }),
+          });
+          const data = await res.json().catch(() => ({})) as { error?: string; imageUrl?: string };
+          if (!res.ok || !data.imageUrl?.startsWith("https://")) {
+            toast.error(data.error || "Não consegui salvar a imagem.");
+            return;
+          }
+          setImageUrl(data.imageUrl);
+          toast.success("Imagem salva. A URL já está no campo.");
+        } catch {
+          toast.error("Não consegui salvar a imagem.");
+        } finally {
+          setUploading(false);
+          if (fileRef.current) fileRef.current.value = "";
+        }
+      };
+      img.onerror = () => toast.error("Não consegui ler essa imagem.");
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
   };
 
   const addPost = async () => {
@@ -159,9 +211,45 @@ export default function WhatsAppGroupCampaignCard() {
       <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold">Imagem e link avulso</h2>
         <p className="text-xs text-muted-foreground">
-          No horário escolhido, a imagem sai para os mesmos grupos, com 3 minutos entre cada um. O horário é o de São Paulo.
+          Carregue a foto aqui. Ela fica salva e a URL aparece no campo. No horário escolhido, a imagem sai para os mesmos grupos, com 3 minutos entre cada um. O horário é o de São Paulo.
         </p>
-        <input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://… imagem" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) uploadImage(file);
+          }}
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Carregar imagem
+          </Button>
+          {imageUrl.startsWith("https://") ? (
+            <img src={imageUrl} alt="" className="h-14 w-14 rounded-lg border border-border object-cover" />
+          ) : null}
+        </div>
+        <div className="flex gap-2">
+          <input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="A URL da imagem aparece aqui" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 shrink-0"
+            disabled={!imageUrl}
+            onClick={() => {
+              void navigator.clipboard.writeText(imageUrl).then(
+                () => toast.success("URL copiada."),
+                () => toast.error("Não consegui copiar a URL."),
+              );
+            }}
+          >
+            <Copy className="w-4 h-4" />
+            Copiar URL
+          </Button>
+        </div>
         <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://… link da mensagem" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <Button type="button" variant="outline" onClick={() => void addPost()} disabled={loading}>Agendar</Button>

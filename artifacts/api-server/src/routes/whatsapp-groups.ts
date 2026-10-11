@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { desc, eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
+import { getR2MissingConfig, isR2Configured, uploadWhatsappGroupImageToR2 } from "../lib/r2";
 import { requirePrimaryAdmin } from "./admin-auth";
 import {
   DEFAULT_GROUP_CHATS,
@@ -72,6 +73,30 @@ router.put("/admin/whatsapp/groups", requirePrimaryAdmin, async (req, res) => {
   await saveSetting(GROUP_PRODUCT_IDS_SETTING, JSON.stringify(productIds));
   await saveSetting(GROUP_CHATS_SETTING, JSON.stringify(savedGroups.chats));
   res.json({ ok: true });
+});
+
+router.post("/admin/whatsapp/groups/upload-image", requirePrimaryAdmin, async (req, res) => {
+  const imageData = String(req.body?.imageData || "");
+  if (!imageData.startsWith("data:image/")) {
+    res.status(400).json({ error: "Envie uma imagem JPG, PNG, WebP ou GIF." });
+    return;
+  }
+  if (!isR2Configured()) {
+    res.status(503).json({ error: "O armazenamento de imagens não está configurado.", missing: getR2MissingConfig() });
+    return;
+  }
+  try {
+    const imageUrl = await uploadWhatsappGroupImageToR2({ dataUrl: imageData });
+    res.status(201).json({ imageUrl });
+  } catch (err) {
+    const code = err instanceof Error ? err.message : "INTERNAL_ERROR";
+    if (code === "INVALID_IMAGE_DATA_URL" || code === "UNSUPPORTED_IMAGE_TYPE" || code === "EMPTY_IMAGE") {
+      res.status(400).json({ error: "Imagem inválida para upload." });
+      return;
+    }
+    console.error("[WhatsApp grupos] upload:", code);
+    res.status(500).json({ error: "Não consegui salvar a imagem." });
+  }
 });
 
 router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, res) => {
