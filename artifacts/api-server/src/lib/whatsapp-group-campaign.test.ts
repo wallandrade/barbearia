@@ -12,8 +12,13 @@ import {
   customGroupDue,
   groupChatsSaveError,
   groupSlotDue,
+  peptideDailyCaption,
+  peptideDailyDue,
+  peptideDailyQueue,
+  pickDailyPeptide,
   pickGroupProduct,
   productCaption,
+  type PeptideBrief,
 } from "./whatsapp-group-campaign";
 
 const products = [
@@ -63,6 +68,31 @@ test("o aviso aceita vários horários ou um intervalo", () => {
   assert.equal(customSlotKey({ mode: "interval", scheduledAt: "2026-10-12T09:00", times: [], intervalHours: 4, durationDays: 2 }, afternoon, 0), "interval:2026-10-12T13:00");
   assert.equal(customSlotKey({ mode: "interval", scheduledAt: "2026-10-12T09:00", times: [], intervalHours: 4, durationDays: 2 }, new Date("2026-10-13T12:00:30.000Z"), 0), "interval:2026-10-13T09:00");
   assert.equal(parseScheduleTimes(["9:00", "15:00", "15:00", "25:00"]).join(","), "15:00");
+});
+
+test("a explicação diária só sai se tiver ficha e produto à venda", () => {
+  const about = "Peptídeo de regeneração de tecidos moles, usado em protocolos de recuperação.";
+  const briefs: PeptideBrief[] = [
+    { slug: "bpc-157", name: "BPC-157", aliases: ["Body Protection Compound"], tagline: "Regeneração de tecidos", about },
+    { slug: "hgh", name: "HGH", aliases: ["hormonio"], tagline: "Hormônio", about },
+    { slug: "hgh-fragment", name: "HGH Fragment 176-191", aliases: [], tagline: "Fragmento", about },
+  ];
+  const products = [
+    { id: "sold", name: "BPC-157 10mg", image: "https://cdn.example/b.jpg", soldOut: true },
+    { id: "plain", name: "BPC-157 5mg", image: null, soldOut: false },
+    { id: "buy", name: "BPC-157 20mg", image: "https://cdn.example/c.jpg", soldOut: false },
+    { id: "frag", name: "HGH Fragment 176-191 5mg", image: "https://cdn.example/f.jpg", soldOut: false },
+  ];
+  const queue = peptideDailyQueue(briefs, products);
+  assert.deepEqual(queue.map((item) => item.product.id), ["buy", "frag"]);
+  const first = pickDailyPeptide(queue, "2026-10-11");
+  const next = pickDailyPeptide(queue, "2026-10-12");
+  assert.notEqual(first?.product.id, next?.product.id);
+  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("https://www.yury-imports.com/produto/buy"), true);
+  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("Regeneração de tecidos"), true);
+  assert.equal(peptideDailyDue(10, 0, 0, 10), true);
+  assert.equal(peptideDailyDue(10, 3, 1, 10), true);
+  assert.equal(peptideDailyDue(9, 0, 0, 10), false);
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

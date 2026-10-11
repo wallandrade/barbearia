@@ -4,6 +4,8 @@ export const GROUP_LIMIT = 6;
 export const GROUP_CAMPAIGN_ENABLED_SETTING = "whatsapp_group_campaign_enabled";
 export const GROUP_PRODUCT_IDS_SETTING = "whatsapp_group_product_ids";
 export const GROUP_CHATS_SETTING = "whatsapp_group_chats";
+export const GROUP_PEPTIDE_ENABLED_SETTING = "whatsapp_group_peptide_enabled";
+export const GROUP_PEPTIDE_HOUR_SETTING = "whatsapp_group_peptide_hour";
 
 export type GroupChat = { name: string; phone: string };
 
@@ -256,4 +258,73 @@ export function customSlotKey(plan: SchedulePlan, now: Date, groupIndex: number)
     return null;
   }
   return customGroupDue(plan.scheduledAt, now, groupIndex) ? "once" : null;
+}
+
+export type PeptideBrief = {
+  slug: string;
+  name: string;
+  aliases: string[];
+  tagline: string;
+  about: string;
+};
+
+function foldPeptide(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+export function matchPeptideProduct(brief: PeptideBrief, products: CampaignProduct[]): { product: CampaignProduct; score: number } | null {
+  const keys = [brief.name, ...brief.aliases].map(foldPeptide).filter((key) => key.length >= 4).sort((a, b) => b.length - a.length);
+  let best: { product: CampaignProduct; score: number } | null = null;
+  for (const product of products) {
+    if (product.soldOut || !String(product.image || "").startsWith("https://")) continue;
+    const name = foldPeptide(product.name);
+    if (name.length < 4) continue;
+    for (const key of keys) {
+      if (!name.includes(key) && !key.includes(name)) continue;
+      const score = Math.min(key.length, name.length);
+      if (!best || score > best.score) best = { product, score };
+      break;
+    }
+  }
+  return best && best.score >= 4 ? best : null;
+}
+
+export function peptideDailyQueue(briefs: PeptideBrief[], products: CampaignProduct[]): Array<{ brief: PeptideBrief; product: CampaignProduct }> {
+  const ranked = briefs.flatMap((brief) => {
+    const match = matchPeptideProduct(brief, products);
+    return match ? [{ brief, product: match.product, score: match.score }] : [];
+  }).sort((a, b) => b.score - a.score || a.brief.slug.localeCompare(b.brief.slug));
+  const used = new Set<string>();
+  const queue = [];
+  for (const item of ranked) {
+    if (used.has(item.product.id)) continue;
+    used.add(item.product.id);
+    queue.push({ brief: item.brief, product: item.product });
+  }
+  return queue.sort((a, b) => a.brief.name.localeCompare(b.brief.name, "pt"));
+}
+
+export function pickDailyPeptide<T>(queue: T[], dayKey: string): T | null {
+  if (queue.length === 0) return null;
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const index = Math.floor(Date.UTC(year, (month || 1) - 1, day || 1) / 86400000);
+  return queue[((index % queue.length) + queue.length) % queue.length];
+}
+
+export function peptideDailyCaption(brief: PeptideBrief, productId: string): string {
+  const about = brief.about.replace(/\s+/g, " ").trim();
+  const short = about.length > 420 ? `${about.slice(0, 417).replace(/\s+\S*$/, "")}…` : about;
+  return `${brief.name}\n${brief.tagline}\n\n${short}\n\nCompre aqui: https://www.yury-imports.com/produto/${encodeURIComponent(productId)}`;
+}
+
+export function peptideDailyDue(hour: number, minute: number, groupIndex: number, sendHour: number): boolean {
+  if (hour !== sendHour) return false;
+  const start = groupIndex * GROUP_STAGGER_MINUTES;
+  return minute >= start && minute < start + 2;
+}
+
+export function peptideSendHour(raw: string): number {
+  const hour = Number(String(raw || "").trim());
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return 10;
+  return hour;
 }

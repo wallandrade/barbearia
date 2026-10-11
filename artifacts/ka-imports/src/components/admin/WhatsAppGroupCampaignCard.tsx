@@ -36,6 +36,10 @@ function postWhen(post: CustomPost): string {
 
 export default function WhatsAppGroupCampaignCard() {
   const [enabled, setEnabled] = useState(false);
+  const [peptideEnabled, setPeptideEnabled] = useState(false);
+  const [peptideHour, setPeptideHour] = useState(10);
+  const [peptideToday, setPeptideToday] = useState<{ name: string; productName: string } | null>(null);
+  const [peptideQueue, setPeptideQueue] = useState<Array<{ name: string; productName: string }>>([]);
   const [groups, setGroups] = useState<GroupChat[]>([]);
   const [productIds, setProductIds] = useState<string[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -60,8 +64,21 @@ export default function WhatsAppGroupCampaignCard() {
       fetch(`${BASE}/api/admin/products`, { headers: authHeaders(), credentials: "include" }),
     ]);
     if (configRes.ok) {
-      const data = await configRes.json() as { enabled: boolean; productIds: string[]; groups: GroupChat[]; posts: CustomPost[] };
+      const data = await configRes.json() as {
+        enabled: boolean;
+        productIds: string[];
+        groups: GroupChat[];
+        posts: CustomPost[];
+        peptideEnabled?: boolean;
+        peptideHour?: number;
+        peptideToday?: { name: string; productName: string } | null;
+        peptideQueue?: Array<{ name: string; productName: string }>;
+      };
       setEnabled(Boolean(data.enabled));
+      setPeptideEnabled(Boolean(data.peptideEnabled));
+      setPeptideHour(Number.isInteger(data.peptideHour) ? Number(data.peptideHour) : 10);
+      setPeptideToday(data.peptideToday || null);
+      setPeptideQueue(data.peptideQueue || []);
       setProductIds(data.productIds || []);
       setGroups(data.groups || []);
       setPosts(data.posts || []);
@@ -83,7 +100,7 @@ export default function WhatsAppGroupCampaignCard() {
         method: "PUT",
         headers: authHeaders(),
         credentials: "include",
-        body: JSON.stringify({ enabled, productIds, groups }),
+        body: JSON.stringify({ enabled, productIds, groups, peptideEnabled, peptideHour }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
@@ -261,6 +278,32 @@ export default function WhatsAppGroupCampaignCard() {
         <Button type="button" onClick={() => void save()} disabled={loading}>
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Salvar campanha
+        </Button>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
+        <h2 className="text-sm font-semibold">Explicação diária</h2>
+        <p className="text-xs text-muted-foreground">
+          Um peptídeo por dia, no horário escolhido, com 3 minutos entre os grupos. Só entra quem tem ficha e produto à venda, com foto.
+          A mensagem traz um resumo e, no final, o link para comprar. A rodada de 9h, 13h, 17h e 21h continua separada.
+        </p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={peptideEnabled} onChange={(event) => setPeptideEnabled(event.target.checked)} />
+          Explicação diária ligada
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          Hora
+          <input type="number" min={0} max={23} value={peptideHour} onChange={(event) => setPeptideHour(Number(event.target.value))} className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm" />
+        </label>
+        <p className="text-sm">{peptideToday ? `Hoje: ${peptideToday.name} · ${peptideToday.productName}` : "Nenhum peptídeo com ficha e produto à venda."}</p>
+        <ul className="max-h-60 overflow-auto rounded-xl border border-border divide-y text-sm">
+          {peptideQueue.map((item) => (
+            <li key={item.name} className="px-3 py-2">{item.name} · {item.productName}</li>
+          ))}
+        </ul>
+        <Button type="button" onClick={() => void save()} disabled={loading}>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Salvar explicação
         </Button>
       </section>
 

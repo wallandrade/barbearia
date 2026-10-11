@@ -4,12 +4,19 @@ import { pool } from "@workspace/db";
 import {
   GROUP_CAMPAIGN_ENABLED_SETTING,
   GROUP_CHATS_SETTING,
+  GROUP_PEPTIDE_ENABLED_SETTING,
+  GROUP_PEPTIDE_HOUR_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
   customCaption,
   customSlotKey,
   parseScheduleTimes,
   groupSlotDue,
   parseGroupChats,
+  peptideDailyCaption,
+  peptideDailyDue,
+  peptideDailyQueue,
+  peptideSendHour,
+  pickDailyPeptide,
   pickGroupProduct,
   productCaption,
   saoPauloParts,
@@ -112,6 +119,7 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
   if (!creds) return;
   const chats = parseGroupChats(await settingValue(GROUP_CHATS_SETTING));
   const parts = saoPauloParts(now);
+  const products = await catalog();
   if ((await settingValue(GROUP_CAMPAIGN_ENABLED_SETTING)) === "1") {
     let allowed: string[] = [];
     try {
@@ -120,7 +128,6 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
     } catch {
       allowed = [];
     }
-    const products = await catalog();
     for (let index = 0; index < chats.length; index += 1) {
       const slot = groupSlotDue(parts.hour, parts.minute, index);
       const chat = chats[index];
@@ -135,6 +142,26 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
         productCaption(product.name, product.id),
         chat.name,
       );
+    }
+  }
+
+  if ((await settingValue(GROUP_PEPTIDE_ENABLED_SETTING)) === "1") {
+    const { peptideBriefs } = await import("./lib/peptide-group-daily");
+    const pick = pickDailyPeptide(peptideDailyQueue(peptideBriefs(), products), parts.dayKey);
+    const sendHour = peptideSendHour(await settingValue(GROUP_PEPTIDE_HOUR_SETTING));
+    if (pick) {
+      for (let index = 0; index < chats.length; index += 1) {
+        const chat = chats[index];
+        if (!chat || !peptideDailyDue(parts.hour, parts.minute, index, sendHour)) continue;
+        await deliver(
+          creds,
+          `e:${parts.dayKey}:${chat.phone}`,
+          chat.phone,
+          pick.product.image || "",
+          peptideDailyCaption(pick.brief, pick.product.id),
+          `${chat.name} peptídeo`,
+        );
+      }
     }
   }
 
