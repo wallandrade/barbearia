@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   customCaption,
   customCaptionError,
+  customLink,
   customGroupDue,
   groupChatsSaveError,
   groupSlotDue,
@@ -40,6 +41,8 @@ test("o texto do aviso vai junto com o link", () => {
   assert.equal(customCaption("Chegou reposição", "https://www.yury-imports.com/yuri"), "Chegou reposição\nhttps://www.yury-imports.com/yuri");
   assert.equal(customCaption("Veja https://www.yury-imports.com/yuri", "https://www.yury-imports.com/yuri"), "Veja https://www.yury-imports.com/yuri");
   assert.equal(customCaptionError("  "), "Escreva o texto da mensagem.");
+  assert.equal(customLink("Compre por aqui:https://www.yury-imports.com/yuri", ""), "https://www.yury-imports.com/yuri");
+  assert.equal(customLink("sem link", ""), null);
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

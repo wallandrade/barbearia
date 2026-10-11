@@ -9,6 +9,7 @@ import {
   GROUP_CHATS_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
   customCaptionError,
+  customLink,
   groupChatsSaveError,
   httpsUrlError,
   parseGroupChats,
@@ -104,11 +105,11 @@ router.post("/admin/whatsapp/groups/upload-image", requirePrimaryAdmin, async (r
 router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, res) => {
   const imageUrl = String(req.body?.imageUrl || "").trim();
   const caption = String(req.body?.caption || "").trim().slice(0, 1000);
-  const linkUrl = String(req.body?.linkUrl || "").trim();
+  const linkUrl = customLink(caption, String(req.body?.linkUrl || "")) || "";
   const scheduledAt = String(req.body?.scheduledAt || "").trim().slice(0, 16);
   const imageError = httpsUrlError(imageUrl, "A imagem", 2000);
   const captionError = customCaptionError(caption);
-  const linkError = httpsUrlError(linkUrl, "O link", 500);
+  const linkError = linkUrl ? httpsUrlError(linkUrl, "O link", 500) : "Coloque um link https no texto.";
   if (imageError || captionError || linkError) {
     res.status(400).json({ error: imageError || captionError || linkError });
     return;

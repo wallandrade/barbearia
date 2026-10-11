@@ -90,6 +90,13 @@ export function customCaptionError(text: string): string | null {
   return null;
 }
 
+export function customLink(text: string, link: string): string | null {
+  const typed = link.trim();
+  if (typed) return typed.slice(0, 500);
+  const found = text.match(/https:\/\/[^\s<>"']+/i)?.[0]?.replace(/[.,;)]+$/, "") || "";
+  return found ? found.slice(0, 500) : null;
+}
+
 export function parseGroupChats(raw: string): GroupChat[] {
   try {
     const parsed = JSON.parse(raw) as unknown;

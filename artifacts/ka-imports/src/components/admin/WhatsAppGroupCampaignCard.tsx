@@ -213,7 +213,7 @@ export default function WhatsAppGroupCampaignCard() {
       <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold">Imagem e link avulso</h2>
         <p className="text-xs text-muted-foreground">
-          Carregue a foto e escreva o texto. Os dois saem juntos, com o link no final. No horário escolhido, a mensagem vai para os mesmos grupos, com 3 minutos entre cada um. O horário é o de São Paulo.
+          Carregue a foto e escreva o texto. Se o link https já estiver no texto, o outro campo pode ficar vazio. No horário escolhido, a mensagem vai para os mesmos grupos, com 3 minutos entre cada um. O horário é o de São Paulo.
         </p>
         <input
           ref={fileRef}
@@ -253,7 +253,7 @@ export default function WhatsAppGroupCampaignCard() {
           </Button>
         </div>
         <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Texto que vai junto com a imagem" rows={4} maxLength={1000} className="w-full px-3 py-2 rounded-xl border-2 border-border text-sm" />
-        <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://… link da mensagem" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
+        <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="Link https, só se ainda não estiver no texto" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <Button type="button" variant="outline" onClick={() => void addPost()} disabled={loading}>Agendar</Button>
         <ul className="space-y-2">
