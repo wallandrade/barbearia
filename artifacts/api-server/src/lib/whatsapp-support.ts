@@ -2,7 +2,7 @@ import { timingSafeEqual } from "crypto";
 import { desc, eq, sql } from "drizzle-orm";
 import { isDeliveredStatus, isInTransitStatus } from "./envioecom";
 import { isOutForDeliveryStatus } from "./order-out-for-delivery-whatsapp";
-import { normalizeN8nWebhookUrl, toWhatsappPhone } from "./order-paid-whatsapp";
+import { toWhatsappPhone } from "./order-paid-whatsapp";
 import { envioecomTrackingUrl } from "./order-tracking-whatsapp";
 import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
@@ -39,6 +39,7 @@ export type SupportInbound = {
   phone: string;
   text: string;
   choiceId: string;
+  instanceId: string;
   skip: boolean;
 };
 
@@ -129,11 +130,12 @@ export function readSupportInbound(body: unknown): SupportInbound {
   const row = body && typeof body === "object" ? body as Record<string, unknown> : {};
   const phone = readPhone(row.phone);
   const type = String(row.type || "").trim();
+  const instanceId = String(row.instanceId || row.instance_id || "").trim();
   const skip = row.fromMe === true
     || row.isGroup === true
     || row.isNewsletter === true
     || (type.length > 0 && !/received/i.test(type));
-  return { phone, text: readText(row), choiceId: readChoiceId(row), skip };
+  return { phone, text: readText(row), choiceId: readChoiceId(row), instanceId, skip };
 }
 
 /** Resumo seguro para o log. Não inclui token, texto nem o telefone inteiro. */
@@ -145,6 +147,7 @@ export function supportInboundLog(body: unknown, tokenOk: boolean): Record<strin
     keys: Object.keys(row).slice(0, 20),
     phoneType: row.phone == null ? "missing" : typeof row.phone,
     phoneTail: inbound.phone ? inbound.phone.slice(-4) : "",
+    instanceTail: inbound.instanceId ? inbound.instanceId.slice(-4) : "",
     type: String(row.type || ""),
     fromMe: row.fromMe === true,
     isGroup: row.isGroup === true,
@@ -529,16 +532,26 @@ export async function supportToken(): Promise<string> {
   return settingValue(N8N_SUPPORT_TOKEN_SETTING);
 }
 
-export async function supportWebhookUrl(): Promise<string> {
-  const fromEnv = normalizeN8nWebhookUrl(process.env.N8N_SUPPORT_WEBHOOK_URL);
-  if (fromEnv) return fromEnv;
-  return normalizeN8nWebhookUrl(await settingValue(N8N_SUPPORT_WEBHOOK_SETTING));
+export async function supportWebhookUrl(line: "poly" | "main" = "main"): Promise<string> {
+  const { resolveSupportWebhookUrl } = await import("./whatsapp-line");
+  return resolveSupportWebhookUrl({
+    line,
+    env: "N8N_SUPPORT_WEBHOOK_URL",
+    setting: N8N_SUPPORT_WEBHOOK_SETTING,
+    envPoly: "N8N_SUPPORT_WEBHOOK_URL_POLY",
+    settingPoly: "n8n_support_webhook_url_poly",
+  });
 }
 
-export async function supportMenuWebhookUrl(): Promise<string> {
-  const fromEnv = normalizeN8nWebhookUrl(process.env.N8N_SUPPORT_MENU_WEBHOOK_URL);
-  if (fromEnv) return fromEnv;
-  return normalizeN8nWebhookUrl(await settingValue(N8N_SUPPORT_MENU_WEBHOOK_SETTING));
+export async function supportMenuWebhookUrl(line: "poly" | "main" = "main"): Promise<string> {
+  const { resolveSupportWebhookUrl } = await import("./whatsapp-line");
+  return resolveSupportWebhookUrl({
+    line,
+    env: "N8N_SUPPORT_MENU_WEBHOOK_URL",
+    setting: N8N_SUPPORT_MENU_WEBHOOK_SETTING,
+    envPoly: "N8N_SUPPORT_MENU_WEBHOOK_URL_POLY",
+    settingPoly: "n8n_support_menu_webhook_url_poly",
+  });
 }
 
 function isSupportStep(value: string): value is SupportStep {
@@ -696,15 +709,15 @@ async function postWebhook(url: string, body: Record<string, unknown>): Promise<
   }
 }
 
-async function sendText(phone: string, message: string): Promise<boolean> {
-  const url = await supportWebhookUrl();
+async function sendText(phone: string, message: string, line: "poly" | "main"): Promise<boolean> {
+  const url = await supportWebhookUrl(line);
   if (!url) return false;
   return postWebhook(url, { phone, message });
 }
 
-async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list" }>): Promise<boolean> {
-  const url = await supportMenuWebhookUrl();
-  if (!url) return sendText(phone, supportListText(turn));
+async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list" }>, line: "poly" | "main"): Promise<boolean> {
+  const url = await supportMenuWebhookUrl(line);
+  if (!url) return sendText(phone, supportListText(turn), line);
   const sent = await postWebhook(url, {
     phone,
     message: turn.message,
@@ -715,16 +728,18 @@ async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list"
     },
   });
   if (sent) return true;
-  return sendText(phone, supportListText(turn));
+  return sendText(phone, supportListText(turn), line);
 }
 
 /** Responde uma mensagem recebida. Não manda de novo o que a própria loja enviou. */
-export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean; skipped?: boolean; error?: string; line?: "poly" | "main" }> {
   const inbound = readSupportInbound(body);
   if (inbound.skip || !inbound.phone) return { ok: true, skipped: true };
+  const { resolveWhatsappLine } = await import("./whatsapp-line");
+  const line = await resolveWhatsappLine(inbound.instanceId);
   if (!allowPhone(inbound.phone)) {
-    const sent = await sendText(inbound.phone, "Recebi muitas mensagens agora. Espera um minuto e tenta de novo.");
-    return sent ? { ok: true } : { ok: false, error: "send_failed" };
+    const sent = await sendText(inbound.phone, "Recebi muitas mensagens agora. Espera um minuto e tenta de novo.", line);
+    return sent ? { ok: true, line } : { ok: false, error: "send_failed", line };
   }
 
   const [session, menu] = await Promise.all([
@@ -734,26 +749,26 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
   const turn = decideSupportTurn({ text: inbound.text, choiceId: inbound.choiceId, session }, menu);
   if (turn.kind === "silent") {
     await saveSession(inbound.phone, turn.session);
-    return { ok: true };
+    return { ok: true, line };
   }
   let nextSession = turn.session;
   let sent = false;
   if (turn.kind === "list") {
-    sent = await sendList(inbound.phone, turn);
+    sent = await sendList(inbound.phone, turn, line);
   } else if (turn.kind === "text") {
-    sent = await sendText(inbound.phone, turn.message);
+    sent = await sendText(inbound.phone, turn.message, line);
   } else {
     const found = await findSupportOrders(turn.intent);
     if (found.orders.length === 0) {
-      sent = await sendText(inbound.phone, buildSupportNotFoundMessage());
+      sent = await sendText(inbound.phone, buildSupportNotFoundMessage(), line);
       nextSession = session?.step === "await_problem" || session?.step === "await_lookup" || session?.step === "await_cpf"
         ? session
         : turn.session;
     } else {
-      sent = await sendText(inbound.phone, `${buildSupportOrdersMessage(found.orders, found.truncated)}${turn.followup}`);
+      sent = await sendText(inbound.phone, `${buildSupportOrdersMessage(found.orders, found.truncated)}${turn.followup}`, line);
     }
   }
-  if (!sent) return { ok: false, error: "not_configured" };
+  if (!sent) return { ok: false, error: "not_configured", line };
   await saveSession(inbound.phone, nextSession);
-  return { ok: true };
+  return { ok: true, line };
 }

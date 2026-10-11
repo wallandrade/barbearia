@@ -137,6 +137,15 @@ test("ignora mensagem da própria loja e de grupo", () => {
   assert.equal(inbound.skip, false);
   assert.equal(inbound.phone, "5535992420559");
   assert.equal(inbound.text, "1782");
+  assert.equal(inbound.instanceId, "");
+  const fromPoly = readSupportInbound({
+    phone: "35992420559",
+    instanceId: "ABC123456789",
+    text: { message: "oi" },
+    type: "ReceivedCallback",
+  });
+  assert.equal(fromPoly.instanceId, "ABC123456789");
+  assert.equal(fromPoly.skip, false);
   const tapped = readSupportInbound({
     phone: "5535992420559",
     type: "ReceivedCallback",

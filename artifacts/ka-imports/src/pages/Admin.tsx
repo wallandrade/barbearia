@@ -19492,6 +19492,16 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [n8nSupportUrl, setN8nSupportUrl] = useState(settings["n8n_support_webhook_url"] ?? "");
   const [n8nSupportMenuUrl, setN8nSupportMenuUrl] = useState(settings["n8n_support_menu_webhook_url"] ?? "");
   const [n8nSupportToken, setN8nSupportToken] = useState(settings["n8n_whatsapp_support_token"] ?? "");
+  const [polyWhatsapp, setPolyWhatsapp] = useState<Record<string, string>>(() => ({
+    n8n_poly_instance_id: settings["n8n_poly_instance_id"] ?? "",
+    n8n_order_paid_webhook_url_poly: settings["n8n_order_paid_webhook_url_poly"] ?? "",
+    n8n_tracking_webhook_url_poly: settings["n8n_tracking_webhook_url_poly"] ?? "",
+    n8n_posted_webhook_url_poly: settings["n8n_posted_webhook_url_poly"] ?? "",
+    n8n_out_for_delivery_webhook_url_poly: settings["n8n_out_for_delivery_webhook_url_poly"] ?? "",
+    n8n_delivered_webhook_url_poly: settings["n8n_delivered_webhook_url_poly"] ?? "",
+    n8n_support_webhook_url_poly: settings["n8n_support_webhook_url_poly"] ?? "",
+    n8n_support_menu_webhook_url_poly: settings["n8n_support_menu_webhook_url_poly"] ?? "",
+  }));
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
   const [showPaymentPw, setShowPaymentPw] = useState(false);
@@ -20723,6 +20733,52 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         </div>
         <p className="text-xs text-muted-foreground break-all">
           Meu pedido: o cliente manda o número ou o CPF e recebe situação, produtos e rastreio. No n8n, o webhook atendimento fica igual aos outros, com phone e message em expressão. Na Z-API, em Ao receber, cole {n8nSupportToken.trim().length >= 8 ? `https://api.yury-imports.com/api/whatsapp/support/inbound?token=${n8nSupportToken.trim()}` : "https://api.yury-imports.com/api/whatsapp/support/inbound?token=SEU_TOKEN"}.
+        </p>
+      </div>
+
+      <div className="max-w-3xl bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+        <div>
+          <h2 className="text-lg font-bold mb-1">WhatsApp da Poly</h2>
+          <p className="text-muted-foreground text-sm">
+            Pedido da Poly e da Bruna (código 123) sai só por estas URLs. Yuri e os outros continuam no card de cima. O mesmo aviso não sai pelos dois números. Sem a URL da Poly, o pedido delas ainda sai pelo número de hoje.
+          </p>
+        </div>
+        {([
+          ["n8n_poly_instance_id", "ID da instância da Poly", "só o ID, sem o token"],
+          ["n8n_order_paid_webhook_url_poly", "URL do pedido pago da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_tracking_webhook_url_poly", "URL do rastreio da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_posted_webhook_url_poly", "URL do pedido postado da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_out_for_delivery_webhook_url_poly", "URL de saiu para entrega da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_delivered_webhook_url_poly", "URL do pedido entregue da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_support_webhook_url_poly", "URL do atendimento da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_support_menu_webhook_url_poly", "URL do menu da Poly", "https://….app.n8n.cloud/webhook/…"],
+        ] as const).map(([key, label, placeholder]) => (
+          <div key={key}>
+            <label className="block text-xs font-medium mb-1">{label}</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={polyWhatsapp[key] ?? ""}
+                onChange={(e) => setPolyWhatsapp((current) => ({ ...current, [key]: e.target.value }))}
+                placeholder={placeholder}
+                className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  const value = (polyWhatsapp[key] ?? "").trim();
+                  if (!value) { onDelete(key); return; }
+                  onSave(key, value);
+                }}
+                disabled={!!loading[key]}
+              >
+                {loading[key] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+            </div>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          Nas duas instâncias, Ao receber usa a mesma URL do token acima. A resposta do menu volta pela instância que recebeu. Se o ID da Poly estiver salvo e a URL do menu dela estiver vazia, o menu não sai pelo número de hoje.
         </p>
       </div>
 

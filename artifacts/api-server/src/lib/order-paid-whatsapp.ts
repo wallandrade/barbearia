@@ -3,8 +3,8 @@ import { postPaymentInsuranceNotice } from "./checkout-insurance";
 import { mysqlAffectedRows } from "./mysql-affected-rows";
 
 async function database() {
-  const { db, ordersTable, siteSettingsTable } = await import("@workspace/db");
-  return { db, ordersTable, siteSettingsTable };
+  const { db, ordersTable } = await import("@workspace/db");
+  return { db, ordersTable };
 }
 
 export const N8N_ORDER_PAID_WEBHOOK_SETTING = "n8n_order_paid_webhook_url";
@@ -152,16 +152,15 @@ export function orderPaidWhatsappPayload(order: PaidWhatsappOrder): { phone: str
   return { phone, message: buildOrderPaidWhatsappMessage(order) };
 }
 
-async function webhookUrl(): Promise<string> {
-  const fromEnv = normalizeN8nWebhookUrl(process.env.N8N_ORDER_PAID_WEBHOOK_URL);
-  if (fromEnv) return fromEnv;
-  const { db, siteSettingsTable } = await database();
-  const rows = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, N8N_ORDER_PAID_WEBHOOK_SETTING))
-    .limit(1);
-  return normalizeN8nWebhookUrl(rows[0]?.value);
+async function webhookUrl(sellerCode?: string | null): Promise<string> {
+  const { resolveWhatsappWebhookUrl } = await import("./whatsapp-line");
+  return resolveWhatsappWebhookUrl({
+    sellerCode,
+    env: "N8N_ORDER_PAID_WEBHOOK_URL",
+    setting: N8N_ORDER_PAID_WEBHOOK_SETTING,
+    envPoly: "N8N_ORDER_PAID_WEBHOOK_URL_POLY",
+    settingPoly: "n8n_order_paid_webhook_url_poly",
+  });
 }
 
 function logHost(url: string): string {
@@ -216,13 +215,13 @@ export async function sendOrderPaidWhatsapp(orderId: string): Promise<{ sent: bo
   const id = String(orderId || "").trim();
   if (!id) return { sent: false, error: "missing_id" };
   try {
-    const url = await webhookUrl();
-    if (!url) return { sent: false, error: "not_configured" };
-
     const { db, ordersTable } = await database();
     const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
     const order = rows[0];
     if (!order) return { sent: false, error: "not_found" };
+
+    const url = await webhookUrl(order.sellerCode);
+    if (!url) return { sent: false, error: "not_configured" };
 
     const payload = orderPaidWhatsappPayload(order);
     if (!payload) return { sent: false, error: "missing_phone" };

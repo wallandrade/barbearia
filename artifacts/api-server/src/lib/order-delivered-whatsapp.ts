@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { isDeliveredStatus } from "./envioecom";
-import { normalizeN8nWebhookUrl, toWhatsappMarkup, toWhatsappPhone } from "./order-paid-whatsapp";
+import { toWhatsappMarkup, toWhatsappPhone } from "./order-paid-whatsapp";
 import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered } from "./superfrete-status";
 
@@ -8,8 +8,8 @@ export const N8N_DELIVERED_WEBHOOK_SETTING = "n8n_delivered_webhook_url";
 const TIMEOUT_MS = 8000;
 
 async function database() {
-  const { db, ordersTable, siteSettingsTable } = await import("@workspace/db");
-  return { db, ordersTable, siteSettingsTable };
+  const { db, ordersTable } = await import("@workspace/db");
+  return { db, ordersTable };
 }
 
 export function parseDeliveredWhatsappKeys(raw: string | null | undefined): string[] {
@@ -64,16 +64,15 @@ export function buildDeliveredWhatsappMessage(input: {
   return toWhatsappMarkup(lines.join("\n"));
 }
 
-async function webhookUrl(): Promise<string> {
-  const fromEnv = normalizeN8nWebhookUrl(process.env.N8N_DELIVERED_WEBHOOK_URL);
-  if (fromEnv) return fromEnv;
-  const { db, siteSettingsTable } = await database();
-  const rows = await db
-    .select({ value: siteSettingsTable.value })
-    .from(siteSettingsTable)
-    .where(eq(siteSettingsTable.key, N8N_DELIVERED_WEBHOOK_SETTING))
-    .limit(1);
-  return normalizeN8nWebhookUrl(rows[0]?.value);
+async function webhookUrl(sellerCode?: string | null): Promise<string> {
+  const { resolveWhatsappWebhookUrl } = await import("./whatsapp-line");
+  return resolveWhatsappWebhookUrl({
+    sellerCode,
+    env: "N8N_DELIVERED_WEBHOOK_URL",
+    setting: N8N_DELIVERED_WEBHOOK_SETTING,
+    envPoly: "N8N_DELIVERED_WEBHOOK_URL_POLY",
+    settingPoly: "n8n_delivered_webhook_url_poly",
+  });
 }
 
 function logHost(url: string): string {
@@ -116,13 +115,13 @@ export async function sendDeliveredWhatsapp(
   const key = String(packageKey || "").trim();
   if (!id || !key) return { sent: false, error: "missing_id" };
   try {
-    const url = await webhookUrl();
-    if (!url) return { sent: false, error: "not_configured" };
-
     const { db, ordersTable } = await database();
     const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
     const order = rows[0];
     if (!order) return { sent: false, error: "not_found" };
+
+    const url = await webhookUrl(order.sellerCode);
+    if (!url) return { sent: false, error: "not_configured" };
     const phone = toWhatsappPhone(order.clientPhone);
     if (!phone) return { sent: false, error: "missing_phone" };
 

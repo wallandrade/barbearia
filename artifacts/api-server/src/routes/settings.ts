@@ -14,6 +14,7 @@ import {
 } from "../lib/shipping-queue-deadline";
 import { MOTOBOY_SLOT_HOURS_KEY, motoboySlotHoursSaveError } from "../lib/motoboy-slot-window";
 import { supportMenuSaveError, WHATSAPP_SUPPORT_MENU_SETTING } from "../lib/whatsapp-support-menu";
+import { N8N_POLY_INSTANCE_SETTING, POLY_N8N_SETTING_KEYS, polyInstanceIdSaveError } from "../lib/whatsapp-line";
 
 const router: IRouter = Router();
 
@@ -77,6 +78,7 @@ const ALLOWED_KEYS = [
   "n8n_support_webhook_url",
   "n8n_support_menu_webhook_url",
   "n8n_whatsapp_support_token",
+  ...POLY_N8N_SETTING_KEYS,
   WHATSAPP_SUPPORT_MENU_SETTING,
   // Admin helpers
   "admin_saved_brands",
@@ -195,6 +197,14 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
           return;
         }
         storedValue = JSON.stringify(parseCheckoutCarrierPriority(value));
+      }
+      if (key === N8N_POLY_INSTANCE_SETTING) {
+        const parsed = polyInstanceIdSaveError(value);
+        if ("error" in parsed) {
+          res.status(400).json({ error: "INVALID_VALUE", message: parsed.error });
+          return;
+        }
+        storedValue = parsed.id;
       }
       if (key === WHATSAPP_SUPPORT_MENU_SETTING) {
         const parsed = supportMenuSaveError(value);
