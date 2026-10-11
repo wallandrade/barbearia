@@ -212,6 +212,11 @@ export default function WhatsAppGroupCampaignCard() {
                   disabled={!httpsImage}
                   onChange={() => toggleProduct(product.id)}
                 />
+                {httpsImage || String(product.image || "").startsWith("data:image/") ? (
+                  <img src={product.image || ""} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-border object-cover" />
+                ) : (
+                  <span className="h-10 w-10 shrink-0 rounded-lg border border-border bg-muted" />
+                )}
                 <span>{product.name}</span>
                 {!httpsImage ? <span className="text-xs text-muted-foreground">sem foto https</span> : null}
                 {product.isSoldOut ? <span className="text-xs text-muted-foreground">esgotado</span> : null}
