@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Copy, Loader2, Trash2, Upload } from "lucide-react";
+import { Copy, Loader2, Pencil, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -28,6 +28,7 @@ export default function WhatsAppGroupCampaignCard() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -123,29 +124,43 @@ export default function WhatsAppGroupCampaignCard() {
     reader.readAsDataURL(file);
   };
 
+  const clearPostForm = () => {
+    setEditingId(null);
+    setImageUrl("");
+    setCaption("");
+    setLinkUrl("");
+    setScheduledAt("");
+  };
+
   const addPost = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${BASE}/api/admin/whatsapp/groups/custom`, {
-        method: "POST",
+      const res = await fetch(editingId ? `${BASE}/api/admin/whatsapp/groups/custom/${editingId}` : `${BASE}/api/admin/whatsapp/groups/custom`, {
+        method: editingId ? "PUT" : "POST",
         headers: authHeaders(),
         credentials: "include",
         body: JSON.stringify({ imageUrl, caption, linkUrl, scheduledAt }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
-        toast.error(data.error || "Não consegui agendar.");
+        toast.error(data.error || "Não consegui salvar o aviso.");
         return;
       }
-      setImageUrl("");
-      setCaption("");
-      setLinkUrl("");
-      setScheduledAt("");
-      toast.success("Aviso agendado.");
+      const wasEditing = Boolean(editingId);
+      clearPostForm();
+      toast.success(wasEditing ? "Aviso atualizado." : "Aviso agendado.");
       await refresh();
     } finally {
       setLoading(false);
     }
+  };
+
+  const startEdit = (post: CustomPost) => {
+    setEditingId(post.id);
+    setImageUrl(post.imageUrl);
+    setCaption(post.caption || "");
+    setLinkUrl(post.caption?.includes(post.linkUrl) ? "" : post.linkUrl);
+    setScheduledAt(post.scheduledAt.slice(0, 16));
   };
 
   const removePost = async (id: string) => {
@@ -255,14 +270,26 @@ export default function WhatsAppGroupCampaignCard() {
         <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Texto que vai junto com a imagem" rows={4} maxLength={1000} className="w-full px-3 py-2 rounded-xl border-2 border-border text-sm" />
         <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="Link https, só se ainda não estiver no texto" className="w-full h-10 px-3 rounded-xl border-2 border-border text-sm" />
         <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="h-10 px-3 rounded-xl border-2 border-border text-sm" />
-        <Button type="button" variant="outline" onClick={() => void addPost()} disabled={loading}>Agendar</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => void addPost()} disabled={loading}>
+            {editingId ? "Salvar aviso" : "Agendar"}
+          </Button>
+          {editingId ? (
+            <Button type="button" variant="outline" onClick={clearPostForm}>Cancelar</Button>
+          ) : null}
+        </div>
         <ul className="space-y-2">
           {posts.map((post) => (
-            <li key={post.id} className="flex items-center justify-between gap-2 text-sm">
-              <span>{post.scheduledAt.replace("T", " ")} · {post.caption || post.linkUrl}</span>
-              <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => void removePost(post.id)} aria-label="Remover">
-                <Trash2 className="w-4 h-4" />
-              </Button>
+            <li key={post.id} className="flex items-start justify-between gap-2 text-sm">
+              <span className="min-w-0 break-words">{post.scheduledAt.replace("T", " ")} · {post.caption || post.linkUrl}</span>
+              <span className="flex shrink-0 gap-1">
+                <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => startEdit(post)} aria-label="Editar">
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => void removePost(post.id)} aria-label="Remover">
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </span>
             </li>
           ))}
         </ul>

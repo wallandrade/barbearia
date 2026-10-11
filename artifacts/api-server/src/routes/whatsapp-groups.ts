@@ -102,31 +102,50 @@ router.post("/admin/whatsapp/groups/upload-image", requirePrimaryAdmin, async (r
   }
 });
 
-router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, res) => {
-  const imageUrl = String(req.body?.imageUrl || "").trim();
-  const caption = String(req.body?.caption || "").trim().slice(0, 1000);
-  const linkUrl = customLink(caption, String(req.body?.linkUrl || "")) || "";
-  const scheduledAt = String(req.body?.scheduledAt || "").trim().slice(0, 16);
+function readCustomPost(body: { imageUrl?: unknown; caption?: unknown; linkUrl?: unknown; scheduledAt?: unknown }):
+  | { imageUrl: string; caption: string; linkUrl: string; scheduledAt: string }
+  | { error: string } {
+  const imageUrl = String(body.imageUrl || "").trim();
+  const caption = String(body.caption || "").trim().slice(0, 1000);
+  const linkUrl = customLink(caption, String(body.linkUrl || "")) || "";
+  const scheduledAt = String(body.scheduledAt || "").trim().slice(0, 16);
   const imageError = httpsUrlError(imageUrl, "A imagem", 2000);
   const captionError = customCaptionError(caption);
   const linkError = linkUrl ? httpsUrlError(linkUrl, "O link", 500) : "Coloque um link https no texto.";
-  if (imageError || captionError || linkError) {
-    res.status(400).json({ error: imageError || captionError || linkError });
-    return;
-  }
+  if (imageError || captionError || linkError) return { error: imageError || captionError || linkError || "Confira o aviso." };
   const when = saoPauloInstant(scheduledAt);
-  if (!when) {
-    res.status(400).json({ error: "Escolha data e hora." });
-    return;
-  }
-  if (when.getTime() < Date.now() - 60 * 1000) {
-    res.status(400).json({ error: "Esse horário já passou." });
+  if (!when) return { error: "Escolha data e hora." };
+  if (when.getTime() < Date.now() - 60 * 1000) return { error: "Esse horário já passou." };
+  return { imageUrl, caption, linkUrl, scheduledAt };
+}
+
+router.post("/admin/whatsapp/groups/custom", requirePrimaryAdmin, async (req, res) => {
+  const parsed = readCustomPost(req.body || {});
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
   const { db, whatsappGroupCustomPostsTable } = await import("@workspace/db");
   const id = randomBytes(12).toString("hex");
-  await db.insert(whatsappGroupCustomPostsTable).values({ id, imageUrl, caption, linkUrl, scheduledAt });
+  await db.insert(whatsappGroupCustomPostsTable).values({ id, ...parsed });
   res.json({ ok: true, id });
+});
+
+router.put("/admin/whatsapp/groups/custom/:id", requirePrimaryAdmin, async (req, res) => {
+  const parsed = readCustomPost(req.body || {});
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const id = String(req.params.id || "");
+  const { db, whatsappGroupCustomPostsTable } = await import("@workspace/db");
+  const existing = await db.select({ id: whatsappGroupCustomPostsTable.id }).from(whatsappGroupCustomPostsTable).where(eq(whatsappGroupCustomPostsTable.id, id)).limit(1);
+  if (!existing[0]) {
+    res.status(404).json({ error: "Aviso não encontrado." });
+    return;
+  }
+  await db.update(whatsappGroupCustomPostsTable).set(parsed).where(eq(whatsappGroupCustomPostsTable.id, id));
+  res.json({ ok: true });
 });
 
 router.delete("/admin/whatsapp/groups/custom/:id", requirePrimaryAdmin, async (req, res) => {
