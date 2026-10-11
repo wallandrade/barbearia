@@ -712,7 +712,8 @@ async function postWebhook(url: string, body: Record<string, unknown>): Promise<
 async function sendText(phone: string, message: string, line: "poly" | "main"): Promise<boolean> {
   const url = await supportWebhookUrl(line);
   if (!url) return false;
-  return postWebhook(url, { phone, message });
+  const { withWhatsappSellerStoreLink } = await import("./whatsapp-line");
+  return postWebhook(url, { phone, message: withWhatsappSellerStoreLink(message, line) });
 }
 
 async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list" }>, line: "poly" | "main"): Promise<boolean> {

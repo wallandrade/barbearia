@@ -6,6 +6,7 @@ import {
   pickWhatsappWebhookUrl,
   polyInstanceIdSaveError,
   whatsappLineForInstance,
+  withWhatsappSellerStoreLink,
 } from "./whatsapp-line";
 
 const main = "https://n8n.example/webhook/main";
@@ -21,6 +22,22 @@ test("pedido da Poly usa o webhook dela e os outros não", () => {
   assert.equal(pickWhatsappWebhookUrl("yuri", main, poly), main);
   assert.equal(pickWhatsappWebhookUrl("", main, poly), main);
   assert.equal(pickWhatsappWebhookUrl("poly", main, ""), main);
+});
+
+test("quero comprar abre o link de quem atendeu", () => {
+  const text = "Pode comprar em https://www.yury-imports.com";
+  assert.equal(
+    withWhatsappSellerStoreLink(text, "poly"),
+    "Pode comprar em https://www.yury-imports.com/poly",
+  );
+  assert.equal(
+    withWhatsappSellerStoreLink(text, "main"),
+    "Pode comprar em https://www.yury-imports.com/yuri",
+  );
+  assert.equal(
+    withWhatsappSellerStoreLink("Veja https://www.yury-imports.com/produto/abc", "poly"),
+    "Veja https://www.yury-imports.com/produto/abc",
+  );
 });
 
 test("menu da Poly não volta pelo número de hoje", () => {

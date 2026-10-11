@@ -18,6 +18,21 @@ export const POLY_N8N_SETTING_KEYS = [
 
 export type WhatsappLine = "poly" | "main";
 
+const STORE_ORIGIN = "https://www.yury-imports.com";
+
+/** Link da loja do vendedor que atendeu. A comissão segue esse caminho. */
+export function whatsappSellerStoreUrl(line: WhatsappLine): string {
+  return line === "poly" ? `${STORE_ORIGIN}/poly` : `${STORE_ORIGIN}/yuri`;
+}
+
+/** Troca o site solto pelo link do vendedor. Página de produto e link que já tem caminho ficam iguais. */
+export function withWhatsappSellerStoreLink(message: string, line: WhatsappLine): string {
+  return message.replace(
+    /https:\/\/www\.yury-imports\.com(?!\/[A-Za-z0-9])/g,
+    whatsappSellerStoreUrl(line),
+  );
+}
+
 export function isPolyWhatsappSeller(sellerCode: string | null | undefined): boolean {
   const code = normalizeCheckoutSellerCode(sellerCode);
   return code != null && (POLY_WHATSAPP_SELLERS as readonly string[]).includes(code);
