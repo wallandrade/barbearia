@@ -6,12 +6,14 @@ import {
   GROUP_CHATS_SETTING,
   GROUP_PEPTIDE_ENABLED_SETTING,
   GROUP_PEPTIDE_HOUR_SETTING,
+  GROUP_PEPTIDE_PRODUCT_IDS_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
   customCaption,
   customSlotKey,
   parseScheduleTimes,
   groupSlotDue,
   parseGroupChats,
+  parseProductIdList,
   peptideDailyCaption,
   peptideDailyDue,
   peptideDailyQueue,
@@ -147,7 +149,8 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
 
   if ((await settingValue(GROUP_PEPTIDE_ENABLED_SETTING)) === "1") {
     const { peptideBriefs } = await import("./lib/peptide-group-daily");
-    const pick = pickDailyPeptide(peptideDailyQueue(peptideBriefs(), products), parts.dayKey);
+    const allowedPeptides = parseProductIdList(await settingValue(GROUP_PEPTIDE_PRODUCT_IDS_SETTING));
+    const pick = pickDailyPeptide(peptideDailyQueue(peptideBriefs(), products, allowedPeptides), parts.dayKey);
     const sendHour = peptideSendHour(await settingValue(GROUP_PEPTIDE_HOUR_SETTING));
     if (pick) {
       for (let index = 0; index < chats.length; index += 1) {

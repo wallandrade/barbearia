@@ -6,6 +6,7 @@ export const GROUP_PRODUCT_IDS_SETTING = "whatsapp_group_product_ids";
 export const GROUP_CHATS_SETTING = "whatsapp_group_chats";
 export const GROUP_PEPTIDE_ENABLED_SETTING = "whatsapp_group_peptide_enabled";
 export const GROUP_PEPTIDE_HOUR_SETTING = "whatsapp_group_peptide_hour";
+export const GROUP_PEPTIDE_PRODUCT_IDS_SETTING = "whatsapp_group_peptide_product_ids";
 
 export type GroupChat = { name: string; phone: string };
 
@@ -272,26 +273,57 @@ function foldPeptide(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+/** Vazio no banco ainda não foi escolhido. Lista salva, mesmo vazia, vale o que está marcado. */
+export function parseProductIdList(raw: string): string[] | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((id) => String(id).trim()).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function peptideNameScore(brief: PeptideBrief, productName: string): number {
+  const name = foldPeptide(productName);
+  if (name.length < 4) return 0;
+  const keys = [brief.name, ...brief.aliases].map(foldPeptide).filter((key) => key.length >= 4);
+  let best = 0;
+  for (const key of keys) {
+    if (!name.includes(key) && !key.includes(name)) continue;
+    best = Math.max(best, Math.min(key.length, name.length));
+  }
+  return best >= 4 ? best : 0;
+}
+
 export function matchPeptideProduct(brief: PeptideBrief, products: CampaignProduct[]): { product: CampaignProduct; score: number } | null {
-  const keys = [brief.name, ...brief.aliases].map(foldPeptide).filter((key) => key.length >= 4).sort((a, b) => b.length - a.length);
   let best: { product: CampaignProduct; score: number } | null = null;
   for (const product of products) {
     if (product.soldOut || !String(product.image || "").startsWith("https://")) continue;
-    const name = foldPeptide(product.name);
-    if (name.length < 4) continue;
-    for (const key of keys) {
-      if (!name.includes(key) && !key.includes(name)) continue;
-      const score = Math.min(key.length, name.length);
-      if (!best || score > best.score) best = { product, score };
-      break;
-    }
+    const score = peptideNameScore(brief, product.name);
+    if (score > 0 && (!best || score > best.score)) best = { product, score };
   }
-  return best && best.score >= 4 ? best : null;
+  return best;
 }
 
-export function peptideDailyQueue(briefs: PeptideBrief[], products: CampaignProduct[]): Array<{ brief: PeptideBrief; product: CampaignProduct }> {
+/** Produtos cujo nome encontra uma ficha, mesmo esgotados ou sem foto. */
+export function peptideSheetProductIds(briefs: PeptideBrief[], products: Array<{ id: string; name: string }>): string[] {
+  return products
+    .filter((product) => briefs.some((brief) => peptideNameScore(brief, product.name) > 0))
+    .map((product) => product.id);
+}
+
+export function peptideDailyQueue(
+  briefs: PeptideBrief[],
+  products: CampaignProduct[],
+  allowedIds: readonly string[] | null = null,
+): Array<{ brief: PeptideBrief; product: CampaignProduct }> {
+  const allowed = allowedIds == null ? null : new Set(allowedIds);
+  const pool = allowed == null ? products : products.filter((product) => allowed.has(product.id));
   const ranked = briefs.flatMap((brief) => {
-    const match = matchPeptideProduct(brief, products);
+    const match = matchPeptideProduct(brief, pool);
     return match ? [{ brief, product: match.product, score: match.score }] : [];
   }).sort((a, b) => b.score - a.score || a.brief.slug.localeCompare(b.brief.slug));
   const used = new Set<string>();

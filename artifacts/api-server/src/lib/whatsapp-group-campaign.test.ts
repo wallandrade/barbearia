@@ -15,6 +15,7 @@ import {
   peptideDailyCaption,
   peptideDailyDue,
   peptideDailyQueue,
+  peptideSheetProductIds,
   pickDailyPeptide,
   pickGroupProduct,
   productCaption,
@@ -85,6 +86,9 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   ];
   const queue = peptideDailyQueue(briefs, products);
   assert.deepEqual(queue.map((item) => item.product.id), ["buy", "frag"]);
+  assert.deepEqual(peptideDailyQueue(briefs, products, ["frag"]).map((item) => item.product.id), ["frag"]);
+  assert.deepEqual(peptideDailyQueue(briefs, products, []), []);
+  assert.equal(peptideSheetProductIds(briefs, products).includes("sold"), true);
   const first = pickDailyPeptide(queue, "2026-10-11");
   const next = pickDailyPeptide(queue, "2026-10-12");
   assert.notEqual(first?.product.id, next?.product.id);

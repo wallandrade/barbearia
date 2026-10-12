@@ -9,6 +9,7 @@ import {
   GROUP_CHATS_SETTING,
   GROUP_PEPTIDE_ENABLED_SETTING,
   GROUP_PEPTIDE_HOUR_SETTING,
+  GROUP_PEPTIDE_PRODUCT_IDS_SETTING,
   GROUP_PRODUCT_IDS_SETTING,
   customCaptionError,
   customLink,
@@ -16,8 +17,10 @@ import {
   httpsUrlError,
   parseGroupChats,
   parseScheduleTimes,
+  parseProductIdList,
   peptideDailyQueue,
   peptideSendHour,
+  peptideSheetProductIds,
   pickDailyPeptide,
   saoPauloParts,
   scheduleLocal,
@@ -45,12 +48,13 @@ async function saveSetting(key: string, value: string): Promise<void> {
 }
 
 router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
-  const [enabledRaw, productsRaw, chatsRaw, peptideRaw, hourRaw] = await Promise.all([
+  const [enabledRaw, productsRaw, chatsRaw, peptideRaw, hourRaw, peptideProductsRaw] = await Promise.all([
     settingValue(GROUP_CAMPAIGN_ENABLED_SETTING),
     settingValue(GROUP_PRODUCT_IDS_SETTING),
     settingValue(GROUP_CHATS_SETTING),
     settingValue(GROUP_PEPTIDE_ENABLED_SETTING),
     settingValue(GROUP_PEPTIDE_HOUR_SETTING),
+    settingValue(GROUP_PEPTIDE_PRODUCT_IDS_SETTING),
   ]);
   let productIds: string[] = [];
   try {
@@ -71,19 +75,28 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
       isActive: productsTable.isActive,
     }).from(productsTable),
   ]);
-  const queue = peptideDailyQueue(peptideBriefs(), catalog.filter((row) => row.isActive !== false).map((row) => ({
+  const peptideCatalog = catalog.filter((row) => row.isActive !== false).map((row) => ({
     id: String(row.id),
     name: String(row.name || "").trim(),
     image: row.image ? String(row.image) : null,
     soldOut: Boolean(row.isSoldOut),
-  })));
+  }));
+  const briefs = peptideBriefs();
+  const peptideProductIds = parseProductIdList(peptideProductsRaw);
+  const queue = peptideDailyQueue(briefs, peptideCatalog, peptideProductIds);
   const today = pickDailyPeptide(queue, saoPauloParts(new Date()).dayKey);
   res.json({
     enabled: enabledRaw === "1",
     peptideEnabled: peptideRaw === "1",
     peptideHour: peptideSendHour(hourRaw),
+    peptideProductIds,
+    peptideSheetProductIds: peptideSheetProductIds(briefs, peptideCatalog),
     peptideToday: today ? { name: today.brief.name, productName: today.product.name } : null,
-    peptideQueue: queue.map((item) => ({ name: item.brief.name, productName: item.product.name })),
+    peptideQueue: queue.map((item) => ({
+      name: item.brief.name,
+      productName: item.product.name,
+      productId: item.product.id,
+    })),
     productIds,
     groups: chatsRaw ? parseGroupChats(chatsRaw) : DEFAULT_GROUP_CHATS,
     posts: posts.map((post) => ({
@@ -115,6 +128,13 @@ router.put("/admin/whatsapp/groups", requirePrimaryAdmin, async (req, res) => {
   if (typeof req.body?.peptideEnabled === "boolean") {
     await saveSetting(GROUP_PEPTIDE_ENABLED_SETTING, req.body.peptideEnabled === true ? "1" : "0");
     await saveSetting(GROUP_PEPTIDE_HOUR_SETTING, String(peptideSendHour(String(req.body?.peptideHour ?? ""))));
+    if (Array.isArray(req.body?.peptideProductIds)) {
+      const peptideProductIds = req.body.peptideProductIds
+        .map((id: unknown) => String(id).trim())
+        .filter(Boolean)
+        .slice(0, 200);
+      await saveSetting(GROUP_PEPTIDE_PRODUCT_IDS_SETTING, JSON.stringify(peptideProductIds));
+    }
   }
   res.json({ ok: true });
 });
