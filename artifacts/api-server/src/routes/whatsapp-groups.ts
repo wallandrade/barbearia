@@ -18,6 +18,7 @@ import {
   parseGroupChats,
   parseScheduleTimes,
   peptideAdminLines,
+  peptideDailyCaption,
   peptideSendHours,
   peptideSendPlan,
   parsePeptideLineSelection,
@@ -94,6 +95,7 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
       slug: pick.brief.slug,
       name: pick.brief.name,
       productNames: pick.products.map((product) => product.name),
+      preview: peptideDailyCaption(pick.brief, pick.products[0]?.id || ""),
     }];
   });
   res.json({

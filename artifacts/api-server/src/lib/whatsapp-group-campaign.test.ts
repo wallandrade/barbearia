@@ -101,10 +101,13 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   assert.deepEqual(peptideSendHours("21"), [21]);
   assert.deepEqual(peptideSendHours("[21,10,10,25,13]"), [10, 13, 21]);
   assert.equal(peptideDailyCaption(briefs[0], "buy").includes("https://www.yury-imports.com/produto/buy"), true);
-  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("Quer entender o BPC-157"), true);
+  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("vale a leitura"), true);
   assert.equal(peptideDailyCaption(briefs[0], "buy").includes("Regeneração de tecidos"), true);
-  const withStudy = peptideDailyCaption({ ...briefs[0], study: "Em 2017, um ensaio acompanhou a recuperação." }, "buy");
-  assert.equal(withStudy.includes("Em 2017, um ensaio acompanhou a recuperação."), true);
+  const technical = "BPC-157 é um peptídeo sintético derivado da tuftsin (Thr-Lys-Pro-Arg), feito em laboratório. Ele ajuda na recuperação dos tecidos sem sedar.";
+  const withStudy = peptideDailyCaption({ ...briefs[0], about: technical, study: "Em 2017, um ensaio acompanhou a recuperação." }, "buy");
+  assert.equal(withStudy.includes("Thr-Lys"), false);
+  assert.equal(withStudy.includes("recuperação dos tecidos"), true);
+  assert.equal(withStudy.includes("Olha o que um estudo mostrou."), true);
   assert.equal(peptideDailyDue(10, 0, 0, 10), true);
   assert.equal(peptideDailyDue(10, 3, 1, 10), true);
   assert.equal(peptideDailyDue(9, 0, 0, 10), false);

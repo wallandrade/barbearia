@@ -15,7 +15,7 @@ function authHeaders(): Record<string, string> {
 type GroupChat = { name: string; phone: string };
 type PeptideChoice = { id: string; name: string; image: string | null; soldOut: boolean };
 type PeptideLine = { slug: string; name: string; selectedIds: string[]; choices: PeptideChoice[] };
-type PeptideSlot = { hour: number; slug: string; name: string; productNames: string[] };
+type PeptideSlot = { hour: number; slug: string; name: string; productNames: string[]; preview?: string };
 
 function nextPeptideHour(hours: number[]): number {
   for (const candidate of [10, 13, 17, 21]) {
@@ -361,10 +361,13 @@ export default function WhatsAppGroupCampaignCard() {
             </button>
           ) : null}
         </div>
-        <div className="text-sm space-y-1">
+        <div className="space-y-3">
           {peptideSlots.length > 0 ? peptideSlots.map((slot) => (
-            <p key={slot.hour}>{slot.hour}h: {slot.name} · {slot.productNames.join(", ")}</p>
-          )) : <p>Nenhuma explicação com produto marcado à venda.</p>}
+            <div key={slot.hour} className="rounded-xl border border-border bg-muted/40 p-3">
+              <p className="text-xs font-medium">{slot.hour}h · {slot.name} · {slot.productNames.join(", ")}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm">{slot.preview}</p>
+            </div>
+          )) : <p className="text-sm">Nenhuma explicação com produto marcado à venda.</p>}
         </div>
         <div className="max-h-[32rem] overflow-auto rounded-xl border border-border divide-y">
           {peptideLines.map((line) => {

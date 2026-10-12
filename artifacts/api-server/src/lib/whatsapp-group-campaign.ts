@@ -457,23 +457,36 @@ export function pickDailyPeptide<T>(queue: T[], dayKey: string, slotIndex = 0): 
   return queue[((index % queue.length) + queue.length) % queue.length];
 }
 
-function captionSentence(text: string, max: number): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  const sentence = clean.split(/(?<=[.!?])\s/)[0] || clean;
-  if (sentence.length <= max) return sentence;
-  return `${sentence.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
+function captionSentences(text: string): string[] {
+  return text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/).map((item) => item.trim()).filter(Boolean);
+}
+
+function looksTechnical(sentence: string): boolean {
+  return /é um .{0,50}peptídeo|heptam|tetrapep|tripépt|Thr-|Ala-|Glu-|Asp-|desenvolvido pelo Instituto|desenvolvido no Instituto/i.test(sentence);
+}
+
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
+}
+
+/** Pula a definição química e fica com a frase que a pessoa consegue ler. */
+function plainPeptideLine(about: string): string {
+  const sentences = captionSentences(about);
+  const readable = sentences.find((sentence) => !looksTechnical(sentence)) || sentences[sentences.length - 1] || "";
+  return clip(readable, 240);
 }
 
 export function peptideDailyCaption(brief: PeptideBrief, productId: string): string {
   const parts = [
-    `Quer entender o ${brief.name} de verdade? Para um minuto e lê.`,
+    `Para um segundo. O ${brief.name} vale a leitura até o fim.`,
     "",
     brief.tagline.trim(),
     "",
-    captionSentence(brief.about, 220),
+    plainPeptideLine(brief.about),
   ];
   const study = String(brief.study || "").replace(/\s+/g, " ").trim();
-  if (study) parts.push("", captionSentence(study, 220));
+  if (study) parts.push("", "Olha o que um estudo mostrou.", clip(study, 240));
   parts.push("", `Compre aqui: https://www.yury-imports.com/produto/${encodeURIComponent(productId)}`);
   return parts.join("\n");
 }
