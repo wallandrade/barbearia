@@ -267,6 +267,7 @@ export type PeptideBrief = {
   aliases: string[];
   tagline: string;
   about: string;
+  study?: string;
 };
 
 function foldPeptide(value: string): string {
@@ -456,10 +457,25 @@ export function pickDailyPeptide<T>(queue: T[], dayKey: string, slotIndex = 0): 
   return queue[((index % queue.length) + queue.length) % queue.length];
 }
 
+function captionSentence(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const sentence = clean.split(/(?<=[.!?])\s/)[0] || clean;
+  if (sentence.length <= max) return sentence;
+  return `${sentence.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
+}
+
 export function peptideDailyCaption(brief: PeptideBrief, productId: string): string {
-  const about = brief.about.replace(/\s+/g, " ").trim();
-  const short = about.length > 420 ? `${about.slice(0, 417).replace(/\s+\S*$/, "")}…` : about;
-  return `${brief.name}\n${brief.tagline}\n\n${short}\n\nCompre aqui: https://www.yury-imports.com/produto/${encodeURIComponent(productId)}`;
+  const parts = [
+    `Quer entender o ${brief.name} de verdade? Para um minuto e lê.`,
+    "",
+    brief.tagline.trim(),
+    "",
+    captionSentence(brief.about, 220),
+  ];
+  const study = String(brief.study || "").replace(/\s+/g, " ").trim();
+  if (study) parts.push("", captionSentence(study, 220));
+  parts.push("", `Compre aqui: https://www.yury-imports.com/produto/${encodeURIComponent(productId)}`);
+  return parts.join("\n");
 }
 
 export function peptideDailyDue(hour: number, minute: number, groupIndex: number, sendHour: number): boolean {
