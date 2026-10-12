@@ -74,6 +74,7 @@ import {
   isAwaitingPaymentStatus,
   isDeliveredStatus,
   getCurrentEnvioEcomOriginCep,
+  envioecomLabelDownloadName,
   isEnvioEcomCancelStatus,
   isInTransitStatus,
   isLabelReadyStatus,
@@ -1493,11 +1494,13 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
 
     let labelUrl: string | null = null;
     try {
+      const labelFolderId = String(order.id || "pedido").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "pedido";
+      const labelPackageId = String(targetPackage?.id || "order").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "order";
       const uploaded = await uploadBufferToR2({
         buffer: label.buffer,
         contentType: "application/pdf",
-        folder: "envioecom-labels",
-        fileName: `${order.id}-${targetPackage?.id || "order"}-${labelBarcode || shipmentId || "label"}.pdf`,
+        folder: `envioecom-labels/${labelFolderId}/${labelPackageId}`,
+        fileName: envioecomLabelDownloadName(order.clientName),
       });
       labelUrl = uploaded.url;
     } catch (uploadErr) {

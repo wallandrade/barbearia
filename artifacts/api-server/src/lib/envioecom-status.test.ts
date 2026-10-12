@@ -6,6 +6,7 @@ import {
   extractStatusHistoryFromShipment,
   inventoryPoolForEnvioEcomAccount,
   isAwaitingPickupStatus,
+  envioecomLabelDownloadName,
   isEnvioEcomCancelStatus,
   shouldPollEnvioEcomStatus,
   isEnvioEcomPanelShipmentId,
@@ -18,6 +19,13 @@ import {
   pickEffectiveShipmentStatus,
   scoreEnvioEcomShipmentCandidate,
 } from "./envioecom";
+
+test("o PDF da etiqueta baixa com o nome do cliente", () => {
+  assert.equal(envioecomLabelDownloadName("João da Silva"), "Joao_da_Silva.pdf");
+  assert.equal(envioecomLabelDownloadName("  Maria   Souza  "), "Maria_Souza.pdf");
+  assert.equal(envioecomLabelDownloadName(""), "Cliente.pdf");
+  assert.equal(envioecomLabelDownloadName(null), "Cliente.pdf");
+});
 
 test("sync automático segue Processando envio e para em entregue/cancelado", () => {
   assert.equal(shouldPollEnvioEcomStatus("Processando envio"), true);

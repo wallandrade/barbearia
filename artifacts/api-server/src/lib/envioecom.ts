@@ -13,6 +13,18 @@ export const ENVIOECOM_ENV_ACCOUNT_ID = "env";
 /** Pool de estoque ligado à conta EnvioEcom: SP → Motoboy, MG → Minas. Sem conta = null. */
 export type EnvioEcomInventoryPool = "motoboy" | "minas";
 
+/** Nome do PDF ao baixar. O id do pedido fica só na pasta, para o arquivo não ser um número. */
+export function envioecomLabelDownloadName(clientName: string | null | undefined): string {
+  const folded = String(clientName || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_")
+    .slice(0, 80);
+  return `${folded || "Cliente"}.pdf`;
+}
+
 export function inventoryPoolForEnvioEcomAccount(
   accountId?: string | null,
   accountName?: string | null,

@@ -147,6 +147,7 @@ export async function uploadBufferToR2(input: {
     Key: objectKey,
     Body: input.buffer,
     ContentType: mimeType,
+    ContentDisposition: `inline; filename="${safeName}"`,
     CacheControl: "public, max-age=31536000, immutable",
   }));
 
