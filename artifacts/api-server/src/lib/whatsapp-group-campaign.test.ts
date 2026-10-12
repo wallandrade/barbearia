@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { peptideAppeal, peptideBriefs } from "./peptide-group-daily";
 import {
   customCaption,
   customCaptionError,
@@ -100,14 +101,26 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   assert.notEqual(pickDailyPeptide(queue, "2026-10-11", 0)?.product.id, pickDailyPeptide(queue, "2026-10-11", 1)?.product.id);
   assert.deepEqual(peptideSendHours("21"), [21]);
   assert.deepEqual(peptideSendHours("[21,10,10,25,13]"), [10, 13, 21]);
-  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("https://www.yury-imports.com/produto/buy"), true);
-  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("vale a leitura"), true);
-  assert.equal(peptideDailyCaption(briefs[0], "buy").includes("Regeneração de tecidos"), true);
+  const plain = peptideDailyCaption(briefs[0], "buy");
+  assert.equal(plain.includes("https://www.yury-imports.com/produto/buy"), true);
+  assert.equal(plain.includes("vale a leitura"), true);
+  assert.equal(plain.includes("Vale guardar isto"), true);
+  assert.equal(plain.includes("Regeneração de tecidos"), false);
   const technical = "BPC-157 é um peptídeo sintético derivado da tuftsin (Thr-Lys-Pro-Arg), feito em laboratório. Ele ajuda na recuperação dos tecidos sem sedar.";
   const withStudy = peptideDailyCaption({ ...briefs[0], about: technical, study: "Em 2017, um ensaio acompanhou a recuperação." }, "buy");
   assert.equal(withStudy.includes("Thr-Lys"), false);
   assert.equal(withStudy.includes("recuperação dos tecidos"), true);
   assert.equal(withStudy.includes("Olha o que um estudo mostrou."), true);
+  const warm = peptideDailyCaption({
+    ...briefs[0],
+    about: technical,
+    appeal: "Melhora de memória e menos fadiga mental",
+    study: "Em 2011, ensaios viram melhora na recuperação.",
+  }, "buy");
+  assert.equal(warm.includes("está atrás disto: melhora de memória e menos fadiga mental."), true);
+  assert.equal(warm.includes("Thr-Lys"), false);
+  assert.equal(warm.includes("Regeneração de tecidos"), false);
+  assert.equal(warm.includes("Vale guardar isto"), false);
   assert.equal(peptideDailyDue(10, 0, 0, 10), true);
   assert.equal(peptideDailyDue(10, 3, 1, 10), true);
   assert.equal(peptideDailyDue(9, 0, 0, 10), false);
@@ -126,6 +139,28 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   assert.equal(parsePeptideLineSelection("[\"a\"]").mode, "legacy");
   const shown = peptideAdminLines(briefs.slice(0, 1), same, { mode: "unset" });
   assert.equal(shown[0]?.selectedIds[0], "a");
+});
+
+test("a explicação fala do benefício e prefere estudo em pessoas", () => {
+  assert.equal(peptideAppeal([
+    "Aumento expressivo de BDNF e NGF no hipocampo",
+    "Melhora de memória, concentração e velocidade de processamento",
+    "Efeito adaptogênico e redutor de fadiga mental",
+  ]), "Melhora de memória, concentração e velocidade de processamento");
+  assert.equal(peptideAppeal([
+    "Aumento fisiológico de GH",
+    "Melhora da composição corporal",
+    "Melhora da qualidade do sono",
+  ]), "Melhora da qualidade do sono");
+  const semax = peptideBriefs().find((item) => item.slug === "semax");
+  const sermorelin = peptideBriefs().find((item) => item.slug === "sermorelin");
+  assert.equal(semax?.study?.includes("2011"), true);
+  assert.equal(sermorelin?.appeal, "Melhora da qualidade do sono");
+  assert.equal(sermorelin?.study?.includes("2004"), true);
+  const caption = peptideDailyCaption(semax!, "b91");
+  assert.equal(caption.includes("está atrás disto"), true);
+  assert.equal(caption.includes("heptapeptídeo"), false);
+  assert.equal(caption.includes("Nootrópico e neuroprotetor"), false);
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

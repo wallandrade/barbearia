@@ -7,16 +7,51 @@ function aboutFromBody(body: string): string {
   return line ? line.replace(/^o que é:\s*/i, "").trim() : "";
 }
 
-/** Um estudo só. Prefere o que fala de pessoas. */
+function benefitIsDry(point: string): boolean {
+  return /bdnf|ngf|\bgh\b|ghrh|igf-?1|gaba|vegf|\berr\b|agonista|receptor|aminoácid|análogo|heptap|pentadecap|pept[ií]d|mitocond|dopamin|seroton|transcri|hipocamp|córtex|cortisol|secretagogo|off-label|sintético|sintetico|isquemi/i.test(point);
+}
+
+function feelingScore(point: string): number {
+  if (benefitIsDry(point)) return -1;
+  if (/sono|ansiol|ansied|mem[oó]ria|fadiga|gordura|queima|cicatriz|humor|libido/i.test(point)) return 5;
+  if (/foco|concentra|energia|disposi|pele|cabelo|recuper|tend[aã]o|ligament|dor\b|inflama/i.test(point)) return 4;
+  if (/exerc[ií]cio|composi|corpo|peso/i.test(point)) return 2;
+  return 1;
+}
+
+/** O benefício que a pessoa entende. Sono, memória, gordura e recuperação passam na frente do jargão. */
+export function peptideAppeal(points: string[]): string {
+  const ranked = points
+    .map((point) => point.replace(/\s+/g, " ").trim())
+    .filter((point) => point.length >= 8)
+    .map((point) => ({ point, score: feelingScore(point) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return (ranked[0]?.point || "").replace(/\.$/, "");
+}
+
+function paperIsHuman(meta: string): boolean {
+  return /human|humano|pessoa/i.test(meta);
+}
+
+function studyFeel(summary: string): number {
+  return /sono|ansiol|mem[oó]ria|fadiga|gordura|queima|cicatriz|humor|recupera|concentra|foco/i.test(summary) ? 2 : 1;
+}
+
+/** Um estudo só. Prefere gente, e entre esses o que fala de um resultado do dia a dia. */
 function studyLine(sheet: AtlasSheet): string {
   const papers = sheet.research?.papers || [];
-  const paper = papers.find((item) => /humano/i.test(item.meta)) || papers[0];
+  const human = papers.filter((item) => paperIsHuman(item.meta));
+  const pool = human.length > 0 ? human : papers;
+  const paper = [...pool].sort((a, b) => studyFeel(b.summary || "") - studyFeel(a.summary || ""))[0];
   if (!paper) return "";
   const summary = String(paper.summary || "").replace(/\s+/g, " ").trim();
   if (summary.length < 20) return "";
   const year = String(paper.year || "").trim();
   const sentence = summary.endsWith(".") ? summary : `${summary}.`;
-  return year ? `Em ${year}, ${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}` : sentence;
+  const word = /^[A-ZÁÉÍÓÚÂÊÔÃÕ][a-záéíóúâêôãõç]/.test(sentence);
+  const lead = word ? `${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}` : sentence;
+  return year ? `Em ${year}, ${lead}` : sentence;
 }
 
 function fromSheet(sheet: AtlasSheet): PeptideBrief {
@@ -26,6 +61,7 @@ function fromSheet(sheet: AtlasSheet): PeptideBrief {
     aliases: sheet.aliases,
     tagline: sheet.tagline,
     about: sheet.about.prose,
+    appeal: peptideAppeal(sheet.benefits?.points || []),
     study: studyLine(sheet),
   };
 }

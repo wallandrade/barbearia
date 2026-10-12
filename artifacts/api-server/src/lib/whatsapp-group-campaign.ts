@@ -267,6 +267,8 @@ export type PeptideBrief = {
   aliases: string[];
   tagline: string;
   about: string;
+  /** Benefício da ficha em linguagem de pessoa. A legenda usa isto no lugar da definição. */
+  appeal?: string;
   study?: string;
 };
 
@@ -462,7 +464,7 @@ function captionSentences(text: string): string[] {
 }
 
 function looksTechnical(sentence: string): boolean {
-  return /é um .{0,50}peptídeo|heptam|tetrapep|tripépt|Thr-|Ala-|Glu-|Asp-|desenvolvido pelo Instituto|desenvolvido no Instituto/i.test(sentence);
+  return /é um .{0,80}peptídeo|heptam|tetrapep|tripépt|pentadecap|Thr-|Ala-|Glu-|Asp-|desenvolvido pelo Instituto|desenvolvido no Instituto|aminoácid|análogo sint|secretagogo|agonista|\bGHRH\b|\bBDNF\b|\bNGF\b|receptor/i.test(sentence);
 }
 
 function clip(text: string, max: number): string {
@@ -473,18 +475,28 @@ function clip(text: string, max: number): string {
 /** Pula a definição química e fica com a frase que a pessoa consegue ler. */
 function plainPeptideLine(about: string): string {
   const sentences = captionSentences(about);
-  const readable = sentences.find((sentence) => !looksTechnical(sentence)) || sentences[sentences.length - 1] || "";
+  const readable = sentences.find((sentence) => !looksTechnical(sentence)) || "";
   return clip(readable, 240);
+}
+
+/** O miolo da legenda, em frase falada. Sem tagline e sem a definição da ficha. */
+function spokenPeptideLine(brief: PeptideBrief): string {
+  const appeal = String(brief.appeal || "").replace(/\s+/g, " ").trim().replace(/\.$/, "");
+  if (appeal && !looksTechnical(appeal)) {
+    const text = `${appeal.charAt(0).toLowerCase()}${appeal.slice(1)}`;
+    return `Quem para para ler o ${brief.name} está atrás disto: ${text}.`;
+  }
+  const sentence = plainPeptideLine(brief.about);
+  if (!sentence) return "";
+  return `Vale guardar isto: ${sentence}`;
 }
 
 export function peptideDailyCaption(brief: PeptideBrief, productId: string): string {
   const parts = [
     `Para um segundo. O ${brief.name} vale a leitura até o fim.`,
-    "",
-    brief.tagline.trim(),
-    "",
-    plainPeptideLine(brief.about),
   ];
+  const spoken = spokenPeptideLine(brief);
+  if (spoken) parts.push("", spoken);
   const study = String(brief.study || "").replace(/\s+/g, " ").trim();
   if (study) parts.push("", "Olha o que um estudo mostrou.", clip(study, 240));
   parts.push("", `Compre aqui: https://www.yury-imports.com/produto/${encodeURIComponent(productId)}`);
