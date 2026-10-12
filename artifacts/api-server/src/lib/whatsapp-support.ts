@@ -27,7 +27,11 @@ const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 20;
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
-const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const FLOOD_TEXT = "Recebi muitas mensagens agora. Espera um minuto e tenta de novo.";
+const STORE_LINES_TTL_MS = 60_000;
+
+const rateBuckets = new Map<string, { count: number; resetAt: number; warned: boolean }>();
+let storeLinesCache: { at: number; phones: string[] } | null = null;
 
 export type SupportIntent =
   | { kind: "menu" }
@@ -126,13 +130,39 @@ function readPhone(value: unknown): string {
   return "";
 }
 
+function readFromMe(value: unknown): boolean {
+  return value === true || value === 1 || value === "true";
+}
+
+function phoneDigits(raw: string): string {
+  return String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
+}
+
+/** A frase do limite, se voltar, não pode gerar outra resposta. */
+export function isSupportFloodText(text: string): boolean {
+  return text.trim() === FLOOD_TEXT;
+}
+
+/** Telefone de vendedor ou do checkout. Os dois números da loja não se respondem. */
+export function isStoreLinePhone(phone: string, lineNumbers: readonly string[]): boolean {
+  const got = phoneDigits(phone);
+  if (got.length < 10) return false;
+  return lineNumbers.some((raw) => {
+    const known = phoneDigits(raw);
+    if (known.length < 10) return false;
+    if (got === known) return true;
+    const shorter = Math.min(got.length, known.length);
+    return shorter >= 10 && (got.endsWith(known) || known.endsWith(got));
+  });
+}
+
 /** Mensagem recebida da Z-API, ou um corpo simples { phone, text }. */
 export function readSupportInbound(body: unknown): SupportInbound {
   const row = body && typeof body === "object" ? body as Record<string, unknown> : {};
   const phone = readPhone(row.phone);
   const type = String(row.type || "").trim();
   const instanceId = String(row.instanceId || row.instance_id || "").trim();
-  const skip = row.fromMe === true
+  const skip = readFromMe(row.fromMe)
     || row.isGroup === true
     || row.isNewsletter === true
     || (type.length > 0 && !/received/i.test(type));
@@ -150,7 +180,7 @@ export function supportInboundLog(body: unknown, tokenOk: boolean): Record<strin
     phoneTail: inbound.phone ? inbound.phone.slice(-4) : "",
     instanceTail: inbound.instanceId ? inbound.instanceId.slice(-4) : "",
     type: String(row.type || ""),
-    fromMe: row.fromMe === true,
+    fromMe: readFromMe(row.fromMe),
     isGroup: row.isGroup === true,
     isNewsletter: row.isNewsletter === true,
     skip: inbound.skip || !inbound.phone,
@@ -512,15 +542,48 @@ export function buildSupportOrdersMessage(orders: SupportOrderView[], truncated:
   return `${head}${blocks.join("\n\n")}${tail}`;
 }
 
-function allowPhone(phone: string, now = Date.now()): boolean {
+/** ok segue o menu. warn manda o aviso uma vez. block não responde mais nessa janela. */
+export function supportRateDecision(phone: string, now = Date.now()): "ok" | "warn" | "block" {
   const current = rateBuckets.get(phone);
   if (!current || current.resetAt <= now) {
-    rateBuckets.set(phone, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
+    rateBuckets.set(phone, { count: 1, resetAt: now + RATE_WINDOW_MS, warned: false });
+    return "ok";
   }
-  if (current.count >= RATE_MAX) return false;
+  if (current.count >= RATE_MAX) {
+    if (current.warned) return "block";
+    current.warned = true;
+    return "warn";
+  }
   current.count += 1;
-  return true;
+  return "ok";
+}
+
+async function storeLinePhones(): Promise<string[]> {
+  const now = Date.now();
+  if (storeLinesCache && now - storeLinesCache.at < STORE_LINES_TTL_MS) return storeLinesCache.phones;
+  try {
+    const { db, sellersTable, siteSettingsTable } = await import("@workspace/db");
+    const { inArray } = await import("drizzle-orm");
+    const [sellers, settings] = await Promise.all([
+      db.select({ whatsapp: sellersTable.whatsapp }).from(sellersTable),
+      db
+        .select({ value: siteSettingsTable.value })
+        .from(siteSettingsTable)
+        .where(inArray(siteSettingsTable.key, [
+          "checkout_store_whatsapp_number",
+          "checkout_raffle_whatsapp_number",
+        ])),
+    ]);
+    const phones = [
+      ...sellers.map((row) => String(row.whatsapp || "")),
+      ...settings.map((row) => String(row.value || "")),
+    ];
+    storeLinesCache = { at: now, phones };
+    return phones;
+  } catch (err) {
+    console.warn("[WhatsApp atendimento] números da loja", err instanceof Error ? err.message : err);
+    return storeLinesCache?.phones ?? [];
+  }
 }
 
 async function database() {
@@ -747,11 +810,14 @@ async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list"
 /** Responde uma mensagem recebida. Não manda de novo o que a própria loja enviou. */
 export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean; skipped?: boolean; error?: string; line?: "poly" | "main" }> {
   const inbound = readSupportInbound(body);
-  if (inbound.skip || !inbound.phone) return { ok: true, skipped: true };
+  if (inbound.skip || !inbound.phone || isSupportFloodText(inbound.text)) return { ok: true, skipped: true };
+  if (isStoreLinePhone(inbound.phone, await storeLinePhones())) return { ok: true, skipped: true };
   const { resolveWhatsappLine } = await import("./whatsapp-line");
   const line = await resolveWhatsappLine(inbound.instanceId);
-  if (!allowPhone(inbound.phone)) {
-    const sent = await sendText(inbound.phone, "Recebi muitas mensagens agora. Espera um minuto e tenta de novo.", line);
+  const rate = supportRateDecision(inbound.phone);
+  if (rate === "block") return { ok: true, skipped: true };
+  if (rate === "warn") {
+    const sent = await sendText(inbound.phone, FLOOD_TEXT, line);
     return sent ? { ok: true, line } : { ok: false, error: "send_failed", line };
   }
 

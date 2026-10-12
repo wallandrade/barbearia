@@ -6,8 +6,11 @@ import {
   buildSupportOrdersMessage,
   classifySupportText,
   decideSupportTurn,
+  isStoreLinePhone,
+  isSupportFloodText,
   readSupportInbound,
   supportInboundLog,
+  supportRateDecision,
   supportDocumentMatches,
   supportPaymentLabel,
   supportSituationLabel,
@@ -132,6 +135,7 @@ test("problema abre o segundo menu", () => {
 
 test("ignora mensagem da própria loja e de grupo", () => {
   assert.equal(readSupportInbound({ phone: "35992420559", text: { message: "oi" }, fromMe: true }).skip, true);
+  assert.equal(readSupportInbound({ phone: "35992420559", text: { message: "oi" }, fromMe: "true" }).skip, true);
   assert.equal(readSupportInbound({ phone: "5535992420559", text: { message: "1782" }, isGroup: true }).skip, true);
   const inbound = readSupportInbound({ phone: "35992420559", text: { message: "1782" }, type: "ReceivedCallback" });
   assert.equal(inbound.skip, false);
@@ -161,6 +165,20 @@ test("ignora mensagem da própria loja e de grupo", () => {
   assert.equal(logged.skip, false);
   assert.equal(logged.textLen, 2);
   assert.equal("text" in logged, false);
+});
+
+test("número da loja e a frase de limite não geram resposta", () => {
+  assert.equal(isStoreLinePhone("5535992420559", ["35992420559"]), true);
+  assert.equal(isStoreLinePhone("3511917739912", ["+351 191 773 9912"]), true);
+  assert.equal(isStoreLinePhone("553511917739912", ["3511917739912"]), true);
+  assert.equal(isStoreLinePhone("5511999998888", ["35992420559", "3511917739912"]), false);
+  assert.equal(isSupportFloodText("Recebi muitas mensagens agora. Espera um minuto e tenta de novo."), true);
+  assert.equal(isSupportFloodText("oi"), false);
+  const phone = "5511888777666";
+  for (let i = 0; i < 20; i += 1) assert.equal(supportRateDecision(phone, 1_000), "ok");
+  assert.equal(supportRateDecision(phone, 1_000), "warn");
+  assert.equal(supportRateDecision(phone, 1_000), "block");
+  assert.equal(supportRateDecision(phone, 1_000 + 10 * 60 * 1000), "ok");
 });
 
 test("token curto ou diferente não passa", () => {
