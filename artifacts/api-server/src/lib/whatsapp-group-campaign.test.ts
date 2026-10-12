@@ -18,6 +18,7 @@ import {
   peptideAdminLines,
   peptideGroupProduct,
   peptideSendPlan,
+  peptideSendHours,
   peptideSheetProductIds,
   parsePeptideLineSelection,
   pickDailyPeptide,
@@ -96,6 +97,9 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   const first = pickDailyPeptide(queue, "2026-10-11");
   const next = pickDailyPeptide(queue, "2026-10-12");
   assert.notEqual(first?.product.id, next?.product.id);
+  assert.notEqual(pickDailyPeptide(queue, "2026-10-11", 0)?.product.id, pickDailyPeptide(queue, "2026-10-11", 1)?.product.id);
+  assert.deepEqual(peptideSendHours("21"), [21]);
+  assert.deepEqual(peptideSendHours("[21,10,10,25,13]"), [10, 13, 21]);
   assert.equal(peptideDailyCaption(briefs[0], "buy").includes("https://www.yury-imports.com/produto/buy"), true);
   assert.equal(peptideDailyCaption(briefs[0], "buy").includes("Regeneração de tecidos"), true);
   assert.equal(peptideDailyDue(10, 0, 0, 10), true);

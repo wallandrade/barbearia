@@ -15,6 +15,17 @@ function authHeaders(): Record<string, string> {
 type GroupChat = { name: string; phone: string };
 type PeptideChoice = { id: string; name: string; image: string | null; soldOut: boolean };
 type PeptideLine = { slug: string; name: string; selectedIds: string[]; choices: PeptideChoice[] };
+type PeptideSlot = { hour: number; slug: string; name: string; productNames: string[] };
+
+function nextPeptideHour(hours: number[]): number {
+  for (const candidate of [10, 13, 17, 21]) {
+    if (!hours.includes(candidate)) return candidate;
+  }
+  for (let hour = 0; hour < 24; hour += 1) {
+    if (!hours.includes(hour)) return hour;
+  }
+  return hours[0] ?? 10;
+}
 type ProductRow = { id: string; name: string; image: string | null; isActive: boolean; isSoldOut: boolean };
 type ScheduleMode = "once" | "times" | "interval";
 type CustomPost = {
@@ -39,8 +50,8 @@ function postWhen(post: CustomPost): string {
 export default function WhatsAppGroupCampaignCard() {
   const [enabled, setEnabled] = useState(false);
   const [peptideEnabled, setPeptideEnabled] = useState(false);
-  const [peptideHour, setPeptideHour] = useState(10);
-  const [peptideToday, setPeptideToday] = useState<{ slug: string; name: string; productNames: string[] } | null>(null);
+  const [peptideHours, setPeptideHours] = useState<number[]>([21]);
+  const [peptideSlots, setPeptideSlots] = useState<PeptideSlot[]>([]);
   const [peptideLines, setPeptideLines] = useState<PeptideLine[]>([]);
   const [groups, setGroups] = useState<GroupChat[]>([]);
   const [productIds, setProductIds] = useState<string[]>([]);
@@ -72,14 +83,18 @@ export default function WhatsAppGroupCampaignCard() {
         groups: GroupChat[];
         posts: CustomPost[];
         peptideEnabled?: boolean;
+        peptideHours?: number[];
         peptideHour?: number;
-        peptideToday?: { slug: string; name: string; productNames: string[] } | null;
+        peptideSlots?: PeptideSlot[];
         peptideLines?: PeptideLine[];
       };
       setEnabled(Boolean(data.enabled));
+      const hours = Array.isArray(data.peptideHours) && data.peptideHours.length > 0
+        ? data.peptideHours
+        : [Number.isInteger(data.peptideHour) ? Number(data.peptideHour) : 21];
       setPeptideEnabled(Boolean(data.peptideEnabled));
-      setPeptideHour(Number.isInteger(data.peptideHour) ? Number(data.peptideHour) : 10);
-      setPeptideToday(data.peptideToday || null);
+      setPeptideHours(hours.slice(0, 4));
+      setPeptideSlots(data.peptideSlots || []);
       setPeptideLines(data.peptideLines || []);
       setProductIds(data.productIds || []);
       setGroups(data.groups || []);
@@ -107,7 +122,7 @@ export default function WhatsAppGroupCampaignCard() {
           productIds,
           groups,
           peptideEnabled,
-          peptideHour,
+          peptideHours,
           peptideProductMap: Object.fromEntries(peptideLines.map((line) => [line.slug, line.selectedIds])),
         }),
       });
@@ -303,26 +318,60 @@ export default function WhatsAppGroupCampaignCard() {
       <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold">Explicação diária</h2>
         <p className="text-xs text-muted-foreground">
-          Um peptídeo por dia, no horário escolhido. Em cada linha, marque os produtos dessa explicação.
+          Até 4 horários. Cada horário manda uma explicação diferente. Em cada linha, marque os produtos dessa explicação.
           Cada grupo recebe um produto marcado diferente, com 3 minutos entre eles. A rodada de 9h, 13h, 17h e 21h continua separada.
         </p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={peptideEnabled} onChange={(event) => setPeptideEnabled(event.target.checked)} />
           Explicação diária ligada
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          Hora
-          <input type="number" min={0} max={23} value={peptideHour} onChange={(event) => setPeptideHour(Number(event.target.value))} className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm" />
-        </label>
-        <p className="text-sm">
-          {peptideToday
-            ? `Hoje: ${peptideToday.name} · ${peptideToday.productNames.join(", ")}`
-            : "Nenhuma explicação com produto marcado à venda."}
-        </p>
+        <div className="space-y-2">
+          {peptideHours.map((hour, row) => (
+            <label key={`${row}-${hour}`} className="flex items-center gap-2 text-sm">
+              Hora {row + 1}
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={hour}
+                onChange={(event) => {
+                  const next = Math.min(23, Math.max(0, Math.round(Number(event.target.value))));
+                  setPeptideHours((current) => current.map((item, index) => index === row ? next : item));
+                }}
+                className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm"
+              />
+              {peptideHours.length > 1 ? (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground"
+                  onClick={() => setPeptideHours((current) => current.filter((_, index) => index !== row))}
+                >
+                  Tirar
+                </button>
+              ) : null}
+            </label>
+          ))}
+          {peptideHours.length < 4 ? (
+            <button
+              type="button"
+              className="text-sm text-muted-foreground"
+              onClick={() => setPeptideHours((current) => [...current, nextPeptideHour(current)].slice(0, 4))}
+            >
+              Adicionar horário
+            </button>
+          ) : null}
+        </div>
+        <div className="text-sm space-y-1">
+          {peptideSlots.length > 0 ? peptideSlots.map((slot) => (
+            <p key={slot.hour}>{slot.hour}h: {slot.name} · {slot.productNames.join(", ")}</p>
+          )) : <p>Nenhuma explicação com produto marcado à venda.</p>}
+        </div>
         <div className="max-h-[32rem] overflow-auto rounded-xl border border-border divide-y">
-          {peptideLines.map((line) => (
+          {peptideLines.map((line) => {
+            const hours = peptideSlots.filter((slot) => slot.slug === line.slug).map((slot) => `${slot.hour}h`);
+            return (
             <div key={line.slug} className="px-3 py-3 space-y-2">
-              <p className="text-sm font-medium">{line.slug === peptideToday?.slug ? `${line.name} · hoje` : line.name}</p>
+              <p className="text-sm font-medium">{hours.length > 0 ? `${line.name} · ${hours.join(", ")}` : line.name}</p>
               {line.choices.map((choice) => {
                 const httpsImage = String(choice.image || "").startsWith("https://");
                 return (
@@ -345,7 +394,8 @@ export default function WhatsAppGroupCampaignCard() {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </div>
         <Button type="button" onClick={() => void save()} disabled={loading}>
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

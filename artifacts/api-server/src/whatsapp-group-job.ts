@@ -16,7 +16,7 @@ import {
   peptideDailyCaption,
   peptideDailyDue,
   peptideGroupProduct,
-  peptideSendHour,
+  peptideSendHours,
   peptideSendPlan,
   parsePeptideLineSelection,
   pickDailyPeptide,
@@ -151,16 +151,17 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
   if ((await settingValue(GROUP_PEPTIDE_ENABLED_SETTING)) === "1") {
     const { peptideBriefs } = await import("./lib/peptide-group-daily");
     const selection = parsePeptideLineSelection(await settingValue(GROUP_PEPTIDE_PRODUCT_IDS_SETTING));
-    const pick = pickDailyPeptide(peptideSendPlan(peptideBriefs(), products, selection), parts.dayKey);
-    const sendHour = peptideSendHour(await settingValue(GROUP_PEPTIDE_HOUR_SETTING));
+    const hours = peptideSendHours(await settingValue(GROUP_PEPTIDE_HOUR_SETTING));
+    const slot = hours.indexOf(parts.hour);
+    const pick = slot < 0 ? null : pickDailyPeptide(peptideSendPlan(peptideBriefs(), products, selection), parts.dayKey, slot);
     if (pick) {
       for (let index = 0; index < chats.length; index += 1) {
         const chat = chats[index];
         const product = peptideGroupProduct(pick.products, index);
-        if (!chat || !product?.image || !peptideDailyDue(parts.hour, parts.minute, index, sendHour)) continue;
+        if (!chat || !product?.image || !peptideDailyDue(parts.hour, parts.minute, index, parts.hour)) continue;
         await deliver(
           creds,
-          `e:${parts.dayKey}:${chat.phone}`,
+          `e:${parts.dayKey}:${parts.hour}:${chat.phone}`,
           chat.phone,
           product.image,
           peptideDailyCaption(pick.brief, product.id),

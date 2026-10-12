@@ -18,7 +18,7 @@ import {
   parseGroupChats,
   parseScheduleTimes,
   peptideAdminLines,
-  peptideSendHour,
+  peptideSendHours,
   peptideSendPlan,
   parsePeptideLineSelection,
   pickDailyPeptide,
@@ -84,17 +84,24 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
   const briefs = peptideBriefs();
   const selection = parsePeptideLineSelection(peptideProductsRaw);
   const plan = peptideSendPlan(briefs, peptideCatalog, selection);
-  const today = pickDailyPeptide(plan, saoPauloParts(new Date()).dayKey);
+  const hours = peptideSendHours(hourRaw);
+  const dayKey = saoPauloParts(new Date()).dayKey;
+  const peptideSlots = hours.flatMap((hour, slot) => {
+    const pick = pickDailyPeptide(plan, dayKey, slot);
+    if (!pick) return [];
+    return [{
+      hour,
+      slug: pick.brief.slug,
+      name: pick.brief.name,
+      productNames: pick.products.map((product) => product.name),
+    }];
+  });
   res.json({
     enabled: enabledRaw === "1",
     peptideEnabled: peptideRaw === "1",
-    peptideHour: peptideSendHour(hourRaw),
+    peptideHours: hours,
     peptideLines: peptideAdminLines(briefs, peptideCatalog, selection),
-    peptideToday: today ? {
-      slug: today.brief.slug,
-      name: today.brief.name,
-      productNames: today.products.map((product) => product.name),
-    } : null,
+    peptideSlots,
     productIds,
     groups: chatsRaw ? parseGroupChats(chatsRaw) : DEFAULT_GROUP_CHATS,
     posts: posts.map((post) => ({
@@ -125,7 +132,9 @@ router.put("/admin/whatsapp/groups", requirePrimaryAdmin, async (req, res) => {
   await saveSetting(GROUP_CHATS_SETTING, JSON.stringify(savedGroups.chats));
   if (typeof req.body?.peptideEnabled === "boolean") {
     await saveSetting(GROUP_PEPTIDE_ENABLED_SETTING, req.body.peptideEnabled === true ? "1" : "0");
-    await saveSetting(GROUP_PEPTIDE_HOUR_SETTING, String(peptideSendHour(String(req.body?.peptideHour ?? ""))));
+    await saveSetting(GROUP_PEPTIDE_HOUR_SETTING, JSON.stringify(peptideSendHours(
+      JSON.stringify(Array.isArray(req.body?.peptideHours) ? req.body.peptideHours : req.body?.peptideHour),
+    )));
     if (req.body?.peptideProductMap && typeof req.body.peptideProductMap === "object" && !Array.isArray(req.body.peptideProductMap)) {
       const bySlug: Record<string, string[]> = {};
       for (const [slug, ids] of Object.entries(req.body.peptideProductMap as Record<string, unknown>)) {

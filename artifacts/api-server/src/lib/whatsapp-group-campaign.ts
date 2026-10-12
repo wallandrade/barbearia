@@ -447,10 +447,12 @@ export function peptideAdminLines(
   return lines.sort((a, b) => a.name.localeCompare(b.name, "pt"));
 }
 
-export function pickDailyPeptide<T>(queue: T[], dayKey: string): T | null {
+export function pickDailyPeptide<T>(queue: T[], dayKey: string, slotIndex = 0): T | null {
   if (queue.length === 0) return null;
   const [year, month, day] = dayKey.split("-").map(Number);
-  const index = Math.floor(Date.UTC(year, (month || 1) - 1, day || 1) / 86400000);
+  const dayIndex = Math.floor(Date.UTC(year, (month || 1) - 1, day || 1) / 86400000);
+  const shift = Number.isInteger(slotIndex) && slotIndex > 0 ? slotIndex : 0;
+  const index = dayIndex + shift;
   return queue[((index % queue.length) + queue.length) % queue.length];
 }
 
@@ -470,4 +472,25 @@ export function peptideSendHour(raw: string): number {
   const hour = Number(String(raw || "").trim());
   if (!Number.isInteger(hour) || hour < 0 || hour > 23) return 10;
   return hour;
+}
+
+/** Até 4 horários. Um número antigo, como "21", continua valendo. */
+export function peptideSendHours(raw: string): number[] {
+  const value = String(raw || "").trim();
+  if (value.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        const hours = [...new Set(
+          parsed
+            .map((hour) => Math.round(Number(hour)))
+            .filter((hour) => Number.isInteger(hour) && hour >= 0 && hour <= 23),
+        )].sort((a, b) => a - b).slice(0, 4);
+        if (hours.length > 0) return hours;
+      }
+    } catch {
+      return [peptideSendHour(value)];
+    }
+  }
+  return [peptideSendHour(value)];
 }
