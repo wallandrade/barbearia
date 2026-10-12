@@ -103,24 +103,25 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   assert.deepEqual(peptideSendHours("[21,10,10,25,13]"), [10, 13, 21]);
   const plain = peptideDailyCaption(briefs[0], "buy");
   assert.equal(plain.includes("https://www.yury-imports.com/produto/buy"), true);
-  assert.equal(plain.includes("vale a leitura"), true);
-  assert.equal(plain.includes("Vale guardar isto"), true);
+  assert.equal(plain.includes("Vale a pena ler até o final"), true);
+  assert.equal(plain.includes("🧠✨"), true);
+  assert.equal(plain.includes("Mas atenção"), false);
   assert.equal(plain.includes("Regeneração de tecidos"), false);
   const technical = "BPC-157 é um peptídeo sintético derivado da tuftsin (Thr-Lys-Pro-Arg), feito em laboratório. Ele ajuda na recuperação dos tecidos sem sedar.";
   const withStudy = peptideDailyCaption({ ...briefs[0], about: technical, study: "Em 2017, um ensaio acompanhou a recuperação." }, "buy");
   assert.equal(withStudy.includes("Thr-Lys"), false);
   assert.equal(withStudy.includes("recuperação dos tecidos"), true);
-  assert.equal(withStudy.includes("Olha o que um estudo mostrou."), true);
+  assert.equal(withStudy.includes("O QUE MOSTRAM OS ESTUDOS?"), true);
   const warm = peptideDailyCaption({
     ...briefs[0],
     about: technical,
     appeal: "Melhora de memória e menos fadiga mental",
     study: "Em 2011, ensaios viram melhora na recuperação.",
   }, "buy");
-  assert.equal(warm.includes("está atrás disto: melhora de memória e menos fadiga mental."), true);
+  assert.equal(warm.includes("Imagine uma substância investigada por seu potencial de melhorar memória e menos fadiga mental."), true);
   assert.equal(warm.includes("Thr-Lys"), false);
   assert.equal(warm.includes("Regeneração de tecidos"), false);
-  assert.equal(warm.includes("Vale guardar isto"), false);
+  assert.equal(warm.includes("Conhecimento e ciência"), false);
   assert.equal(peptideDailyDue(10, 0, 0, 10), true);
   assert.equal(peptideDailyDue(10, 3, 1, 10), true);
   assert.equal(peptideDailyDue(9, 0, 0, 10), false);
@@ -157,10 +158,16 @@ test("a explicação fala do benefício e prefere estudo em pessoas", () => {
   assert.equal(semax?.study?.includes("2011"), true);
   assert.equal(sermorelin?.appeal, "Melhora da qualidade do sono");
   assert.equal(sermorelin?.study?.includes("2004"), true);
+  const selank = peptideBriefs().find((item) => item.slug === "selank");
   const caption = peptideDailyCaption(semax!, "b91");
-  assert.equal(caption.includes("está atrás disto"), true);
+  const selankCaption = peptideDailyCaption(selank!, "ce2");
+  assert.equal(caption.includes("Imagine uma substância"), true);
+  assert.equal(caption.includes("⏳"), true);
   assert.equal(caption.includes("heptapeptídeo"), false);
   assert.equal(caption.includes("Nootrópico e neuroprotetor"), false);
+  assert.equal(selankCaption.includes("reduzir a ansiedade sem provocar a sedação"), true);
+  assert.equal(selankCaption.includes("Potencial de menor efeito sedativo"), true);
+  assert.equal(selankCaption.includes("Mas atenção"), false);
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

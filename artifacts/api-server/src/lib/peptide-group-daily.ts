@@ -19,15 +19,24 @@ function feelingScore(point: string): number {
   return 1;
 }
 
-/** O benefício que a pessoa entende. Sono, memória, gordura e recuperação passam na frente do jargão. */
-export function peptideAppeal(points: string[]): string {
-  const ranked = points
-    .map((point) => point.replace(/\s+/g, " ").trim())
+function rankedBenefits(points: string[]): string[] {
+  return points
+    .map((point) => point.replace(/\s+/g, " ").trim().replace(/\.$/, ""))
     .filter((point) => point.length >= 8)
     .map((point) => ({ point, score: feelingScore(point) }))
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-  return (ranked[0]?.point || "").replace(/\.$/, "");
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.point);
+}
+
+/** O benefício que a pessoa entende. Sono, memória, gordura e recuperação passam na frente do jargão. */
+export function peptideAppeal(points: string[]): string {
+  return rankedBenefits(points)[0] || "";
+}
+
+/** Até três benefícios legíveis para os pontos da legenda. */
+export function peptideHighlightPoints(points: string[]): string[] {
+  return rankedBenefits(points).slice(0, 3);
 }
 
 function paperIsHuman(meta: string): boolean {
@@ -62,6 +71,7 @@ function fromSheet(sheet: AtlasSheet): PeptideBrief {
     tagline: sheet.tagline,
     about: sheet.about.prose,
     appeal: peptideAppeal(sheet.benefits?.points || []),
+    points: peptideHighlightPoints(sheet.benefits?.points || []),
     study: studyLine(sheet),
   };
 }

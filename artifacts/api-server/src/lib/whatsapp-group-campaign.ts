@@ -269,6 +269,8 @@ export type PeptideBrief = {
   about: string;
   /** Benefício da ficha em linguagem de pessoa. A legenda usa isto no lugar da definição. */
   appeal?: string;
+  /** Até três benefícios legíveis, para os pontos da legenda. */
+  points?: string[];
   study?: string;
 };
 
@@ -479,26 +481,111 @@ function plainPeptideLine(about: string): string {
   return clip(readable, 240);
 }
 
-/** O miolo da legenda, em frase falada. Sem tagline e sem a definição da ficha. */
-function spokenPeptideLine(brief: PeptideBrief): string {
-  const appeal = String(brief.appeal || "").replace(/\s+/g, " ").trim().replace(/\.$/, "");
+function appealText(brief: PeptideBrief): string {
+  return String(brief.appeal || "").replace(/\s+/g, " ").trim().replace(/\.$/, "");
+}
+
+function toInfinitive(text: string): string {
+  return text
+    .replace(/^melhora das\s+/i, "melhorar as ")
+    .replace(/^melhora dos\s+/i, "melhorar os ")
+    .replace(/^melhora da\s+/i, "melhorar a ")
+    .replace(/^melhora do\s+/i, "melhorar o ")
+    .replace(/^melhora de\s+/i, "melhorar ")
+    .replace(/^aumento das\s+/i, "aumentar as ")
+    .replace(/^aumento dos\s+/i, "aumentar os ")
+    .replace(/^aumento da\s+/i, "aumentar a ")
+    .replace(/^aumento do\s+/i, "aumentar o ")
+    .replace(/^aumento de\s+/i, "aumentar ")
+    .replace(/^redu[cç][aã]o das\s+/i, "reduzir as ")
+    .replace(/^redu[cç][aã]o dos\s+/i, "reduzir os ")
+    .replace(/^redu[cç][aã]o da\s+/i, "reduzir a ")
+    .replace(/^redu[cç][aã]o do\s+/i, "reduzir o ")
+    .replace(/^redu[cç][aã]o de\s+/i, "reduzir ")
+    .replace(/^acelera[cç][aã]o das\s+/i, "acelerar as ")
+    .replace(/^acelera[cç][aã]o dos\s+/i, "acelerar os ")
+    .replace(/^acelera[cç][aã]o da\s+/i, "acelerar a ")
+    .replace(/^acelera[cç][aã]o do\s+/i, "acelerar o ")
+    .replace(/^acelera[cç][aã]o de\s+/i, "acelerar ")
+    .replace(/^queima de\s+/i, "queimar ");
+}
+
+function imaginePhrase(appeal: string): string {
+  if (/ansiol/i.test(appeal) && /seda/i.test(appeal)) {
+    return "reduzir a ansiedade sem provocar a sedação frequentemente associada a alguns medicamentos tradicionais";
+  }
+  const text = `${appeal.charAt(0).toLowerCase()}${appeal.slice(1)}`;
+  return toInfinitive(text);
+}
+
+function topicEmoji(text: string): string {
+  if (/ansiol|ansied/i.test(text)) return "😰";
+  if (/sono|seda/i.test(text)) return "💤";
+  if (/mem[oó]ria|foco|concentra/i.test(text)) return "🧠";
+  if (/gordura|queima|peso/i.test(text)) return "🔥";
+  if (/recuper|cicatriz|tend[aã]o|ligament/i.test(text)) return "💪";
+  return "✨";
+}
+
+function topicAbout(text: string): string {
+  if (/ansiol|ansied/i.test(text)) return "à ansiedade";
+  if (/sono|seda/i.test(text)) return "ao sono";
+  if (/mem[oó]ria|foco|concentra/i.test(text)) return "à memória";
+  if (/gordura|queima|peso/i.test(text)) return "à gordura corporal";
+  if (/recuper|cicatriz|tend[aã]o|ligament/i.test(text)) return "à recuperação";
+  return "";
+}
+
+function imagineLine(brief: PeptideBrief): string {
+  const appeal = appealText(brief);
   if (appeal && !looksTechnical(appeal)) {
-    const text = `${appeal.charAt(0).toLowerCase()}${appeal.slice(1)}`;
-    return `Quem para para ler o ${brief.name} está atrás disto: ${text}.`;
+    return `${topicEmoji(appeal)} Imagine uma substância investigada por seu potencial de ${imaginePhrase(appeal)}.`;
   }
   const sentence = plainPeptideLine(brief.about);
   if (!sentence) return "";
-  return `Vale guardar isto: ${sentence}`;
+  return `✨ ${sentence}`;
+}
+
+function studyLead(brief: PeptideBrief): string {
+  const study = String(brief.study || "").replace(/\s+/g, " ").trim();
+  const year = study.match(/\b(?:19|20)\d{2}\b/)?.[0];
+  const russian = /russ/i.test(`${study} ${brief.about}`);
+  const about = topicAbout(appealText(brief));
+  const place = russian ? "Pesquisas russas, incluindo estudos" : "Pesquisas";
+  const published = year ? (russian ? ` publicados em ${year}` : ` publicadas em ${year}`) : "";
+  const effect = about
+    ? `investigaram os possíveis efeitos relacionados ${about} do ${brief.name}`
+    : `investigaram os possíveis efeitos do ${brief.name}`;
+  return `📚 ${place}${published}, ${effect}.`;
+}
+
+function bulletLines(brief: PeptideBrief): string[] {
+  const appeal = appealText(brief);
+  const about = topicAbout(appeal);
+  const lines = ["✅ Resultados preliminares promissores"];
+  if (about) lines.push(`${topicEmoji(appeal)} Possível ação sobre mecanismos relacionados ${about}`);
+  if (/seda/i.test(appeal)) lines.push("💤 Potencial de menor efeito sedativo");
+  const extras = (brief.points || [])
+    .map((point) => point.replace(/\s+/g, " ").trim().replace(/\.$/, ""))
+    .filter((point) => point && point.toLowerCase() !== appeal.toLowerCase() && !looksTechnical(point));
+  for (const point of extras) {
+    if (lines.length >= 3) break;
+    const text = `${point.charAt(0).toLowerCase()}${point.slice(1)}`;
+    lines.push(`${topicEmoji(point)} Potencial de ${toInfinitive(text)}`);
+  }
+  return lines.slice(0, 3);
 }
 
 export function peptideDailyCaption(brief: PeptideBrief, productId: string): string {
+  const name = String(brief.name || "Peptídeo").trim();
   const parts = [
-    `Para um segundo. O ${brief.name} vale a leitura até o fim.`,
+    `🧠✨ *${name.toUpperCase()}: O QUE A CIÊNCIA DIZ SOBRE ESSE PEPTÍDEO?*`,
+    "",
+    "⏳ *Pare um segundo! Vale a pena ler até o final.*",
   ];
-  const spoken = spokenPeptideLine(brief);
-  if (spoken) parts.push("", spoken);
-  const study = String(brief.study || "").replace(/\s+/g, " ").trim();
-  if (study) parts.push("", "Olha o que um estudo mostrou.", clip(study, 240));
+  const imagine = imagineLine(brief);
+  if (imagine) parts.push("", imagine);
+  parts.push("", "🔬 *O QUE MOSTRAM OS ESTUDOS?*", "", studyLead(brief), "", ...bulletLines(brief));
   parts.push("", `Compre aqui: https://www.yury-imports.com/produto/${encodeURIComponent(productId)}`);
   return parts.join("\n");
 }
