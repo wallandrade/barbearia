@@ -15,7 +15,11 @@ import {
   peptideDailyCaption,
   peptideDailyDue,
   peptideDailyQueue,
+  peptideAdminLines,
+  peptideGroupProduct,
+  peptideSendPlan,
   peptideSheetProductIds,
+  parsePeptideLineSelection,
   pickDailyPeptide,
   pickGroupProduct,
   productCaption,
@@ -97,6 +101,21 @@ test("a explicação diária só sai se tiver ficha e produto à venda", () => {
   assert.equal(peptideDailyDue(10, 0, 0, 10), true);
   assert.equal(peptideDailyDue(10, 3, 1, 10), true);
   assert.equal(peptideDailyDue(9, 0, 0, 10), false);
+  const same = [
+    { id: "a", name: "BPC-157 5mg", image: "https://cdn.example/a.jpg", soldOut: false },
+    { id: "b", name: "BPC-157 10mg", image: "https://cdn.example/b.jpg", soldOut: false },
+    { id: "sold", name: "BPC-157 20mg", image: "https://cdn.example/c.jpg", soldOut: true },
+  ];
+  const plan = peptideSendPlan(briefs.slice(0, 1), same, { mode: "lines", bySlug: { "bpc-157": ["a", "sold", "b"] } });
+  assert.deepEqual(plan[0]?.products.map((item) => item.id), ["a", "b"]);
+  assert.equal(peptideGroupProduct(plan[0]?.products || [], 0)?.id, "a");
+  assert.equal(peptideGroupProduct(plan[0]?.products || [], 1)?.id, "b");
+  assert.equal(peptideGroupProduct(plan[0]?.products || [], 2)?.id, "a");
+  assert.equal(peptideSendPlan(briefs.slice(0, 1), same, { mode: "lines", bySlug: {} }).length, 0);
+  assert.equal(parsePeptideLineSelection("").mode, "unset");
+  assert.equal(parsePeptideLineSelection("[\"a\"]").mode, "legacy");
+  const shown = peptideAdminLines(briefs.slice(0, 1), same, { mode: "unset" });
+  assert.equal(shown[0]?.selectedIds[0], "a");
 });
 
 test("o aviso avulso respeita o intervalo do grupo", () => {

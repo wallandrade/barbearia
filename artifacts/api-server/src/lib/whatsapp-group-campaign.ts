@@ -336,6 +336,117 @@ export function peptideDailyQueue(
   return queue.sort((a, b) => a.brief.name.localeCompare(b.brief.name, "pt"));
 }
 
+export type PeptideLineSelection =
+  | { mode: "unset" }
+  | { mode: "legacy"; ids: string[] }
+  | { mode: "lines"; bySlug: Record<string, string[]> };
+
+/** Lista antiga é um array. O mapa por ficha é o formato novo. Vazio ainda não foi salvo. */
+export function parsePeptideLineSelection(raw: string): PeptideLineSelection {
+  const value = String(raw || "").trim();
+  if (!value) return { mode: "unset" };
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) {
+      return { mode: "legacy", ids: parsed.map((id) => String(id).trim()).filter(Boolean) };
+    }
+    if (!parsed || typeof parsed !== "object") return { mode: "unset" };
+    const bySlug: Record<string, string[]> = {};
+    for (const [slug, ids] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!Array.isArray(ids)) continue;
+      const clean = ids.map((id) => String(id).trim()).filter(Boolean).slice(0, 30);
+      if (clean.length > 0) bySlug[slug] = clean;
+    }
+    return { mode: "lines", bySlug };
+  } catch {
+    return { mode: "unset" };
+  }
+}
+
+export function peptideLineChoices(brief: PeptideBrief, products: CampaignProduct[]): CampaignProduct[] {
+  return products
+    .filter((product) => peptideNameScore(brief, product.name) > 0)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt"));
+}
+
+function readyPeptideProducts(products: CampaignProduct[]): CampaignProduct[] {
+  return products.filter((product) => !product.soldOut && String(product.image || "").startsWith("https://"));
+}
+
+/** Grupo 1 leva o primeiro marcado, grupo 2 o segundo, e volta ao início. */
+export function peptideGroupProduct(products: CampaignProduct[], groupIndex: number): CampaignProduct | null {
+  const ready = readyPeptideProducts(products);
+  if (ready.length === 0) return null;
+  const index = Number.isInteger(groupIndex) && groupIndex >= 0 ? groupIndex : 0;
+  return ready[index % ready.length] ?? null;
+}
+
+export function peptideLinesQueue(
+  briefs: PeptideBrief[],
+  products: CampaignProduct[],
+  bySlug: Record<string, string[]>,
+): Array<{ brief: PeptideBrief; products: CampaignProduct[] }> {
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const queue = briefs.flatMap((brief) => {
+    const chosen = (bySlug[brief.slug] || [])
+      .map((id) => byId.get(id))
+      .filter((product): product is CampaignProduct => Boolean(product));
+    const ready = readyPeptideProducts(chosen);
+    if (ready.length === 0) return [];
+    return [{ brief, products: ready }];
+  });
+  return queue.sort((a, b) => a.brief.name.localeCompare(b.brief.name, "pt"));
+}
+
+export function peptideSendPlan(
+  briefs: PeptideBrief[],
+  products: CampaignProduct[],
+  selection: PeptideLineSelection,
+): Array<{ brief: PeptideBrief; products: CampaignProduct[] }> {
+  if (selection.mode === "lines") return peptideLinesQueue(briefs, products, selection.bySlug);
+  const allowed = selection.mode === "legacy" ? selection.ids : null;
+  return peptideDailyQueue(briefs, products, allowed).map((item) => ({
+    brief: item.brief,
+    products: [item.product],
+  }));
+}
+
+export function peptideAdminLines(
+  briefs: PeptideBrief[],
+  products: CampaignProduct[],
+  selection: PeptideLineSelection,
+): Array<{ slug: string; name: string; selectedIds: string[]; choices: Array<{ id: string; name: string; image: string | null; soldOut: boolean }> }> {
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const allowed = selection.mode === "legacy" ? selection.ids : null;
+  const current = selection.mode === "lines"
+    ? new Map<string, string>()
+    : new Map(peptideDailyQueue(briefs, products, allowed).map((item) => [item.brief.slug, item.product.id]));
+  const lines = briefs.flatMap((brief) => {
+    const matched = peptideLineChoices(brief, products);
+    const savedIds = selection.mode === "lines" ? selection.bySlug[brief.slug] || [] : [];
+    const extras = savedIds
+      .map((id) => byId.get(id))
+      .filter((product): product is CampaignProduct => Boolean(product) && !matched.some((item) => item.id === product.id));
+    const choices = [...matched, ...extras];
+    if (choices.length === 0) return [];
+    const selectedIds = selection.mode === "lines"
+      ? savedIds.filter((id) => choices.some((choice) => choice.id === id))
+      : (current.get(brief.slug) ? [current.get(brief.slug) as string] : []);
+    return [{
+      slug: brief.slug,
+      name: brief.name,
+      selectedIds,
+      choices: choices.map((product) => ({
+        id: product.id,
+        name: product.name,
+        image: product.image,
+        soldOut: product.soldOut,
+      })),
+    }];
+  });
+  return lines.sort((a, b) => a.name.localeCompare(b.name, "pt"));
+}
+
 export function pickDailyPeptide<T>(queue: T[], dayKey: string): T | null {
   if (queue.length === 0) return null;
   const [year, month, day] = dayKey.split("-").map(Number);

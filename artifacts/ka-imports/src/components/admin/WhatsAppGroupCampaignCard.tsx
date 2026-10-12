@@ -13,6 +13,8 @@ function authHeaders(): Record<string, string> {
 }
 
 type GroupChat = { name: string; phone: string };
+type PeptideChoice = { id: string; name: string; image: string | null; soldOut: boolean };
+type PeptideLine = { slug: string; name: string; selectedIds: string[]; choices: PeptideChoice[] };
 type ProductRow = { id: string; name: string; image: string | null; isActive: boolean; isSoldOut: boolean };
 type ScheduleMode = "once" | "times" | "interval";
 type CustomPost = {
@@ -38,10 +40,8 @@ export default function WhatsAppGroupCampaignCard() {
   const [enabled, setEnabled] = useState(false);
   const [peptideEnabled, setPeptideEnabled] = useState(false);
   const [peptideHour, setPeptideHour] = useState(10);
-  const [peptideToday, setPeptideToday] = useState<{ name: string; productName: string } | null>(null);
-  const [peptideQueue, setPeptideQueue] = useState<Array<{ name: string; productName: string; productId: string }>>([]);
-  const [peptideProductIds, setPeptideProductIds] = useState<string[]>([]);
-  const [peptideSheetIds, setPeptideSheetIds] = useState<string[]>([]);
+  const [peptideToday, setPeptideToday] = useState<{ slug: string; name: string; productNames: string[] } | null>(null);
+  const [peptideLines, setPeptideLines] = useState<PeptideLine[]>([]);
   const [groups, setGroups] = useState<GroupChat[]>([]);
   const [productIds, setProductIds] = useState<string[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -73,24 +73,14 @@ export default function WhatsAppGroupCampaignCard() {
         posts: CustomPost[];
         peptideEnabled?: boolean;
         peptideHour?: number;
-        peptideToday?: { name: string; productName: string } | null;
-        peptideQueue?: Array<{ name: string; productName: string; productId?: string }>;
-        peptideProductIds?: string[] | null;
-        peptideSheetProductIds?: string[];
+        peptideToday?: { slug: string; name: string; productNames: string[] } | null;
+        peptideLines?: PeptideLine[];
       };
       setEnabled(Boolean(data.enabled));
       setPeptideEnabled(Boolean(data.peptideEnabled));
       setPeptideHour(Number.isInteger(data.peptideHour) ? Number(data.peptideHour) : 10);
       setPeptideToday(data.peptideToday || null);
-      setPeptideQueue((data.peptideQueue || []).map((item) => ({
-        name: item.name,
-        productName: item.productName,
-        productId: item.productId || "",
-      })));
-      setPeptideSheetIds(data.peptideSheetProductIds || []);
-      setPeptideProductIds(Array.isArray(data.peptideProductIds)
-        ? data.peptideProductIds
-        : (data.peptideQueue || []).map((item) => item.productId || "").filter(Boolean));
+      setPeptideLines(data.peptideLines || []);
       setProductIds(data.productIds || []);
       setGroups(data.groups || []);
       setPosts(data.posts || []);
@@ -112,7 +102,14 @@ export default function WhatsAppGroupCampaignCard() {
         method: "PUT",
         headers: authHeaders(),
         credentials: "include",
-        body: JSON.stringify({ enabled, productIds, groups, peptideEnabled, peptideHour, peptideProductIds }),
+        body: JSON.stringify({
+          enabled,
+          productIds,
+          groups,
+          peptideEnabled,
+          peptideHour,
+          peptideProductMap: Object.fromEntries(peptideLines.map((line) => [line.slug, line.selectedIds])),
+        }),
       });
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) {
@@ -239,8 +236,14 @@ export default function WhatsAppGroupCampaignCard() {
     setProductIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
 
-  const togglePeptideProduct = (id: string) => {
-    setPeptideProductIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const toggleLineProduct = (slug: string, productId: string) => {
+    setPeptideLines((current) => current.map((line) => {
+      if (line.slug !== slug) return line;
+      const selectedIds = line.selectedIds.includes(productId)
+        ? line.selectedIds.filter((id) => id !== productId)
+        : [...line.selectedIds, productId];
+      return { ...line, selectedIds };
+    }));
   };
 
   return (
@@ -300,8 +303,8 @@ export default function WhatsAppGroupCampaignCard() {
       <section className="rounded-2xl border border-border bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold">Explicação diária</h2>
         <p className="text-xs text-muted-foreground">
-          Um peptídeo por dia, no horário escolhido, com 3 minutos entre os grupos. Marque os produtos cujo link pode ir na publicação.
-          Só sai quem está marcado, tem ficha, foto https e não está esgotado. A rodada de 9h, 13h, 17h e 21h continua separada.
+          Um peptídeo por dia, no horário escolhido. Em cada linha, marque os produtos dessa explicação.
+          Cada grupo recebe um produto marcado diferente, com 3 minutos entre eles. A rodada de 9h, 13h, 17h e 21h continua separada.
         </p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={peptideEnabled} onChange={(event) => setPeptideEnabled(event.target.checked)} />
@@ -311,37 +314,39 @@ export default function WhatsAppGroupCampaignCard() {
           Hora
           <input type="number" min={0} max={23} value={peptideHour} onChange={(event) => setPeptideHour(Number(event.target.value))} className="h-10 w-20 px-3 rounded-xl border-2 border-border text-sm" />
         </label>
-        <div className="max-h-80 overflow-auto rounded-xl border border-border divide-y">
-          {products.map((product) => {
-            const httpsImage = String(product.image || "").startsWith("https://");
-            const hasSheet = peptideSheetIds.includes(product.id);
-            return (
-              <label key={product.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={peptideProductIds.includes(product.id)}
-                  disabled={!httpsImage}
-                  onChange={() => togglePeptideProduct(product.id)}
-                />
-                {httpsImage || String(product.image || "").startsWith("data:image/") ? (
-                  <img src={product.image || ""} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-border object-cover" />
-                ) : (
-                  <span className="h-10 w-10 shrink-0 rounded-lg border border-border bg-muted" />
-                )}
-                <span>{product.name}</span>
-                {!hasSheet ? <span className="text-xs text-muted-foreground">sem ficha</span> : null}
-                {!httpsImage ? <span className="text-xs text-muted-foreground">sem foto https</span> : null}
-                {product.isSoldOut ? <span className="text-xs text-muted-foreground">esgotado</span> : null}
-              </label>
-            );
-          })}
-        </div>
-        <p className="text-sm">{peptideToday ? `Hoje: ${peptideToday.name} · ${peptideToday.productName}` : "Nenhum produto marcado com ficha e à venda."}</p>
-        <ul className="max-h-60 overflow-auto rounded-xl border border-border divide-y text-sm">
-          {peptideQueue.map((item) => (
-            <li key={item.name} className="px-3 py-2">{item.name} · {item.productName}</li>
+        <p className="text-sm">
+          {peptideToday
+            ? `Hoje: ${peptideToday.name} · ${peptideToday.productNames.join(", ")}`
+            : "Nenhuma explicação com produto marcado à venda."}
+        </p>
+        <div className="max-h-[32rem] overflow-auto rounded-xl border border-border divide-y">
+          {peptideLines.map((line) => (
+            <div key={line.slug} className="px-3 py-3 space-y-2">
+              <p className="text-sm font-medium">{line.slug === peptideToday?.slug ? `${line.name} · hoje` : line.name}</p>
+              {line.choices.map((choice) => {
+                const httpsImage = String(choice.image || "").startsWith("https://");
+                return (
+                  <label key={choice.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={line.selectedIds.includes(choice.id)}
+                      disabled={!httpsImage}
+                      onChange={() => toggleLineProduct(line.slug, choice.id)}
+                    />
+                    {httpsImage || String(choice.image || "").startsWith("data:image/") ? (
+                      <img src={choice.image || ""} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-border object-cover" />
+                    ) : (
+                      <span className="h-10 w-10 shrink-0 rounded-lg border border-border bg-muted" />
+                    )}
+                    <span>{choice.name}</span>
+                    {!httpsImage ? <span className="text-xs text-muted-foreground">sem foto https</span> : null}
+                    {choice.soldOut ? <span className="text-xs text-muted-foreground">esgotado</span> : null}
+                  </label>
+                );
+              })}
+            </div>
           ))}
-        </ul>
+        </div>
         <Button type="button" onClick={() => void save()} disabled={loading}>
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Salvar explicação

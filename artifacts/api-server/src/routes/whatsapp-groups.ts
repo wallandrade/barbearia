@@ -17,10 +17,10 @@ import {
   httpsUrlError,
   parseGroupChats,
   parseScheduleTimes,
-  parseProductIdList,
-  peptideDailyQueue,
+  peptideAdminLines,
   peptideSendHour,
-  peptideSheetProductIds,
+  peptideSendPlan,
+  parsePeptideLineSelection,
   pickDailyPeptide,
   saoPauloParts,
   scheduleLocal,
@@ -82,21 +82,19 @@ router.get("/admin/whatsapp/groups", requirePrimaryAdmin, async (_req, res) => {
     soldOut: Boolean(row.isSoldOut),
   }));
   const briefs = peptideBriefs();
-  const peptideProductIds = parseProductIdList(peptideProductsRaw);
-  const queue = peptideDailyQueue(briefs, peptideCatalog, peptideProductIds);
-  const today = pickDailyPeptide(queue, saoPauloParts(new Date()).dayKey);
+  const selection = parsePeptideLineSelection(peptideProductsRaw);
+  const plan = peptideSendPlan(briefs, peptideCatalog, selection);
+  const today = pickDailyPeptide(plan, saoPauloParts(new Date()).dayKey);
   res.json({
     enabled: enabledRaw === "1",
     peptideEnabled: peptideRaw === "1",
     peptideHour: peptideSendHour(hourRaw),
-    peptideProductIds,
-    peptideSheetProductIds: peptideSheetProductIds(briefs, peptideCatalog),
-    peptideToday: today ? { name: today.brief.name, productName: today.product.name } : null,
-    peptideQueue: queue.map((item) => ({
-      name: item.brief.name,
-      productName: item.product.name,
-      productId: item.product.id,
-    })),
+    peptideLines: peptideAdminLines(briefs, peptideCatalog, selection),
+    peptideToday: today ? {
+      slug: today.brief.slug,
+      name: today.brief.name,
+      productNames: today.products.map((product) => product.name),
+    } : null,
     productIds,
     groups: chatsRaw ? parseGroupChats(chatsRaw) : DEFAULT_GROUP_CHATS,
     posts: posts.map((post) => ({
@@ -128,7 +126,15 @@ router.put("/admin/whatsapp/groups", requirePrimaryAdmin, async (req, res) => {
   if (typeof req.body?.peptideEnabled === "boolean") {
     await saveSetting(GROUP_PEPTIDE_ENABLED_SETTING, req.body.peptideEnabled === true ? "1" : "0");
     await saveSetting(GROUP_PEPTIDE_HOUR_SETTING, String(peptideSendHour(String(req.body?.peptideHour ?? ""))));
-    if (Array.isArray(req.body?.peptideProductIds)) {
+    if (req.body?.peptideProductMap && typeof req.body.peptideProductMap === "object" && !Array.isArray(req.body.peptideProductMap)) {
+      const bySlug: Record<string, string[]> = {};
+      for (const [slug, ids] of Object.entries(req.body.peptideProductMap as Record<string, unknown>)) {
+        if (!/^[a-z0-9-]{1,80}$/.test(slug) || !Array.isArray(ids)) continue;
+        const clean = ids.map((id) => String(id).trim()).filter(Boolean).slice(0, 30);
+        if (clean.length > 0) bySlug[slug] = clean;
+      }
+      await saveSetting(GROUP_PEPTIDE_PRODUCT_IDS_SETTING, JSON.stringify(bySlug));
+    } else if (Array.isArray(req.body?.peptideProductIds)) {
       const peptideProductIds = req.body.peptideProductIds
         .map((id: unknown) => String(id).trim())
         .filter(Boolean)
