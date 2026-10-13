@@ -6,6 +6,7 @@ import {
   buildSupportOrdersMessage,
   classifySupportText,
   decideSupportTurn,
+  ATTENDANT_LINE_PHONES,
   isStoreLinePhone,
   isSupportFloodText,
   readSupportInbound,
@@ -172,6 +173,8 @@ test("número da loja e a frase de limite não geram resposta", () => {
   assert.equal(isStoreLinePhone("3511917739912", ["+351 191 773 9912"]), true);
   assert.equal(isStoreLinePhone("553511917739912", ["3511917739912"]), true);
   assert.equal(isStoreLinePhone("5511999998888", ["35992420559", "3511917739912"]), false);
+  assert.equal(isStoreLinePhone("+55 11 91773-9912", ATTENDANT_LINE_PHONES), true);
+  assert.equal(isStoreLinePhone("5511999998888", ATTENDANT_LINE_PHONES), false);
   assert.equal(isSupportFloodText("Recebi muitas mensagens agora. Espera um minuto e tenta de novo."), true);
   assert.equal(isSupportFloodText("oi"), false);
   const phone = "5511888777666";

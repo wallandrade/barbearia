@@ -143,6 +143,9 @@ export function isSupportFloodText(text: string): boolean {
   return text.trim() === FLOOD_TEXT;
 }
 
+/** Atendente que não deve receber o menu. O n8n continua recebendo; a loja não responde. */
+export const ATTENDANT_LINE_PHONES = ["5511917739912"];
+
 /** Telefone de vendedor ou do checkout. Os dois números da loja não se respondem. */
 export function isStoreLinePhone(phone: string, lineNumbers: readonly string[]): boolean {
   const got = phoneDigits(phone);
@@ -575,6 +578,7 @@ async function storeLinePhones(): Promise<string[]> {
         ])),
     ]);
     const phones = [
+      ...ATTENDANT_LINE_PHONES,
       ...sellers.map((row) => String(row.whatsapp || "")),
       ...settings.map((row) => String(row.value || "")),
     ];
