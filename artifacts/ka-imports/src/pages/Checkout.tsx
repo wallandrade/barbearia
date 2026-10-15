@@ -2920,6 +2920,7 @@ export default function Checkout() {
                       Saldo disponível: {affiliateCreditLoading ? "carregando..." : formatCurrency(affiliateCreditAvailable)}
                     </p>
                   </div>
+                  {storeCreditAvailable > 0 && (
                   <div>
                     <label className="flex items-center justify-between gap-3 cursor-pointer">
                       <span className="text-sm font-medium text-foreground">Usar saldo da loja (seguro)</span>
@@ -2927,12 +2928,12 @@ export default function Checkout() {
                         type="checkbox"
                         checked={useStoreCredit}
                         onChange={(e) => setUseStoreCredit(e.target.checked)}
-                        disabled={storeCreditLoading || storeCreditAvailable <= 0}
+                        disabled={storeCreditLoading}
                         className="w-4 h-4"
                       />
                     </label>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Saldo disponível: {storeCreditLoading ? "carregando..." : formatCurrency(storeCreditAvailable)}
+                      Saldo disponível: {formatCurrency(storeCreditAvailable)}
                     </p>
                     {useStoreCredit && storeCreditToApply > 0 && (
                       <p className="text-xs text-emerald-700 mt-1">
@@ -2940,6 +2941,7 @@ export default function Checkout() {
                       </p>
                     )}
                   </div>
+                  )}
                 </div>
               )}
 
