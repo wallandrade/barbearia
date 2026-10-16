@@ -32,6 +32,8 @@ export type LossIncidentView = {
   occurredAt: Date;
   orderNumber: number | null;
   kind: string;
+  /** `peer` = caso da outra loja. Sem isso, o aviso cita o pedido daqui. */
+  origin?: "yury" | "peer";
 };
 
 export type LossAlert = {
@@ -228,9 +230,11 @@ function incidentMatchesDestination(
 function detailClause(incident: LossIncidentView): { inline: string; last: string } {
   const neighborhood = String(incident.neighborhoodLabel || "").trim();
   const day = formatLossDay(incident.occurredAt);
-  const order = incident.orderNumber != null && incident.orderNumber > 0
-    ? `, pedido #${incident.orderNumber}`
-    : "";
+  const order = incident.origin === "peer"
+    ? ", outra loja"
+    : incident.orderNumber != null && incident.orderNumber > 0
+      ? `, pedido #${incident.orderNumber}`
+      : "";
   if (neighborhood) {
     const inline = `bairro ${neighborhood}, ${day}${order}`;
     return { inline, last: `no bairro ${neighborhood}, ${day}${order}` };

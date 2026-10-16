@@ -33,6 +33,7 @@ import motoboyCoverageRouter from "./motoboy-coverage";
 import motoboyProposalsRouter from "./motoboy-proposals";
 import motoboyCoverageSyncRouter from "./motoboy-coverage-sync";
 import inventorySyncRouter from "./inventory-sync";
+import lossBlacklistSyncRouter from "./loss-blacklist-sync";
 import shippingQueueRouter from "./shipping-queue";
 import shippingDeliveryEstimateRouter from "./shipping-delivery-estimate";
 
@@ -83,6 +84,7 @@ router.use(motoboyCoverageRouter);
 router.use(motoboyProposalsRouter);
 router.use(motoboyCoverageSyncRouter);
 router.use(inventorySyncRouter);
+router.use(lossBlacklistSyncRouter);
 router.use(shippingQueueRouter);
 router.use(shippingDeliveryEstimateRouter);
 router.use(brevoRouter);

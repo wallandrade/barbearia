@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-10-05
+> **Última atualização:** 2026-10-15
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-15 | Lista negra compartilhada: pull por `LOSS_SYNC_TOKEN` (Bearer / `X-Api-Key`); webhook com `LOSS_SYNC_WEBHOOK_SECRET`; leitura da outra loja com `LOSS_PEER_TOKEN` | Sem token o snapshot responde 503. A cotação não usa sessão admin | Snapshot de estoque e cobertura Motoboy iguais |
 | 2026-10-05 | Login da loja pharma: dois botões, **Não tenho conta** (cadastro) e **Esqueci minha senha** (WhatsApp com o e-mail) | O cliente não cai mais no cadastro quando só esqueceu a senha | Login/cadastro e `set-password` do admin iguais; sem reset por e-mail |
 | 2026-09-18 | Carteira na aba Clientes: `POST /api/admin/customers/:id/store-credit` só admin primário (`hasGlobalAccess`); `GET /admin/customers` mostra saldo a qualquer admin autenticado | Ajustar/zerar na lista sem ir na aba Seguro | Impersonate/senha e aba Seguro iguais |
 | 2026-09-10 | Janela da senha de baixa Motoboy/Minas: **30 min** | Uma senha cobre várias baixas no período | GET snapshot e token iguais |
@@ -64,6 +65,13 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Admin: `GET /api/admin/integrations/inventory/exit-access` e `POST .../unlock` = `requireAdminAuth`. `PUT .../exit-password` = `requirePrimaryAdmin`. Hash, senha não volta no GET.
 - Push: `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret pode cair no da cobertura). Sem URL = no-op.
 - Não usa sessão admin.
+
+## Lista negra compartilhada (outra loja)
+
+- Pull: `GET /api/integrations/loss-blacklist/snapshot` — Bearer ou `X-Api-Key` = `LOSS_SYNC_TOKEN`. Sem token → 503.
+- Push: `LOSS_SYNC_WEBHOOK_URL` + `LOSS_SYNC_WEBHOOK_SECRET` (secret pode cair no da cobertura). Sem URL = no-op.
+- Leitura da outra loja: `LOSS_PEER_SNAPSHOT_URL` + `LOSS_PEER_TOKEN`. Não usa sessão admin.
+- O snapshot não leva nome, pedido, CEP nem rastreio.
 
 ## Cliente (customer)
 

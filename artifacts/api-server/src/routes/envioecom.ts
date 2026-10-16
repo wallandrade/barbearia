@@ -871,7 +871,7 @@ router.get("/admin/envioecom/loss-blacklist", requireAdminAuth, async (req, res)
       query: String(req.query.q || ""),
       includeRemoved: String(req.query.includeRemoved || "") === "1",
     });
-    res.json({ ok: true, items: result.items, truncated: result.truncated });
+    res.json({ ok: true, items: result.items, truncated: result.truncated, peer: result.peer });
   } catch (err) {
     console.error("[EnvioEcom] loss-blacklist list error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao listar a lista negra." });

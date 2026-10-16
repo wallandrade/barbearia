@@ -17,6 +17,11 @@ import {
   type LossIncidentView,
 } from "./carrier-loss";
 import type { StatusHistoryEntry } from "./envioecom";
+import {
+  loadPeerLossIncidents,
+  notifyLossChanged,
+  toLossSyncIncident,
+} from "./loss-blacklist-sync";
 
 export class CarrierLossError extends Error {
   status: number;
@@ -120,12 +125,15 @@ export async function recordCarrierLossFromStatus(input: {
   const neighborhood = String(input.order.addressNeighborhood || "").trim();
   const now = input.occurredAt && !Number.isNaN(input.occurredAt.getTime()) ? input.occurredAt : new Date();
   const existing = await findIncident(input.order.id, packageId);
+  const displayCarrier = carrierDisplayName(carrierLabel);
+  const neighborhoodKey = neighborhoodMatchKey(neighborhood) || null;
+  const cityLabel = String(input.order.addressCity || "").trim() || place.cityKey;
   if (!existing) {
     await insertIncident({
       order: input.order,
       packageId,
       carrierKey,
-      carrierLabel: carrierDisplayName(carrierLabel),
+      carrierLabel: displayCarrier,
       place,
       cep,
       neighborhood,
@@ -137,27 +145,50 @@ export async function recordCarrierLossFromStatus(input: {
     return;
   }
 
+  const wasRemoved = Boolean(existing.removedAt);
+  const regionChanged = existing.regionKey !== place.regionKey
+    || existing.carrierKey !== carrierKey
+    || existing.kind !== found.kind
+    || (existing.neighborhoodKey || "") !== (neighborhoodKey || "");
   await db
     .update(carrierLossIncidentsTable)
     .set({
       carrierKey,
-      carrierLabel: carrierDisplayName(carrierLabel),
+      carrierLabel: displayCarrier,
       kind: found.kind,
       statusText: found.text,
       regionKey: place.regionKey,
       regionLabel: place.regionLabel,
       scope: place.scope,
       cityKey: place.cityKey,
-      cityLabel: String(input.order.addressCity || "").trim() || place.cityKey,
+      cityLabel,
       state: place.state,
       neighborhood: neighborhood || null,
-      neighborhoodKey: neighborhoodMatchKey(neighborhood) || null,
+      neighborhoodKey,
       cep,
       removedAt: null,
       occurredAt: existing.removedAt ? now : existing.occurredAt,
       updatedAt: new Date(),
     })
     .where(eq(carrierLossIncidentsTable.id, existing.id));
+  if (wasRemoved || regionChanged) {
+    notifyLossChanged(toLossSyncIncident({
+      id: existing.id,
+      carrierKey,
+      carrierLabel: displayCarrier,
+      cityKey: place.cityKey,
+      cityLabel,
+      state: place.state,
+      neighborhoodKey,
+      neighborhood,
+      regionKey: place.regionKey,
+      regionLabel: place.regionLabel,
+      scope: place.scope,
+      kind: found.kind,
+      occurredAt: existing.removedAt ? now : existing.occurredAt,
+      removedAt: null,
+    }));
+  }
 }
 
 export async function markManualCarrierLoss(input: {
@@ -215,16 +246,34 @@ export async function markManualCarrierLoss(input: {
       updatedAt: now,
     })
     .where(eq(carrierLossIncidentsTable.id, existing.id));
+  notifyLossChanged(toLossSyncIncident({
+    id: existing.id,
+    carrierKey,
+    carrierLabel,
+    cityKey: place.cityKey,
+    cityLabel: String(input.order.addressCity || "").trim() || place.cityKey,
+    state: place.state,
+    neighborhoodKey: neighborhoodMatchKey(neighborhood) || null,
+    neighborhood,
+    regionKey: place.regionKey,
+    regionLabel: place.regionLabel,
+    scope: place.scope,
+    kind: "manual",
+    occurredAt: now,
+    removedAt: null,
+  }));
   return { phrase, carrierLabel };
 }
 
 export async function clearCarrierLoss(orderId: string, packageId?: string | null): Promise<boolean> {
   const existing = await findIncident(orderId, String(packageId || "").trim());
   if (!existing || existing.removedAt) return false;
+  const removedAt = new Date();
   await db
     .update(carrierLossIncidentsTable)
-    .set({ removedAt: new Date(), updatedAt: new Date() })
+    .set({ removedAt, updatedAt: removedAt })
     .where(eq(carrierLossIncidentsTable.id, existing.id));
+  notifyLossChanged(toLossSyncIncident({ ...existing, removedAt }));
   return true;
 }
 
@@ -242,22 +291,31 @@ export async function lossAlertsForDestination(input: {
     return input.quotes.map((quote) => ({ ...quote, lossAlert: null }));
   }
   const cutoff = new Date(Date.now() - CARRIER_LOSS_WINDOW_MS);
-  let incidents: LossIncidentView[] = [];
-  try {
-    const rows = await db
-      .select()
-      .from(carrierLossIncidentsTable)
-      .where(and(
-        eq(carrierLossIncidentsTable.cityKey, place.cityKey),
-        eq(carrierLossIncidentsTable.state, place.state),
-        isNull(carrierLossIncidentsTable.removedAt),
-        gte(carrierLossIncidentsTable.occurredAt, cutoff),
-      ));
-    incidents = rows.map(rowToView);
-  } catch (err) {
-    console.warn("[carrier-loss] quote lookup failed", err);
-  }
-  return attachLossAlerts(input.quotes, incidents, input.destination);
+  const [local, peer] = await Promise.all([
+    (async () => {
+      try {
+        const rows = await db
+          .select()
+          .from(carrierLossIncidentsTable)
+          .where(and(
+            eq(carrierLossIncidentsTable.cityKey, place.cityKey),
+            eq(carrierLossIncidentsTable.state, place.state),
+            isNull(carrierLossIncidentsTable.removedAt),
+            gte(carrierLossIncidentsTable.occurredAt, cutoff),
+          ));
+        return rows.map(rowToView);
+      } catch (err) {
+        console.warn("[carrier-loss] quote lookup failed", err);
+        return [] as LossIncidentView[];
+      }
+    })(),
+    loadPeerLossIncidents().catch((err) => {
+      console.warn("[carrier-loss] peer lookup failed", err);
+      return { enabled: false, loaded: false, incidents: [] as LossIncidentView[], listed: [] };
+    }),
+  ]);
+  const peerHere = peer.incidents.filter((row) => row.cityKey === place.cityKey && row.state === place.state);
+  return attachLossAlerts(input.quotes, [...local, ...peerHere], input.destination);
 }
 
 export async function attachCarrierLossFlags<T extends {
@@ -317,15 +375,17 @@ async function insertIncident(input: {
   occurredAt: Date;
 }) {
   const neighborhoodKey = neighborhoodMatchKey(input.neighborhood);
+  const id = crypto.randomUUID();
+  const cityLabel = (String(input.order.addressCity || "").trim() || input.place.cityKey).slice(0, 128);
   await db.insert(carrierLossIncidentsTable).values({
-    id: crypto.randomUUID(),
+    id,
     orderId: input.order.id,
     packageId: input.packageId,
     orderNumber: input.order.orderNumber ?? null,
     carrierKey: input.carrierKey,
     carrierLabel: input.carrierLabel.slice(0, 128),
     cityKey: input.place.cityKey.slice(0, 128),
-    cityLabel: (String(input.order.addressCity || "").trim() || input.place.cityKey).slice(0, 128),
+    cityLabel,
     state: input.place.state,
     neighborhood: input.neighborhood ? input.neighborhood.slice(0, 255) : null,
     neighborhoodKey: neighborhoodKey ? neighborhoodKey.slice(0, 255) : null,
@@ -339,6 +399,22 @@ async function insertIncident(input: {
     occurredAt: input.occurredAt,
     removedAt: null,
   });
+  notifyLossChanged(toLossSyncIncident({
+    id,
+    carrierKey: input.carrierKey,
+    carrierLabel: input.carrierLabel,
+    cityKey: input.place.cityKey,
+    cityLabel,
+    state: input.place.state,
+    neighborhoodKey,
+    neighborhood: input.neighborhood,
+    regionKey: input.place.regionKey,
+    regionLabel: input.place.regionLabel,
+    scope: input.place.scope,
+    kind: input.kind,
+    occurredAt: input.occurredAt,
+    removedAt: null,
+  }));
 }
 
 export type LossBlacklistListItem = {
@@ -356,6 +432,7 @@ export type LossBlacklistListItem = {
   kind: string;
   occurredAt: string;
   removedAt: string | null;
+  origin: "yury" | "peer";
   barcode: string | null;
   status: string | null;
   events: LossBlacklistEvent[];
@@ -385,7 +462,11 @@ async function rowsByIds<T extends { id: string }>(
 export async function listCarrierLossBlacklist(input: {
   query?: string | null;
   includeRemoved?: boolean;
-}): Promise<{ items: LossBlacklistListItem[]; truncated: boolean }> {
+}): Promise<{
+  items: LossBlacklistListItem[];
+  truncated: boolean;
+  peer: { enabled: boolean; loaded: boolean };
+}> {
   const rows = input.includeRemoved
     ? await db
       .select()
@@ -466,12 +547,51 @@ export async function listCarrierLossBlacklist(input: {
         barcode,
         status,
         events: lossBlacklistEventsFromHistory(history),
+        origin: "yury" as const,
       } satisfies LossBlacklistListItem,
     };
   });
 
-  const matched = mapped
+  const peer = await loadPeerLossIncidents().catch((err) => {
+    console.warn("[carrier-loss] peer list failed", err);
+    return { enabled: false, loaded: false, incidents: [] as LossIncidentView[], listed: [] };
+  });
+  const peerMapped = peer.listed.map((row) => ({
+    search: {
+      orderNumber: null,
+      clientName: "Outra loja",
+      cityLabel: row.cityLabel,
+      state: row.state,
+      neighborhood: row.neighborhoodLabel,
+      carrierLabel: row.carrierLabel,
+      kind: row.kind,
+      source: "outra loja",
+    },
+    item: {
+      id: `peer:${row.id}`,
+      orderId: "",
+      packageId: null,
+      orderNumber: null,
+      clientName: "Outra loja",
+      orderCreatedAt: null,
+      carrierLabel: row.carrierLabel,
+      cityLabel: row.cityLabel,
+      state: row.state,
+      neighborhood: row.neighborhoodLabel || null,
+      source: "peer",
+      kind: row.kind,
+      occurredAt: row.occurredAt,
+      removedAt: null,
+      barcode: null,
+      status: null,
+      events: [],
+      origin: "peer" as const,
+    } satisfies LossBlacklistListItem,
+  }));
+
+  const matched = [...mapped, ...peerMapped]
     .filter((row) => lossBlacklistMatchesQuery(row.search, input.query))
+    .sort((a, b) => b.item.occurredAt.localeCompare(a.item.occurredAt))
     .map((row) => row.item);
-  return capLossBlacklistList(matched);
+  return { ...capLossBlacklistList(matched), peer: { enabled: peer.enabled, loaded: peer.loaded } };
 }

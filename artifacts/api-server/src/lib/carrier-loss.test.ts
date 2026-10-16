@@ -239,3 +239,36 @@ test("caso com mais de 180 dias não avisa", () => {
   });
   assert.equal(alert, null);
 });
+
+test("caso da outra loja soma e não cita o pedido de lá", () => {
+  const alert = buildLossAlert({
+    carrierLabel: "Jadlog",
+    destination: { city: "Campinas", state: "SP", cep: "13010000", neighborhood: "Centro" },
+    incidents: [
+      incident({
+        carrierKey: "jadlog",
+        cityKey: "campinas",
+        state: "SP",
+        regionKey: "city",
+        orderNumber: 10,
+        occurredAt: new Date("2026-08-01T15:00:00.000Z"),
+      }),
+      incident({
+        carrierKey: "jadlog",
+        cityKey: "campinas",
+        state: "SP",
+        regionKey: "city",
+        orderNumber: 999,
+        origin: "peer",
+        neighborhoodKey: "centro",
+        neighborhoodLabel: "Centro",
+        occurredAt: new Date("2026-09-01T15:00:00.000Z"),
+      }),
+    ],
+    now: NOW,
+  });
+  assert.equal(alert?.level, "danger");
+  assert.equal(alert?.count, 2);
+  assert.match(alert?.message || "", /outra loja/);
+  assert.doesNotMatch(alert?.message || "", /pedido #999/);
+});

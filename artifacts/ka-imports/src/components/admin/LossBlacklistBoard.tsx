@@ -28,6 +28,7 @@ type LossRow = {
   occurredAt?: string | null;
   removedAt?: string | null;
   events?: LossEvent[];
+  origin?: "yury" | "peer" | null;
 };
 
 type Props = {
@@ -43,8 +44,9 @@ function formatDateBR(date: string | Date | undefined | null): string {
   return parsed.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
-function sourceLabel(source: string | null | undefined): string {
-  return source === "manual" ? "Manual" : "Rastreio";
+function sourceLabel(row: LossRow): string {
+  if (row.origin === "peer") return "Outra loja";
+  return row.source === "manual" ? "Yury · Manual" : "Yury · Rastreio";
 }
 
 function rowKey(row: LossRow): string {
@@ -106,6 +108,8 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
   const [includeRemoved, setIncludeRemoved] = useState(false);
   const [items, setItems] = useState<LossRow[]>([]);
   const [truncated, setTruncated] = useState(false);
+  const [peerEnabled, setPeerEnabled] = useState(false);
+  const [peerLoaded, setPeerLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -129,13 +133,20 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
         onUnauthorized();
         return;
       }
-      const data = await res.json() as { items?: LossRow[]; truncated?: boolean; message?: string };
+      const data = await res.json() as {
+        items?: LossRow[];
+        truncated?: boolean;
+        message?: string;
+        peer?: { enabled?: boolean; loaded?: boolean };
+      };
       if (!res.ok) {
         toast.error(data.message || "Falha ao carregar a lista negra.");
         return;
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTruncated(data.truncated === true);
+      setPeerEnabled(data.peer?.enabled === true);
+      setPeerLoaded(data.peer?.loaded === true);
     } catch {
       toast.error("Erro ao carregar a lista negra.");
     } finally {
@@ -187,7 +198,8 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
       <div>
         <h2 className="text-xl font-bold text-foreground">Lista negra</h2>
         <p className="text-sm text-muted-foreground">
-          Extravios já gravados. A busca não consulta a EnvioEcom.
+          Extravios já gravados aqui
+          {peerEnabled ? " e na outra loja" : ""}. A busca não consulta a EnvioEcom.
         </p>
       </div>
 
@@ -211,6 +223,12 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
           Mostrar retirados
         </label>
       </div>
+
+      {peerEnabled && !peerLoaded && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
+          A lista da outra loja não respondeu. Mostrando só a nossa.
+        </p>
+      )}
 
       {truncated && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
@@ -246,6 +264,7 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
               {items.map((item) => {
                 const key = rowKey(item);
                 const open = expandedId === key;
+                const peer = item.origin === "peer";
                 const removed = Boolean(item.removedAt);
                 const events = item.events || [];
                 return (
@@ -262,6 +281,9 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
                             <ChevronDown className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                           )}
                           <div>
+                            {peer ? (
+                              <p className="font-bold text-foreground">Outra loja</p>
+                            ) : (
                             <button
                               type="button"
                               className="font-bold text-foreground hover:text-primary"
@@ -276,6 +298,7 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
                             >
                               #{item.orderNumber != null ? item.orderNumber : item.orderId.slice(0, 8)}
                             </button>
+                            )}
                             {item.packageId ? (
                               <p className="text-[11px] font-semibold text-amber-800 mt-0.5">Pacote</p>
                             ) : null}
@@ -292,7 +315,7 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
                           <p className="text-[11px] text-muted-foreground mt-0.5">{item.neighborhood}</p>
                         ) : null}
                       </td>
-                      <td className="px-3 py-3">{sourceLabel(item.source)}</td>
+                      <td className="px-3 py-3">{sourceLabel(item)}</td>
                       <td className="px-3 py-3 capitalize">{item.kind || "—"}</td>
                       <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {formatDateBR(item.occurredAt) || "—"}
@@ -303,7 +326,7 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
                         ) : null}
                       </td>
                       <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
-                        {!removed && (
+                        {!removed && !peer && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -319,7 +342,13 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
                     {open && (
                       <tr className="border-b border-border/70 bg-slate-50/80">
                         <td colSpan={8} className="px-4 py-4">
-                          <LossPath events={events} />
+                          {peer ? (
+                            <p className="text-sm text-muted-foreground">
+                              Caso da outra loja. Dá para tirar só na lista de lá.
+                            </p>
+                          ) : (
+                            <LossPath events={events} />
+                          )}
                         </td>
                       </tr>
                     )}
