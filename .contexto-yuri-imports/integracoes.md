@@ -8,7 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-10-16 | Legenda da filmagem sem a frase do consumidor | O comunicado do pagamento não fala mais em direitos do consumidor | A imagem, o lembrete da entrega e a cópia 48h iguais |
+| 2026-10-16 | Comunicado da filmagem sem o aviso final | Saiu a frase dos direitos do consumidor e a de desconhecer o aviso | A imagem, o lembrete da entrega e a cópia 48h iguais |
 | 2026-10-16 | Lembrete da filmagem na saída para entrega | Quando a EnvioEcom grava saiu para entrega, POST `{ phone, caption }` de novo em `webhook/filmagem`. A legenda lembra o aviso do pagamento. `orders.filmagem_delivery_whatsapp_sent_at` impede o segundo lembrete | O aviso da EnvioEcom e o texto de parabéns iguais |
 | 2026-10-16 | WhatsApp da filmagem via n8n | No pagamento confirmado, POST `{ phone, caption }` em `webhook/filmagem`. A imagem fica no n8n. `orders.filmagem_whatsapp_sent_at` impede o segundo envio | O texto de parabéns e a cópia 48h iguais |
 | 2026-10-16 | Aba Imagem sobe foto para o R2 | `POST /api/admin/images` guarda a URL https em `admin_images`. Copiar URL na aba | Upload de produto, grupos e a cópia 48h iguais |
