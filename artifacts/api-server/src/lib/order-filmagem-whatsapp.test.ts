@@ -14,6 +14,7 @@ test("filmagem do pagamento manda telefone e a legenda oficial", () => {
   assert.equal(payload?.phone, "5535999768759");
   assert.match(payload?.caption || "", /COMUNICADO OFICIAL/);
   assert.equal(payload?.caption, FILMAGEM_PAID_CAPTION);
+  assert.equal((payload?.caption || "").includes("direitos do consumidor"), false);
   assert.ok((payload?.caption.length || 0) <= 1024);
 });
 

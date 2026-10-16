@@ -24,7 +24,7 @@ export const FILMAGEM_PAID_CAPTION = [
   "",
   "🛡️ O seguro é opcional e *não dispensa* essa filmagem. Sem ela, a ocorrência pode ficar sem comprovação.",
   "",
-  "📌 Esta regra não tira os direitos do consumidor. Desconhecer o aviso não dispensa a filmagem.",
+  "📌 Desconhecer o aviso não dispensa a filmagem.",
   "",
   "*YURY IMPORTS 🇵🇾🇧🇷*",
 ].join("\n");
