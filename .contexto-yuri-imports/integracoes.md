@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-15 | Aba Lista negra separa as duas lojas | Bloco **Esta loja** e bloco **Outra loja** | Snapshot, cotação e a cópia 48h iguais |
 | 2026-10-15 | Lista negra compartilhada nos dois sentidos | `GET /api/integrations/loss-blacklist/snapshot` (`LOSS_SYNC_TOKEN`) e webhook `loss.changed`. A cotação lê `LOSS_PEER_SNAPSHOT_URL` | Estoque, cobertura Motoboy, checkout e a cópia 48h iguais |
 | 2026-10-13 | Atendimento não manda menu para o outro atendente | O número 5511917739912 fica sem resposta do menu. Cliente e aviso de pedido continuam | Pedido pago e a cópia 48h iguais |
 | 2026-10-12 | Explicação do grupo sai no estilo com emoji | Título, convite, frase imagine, estudo e três pontos. Sem o aviso de evidência fraca | Horários, produtos e o link iguais |
@@ -279,7 +280,7 @@ Cada loja continua dona da própria lista. O snapshot não leva nome, pedido, CE
 
 - **Eles leem a gente:** `GET /api/integrations/loss-blacklist/snapshot` — Bearer ou `X-Api-Key` = `LOSS_SYNC_TOKEN`. Sem token → 503. Resposta: `{ syncedAt, source: "yury-imports", windowDays: 180, incidents[], truncated }`. Só `removed_at` nulo e ocorrido nos últimos 180 dias. Cada caso traz transportadora, cidade, UF, região, bairro, tipo e data.
 - **Aviso:** `LOSS_SYNC_WEBHOOK_URL` + `LOSS_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `loss.changed` ao gravar, repor ou tirar da lista. Atualização de rastreio de um caso que já está na lista não dispara de novo. Headers iguais ao estoque (`X-Yury-Signature`).
-- **A gente lê eles:** `LOSS_PEER_SNAPSHOT_URL` + `LOSS_PEER_TOKEN`. O JSON deles segue o mesmo formato (`incidents[]`). Cache 12 min. Timeout 3 s. Falha não trava a cotação nem a aba: segue só com a lista daqui. Caso de lá entra no `lossAlert` (âmbar/vermelho iguais) e o texto diz **outra loja**. A aba Lista negra mostra a origem e não oferece **Tirar da lista negra** nesse caso.
+- **A gente lê eles:** `LOSS_PEER_SNAPSHOT_URL` + `LOSS_PEER_TOKEN`. O JSON deles segue o mesmo formato (`incidents[]`). Cache 12 min. Timeout 3 s. Falha não trava a cotação nem a aba: segue só com a lista daqui. Caso de lá entra no `lossAlert` (âmbar/vermelho iguais) e o texto diz **outra loja**. A aba Lista negra mostra dois blocos, **Esta loja** e **Outra loja**, e não oferece **Tirar da lista negra** no caso de lá.
 - Lib: `lib/loss-blacklist-sync.ts`; rota: `routes/loss-blacklist-sync.ts`.
 
 ## Storage

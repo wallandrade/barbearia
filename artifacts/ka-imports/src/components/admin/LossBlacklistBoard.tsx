@@ -53,6 +53,153 @@ function rowKey(row: LossRow): string {
   return row.id || `${row.orderId}:${row.packageId || ""}`;
 }
 
+function LossSection({
+  title,
+  hint,
+  rows,
+  expandedId,
+  setExpandedId,
+  removingId,
+  removeRow,
+  onGoToOrder,
+}: {
+  title: string;
+  hint: string;
+  rows: LossRow[];
+  expandedId: string | null;
+  setExpandedId: (value: string | null) => void;
+  removingId: string | null;
+  removeRow: (row: LossRow) => void;
+  onGoToOrder?: Props["onGoToOrder"];
+}) {
+  return (
+    <section className="space-y-2">
+      <div>
+        <h3 className="text-base font-bold text-foreground">{title}</h3>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          Nenhum envio nesta lista.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-border bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-left">
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Pedido</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Cliente</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Transportadora</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Cidade</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Origem</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Tipo</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Data</th>
+                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((item) => {
+                const key = rowKey(item);
+                const open = expandedId === key;
+                const peer = item.origin === "peer";
+                const removed = Boolean(item.removedAt);
+                const events = item.events || [];
+                return (
+                  <Fragment key={key}>
+                    <tr
+                      className={`border-b border-border/70 align-top hover:bg-muted/20 cursor-pointer ${open ? "bg-amber-50/50" : ""}`}
+                      onClick={() => setExpandedId(open ? null : key)}
+                    >
+                      <td className="px-3 py-3">
+                        <div className="flex items-start gap-1.5">
+                          {open ? (
+                            <ChevronUp className="w-4 h-4 text-amber-800 mt-0.5 shrink-0" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                          )}
+                          <div>
+                            {peer ? (
+                              <p className="font-bold text-foreground">Outra loja</p>
+                            ) : (
+                              <button
+                                type="button"
+                                className="font-bold text-foreground hover:text-primary"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onGoToOrder?.(
+                                    item.orderId,
+                                    item.orderCreatedAt,
+                                    item.orderNumber != null ? String(item.orderNumber) : item.orderId,
+                                  );
+                                }}
+                              >
+                                #{item.orderNumber != null ? item.orderNumber : item.orderId.slice(0, 8)}
+                              </button>
+                            )}
+                            {item.packageId ? (
+                              <p className="text-[11px] font-semibold text-amber-800 mt-0.5">Pacote</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="font-medium text-foreground">{item.clientName || "—"}</p>
+                      </td>
+                      <td className="px-3 py-3">{item.carrierLabel || "—"}</td>
+                      <td className="px-3 py-3">
+                        <p>{[item.cityLabel, item.state].filter(Boolean).join("/") || "—"}</p>
+                        {item.neighborhood ? (
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{item.neighborhood}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-3">{sourceLabel(item)}</td>
+                      <td className="px-3 py-3 capitalize">{item.kind || "—"}</td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {formatDateBR(item.occurredAt) || "—"}
+                        {removed ? (
+                          <p className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                            Retirado
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
+                        {!removed && !peer && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs text-red-800 border-red-200 hover:bg-red-50"
+                            disabled={removingId === key}
+                            onClick={() => { removeRow(item); }}
+                          >
+                            {removingId === key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Tirar da lista negra"}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr className="border-b border-border/70 bg-slate-50/80">
+                        <td colSpan={8} className="px-4 py-4">
+                          {peer ? (
+                            <p className="text-sm text-muted-foreground">
+                              Caso da outra loja. Dá para tirar só na lista de lá.
+                            </p>
+                          ) : (
+                            <LossPath events={events} />
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function LossPath({ events }: { events: LossEvent[] }) {
   return (
     <div className="rounded-xl border border-border bg-white p-4 max-w-2xl">
@@ -241,122 +388,30 @@ export default function LossBlacklistBoard({ authHeaders, onUnauthorized, onGoTo
           <Loader2 className="w-8 h-8 animate-spin mb-3 text-primary" />
           Carregando lista negra...
         </div>
-      ) : items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-10 text-center text-muted-foreground">
-          Nenhum envio na lista negra.
-        </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-border bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40 text-left">
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Pedido</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Cliente</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Transportadora</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Cidade</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Origem</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Tipo</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Data</th>
-                <th className="px-3 py-2.5 font-semibold text-muted-foreground">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                const key = rowKey(item);
-                const open = expandedId === key;
-                const peer = item.origin === "peer";
-                const removed = Boolean(item.removedAt);
-                const events = item.events || [];
-                return (
-                  <Fragment key={key}>
-                    <tr
-                      className={`border-b border-border/70 align-top hover:bg-muted/20 cursor-pointer ${open ? "bg-amber-50/50" : ""}`}
-                      onClick={() => setExpandedId((current) => (current === key ? null : key))}
-                    >
-                      <td className="px-3 py-3">
-                        <div className="flex items-start gap-1.5">
-                          {open ? (
-                            <ChevronUp className="w-4 h-4 text-amber-800 mt-0.5 shrink-0" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                          )}
-                          <div>
-                            {peer ? (
-                              <p className="font-bold text-foreground">Outra loja</p>
-                            ) : (
-                            <button
-                              type="button"
-                              className="font-bold text-foreground hover:text-primary"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onGoToOrder?.(
-                                  item.orderId,
-                                  item.orderCreatedAt,
-                                  item.orderNumber != null ? String(item.orderNumber) : item.orderId,
-                                );
-                              }}
-                            >
-                              #{item.orderNumber != null ? item.orderNumber : item.orderId.slice(0, 8)}
-                            </button>
-                            )}
-                            {item.packageId ? (
-                              <p className="text-[11px] font-semibold text-amber-800 mt-0.5">Pacote</p>
-                            ) : null}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <p className="font-medium text-foreground">{item.clientName || "—"}</p>
-                      </td>
-                      <td className="px-3 py-3">{item.carrierLabel || "—"}</td>
-                      <td className="px-3 py-3">
-                        <p>{[item.cityLabel, item.state].filter(Boolean).join("/") || "—"}</p>
-                        {item.neighborhood ? (
-                          <p className="text-[11px] text-muted-foreground mt-0.5">{item.neighborhood}</p>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-3">{sourceLabel(item)}</td>
-                      <td className="px-3 py-3 capitalize">{item.kind || "—"}</td>
-                      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDateBR(item.occurredAt) || "—"}
-                        {removed ? (
-                          <p className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                            Retirado
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
-                        {!removed && !peer && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 text-xs text-red-800 border-red-200 hover:bg-red-50"
-                            disabled={removingId === key}
-                            onClick={() => { void removeRow(item); }}
-                          >
-                            {removingId === key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Tirar da lista negra"}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                    {open && (
-                      <tr className="border-b border-border/70 bg-slate-50/80">
-                        <td colSpan={8} className="px-4 py-4">
-                          {peer ? (
-                            <p className="text-sm text-muted-foreground">
-                              Caso da outra loja. Dá para tirar só na lista de lá.
-                            </p>
-                          ) : (
-                            <LossPath events={events} />
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-8">
+          <LossSection
+            title="Esta loja"
+            hint="Extravios gravados aqui. Dá para tirar da lista."
+            rows={items.filter((item) => item.origin !== "peer")}
+            expandedId={expandedId}
+            setExpandedId={setExpandedId}
+            removingId={removingId}
+            removeRow={(row) => { void removeRow(row); }}
+            onGoToOrder={onGoToOrder}
+          />
+          {peerEnabled && (
+            <LossSection
+              title="Outra loja"
+              hint="Casos lidos da outra loja. Tirar da lista só vale lá."
+              rows={items.filter((item) => item.origin === "peer")}
+              expandedId={expandedId}
+              setExpandedId={setExpandedId}
+              removingId={removingId}
+              removeRow={(row) => { void removeRow(row); }}
+              onGoToOrder={onGoToOrder}
+            />
+          )}
         </div>
       )}
     </div>
