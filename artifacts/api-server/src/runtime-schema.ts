@@ -1390,6 +1390,18 @@ async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<
   }
 }
 
+async function ensureAdminImagesTable(databaseName: string): Promise<void> {
+  if (await tableExists("admin_images", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE admin_images (
+      id VARCHAR(64) NOT NULL PRIMARY KEY,
+      name VARCHAR(120) NOT NULL,
+      image_url TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
 async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   if (await tableExists("checkout_drafts", databaseName)) return;
   await pool.query(`
@@ -1454,6 +1466,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureWhatsappSupportSessionsTable(databaseName);
     await ensureWhatsappSupportExamplesTable(databaseName);
     await ensureWhatsappGroupCampaignTables(databaseName);
+    await ensureAdminImagesTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

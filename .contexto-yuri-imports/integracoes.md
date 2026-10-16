@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-10-15
+> **Última atualização:** 2026-10-16
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-16 | Aba Imagem sobe foto para o R2 | `POST /api/admin/images` guarda a URL https em `admin_images`. Copiar URL na aba | Upload de produto, grupos e a cópia 48h iguais |
 | 2026-10-15 | Aba Lista negra separa as duas lojas | Bloco **Esta loja** e bloco **Outra loja** | Snapshot, cotação e a cópia 48h iguais |
 | 2026-10-15 | Lista negra compartilhada nos dois sentidos | `GET /api/integrations/loss-blacklist/snapshot` (`LOSS_SYNC_TOKEN`) e webhook `loss.changed`. A cotação lê `LOSS_PEER_SNAPSHOT_URL` | Estoque, cobertura Motoboy, checkout e a cópia 48h iguais |
 | 2026-10-13 | Atendimento não manda menu para o outro atendente | O número 5511917739912 fica sem resposta do menu. Cliente e aviso de pedido continuam | Pedido pago e a cópia 48h iguais |
@@ -285,7 +286,7 @@ Cada loja continua dona da própria lista. O snapshot não leva nome, pedido, CE
 
 ## Storage
 
-- **Cloudflare R2** via `@aws-sdk/client-s3` — `artifacts/api-server/src/lib/r2.ts` (imagens de produto, settings, etiquetas, PDFs EnvioEcom, etc.).
+- **Cloudflare R2** via `@aws-sdk/client-s3` — `artifacts/api-server/src/lib/r2.ts` (imagens de produto, settings, etiquetas, PDFs EnvioEcom, aba Imagem em `admin-images/`, etc.).
 - Scripts de migração de imagens: `scripts/src/migrate-product-images-to-r2.ts`.
 
 ## E-mail / CRM

@@ -22,6 +22,7 @@ export * from "./support-tickets";
 export * from "./whatsapp-support-sessions";
 export * from "./whatsapp-support-examples";
 export * from "./whatsapp-group-campaign";
+export * from "./admin-images";
 export * from "./reshipments";
 export * from "./manual-reshipments";
 export * from "./inventory";

@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-10-11
+> **Última atualização:** 2026-10-16
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-16 | Tabela `admin_images` (+ runtime) | Aba Imagem guarda nome e URL https das fotos enviadas | Fotos de produto e dos grupos iguais |
 | 2026-10-11 | Coluna `whatsapp_group_custom_posts.duration_days` (+ runtime) | Guarda por quantos dias o aviso avulso permanece | A rodada de produtos igual |
 | 2026-10-11 | Colunas `schedule_mode`, `schedule_times` e `interval_hours` em `whatsapp_group_custom_posts` | O aviso avulso guarda vários horários ou o intervalo | A rodada de produtos igual |
 | 2026-10-11 | Coluna `whatsapp_group_custom_posts.caption` (+ runtime) | Guarda o texto que sai junto com a foto do aviso avulso | A rodada de produtos igual |
@@ -75,7 +76,7 @@ Workspace: `pnpm-workspace.yaml` (`artifacts/*`, `lib/*`, `scripts`).
 
 Schemas em `lib/db/src/schema/*.ts` (export em `index.ts`):
 
-`orders`, `checkout_drafts`, `order_shipments`, `order_activity`, `carrier_loss_incidents`, `custom_charges`, `admin_users`, `admin_sessions`, `customer_users`, `customer_subscriptions`, `customer_store_credits`, `customer_store_credit_ledger`, `coupons`, `products`, `product_cost_history`, `site_settings`, `sellers`, `shipping_options`, `order_bumps`, `kyc_documents`, `social_proof_settings`, `social_proof_fake_entries`, `affiliates`, `affiliate_referrals`, `affiliate_commissions`, `affiliate_credit_uses`, `raffles`, `raffle_reservations`, `raffle_results`, `raffle_promotions`, `support_tickets`, `reshipments`, `manual_reshipments`, `inventory_balances`, `inventory_movements`, `inventory_motoboy_balances`, `inventory_motoboy_movements`, `inventory_minas_balances`, `inventory_minas_movements`, `manual_return_items`, `marketing_expenses`, `suppliers`, `supplier_purchases`, `supplier_purchase_items`, `seller_commission_batches`, `motoboy_neighborhoods`, `motoboy_bookings`, `motoboy_cep_ranges`, `shipping_queue`.
+`orders`, `checkout_drafts`, `order_shipments`, `order_activity`, `carrier_loss_incidents`, `custom_charges`, `admin_users`, `admin_sessions`, `customer_users`, `customer_subscriptions`, `customer_store_credits`, `customer_store_credit_ledger`, `coupons`, `products`, `product_cost_history`, `site_settings`, `sellers`, `shipping_options`, `order_bumps`, `kyc_documents`, `social_proof_settings`, `social_proof_fake_entries`, `affiliates`, `affiliate_referrals`, `affiliate_commissions`, `affiliate_credit_uses`, `raffles`, `raffle_reservations`, `raffle_results`, `raffle_promotions`, `support_tickets`, `reshipments`, `manual_reshipments`, `inventory_balances`, `inventory_movements`, `inventory_motoboy_balances`, `inventory_motoboy_movements`, `inventory_minas_balances`, `inventory_minas_movements`, `manual_return_items`, `marketing_expenses`, `suppliers`, `supplier_purchases`, `supplier_purchase_items`, `seller_commission_batches`, `motoboy_neighborhoods`, `motoboy_bookings`, `motoboy_cep_ranges`, `shipping_queue`, `admin_images`.
 
 ## Auth (resumo)
 

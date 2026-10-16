@@ -754,6 +754,7 @@ import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import LossBlacklistBoard from "@/components/admin/LossBlacklistBoard";
+import AdminImagesPanel from "@/components/admin/AdminImagesPanel";
 import WhatsAppGroupCampaignCard from "@/components/admin/WhatsAppGroupCampaignCard";
 import WhatsAppSupportAiCard from "@/components/admin/WhatsAppSupportAiCard";
 import WhatsAppSupportMenuCard from "@/components/admin/WhatsAppSupportMenuCard";
@@ -1307,7 +1308,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "socialProof" | "raffles" | "checkout" | "seguro";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro";
 
 interface CommissionPendingOrder {
   id: string;
@@ -5281,6 +5282,7 @@ export default function Admin() {
               { key: "configuracoes", label: "Configuração",     icon: "Settings" },
               { key: "atendimento",   label: "Atendimento",      icon: "MessageCircle" },
               { key: "automacao",     label: "Automação",        icon: "Send" },
+              { key: "imagens",       label: "Imagem",           icon: "Image" },
               { key: "fretes",        label: "Fretes",           icon: "Truck",       count: shippingOptions.length },
             ] : []),
             { key: "extrato",       label: "Extrato",          icon: "Landmark" },
@@ -8025,6 +8027,8 @@ export default function Admin() {
           </div>
         ) : tab === "automacao" ? (
           <WhatsAppGroupCampaignCard />
+        ) : tab === "imagens" ? (
+          <AdminImagesPanel />
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
             <ConfiguracoesPanel
