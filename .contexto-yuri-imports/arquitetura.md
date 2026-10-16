@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-16 | Coluna `orders.filmagem_delivery_whatsapp_sent_at` (+ runtime) | Marca o lembrete da filmagem na saída para entrega | O aviso do pagamento igual |
 | 2026-10-16 | Coluna `orders.filmagem_whatsapp_sent_at` (+ runtime) | Marca que o WhatsApp da filmagem já foi para o n8n | O aviso de pedido pago igual |
 | 2026-10-16 | Tabela `admin_images` (+ runtime) | Aba Imagem guarda nome e URL https das fotos enviadas | Fotos de produto e dos grupos iguais |
 | 2026-10-11 | Coluna `whatsapp_group_custom_posts.duration_days` (+ runtime) | Guarda por quantos dias o aviso avulso permanece | A rodada de produtos igual |

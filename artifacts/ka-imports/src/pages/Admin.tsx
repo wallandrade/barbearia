@@ -20594,7 +20594,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          No mesmo pagamento, a loja manda só o telefone para o webhook Filmagem. A imagem e a legenda ficam no n8n. Com o campo vazio, vale https://wallandrade.app.n8n.cloud/webhook/filmagem. O texto de parabéns continua no webhook de cima.
+          No pagamento e quando a EnvioEcom marca saiu para entrega, a loja manda o telefone e a legenda para o webhook Filmagem. A imagem fica no n8n. No HTTP Request, o campo caption precisa ser expressão: {`{{ $json.body.caption }}`}. Com o campo vazio, vale https://wallandrade.app.n8n.cloud/webhook/filmagem. O texto de parabéns continua no webhook de cima.
         </p>
         <div>
           <label className="block text-xs font-medium mb-1">URL do rastreio</label>

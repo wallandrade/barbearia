@@ -7,11 +7,56 @@ export const N8N_FILMAGEM_WEBHOOK_SETTING = "n8n_filmagem_webhook_url";
 export const DEFAULT_N8N_FILMAGEM_WEBHOOK_URL = "https://wallandrade.app.n8n.cloud/webhook/filmagem";
 const TIMEOUT_MS = 8000;
 
-/** O n8n já tem a imagem e a legenda. A loja só manda o telefone. */
-export function orderFilmagemWhatsappPayload(order: PaidWhatsappOrder): { phone: string } | null {
+/** Legenda do pagamento. O n8n usa `{{ $json.body.caption }}`. */
+export const FILMAGEM_PAID_CAPTION = [
+  "🚨🚨 *COMUNICADO OFICIAL – LEITURA OBRIGATÓRIA!* 🚨🚨",
+  "",
+  "⚠️ *A filmagem completa da abertura é obrigatória* para comprovar qualquer problema, *com seguro ou sem seguro*.",
+  "",
+  "📦 *Como filmar, sem pausa e sem corte:*",
+  "1️⃣ Caixa ainda lacrada, com os lacres intactos",
+  "2️⃣ Todos os lados: cima, baixo e laterais",
+  "3️⃣ Abertura contínua, até o fim",
+  "4️⃣ Todo o conteúdo recebido",
+  "5️⃣ Nome e lote de cada produto, legíveis no frasco",
+  "",
+  "❌ Não vale: vídeo que já começa com a caixa aberta, vídeo com corte, ou só foto.",
+  "",
+  "🛡️ O seguro é opcional e *não dispensa* essa filmagem. Sem ela, a ocorrência pode ficar sem comprovação.",
+  "",
+  "📌 Esta regra não tira os direitos do consumidor. Desconhecer o aviso não dispensa a filmagem.",
+  "",
+  "*YURY IMPORTS 🇵🇾🇧🇷*",
+].join("\n");
+
+/** Lembrete quando a EnvioEcom marca saiu para entrega. */
+export const FILMAGEM_DELIVERY_CAPTION = [
+  "🚨 *LEMBRETE: SEU PEDIDO SAIU PARA ENTREGA!* 🚨",
+  "",
+  "Você já recebeu este aviso quando o pagamento foi confirmado. Estamos avisando de novo porque a encomenda está a caminho.",
+  "",
+  "⚠️ *A filmagem completa da abertura continua obrigatória*, *com seguro ou sem seguro*.",
+  "",
+  "📦 *Sem pausa e sem corte:*",
+  "1️⃣ Caixa ainda lacrada, com os lacres intactos",
+  "2️⃣ Todos os lados: cima, baixo e laterais",
+  "3️⃣ Abertura contínua, até o fim",
+  "4️⃣ Todo o conteúdo recebido",
+  "5️⃣ Nome e lote de cada produto, legíveis no frasco",
+  "",
+  "❌ Não vale: vídeo que já começa com a caixa aberta, vídeo com corte, ou só foto.",
+  "",
+  "*YURY IMPORTS 🇵🇾🇧🇷*",
+].join("\n");
+
+/** A imagem fica no n8n. A legenda muda entre o pagamento e a saída para entrega. */
+export function orderFilmagemWhatsappPayload(
+  order: PaidWhatsappOrder,
+  caption = FILMAGEM_PAID_CAPTION,
+): { phone: string; caption: string } | null {
   const phone = toWhatsappPhone(order.clientPhone);
   if (!phone) return null;
-  return { phone };
+  return { phone, caption };
 }
 
 async function webhookUrl(sellerCode?: string | null): Promise<string> {
@@ -35,24 +80,27 @@ function logHost(url: string): string {
   }
 }
 
-async function claimSend(orderId: string): Promise<boolean> {
+type FilmagemKind = "paid" | "delivery";
+
+async function claimSend(orderId: string, kind: FilmagemKind): Promise<boolean> {
   const { db, ordersTable } = await import("@workspace/db");
+  const stamp = kind === "delivery" ? ordersTable.filmagemDeliveryWhatsappSentAt : ordersTable.filmagemWhatsappSentAt;
   const result = await db
     .update(ordersTable)
-    .set({ filmagemWhatsappSentAt: new Date() })
-    .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.filmagemWhatsappSentAt)));
+    .set(kind === "delivery" ? { filmagemDeliveryWhatsappSentAt: new Date() } : { filmagemWhatsappSentAt: new Date() })
+    .where(and(eq(ordersTable.id, orderId), isNull(stamp)));
   return mysqlAffectedRows(result) > 0;
 }
 
-async function releaseClaim(orderId: string): Promise<void> {
+async function releaseClaim(orderId: string, kind: FilmagemKind): Promise<void> {
   const { db, ordersTable } = await import("@workspace/db");
   await db
     .update(ordersTable)
-    .set({ filmagemWhatsappSentAt: null })
+    .set(kind === "delivery" ? { filmagemDeliveryWhatsappSentAt: null } : { filmagemWhatsappSentAt: null })
     .where(eq(ordersTable.id, orderId));
 }
 
-async function postWebhook(url: string, body: { phone: string }): Promise<{ ok: boolean; error?: string }> {
+async function postWebhook(url: string, body: { phone: string; caption: string }): Promise<{ ok: boolean; error?: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -74,8 +122,7 @@ async function postWebhook(url: string, body: { phone: string }): Promise<{ ok: 
   }
 }
 
-/** Manda o WhatsApp da filmagem uma vez. Falha não segura o aviso de pedido pago. */
-export async function sendOrderFilmagemWhatsapp(orderId: string): Promise<{ sent: boolean; error?: string }> {
+async function sendFilmagem(orderId: string, kind: FilmagemKind): Promise<{ sent: boolean; error?: string }> {
   const id = String(orderId || "").trim();
   if (!id) return { sent: false, error: "missing_id" };
   try {
@@ -87,10 +134,13 @@ export async function sendOrderFilmagemWhatsapp(orderId: string): Promise<{ sent
     const url = await webhookUrl(order.sellerCode);
     if (!url) return { sent: false, error: "not_configured" };
 
-    const payload = orderFilmagemWhatsappPayload(order);
+    const payload = orderFilmagemWhatsappPayload(
+      order,
+      kind === "delivery" ? FILMAGEM_DELIVERY_CAPTION : FILMAGEM_PAID_CAPTION,
+    );
     if (!payload) return { sent: false, error: "missing_phone" };
 
-    const claimed = await claimSend(id);
+    const claimed = await claimSend(id, kind);
     if (!claimed) return { sent: false, error: "already_sent" };
 
     let lastError = "request_failed";
@@ -100,17 +150,33 @@ export async function sendOrderFilmagemWhatsapp(orderId: string): Promise<{ sent
       lastError = result.error || lastError;
     }
 
-    await releaseClaim(id).catch(() => {});
-    console.warn("[WhatsApp filmagem] falha", id, logHost(url), lastError);
+    await releaseClaim(id, kind).catch(() => {});
+    console.warn("[WhatsApp filmagem] falha", kind, id, logHost(url), lastError);
     return { sent: false, error: lastError };
   } catch (err) {
-    console.error("[WhatsApp filmagem] sync", id, err instanceof Error ? err.message : err);
+    console.error("[WhatsApp filmagem] sync", kind, id, err instanceof Error ? err.message : err);
     return { sent: false, error: "exception" };
   }
+}
+
+/** Manda o WhatsApp da filmagem uma vez no pagamento. Falha não segura o aviso de pedido pago. */
+export async function sendOrderFilmagemWhatsapp(orderId: string): Promise<{ sent: boolean; error?: string }> {
+  return sendFilmagem(orderId, "paid");
+}
+
+/** Lembrete da filmagem quando a EnvioEcom marca saiu para entrega. Uma vez por pedido. */
+export async function sendOrderFilmagemDeliveryWhatsapp(orderId: string): Promise<{ sent: boolean; error?: string }> {
+  return sendFilmagem(orderId, "delivery");
 }
 
 export function queueOrderFilmagemWhatsapp(orderId: string | null | undefined): void {
   const id = String(orderId || "").trim();
   if (!id) return;
   void sendOrderFilmagemWhatsapp(id);
+}
+
+export function queueOrderFilmagemDeliveryWhatsapp(orderId: string | null | undefined): void {
+  const id = String(orderId || "").trim();
+  if (!id) return;
+  void sendOrderFilmagemDeliveryWhatsapp(id);
 }

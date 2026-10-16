@@ -84,6 +84,8 @@ export const ordersTable = mysqlTable("orders", {
   paidWhatsappSentAt: timestamp("paid_whatsapp_sent_at"),
   /** WhatsApp da filmagem já foi entregue ao n8n. Separado do pedido pago. */
   filmagemWhatsappSentAt: timestamp("filmagem_whatsapp_sent_at"),
+  /** Lembrete da filmagem quando a EnvioEcom marca saiu para entrega. Uma vez por pedido. */
+  filmagemDeliveryWhatsappSentAt: timestamp("filmagem_delivery_whatsapp_sent_at"),
   /** Códigos de rastreio que já saíram no WhatsApp. JSON. EC não entra. */
   trackingWhatsappCodes: text("tracking_whatsapp_codes"),
   /** Pacotes que já receberam o WhatsApp de postado. JSON. */

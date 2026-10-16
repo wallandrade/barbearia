@@ -181,4 +181,7 @@ export function announceOutForDelivery(input: {
     packageKey: key,
   })) return;
   queueOutForDeliveryWhatsapp(input.orderId, key, input.trackingCode);
+  void import("./order-filmagem-whatsapp").then(({ queueOrderFilmagemDeliveryWhatsapp }) => {
+    queueOrderFilmagemDeliveryWhatsapp(input.orderId);
+  });
 }
