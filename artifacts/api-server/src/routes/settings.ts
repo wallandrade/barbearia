@@ -71,6 +71,7 @@ const ALLOWED_KEYS = [
   "outbound_webhook_event_order_paid",
   "outbound_webhook_event_order_cancelled",
   "n8n_order_paid_webhook_url",
+  "n8n_filmagem_webhook_url",
   "n8n_tracking_webhook_url",
   "n8n_posted_webhook_url",
   "n8n_delivered_webhook_url",

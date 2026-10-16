@@ -19498,6 +19498,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [outboundUrlPaid, setOutboundUrlPaid] = useState(settings["outbound_webhook_url_order_paid"] ?? "");
   const [outboundUrlCancelled, setOutboundUrlCancelled] = useState(settings["outbound_webhook_url_order_cancelled"] ?? "");
   const [n8nOrderPaidUrl, setN8nOrderPaidUrl] = useState(settings["n8n_order_paid_webhook_url"] ?? "");
+  const [n8nFilmagemUrl, setN8nFilmagemUrl] = useState(settings["n8n_filmagem_webhook_url"] ?? "");
   const [n8nTrackingUrl, setN8nTrackingUrl] = useState(settings["n8n_tracking_webhook_url"] ?? "");
   const [n8nPostedUrl, setN8nPostedUrl] = useState(settings["n8n_posted_webhook_url"] ?? "");
   const [n8nDeliveredUrl, setN8nDeliveredUrl] = useState(settings["n8n_delivered_webhook_url"] ?? "");
@@ -19508,6 +19509,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
   const [polyWhatsapp, setPolyWhatsapp] = useState<Record<string, string>>(() => ({
     n8n_poly_instance_id: settings["n8n_poly_instance_id"] ?? "",
     n8n_order_paid_webhook_url_poly: settings["n8n_order_paid_webhook_url_poly"] ?? "",
+    n8n_filmagem_webhook_url_poly: settings["n8n_filmagem_webhook_url_poly"] ?? "",
     n8n_tracking_webhook_url_poly: settings["n8n_tracking_webhook_url_poly"] ?? "",
     n8n_posted_webhook_url_poly: settings["n8n_posted_webhook_url_poly"] ?? "",
     n8n_out_for_delivery_webhook_url_poly: settings["n8n_out_for_delivery_webhook_url_poly"] ?? "",
@@ -20569,6 +20571,32 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
           No n8n, os campos phone e message do HTTP Request precisam ser expressão: {`{{ $json.body.phone }}`} e {`{{ $json.body.message }}`}. Se continuarem fixos, todo pedido pago repete a mensagem de teste.
         </p>
         <div>
+          <label className="block text-xs font-medium mb-1">URL da filmagem</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={n8nFilmagemUrl}
+              onChange={(e) => setN8nFilmagemUrl(e.target.value)}
+              placeholder="https://wallandrade.app.n8n.cloud/webhook/filmagem"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const value = n8nFilmagemUrl.trim();
+                if (!value) { onDelete("n8n_filmagem_webhook_url"); return; }
+                onSave("n8n_filmagem_webhook_url", value);
+              }}
+              disabled={!!loading["n8n_filmagem_webhook_url"]}
+            >
+              {loading["n8n_filmagem_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          No mesmo pagamento, a loja manda só o telefone para o webhook Filmagem. A imagem e a legenda ficam no n8n. Com o campo vazio, vale https://wallandrade.app.n8n.cloud/webhook/filmagem. O texto de parabéns continua no webhook de cima.
+        </p>
+        <div>
           <label className="block text-xs font-medium mb-1">URL do rastreio</label>
           <div className="flex gap-2">
             <input
@@ -20759,6 +20787,7 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
         {([
           ["n8n_poly_instance_id", "ID da instância da Poly", "só o ID, sem o token"],
           ["n8n_order_paid_webhook_url_poly", "URL do pedido pago da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_filmagem_webhook_url_poly", "URL da filmagem da Poly", "https://….app.n8n.cloud/webhook/…"],
           ["n8n_tracking_webhook_url_poly", "URL do rastreio da Poly", "https://….app.n8n.cloud/webhook/…"],
           ["n8n_posted_webhook_url_poly", "URL do pedido postado da Poly", "https://….app.n8n.cloud/webhook/…"],
           ["n8n_out_for_delivery_webhook_url_poly", "URL de saiu para entrega da Poly", "https://….app.n8n.cloud/webhook/…"],

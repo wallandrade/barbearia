@@ -249,4 +249,7 @@ export function queueOrderPaidWhatsapp(orderId: string | null | undefined): void
   const id = String(orderId || "").trim();
   if (!id) return;
   void sendOrderPaidWhatsapp(id);
+  void import("./order-filmagem-whatsapp").then(({ queueOrderFilmagemWhatsapp }) => {
+    queueOrderFilmagemWhatsapp(id);
+  });
 }

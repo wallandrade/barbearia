@@ -8,6 +8,7 @@ export const N8N_POLY_INSTANCE_SETTING = "n8n_poly_instance_id";
 export const POLY_N8N_SETTING_KEYS = [
   N8N_POLY_INSTANCE_SETTING,
   "n8n_order_paid_webhook_url_poly",
+  "n8n_filmagem_webhook_url_poly",
   "n8n_tracking_webhook_url_poly",
   "n8n_posted_webhook_url_poly",
   "n8n_out_for_delivery_webhook_url_poly",
