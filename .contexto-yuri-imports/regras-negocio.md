@@ -44,6 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-20 | Foto da oferta relâmpago maior | A imagem ocupa a largura do card, com 176 px de altura | Preço, setas e o sorteio iguais |
 | 2026-10-20 | Preço da oferta relâmpago fica dentro do card | O valor laranja desce para baixo da foto, na largura do card | Sorteio, carrossel e o botão iguais |
 | 2026-10-20 | Interruptor mostra a oferta na primeira visita | Ligado, ignora chance, horário, vaga e repetição. Cada cliente vê as campanhas ligadas uma vez | Desligado, o sorteio e o carrossel continuam iguais |
 | 2026-10-20 | Ofertas relâmpago que passam abrem em carrossel | Cada campanha sorteia a própria chance. Perder uma não esconde as outras. Duas ou mais viram carrossel | Vaga, horário e repetir iguais. Uma oferta continua o card único |

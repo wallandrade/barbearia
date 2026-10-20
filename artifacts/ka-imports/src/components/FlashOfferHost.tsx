@@ -143,39 +143,37 @@ export function FlashOfferHost() {
             <p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-neutral-500">
               Aparece uma vez. Se aceitar, tem 1 hora para pagar no PIX ou no WhatsApp.
             </p>
-            <div className="mt-4 flex items-center gap-2">
-              {carousel ? (
-                <button
-                  type="button"
-                  aria-label="Oferta anterior"
-                  onClick={() => stepOffer(-1)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ffd7b8] text-[#ff6a00]"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-              ) : null}
-              <div className="min-w-0 flex-1 overflow-hidden rounded-2xl bg-[#fff4ea] p-3 text-left">
-                <div className="flex items-center gap-3">
-                  {offer.image ? (
-                    <img src={offer.image} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-white object-contain" />
-                  ) : (
-                    <div className="h-16 w-16 shrink-0 rounded-xl bg-white" />
-                  )}
-                  <p className="min-w-0 flex-1 text-[15px] font-bold leading-tight text-neutral-950">{offer.name}</p>
-                </div>
-                <p className="mt-2 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
-                <p className="text-[26px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
+            <div className="mt-4 overflow-hidden rounded-2xl bg-[#fff4ea] p-3 text-left">
+              <div className="relative">
+                {offer.image ? (
+                  <img src={offer.image} alt="" className="mx-auto h-44 w-full rounded-xl bg-white object-contain" />
+                ) : (
+                  <div className="mx-auto h-44 w-full rounded-xl bg-white" />
+                )}
+                {carousel ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Oferta anterior"
+                      onClick={() => stepOffer(-1)}
+                      className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[#ffd7b8] bg-white text-[#ff6a00]"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Próxima oferta"
+                      onClick={() => stepOffer(1)}
+                      className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[#ffd7b8] bg-white text-[#ff6a00]"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  </>
+                ) : null}
               </div>
-              {carousel ? (
-                <button
-                  type="button"
-                  aria-label="Próxima oferta"
-                  onClick={() => stepOffer(1)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ffd7b8] text-[#ff6a00]"
-                >
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              ) : null}
+              <p className="mt-3 text-[15px] font-bold leading-tight text-neutral-950">{offer.name}</p>
+              <p className="mt-1 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
+              <p className="text-[26px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
             </div>
             {carousel ? (
               <div className="mt-3 flex items-center justify-center gap-1.5">
