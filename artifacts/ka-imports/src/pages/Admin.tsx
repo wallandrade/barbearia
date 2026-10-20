@@ -793,6 +793,7 @@ import { AdminLiveVisitorStats } from "@/components/AdminLiveVisitorStats";
 import { AdminOrdersChargesSearchShell } from "@/components/AdminOrdersChargesSearchShell";
 import { AdminOrdersCopyBar } from "@/components/AdminOrdersCopyBar";
 import { EnvioEcomManageMenu, OrderCopyMenu } from "@/components/AdminOrderCardActionMenus";
+import { envioecomLabelTarget } from "@/lib/envioecom-label-target";
 import { ShippingForecastField } from "@/components/ShippingForecastField";
 
 
@@ -11649,35 +11650,49 @@ function OrdersPanel({
   };
 
   const generateEnvioEcomLabel = async (order: AdminOrder, packageId?: string | null) => {
-    if (isEnvioEcomCancelStatus((order as { envioecomStatus?: string | null }).envioecomStatus)) {
+    const target = envioecomLabelTarget(order, packageId);
+    if (isEnvioEcomCancelStatus(target.status)) {
       toast.info("Envio em cancelamento. Clique em EnvioEcom para cotar e criar um envio novo.");
       return;
     }
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
-      let knownShipmentId = String((order as any).envioecomShipmentId || "").trim();
-      let knownBarcode = String((order as any).envioecomBarcode || (order as any).trackingCode || "").trim();
+      let knownShipmentId = target.shipmentId;
+      let knownBarcode = target.barcode;
 
-      // Sync primeiro: grava shipping_id/barcode definitivo sem pedir nada
+      // Sync primeiro: no dividido só o pacote clicado. O resumo do pedido é outro envio.
       try {
+        const syncBody: Record<string, string> = target.scoped
+          ? {
+              ...(packageId ? { packageId } : {}),
+              ...(target.accountId ? { accountId: target.accountId } : {}),
+            }
+          : (knownShipmentId ? { shipment_id: knownShipmentId } : {});
         const syncRes = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/sync`, {
           method: "POST",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify(knownShipmentId ? { shipment_id: knownShipmentId, ...(packageId ? { packageId } : {}) } : (packageId ? { packageId } : {})),
+          body: JSON.stringify(syncBody),
         });
         if (syncRes.ok) {
           const syncData = await syncRes.json() as {
             resolved?: { shipmentId?: string | null; barcode?: string | null; status?: string | null };
             tracking?: { barcode?: string | null; trackingCode?: string | null };
+            packages?: unknown[];
           };
           if (syncData.resolved?.shipmentId) knownShipmentId = String(syncData.resolved.shipmentId);
           if (syncData.resolved?.barcode) knownBarcode = String(syncData.resolved.barcode);
-          patchOrderLocal(order.id, {
-            envioecomShipmentId: knownShipmentId || (order as any).envioecomShipmentId,
-            envioecomBarcode: knownBarcode || (order as any).envioecomBarcode,
-            trackingCode: knownBarcode || (order as any).trackingCode,
-            envioecomStatus: syncData.resolved?.status || (order as any).envioecomStatus,
-          });
+          if (target.scoped) {
+            if (Array.isArray(syncData.packages)) {
+              patchOrderLocal(order.id, { envioecomPackages: syncData.packages });
+            }
+          } else {
+            patchOrderLocal(order.id, {
+              envioecomShipmentId: knownShipmentId || (order as any).envioecomShipmentId,
+              envioecomBarcode: knownBarcode || (order as any).envioecomBarcode,
+              trackingCode: knownBarcode || (order as any).trackingCode,
+              envioecomStatus: syncData.resolved?.status || (order as any).envioecomStatus,
+            });
+          }
         }
       } catch {
         // segue para labels
@@ -11686,7 +11701,7 @@ function OrdersPanel({
       // Sem shipping_id e só EC provisório → modal de vínculo (sem window.prompt)
       let shipmentIdOverride = knownShipmentId;
       if (!shipmentIdOverride && /^EC/i.test(knownBarcode)) {
-        openEnvioEcomLinkModal(order, { continueToLabel: true, prefill: "" });
+        openEnvioEcomLinkModal(order, { continueToLabel: true, prefill: "", packageId });
         toast.info("Vincule o ID do painel EnvioEcom para gerar a etiqueta.");
         return;
       }
@@ -11694,13 +11709,15 @@ function OrdersPanel({
       const res = await fetch(`${BASE}/api/admin/envioecom/orders/${order.id}/labels`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(shipmentIdOverride ? { shipment_id: shipmentIdOverride } : {}),
-          ...((order as { envioecomAccountId?: string | null }).envioecomAccountId
-            ? { accountId: (order as { envioecomAccountId?: string | null }).envioecomAccountId }
-            : {}),
-          ...(packageId ? { packageId } : {}),
-        }),
+        body: JSON.stringify(target.scoped
+          ? {
+              ...(packageId ? { packageId } : {}),
+              ...(target.accountId ? { accountId: target.accountId } : {}),
+            }
+          : {
+              ...(shipmentIdOverride ? { shipment_id: shipmentIdOverride } : {}),
+              ...(target.accountId ? { accountId: target.accountId } : {}),
+            }),
       });
       const data = await res.json() as {
         ok?: boolean;
@@ -11721,16 +11738,22 @@ function OrdersPanel({
       };
 
       const applyLabelSuccess = (payload: typeof data) => {
-        patchOrderLocal(order.id, {
-          envioecomLabelUrl: payload.labelUrl,
-          trackingLabelUrl: payload.labelUrl,
-          envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
-          envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
-          trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
-          envioecomStatus: payload.envioecomStatus || (order as any).envioecomStatus || "Etiqueta emitida",
-          ...(payload.inventoryPool ? { inventoryPool: payload.inventoryPool } : {}),
-          ...(Array.isArray(payload.packages) ? { envioecomPackages: payload.packages } : {}),
-        });
+        if (target.scoped) {
+          if (Array.isArray(payload.packages)) {
+            patchOrderLocal(order.id, { envioecomPackages: payload.packages });
+          }
+        } else {
+          patchOrderLocal(order.id, {
+            envioecomLabelUrl: payload.labelUrl,
+            trackingLabelUrl: payload.labelUrl,
+            envioecomShipmentId: payload.shipmentId || shipmentIdOverride || knownShipmentId || (order as any).envioecomShipmentId,
+            envioecomBarcode: payload.barcode || knownBarcode || (order as any).envioecomBarcode,
+            trackingCode: payload.barcode || knownBarcode || (order as any).trackingCode,
+            envioecomStatus: payload.envioecomStatus || (order as any).envioecomStatus || "Etiqueta emitida",
+            ...(payload.inventoryPool ? { inventoryPool: payload.inventoryPool } : {}),
+            ...(Array.isArray(payload.packages) ? { envioecomPackages: payload.packages } : {}),
+          });
+        }
         if (payload.labelUrl) {
           const opened = window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
           toast.success(opened ? "Etiqueta gerada — abriu em nova aba." : "Etiqueta gerada. Clique em Ver PDF.");

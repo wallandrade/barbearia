@@ -41,6 +41,7 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isSplitShipmentList } from "../lib/order-shipments-logic";
+import { pickEnvioEcomLabelRefs, shipmentRefBelongsToSibling } from "../lib/envioecom-label-refs";
 import {
   controlTowerSince,
   hasEnvioEcomTowerBinding,
@@ -1308,7 +1309,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     }
 
     const { order } = loaded;
-    const { pkg: targetPackage } = await requirePackageForSplit(order, req.body);
+    const { packages: shipmentPackages, pkg: targetPackage } = await requirePackageForSplit(order, req.body);
     const cancelStatus = targetPackage?.envioecomStatus || order.envioecomStatus;
     if (isEnvioEcomCancelStatus(cancelStatus)) {
       res.status(409).json({
@@ -1321,10 +1322,25 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
 
     const bodyShipmentId = String(req.body?.shipment_id || req.body?.shipping_id || "").trim();
     const bodyBarcode = String(req.body?.barcode || "").trim();
+    const bodyIsSibling = Boolean(
+      targetPackage && shipmentRefBelongsToSibling(shipmentPackages, targetPackage.id, bodyShipmentId, bodyBarcode),
+    );
+    const labelRefs = pickEnvioEcomLabelRefs({
+      hasPackage: Boolean(targetPackage),
+      packageShipmentId: targetPackage?.envioecomShipmentId,
+      packageBarcode: targetPackage?.envioecomBarcode,
+      packageTrackingKey: targetPackage?.envioecomTrackingKey,
+      orderShipmentId: order.envioecomShipmentId,
+      orderBarcode: order.envioecomBarcode,
+      orderTrackingCode: order.trackingCode,
+      orderTrackingKey: order.envioecomTrackingKey,
+      bodyShipmentId: bodyIsSibling ? "" : bodyShipmentId,
+      bodyBarcode: bodyIsSibling ? "" : bodyBarcode,
+    });
 
-    let barcode = bodyBarcode || String(targetPackage?.envioecomBarcode || order.envioecomBarcode || order.trackingCode || "").trim();
-    let shipmentId = bodyShipmentId || String(targetPackage?.envioecomShipmentId || order.envioecomShipmentId || "").trim();
-    let trackingKey = String(targetPackage?.envioecomTrackingKey || order.envioecomTrackingKey || "").trim();
+    let barcode = labelRefs.barcode;
+    let shipmentId = labelRefs.shipmentId;
+    let trackingKey = labelRefs.trackingKey;
 
     if (!barcode && !shipmentId && !trackingKey) {
       res.status(400).json({ error: "NO_BARCODE", message: "Pedido sem barcode/shipping_id EnvioEcom. Crie o envio antes." });
@@ -1342,7 +1358,8 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         barcode,
         accountId: labelsAccountId,
         trackingKey,
-        externalOrderNumber: String(targetPackage?.envioecomExternalOrderNumber || order.envioecomExternalOrderNumber || ""),
+        externalOrderNumber: String(targetPackage?.envioecomExternalOrderNumber || (targetPackage ? "" : order.envioecomExternalOrderNumber) || ""),
+        strictIdentifier: Boolean(targetPackage),
       });
       const live = resolved.result;
       if (resolved.accountId) labelsAccountId = resolved.accountId;
@@ -1605,9 +1622,13 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     }
 
     const { order } = loaded;
-    const { pkg: targetPackage } = await requirePackageForSplit(order, req.body);
-    const bodyShipmentId = String(req.body?.shipment_id || req.body?.shipping_id || "").trim();
-    const bodyBarcode = String(req.body?.barcode || "").trim();
+    const { packages: shipmentPackages, pkg: targetPackage } = await requirePackageForSplit(order, req.body);
+    let bodyShipmentId = String(req.body?.shipment_id || req.body?.shipping_id || "").trim();
+    let bodyBarcode = String(req.body?.barcode || "").trim();
+    if (targetPackage && shipmentRefBelongsToSibling(shipmentPackages, targetPackage.id, bodyShipmentId, bodyBarcode)) {
+      bodyShipmentId = "";
+      bodyBarcode = "";
+    }
 
     if (
       !bodyShipmentId &&
