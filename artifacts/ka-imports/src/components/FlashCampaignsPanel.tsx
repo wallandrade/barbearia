@@ -110,16 +110,21 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [productQuery, setProductQuery] = useState("");
   const [flashPrice, setFlashPrice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [forceFirstVisit, setForceFirstVisit] = useState(false);
+  const [forceSaving, setForceSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [campaignRes, productRes] = await Promise.all([
+    const [campaignRes, productRes, settingsRes] = await Promise.all([
       fetch(`${BASE}/api/admin/flash-campaigns`, { headers: adminHeaders() }),
       fetch(`${BASE}/api/admin/products`, { headers: adminHeaders() }),
+      fetch(`${BASE}/api/admin/settings`, { headers: adminHeaders() }),
     ]);
-    if (campaignRes.status === 401 || productRes.status === 401) {
+    if (campaignRes.status === 401 || productRes.status === 401 || settingsRes.status === 401) {
       onUnauthorized();
       return;
     }
+    const settings = await settingsRes.json().catch(() => ({})) as { flash_force_first_visit?: string };
+    setForceFirstVisit(String(settings.flash_force_first_visit || "") === "1");
     const campaignData = await campaignRes.json() as { campaigns?: Campaign[] };
     const productData = await productRes.json() as {
       products?: Array<{
@@ -198,6 +203,31 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
     }
     setItems((current) => [...current, { productId: product.id, flashPrice: price.toFixed(2) }]);
     setFlashPrice("");
+  }
+
+  async function toggleForceFirstVisit() {
+    const next = !forceFirstVisit;
+    setForceSaving(true);
+    try {
+      const response = await fetch(`${BASE}/api/admin/settings/flash_force_first_visit`, {
+        method: "PUT",
+        headers: adminHeaders(),
+        body: JSON.stringify({ value: next ? "1" : "0" }),
+      });
+      if (response.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      if (!response.ok) {
+        toast.error("Não foi possível salvar o interruptor.");
+        return;
+      }
+      setForceFirstVisit(next);
+    } catch {
+      toast.error("Não foi possível salvar o interruptor.");
+    } finally {
+      setForceSaving(false);
+    }
   }
 
   async function save() {
@@ -385,6 +415,23 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
             <button type="button" onClick={resetForm} className="h-10 rounded-lg border border-border px-4 text-sm font-semibold">Cancelar</button>
           ) : null}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-white p-4">
+        <div>
+          <h2 className="font-bold">Mostrar na primeira visita</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ligado: ignora chance, horário, vaga e repetição. Cada cliente vê as campanhas ligadas uma vez, na primeira entrada.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={forceSaving}
+          onClick={() => void toggleForceFirstVisit()}
+          className={`h-10 rounded-lg px-4 text-sm font-semibold text-white disabled:opacity-60 ${forceFirstVisit ? "bg-emerald-600" : "bg-neutral-400"}`}
+        >
+          {forceSaving ? "Salvando..." : forceFirstVisit ? "Ligado" : "Desligado"}
+        </button>
       </div>
 
       <div className="space-y-3">

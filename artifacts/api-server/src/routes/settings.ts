@@ -45,6 +45,7 @@ const PUBLIC_KEYS  = [
   "checkout_insurance_full_label", "checkout_insurance_full_description",
   "checkout_insurance_reduced_label", "checkout_insurance_reduced_description",
   "promo_countdown_enabled", "promo_countdown_datetime", "promo_countdown_text",
+  "flash_force_first_visit",
   "store_theme_preset",
   "store_theme_color",
 ];

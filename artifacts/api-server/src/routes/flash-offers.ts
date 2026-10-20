@@ -8,6 +8,7 @@ import {
   flashVisitsTable,
   ordersTable,
   productsTable,
+  siteSettingsTable,
 } from "@workspace/db";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
@@ -33,6 +34,18 @@ import {
 const router: IRouter = Router();
 const SLOT_TAKEN = "Essa vaga já foi para outro cliente.";
 const OFFER_EXPIRED = "Essa oferta expirou.";
+const FLASH_FORCE_FIRST_VISIT_KEY = "flash_force_first_visit";
+const FLASH_FIRST_VISIT_MARKER = "flash-first-visit";
+
+type FlashDrawOffer = {
+  campaignId: string;
+  productId: string;
+  name: string;
+  image: string | null;
+  chargedPrice: number;
+  flashPrice: number;
+  hasVariants: boolean;
+};
 
 function normalizeIp(raw?: string | null): string {
   return String(raw || "")
@@ -65,6 +78,64 @@ function readVisitorId(body: unknown): string {
 
 function jsonError(res: { status: (code: number) => { json: (body: unknown) => void } }, status: number, error: string, message: string) {
   res.status(status).json({ error, message });
+}
+
+async function isFlashForceFirstVisit(): Promise<boolean> {
+  const [row] = await db
+    .select({ value: siteSettingsTable.value })
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, FLASH_FORCE_FIRST_VISIT_KEY))
+    .limit(1);
+  return String(row?.value || "").trim() === "1";
+}
+
+async function forceFirstVisitAlreadyShown(visitorId: string, userId: string | null): Promise<boolean> {
+  const [byVisitor] = await db
+    .select({ id: flashVisitsTable.id })
+    .from(flashVisitsTable)
+    .where(and(
+      eq(flashVisitsTable.campaignId, FLASH_FIRST_VISIT_MARKER),
+      eq(flashVisitsTable.visitorId, visitorId),
+    ))
+    .limit(1);
+  if (byVisitor) return true;
+  if (!userId) return false;
+  const [byAccount] = await db
+    .select({ id: flashVisitsTable.id })
+    .from(flashVisitsTable)
+    .where(and(
+      eq(flashVisitsTable.campaignId, FLASH_FIRST_VISIT_MARKER),
+      eq(flashVisitsTable.userId, userId),
+    ))
+    .limit(1);
+  return Boolean(byAccount);
+}
+
+async function offerFromCampaign(campaignId: string, now: Date): Promise<FlashDrawOffer | null> {
+  const items = await db
+    .select()
+    .from(flashCampaignItemsTable)
+    .where(eq(flashCampaignItemsTable.campaignId, campaignId));
+  if (items.length === 0) return null;
+  const products = await db.select().from(productsTable).where(inArray(productsTable.id, items.map((item) => item.productId)));
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const eligible = items.filter((item) => {
+    const product = byId.get(item.productId);
+    if (!product) return false;
+    return isFlashProductEligible(Number(item.flashPrice), product, now);
+  });
+  if (eligible.length === 0) return null;
+  const picked = eligible[crypto.randomInt(0, eligible.length)]!;
+  const product = byId.get(picked.productId)!;
+  return {
+    campaignId,
+    productId: product.id,
+    name: product.name,
+    image: product.image,
+    chargedPrice: chargedCatalogPrice(product, now),
+    flashPrice: Number(picked.flashPrice),
+    hasVariants: parseVariantGroups(product.variantGroups).length > 0,
+  };
 }
 
 async function recordVisit(input: {
@@ -136,15 +207,40 @@ router.post("/flash-offers/draw", async (req, res) => {
       .where(eq(flashCampaignsTable.isActive, true))
       .orderBy(asc(flashCampaignsTable.createdAt));
 
-    const offers: Array<{
-      campaignId: string;
-      productId: string;
-      name: string;
-      image: string | null;
-      chargedPrice: number;
-      flashPrice: number;
-      hasVariants: boolean;
-    }> = [];
+    const offers: FlashDrawOffer[] = [];
+    const forceFirstVisit = await isFlashForceFirstVisit();
+    if (forceFirstVisit) {
+      if (await forceFirstVisitAlreadyShown(visitorId, userId)) {
+        res.json({ offers: [], offer: null });
+        return;
+      }
+      const now = new Date();
+      for (const campaign of campaigns) {
+        const offer = await offerFromCampaign(campaign.id, now);
+        if (!offer) continue;
+        await recordVisit({
+          campaignId: campaign.id,
+          visitorId,
+          userId,
+          ipHash,
+          result: "seen",
+          today,
+        });
+        offers.push(offer);
+      }
+      if (offers.length > 0) {
+        await recordVisit({
+          campaignId: FLASH_FIRST_VISIT_MARKER,
+          visitorId,
+          userId,
+          ipHash,
+          result: "seen",
+          today,
+        });
+      }
+      res.json({ offers, offer: offers[0] ?? null });
+      return;
+    }
 
     for (const campaign of campaigns) {
       if (!isFlashHourOpen(campaign.startHour, campaign.endHour, hour)) continue;
@@ -376,7 +472,7 @@ router.post("/flash-offers/claim", async (req, res) => {
           },
         };
       }
-      if (open.length >= campaign.slotLimit) return { error: "taken" as const };
+      if (open.length >= campaign.slotLimit && !(await isFlashForceFirstVisit())) return { error: "taken" as const };
 
       const id = crypto.randomBytes(12).toString("hex");
       const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
