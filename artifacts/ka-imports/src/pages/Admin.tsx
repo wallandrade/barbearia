@@ -771,6 +771,7 @@ import AdminBankDepositsPanel from "@/pages/AdminBankDepositsPanel";
 import PeptideLibraryPanel from "@/components/PeptideLibraryPanel";
 import { AdminInsurancePanel } from "@/components/AdminInsurancePanel";
 import { AdminDrePanel } from "@/components/AdminDrePanel";
+import { FlashCampaignsPanel } from "@/components/FlashCampaignsPanel";
 import { AdminSupplierPurchasesPanel } from "@/components/AdminSupplierPurchasesPanel";
 import { AdminMarketingExpensesPanel } from "@/components/AdminMarketingExpensesPanel";
 import { AdminInsuranceClaimActions } from "@/components/AdminInsuranceClaimActions";
@@ -1308,7 +1309,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "flashCampaigns" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1364,6 +1365,7 @@ interface ExpenseEntry {
 const PRIMARY_ONLY_TABS = new Set<TabType>([
   "users",
   "coupons",
+  "flashCampaigns",
   "products",
   "fretes",
   "orderBumps",
@@ -5299,6 +5301,7 @@ export default function Admin() {
             { key: "biblioteca",    label: "Biblioteca",       icon: "BookOpen" },
             ...(isPrimary ? [
               { key: "coupons",       label: "Cupons",           icon: "Ticket",      count: coupons.length },
+              { key: "flashCampaigns", label: "Promoções",       icon: "Zap" },
               { key: "orderBumps",    label: "Order Bumps",      icon: "Zap",         count: orderBumps.length },
               { key: "users",         label: "Usuários",         icon: "User" },
               { key: "socialProof",   label: "Prova Social",     icon: "ShoppingBag" },
@@ -5936,6 +5939,8 @@ export default function Admin() {
               />
             ) : null}
           </div>
+        ) : tab === "flashCampaigns" ? (
+          <FlashCampaignsPanel onUnauthorized={handleUnauthorized} />
         ) : tab === "coupons" ? (
           <CouponsPanel
             coupons={coupons}

@@ -19,6 +19,7 @@ import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
+import { getFlashVisitorId } from "@/lib/flash-offer";
 import { formatCurrency, getActiveWhatsApp, getSellerSlugFromCheckoutPath, setSellerContext } from "@/lib/utils";
 import {
   CHECKOUT_INSURANCE_SETTING_KEYS,
@@ -998,7 +999,16 @@ export default function Checkout() {
       ? insuranceReducedPreview
       : 0;
   const baseTotal = subtotal + shippingCost + insuranceAmount;
-  const discountAmount = appliedCoupon
+  const hasFlashOffer = items.some((item) => item.flashOffer === true);
+  const flashCheckoutBody = () => {
+    const line = items.find((item) => item.flashReservationId);
+    if (!line?.flashReservationId) return {};
+    return {
+      flashReservationId: line.flashReservationId,
+      flashVisitorId: getFlashVisitorId(),
+    };
+  };
+  const discountAmount = !hasFlashOffer && appliedCoupon
     ? appliedCoupon.discountType === "percent"
       ? eligibleProductSubtotal * (appliedCoupon.discountValue / 100)
       : Math.min(appliedCoupon.discountValue, eligibleProductSubtotal)
@@ -1011,7 +1021,7 @@ export default function Checkout() {
 
   // Card payment uses regular (non-promo) prices
   const cardSubtotal = getCardSubtotal();
-  const cardDiscountAmount = appliedCoupon
+  const cardDiscountAmount = !hasFlashOffer && appliedCoupon
     ? appliedCoupon.discountType === "percent"
       ? eligibleProductSubtotalCard * (appliedCoupon.discountValue / 100)
       : Math.min(appliedCoupon.discountValue, eligibleProductSubtotalCard)
@@ -1477,8 +1487,9 @@ export default function Checkout() {
           affiliateCode:   affiliateCode || undefined,
           useAffiliateCredit,
           useStoreCredit,
-          couponCode:      appliedCoupon?.code,
+          couponCode:      hasFlashOffer ? undefined : appliedCoupon?.code,
           discountAmount:  discountAmount > 0 ? discountAmount : undefined,
+          ...flashCheckoutBody(),
           draftId: sessionStorage.getItem("yury_checkout_draft_id") || undefined,
         }),
       });
@@ -1740,8 +1751,9 @@ export default function Checkout() {
         paymentMethod: "whatsapp_pix",
         sellerCode,
         affiliateCode: affiliateCode || undefined,
-        couponCode: appliedCoupon?.code,
+        couponCode: hasFlashOffer ? undefined : appliedCoupon?.code,
         discountAmount: discountAmount > 0 ? discountAmount : undefined,
+        ...flashCheckoutBody(),
       });
 
       const itemsText = productsPayload
@@ -1897,8 +1909,9 @@ export default function Checkout() {
         cardInstallments: installments,
         sellerCode,
         affiliateCode: affiliateCode || undefined,
-        couponCode: appliedCoupon?.code,
+        couponCode: hasFlashOffer ? undefined : appliedCoupon?.code,
         discountAmount: cardDiscountAmount > 0 ? cardDiscountAmount : undefined,
+        ...flashCheckoutBody(),
       });
 
       await bookMotoboySlotForOrder(order.id, {

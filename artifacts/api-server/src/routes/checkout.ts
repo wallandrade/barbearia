@@ -27,6 +27,13 @@ import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan } from "../li
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 import { applyStoreCreditToOrder } from "../lib/store-credits";
 import { consumePromoStockForPaidOrder, promoPriceStillApplies } from "../lib/promo-stock";
+import {
+  FlashCheckoutError,
+  FlashOfferExpiredError,
+  insertOrderConsumingFlash,
+  loadFlashLinePlan,
+  type FlashLinePlan,
+} from "../lib/flash-offer-checkout";
 
 const router: IRouter = Router();
 
@@ -290,9 +297,36 @@ router.post("/checkout/pix", async (req, res) => {
       productRows = new Map(rows.map((row) => [row.id, row]));
     }
 
+    const flashReservationId = String(req.body?.flashReservationId || "").trim();
+    const flashVisitorId = String(req.body?.flashVisitorId || "").trim();
+    let flashPlan: FlashLinePlan | null = null;
+    if (flashReservationId) {
+      try {
+        flashPlan = await loadFlashLinePlan({
+          reservationId: flashReservationId,
+          visitorId: flashVisitorId,
+          userId: customerSession?.userId ?? null,
+        });
+      } catch (err) {
+        if (err instanceof FlashCheckoutError) {
+          res.status(err.status).json({ error: err.code, message: err.message });
+          return;
+        }
+        throw err;
+      }
+      if (couponCode?.trim()) {
+        res.status(400).json({
+          error: "FLASH_COUPON",
+          message: "Cupom não combina com a oferta relâmpago.",
+        });
+        return;
+      }
+    }
+
     const unavailableProducts: string[] = [];
     const variantErrors: string[] = [];
     const priceChanges: Array<{ id: string; name: string; sentPrice: number; currentPrice: number }> = [];
+    let flashUnits = 0;
     const orderProducts = productItems
       .map((item) => {
         const productId = String(item.id || "").trim();
@@ -307,7 +341,13 @@ router.post("/checkout/pix", async (req, res) => {
 
         const sentUnitPrice = Number(item.price) || 0;
         const isBump = item.isBump === true;
-        const serverUnitPrice = isBump ? sentUnitPrice : resolveUnitPriceForQuantity(current, quantity);
+        const isFlashLine = Boolean(flashPlan && !isBump && productId === flashPlan.productId);
+        if (isFlashLine) flashUnits += quantity;
+        const serverUnitPrice = isBump
+          ? sentUnitPrice
+          : isFlashLine
+            ? flashPlan!.unitPrice
+            : resolveUnitPriceForQuantity(current, quantity);
         const rawSelectedVariants = normalizeOrderItemVariants(item.selectedVariants);
         const groups = parseVariantGroups(current.variantGroups);
         let selectedVariants = rawSelectedVariants;
@@ -344,18 +384,10 @@ router.post("/checkout/pix", async (req, res) => {
           image: resolveLineImage(current.image, current.variantGroups, selectedVariants),
           selectedVariants: variantSnapshots.length > 0 ? variantSnapshots : undefined,
           variantLabel: variantLabel || undefined,
+          flashOffer: isFlashLine ? true as const : undefined,
         };
       })
-      .filter((item): item is {
-        id: string;
-        name: string;
-        quantity: number;
-        price: number;
-        costPrice: number;
-        image: string | null;
-        selectedVariants?: Array<{ groupName: string; option: string; image: string | null }>;
-        variantLabel?: string;
-      } => Boolean(item));
+      .flatMap((item) => (item ? [item] : []));
 
     if (variantErrors.length > 0) {
       res.status(400).json({
@@ -378,6 +410,14 @@ router.post("/checkout/pix", async (req, res) => {
         error: "PRICE_CHANGED",
         message: "Os preços do carrinho foram atualizados. Revise e tente novamente.",
         items: priceChanges,
+      });
+      return;
+    }
+
+    if (flashPlan && flashUnits !== 1) {
+      res.status(400).json({
+        error: "FLASH_QUANTITY",
+        message: "A oferta relâmpago vale para 1 unidade.",
       });
       return;
     }
@@ -470,7 +510,8 @@ router.post("/checkout/pix", async (req, res) => {
     const resolvedSellerCode = assignedSeller.sellerCode;
     const sellerCommissionRateSnapshot = assignedSeller.commissionRateSnapshot;
 
-    await db.insert(ordersTable).values({
+    try {
+      await insertOrderConsumingFlash({
       id:                  orderId,
       userId:              customerSession?.userId ?? null,
       guestAccessToken,
@@ -507,7 +548,14 @@ router.post("/checkout/pix", async (req, res) => {
       sellerCommissionRateSnapshot: String(sellerCommissionRateSnapshot),
       couponCode:          normalizedCouponCode,
       discountAmount:      computedDiscountAmount > 0 ? String(computedDiscountAmount) : null,
-    });
+    }, flashPlan?.reservationId ?? null);
+    } catch (err) {
+      if (err instanceof FlashOfferExpiredError) {
+        res.status(409).json({ error: "FLASH_EXPIRED", message: "Essa oferta expirou." });
+        return;
+      }
+      throw err;
+    }
 
     const [createdOrderRow] = await db
       .select({ orderNumber: ordersTable.orderNumber })

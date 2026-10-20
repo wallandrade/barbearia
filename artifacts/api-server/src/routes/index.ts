@@ -49,6 +49,7 @@ import supplierPurchasesRouter from "./supplier-purchases";
 import whatsappSupportRouter from "./whatsapp-support";
 import whatsappGroupsRouter from "./whatsapp-groups";
 import adminImagesRouter from "./admin-images";
+import flashOffersRouter from "./flash-offers";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -100,5 +101,6 @@ router.use(supplierPurchasesRouter);
 router.use(whatsappSupportRouter);
 router.use(whatsappGroupsRouter);
 router.use(adminImagesRouter);
+router.use(flashOffersRouter);
 
 export default router;

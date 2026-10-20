@@ -50,7 +50,9 @@ export function CartDrawer() {
                       />
                       <div className="min-w-0 flex-1">
                         <p className="line-clamp-2 text-xs font-semibold uppercase text-neutral-900">{item.name}</p>
-                        <p className="mt-1 text-xs text-neutral-500">{item.quantity} un · {formatCurrency(item.price)}</p>
+                        <p className="mt-1 text-xs text-neutral-500">
+                          {item.flashOffer ? "Oferta relâmpago · 1 un" : `${item.quantity} un · ${formatCurrency(item.price)}`}
+                        </p>
                         <p className="text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(lineTotal)}</p>
                       </div>
                       <button type="button" aria-label="Remover" className="text-neutral-400" onClick={() => removeItem(cartLineId(item))}>
@@ -185,6 +187,9 @@ export function CartDrawer() {
                             {Boolean((item as { variantLabel?: string }).variantLabel) && (
                               <p className="text-[11px] text-muted-foreground mt-0.5">{(item as { variantLabel?: string }).variantLabel}</p>
                             )}
+                            {item.flashOffer ? (
+                              <p className="text-[11px] font-semibold text-primary mt-0.5">Oferta relâmpago · 1 un</p>
+                            ) : null}
                             {bumpItem && (
                               <span className="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold mt-0.5">
                                 🏷️ Desconto aplicado no checkout
@@ -208,9 +213,14 @@ export function CartDrawer() {
                               <Minus className="w-3 h-3" />
                             </button>
                             <span className="text-sm font-medium w-4 text-center">{totalQty}</span>
-                            <button 
-                              onClick={() => updateQuantity(cartLineId(item), item.quantity + 1)}
-                              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-foreground transition-colors"
+                            <button
+                              type="button"
+                              disabled={item.flashOffer === true}
+                              onClick={() => {
+                                if (item.flashOffer) return;
+                                updateQuantity(cartLineId(item), item.quantity + 1);
+                              }}
+                              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Plus className="w-3 h-3" />
                             </button>

@@ -1398,6 +1398,71 @@ async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<
   }
 }
 
+async function ensureFlashOfferTables(databaseName: string): Promise<void> {
+  if (!(await tableExists("flash_campaigns", databaseName))) {
+    await pool.query(`
+      CREATE TABLE flash_campaigns (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 0,
+        slot_limit INT NOT NULL DEFAULT 5,
+        chance INT NOT NULL DEFAULT 25,
+        start_hour INT NULL,
+        end_hour INT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  if (!(await tableExists("flash_campaign_items", databaseName))) {
+    await pool.query(`
+      CREATE TABLE flash_campaign_items (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        campaign_id VARCHAR(64) NOT NULL,
+        product_id VARCHAR(255) NOT NULL,
+        flash_price DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY flash_campaign_items_product_uq (campaign_id, product_id)
+      )
+    `);
+  }
+  if (!(await tableExists("flash_visits", databaseName))) {
+    await pool.query(`
+      CREATE TABLE flash_visits (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        campaign_id VARCHAR(64) NOT NULL,
+        visitor_id VARCHAR(80) NOT NULL,
+        user_id VARCHAR(255) NULL,
+        ip_hash VARCHAR(64) NOT NULL,
+        result VARCHAR(16) NOT NULL,
+        visited_on VARCHAR(10) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY flash_visits_campaign_visitor_uq (campaign_id, visitor_id),
+        KEY flash_visits_campaign_day_ip_idx (campaign_id, visited_on, ip_hash)
+      )
+    `);
+  }
+  if (!(await tableExists("flash_reservations", databaseName))) {
+    await pool.query(`
+      CREATE TABLE flash_reservations (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        campaign_id VARCHAR(64) NOT NULL,
+        visitor_id VARCHAR(80) NOT NULL,
+        user_id VARCHAR(255) NULL,
+        product_id VARCHAR(255) NOT NULL,
+        flash_price DECIMAL(10,2) NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'active',
+        order_id VARCHAR(255) NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY flash_reservations_campaign_status_idx (campaign_id, status)
+      )
+    `);
+  }
+}
+
 async function ensureAdminImagesTable(databaseName: string): Promise<void> {
   if (await tableExists("admin_images", databaseName)) return;
   await pool.query(`
@@ -1475,6 +1540,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureWhatsappSupportExamplesTable(databaseName);
     await ensureWhatsappGroupCampaignTables(databaseName);
     await ensureAdminImagesTable(databaseName);
+    await ensureFlashOfferTables(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

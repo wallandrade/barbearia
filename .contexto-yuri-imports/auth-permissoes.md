@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-10-15
+> **Última atualização:** 2026-10-19
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-19 | Aba Promoções e `/api/admin/flash-campaigns` só com `requirePrimaryAdmin` | Admin de vendedor não vê e não grava a oferta relâmpago | Cupons, produtos e a sessão iguais |
 | 2026-10-15 | Lista negra compartilhada: pull por `LOSS_SYNC_TOKEN` (Bearer / `X-Api-Key`); webhook com `LOSS_SYNC_WEBHOOK_SECRET`; leitura da outra loja com `LOSS_PEER_TOKEN` | Sem token o snapshot responde 503. A cotação não usa sessão admin | Snapshot de estoque e cobertura Motoboy iguais |
 | 2026-10-05 | Login da loja pharma: dois botões, **Não tenho conta** (cadastro) e **Esqueci minha senha** (WhatsApp com o e-mail) | O cliente não cai mais no cadastro quando só esqueceu a senha | Login/cadastro e `set-password` do admin iguais; sem reset por e-mail |
 | 2026-09-18 | Carteira na aba Clientes: `POST /api/admin/customers/:id/store-credit` só admin primário (`hasGlobalAccess`); `GET /admin/customers` mostra saldo a qualquer admin autenticado | Ajustar/zerar na lista sem ir na aba Seguro | Impersonate/senha e aba Seguro iguais |
@@ -40,6 +41,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Contas extras EnvioEcom: `POST/PUT/DELETE /api/admin/envioecom/accounts` = `requirePrimaryAdmin`; `GET` = qualquer admin autenticado (seletor no card).
 - **Não** há multi-tenant por `tenant_id`; isolamento = `sellerCode` + escopo.
 - Aba **Biblioteca** (fichas de compostos): todos os admins autenticados; não está em `PRIMARY_ONLY_TABS`. API das fichas continua pública (`/api/chat/*`).
+- Aba **Promoções** (oferta relâmpago): `PRIMARY_ONLY_TABS`. `GET/POST/PATCH/DELETE /api/admin/flash-campaigns` = `requirePrimaryAdmin`.
 - Aba **Seguro**: `PRIMARY_ONLY_TABS`. `GET/POST /api/admin/store-credits*` = `requirePrimaryAdmin`. `POST /api/admin/orders/:id/insurance-claim` = `requireAdminAuth`.
 - Aba **Clientes**: listagem `GET /api/admin/customers` = `requireAdminAuth`. Ajuste de carteira `POST /api/admin/customers/:id/store-credit` = admin primário (`hasGlobalAccess`), igual senha/impersonate.
 

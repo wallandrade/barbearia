@@ -1,0 +1,143 @@
+import { createHash } from "node:crypto";
+import { promoPriceStillApplies } from "./promo-stock-logic";
+
+const VISITOR_ID = /^[A-Za-z0-9_-]{16,80}$/;
+
+export function isFlashVisitorId(value: string): boolean {
+  return VISITOR_ID.test(value);
+}
+
+/** SHA-256 de `flash-ip:` + IP. Sem IP cru. */
+export function hashFlashIp(ip: string): string {
+  return createHash("sha256").update(`flash-ip:${ip}`).digest("hex");
+}
+
+export function flashVisitIpHash(ip: string | null, visitorId: string): string {
+  const trimmed = String(ip || "").trim();
+  if (trimmed) return hashFlashIp(trimmed);
+  return hashFlashIp(`none:${visitorId}`);
+}
+
+export function saoPauloHour(now = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const raw = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
+  if (!Number.isFinite(raw)) return 0;
+  return raw === 24 ? 0 : raw;
+}
+
+export function saoPauloDateKey(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/**
+ * Vazio + vazio = o dia inteiro.
+ * Só início = dessa hora até o fim do dia.
+ * Só fim = da meia-noite até essa hora, inclusive.
+ * Os dois: a hora final entra. Fim menor que início atravessa a meia-noite.
+ */
+export function isFlashHourOpen(
+  startHour: number | null | undefined,
+  endHour: number | null | undefined,
+  hour: number,
+): boolean {
+  const start = startHour == null ? null : startHour;
+  const end = endHour == null ? null : endHour;
+  if (start == null && end == null) return true;
+  if (start != null && end == null) return hour >= start;
+  if (start == null && end != null) return hour <= end;
+  if (end! >= start!) return hour >= start! && hour <= end!;
+  return hour >= start! || hour <= end!;
+}
+
+export function parseFlashHour(value: unknown): { ok: true; hour: number | null } | { ok: false } {
+  if (value === null || value === undefined || value === "") return { ok: true, hour: null };
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 23) return { ok: false };
+  return { ok: true, hour: parsed };
+}
+
+export function parseFlashSlotLimit(value: unknown, fallback = 5): { ok: true; value: number } | { ok: false } {
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) return { ok: false };
+  return { ok: true, value: parsed };
+}
+
+export function parseFlashChance(value: unknown, fallback = 25): { ok: true; value: number } | { ok: false } {
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) return { ok: false };
+  return { ok: true, value: parsed };
+}
+
+export function flashRollWins(chance: number, roll: number): boolean {
+  return roll >= 1 && roll <= 100 && roll <= chance;
+}
+
+export function isValidFlashCatalogPrice(flashPrice: number, catalogPrice: number): boolean {
+  return Number.isFinite(flashPrice) && flashPrice > 0 && Number.isFinite(catalogPrice) && flashPrice < catalogPrice;
+}
+
+export function chargedCatalogPrice(product: {
+  price: string | number;
+  promoPrice?: string | number | null;
+  promoEndsAt?: Date | string | null;
+  promoUntilStock?: boolean | null;
+  promoStockLeft?: number | null;
+}, now = new Date()): number {
+  const regular = Number(product.price || 0);
+  if (!promoPriceStillApplies(product, now)) return regular;
+  return Number(product.promoPrice);
+}
+
+export function isFlashProductEligible(
+  flashPrice: number,
+  product: {
+    isActive: boolean;
+    isSoldOut: boolean;
+    price: string | number;
+    promoPrice?: string | number | null;
+    promoEndsAt?: Date | string | null;
+    promoUntilStock?: boolean | null;
+    promoStockLeft?: number | null;
+  },
+  now = new Date(),
+): boolean {
+  if (!product.isActive || product.isSoldOut) return false;
+  const charged = chargedCatalogPrice(product, now);
+  return flashPrice > 0 && flashPrice < charged;
+}
+
+export type FlashVisitView = {
+  result: string;
+  visitedOn: string;
+};
+
+/** seen vale enquanto a campanha existir. miss de outro dia em São Paulo não trava. */
+export function visitorCanDraw(visit: FlashVisitView | null, today: string): boolean {
+  if (!visit) return true;
+  if (visit.result === "seen") return false;
+  if (visit.result === "miss" && visit.visitedOn === today) return false;
+  return true;
+}
+
+export function accountCanDraw(visits: FlashVisitView[], today: string): boolean {
+  return visits.every((visit) => visitorCanDraw(visit, today));
+}
+
+export function flashRejectsCoupon(reservationId: string, couponCode: string): boolean {
+  return reservationId.trim().length > 0 && couponCode.trim().length > 0;
+}
+
+export function flashQuantityIsOne(quantity: number): boolean {
+  return quantity === 1;
+}

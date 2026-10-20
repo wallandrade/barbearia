@@ -2,6 +2,7 @@ import app from "./app";
 import { startReconciliationJob } from "./reconciliation";
 import { ensureRuntimeSchema } from "./runtime-schema";
 import { startRaffleExpiryJob } from "./raffle-expiry";
+import { startFlashExpiryJob } from "./flash-expiry";
 import { startEnvioEcomStatusSyncJob } from "./envioecom-status-job";
 import { startSuperfreteStatusSyncJob } from "./superfrete-status-job";
 import { startWhatsappGroupJob } from "./whatsapp-group-job";
@@ -38,6 +39,7 @@ async function bootstrap(): Promise<void> {
     console.log(`Server listening on port ${port}`);
     startReconciliationJob();
     startRaffleExpiryJob();
+    startFlashExpiryJob();
     startEnvioEcomStatusSyncJob();
     startSuperfreteStatusSyncJob();
     startWhatsappGroupJob();

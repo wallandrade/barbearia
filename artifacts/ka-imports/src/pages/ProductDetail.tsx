@@ -7,6 +7,7 @@ import { PromoCountdown } from "@/components/product/PromoCountdown";
 import { isPromoStillActive } from "@/lib/promo-ends-at";
 import { normalizeSelectedVariants, parseVariantGroups, variantGalleryImages, variantImageFromSelection, variantSelectionError } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
+import { claimPendingFlashIfAny } from "@/lib/flash-offer";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
@@ -322,7 +323,7 @@ export default function ProductDetail() {
                         size="lg"
                         className="w-full text-base"
                         disabled={isSoldOut || !hasRequiredVariants}
-                        onClick={() => {
+                        onClick={async () => {
                           if (isSoldOut) {
                             toast.error("Este produto está esgotado e não pode ser adicionado.");
                             return;
@@ -331,10 +332,22 @@ export default function ProductDetail() {
                             toast.error(variantError || "Selecione as variantes para continuar.");
                             return;
                           }
+                          const flash = await claimPendingFlashIfAny(product.id, option.quantity);
+                          if (flash.error) {
+                            toast.error(flash.error);
+                            return;
+                          }
                           addItem(product, {
-                            quantity: option.quantity,
-                            unitPrice: option.unitPrice,
+                            quantity: flash.reservation ? 1 : option.quantity,
+                            unitPrice: flash.reservation ? flash.reservation.flashPrice : option.unitPrice,
                             selectedVariants,
+                            flash: flash.reservation
+                              ? {
+                                reservationId: flash.reservation.id,
+                                expiresAt: flash.reservation.expiresAt,
+                                catalogPrice: option.unitPrice,
+                              }
+                              : undefined,
                           });
                           toast.success(`${option.quantityLabel} adicionado ao carrinho!`);
                         }}
@@ -350,7 +363,7 @@ export default function ProductDetail() {
                   size="lg"
                   className="w-full text-base"
                   disabled={isSoldOut || !hasRequiredVariants}
-                  onClick={() => {
+                  onClick={async () => {
                     if (isSoldOut) {
                       toast.error("Este produto está esgotado e não pode ser adicionado.");
                       return;
@@ -359,7 +372,26 @@ export default function ProductDetail() {
                       toast.error(variantError || "Selecione as variantes para continuar.");
                       return;
                     }
-                    addItem(product, { selectedVariants });
+                    const flash = await claimPendingFlashIfAny(product.id, 1);
+                    if (flash.error) {
+                      toast.error(flash.error);
+                      return;
+                    }
+                    addItem(product, {
+                      selectedVariants,
+                      quantity: 1,
+                      unitPrice: flash.reservation ? flash.reservation.flashPrice : undefined,
+                      flash: flash.reservation
+                        ? {
+                          reservationId: flash.reservation.id,
+                          expiresAt: flash.reservation.expiresAt,
+                          catalogPrice: isPromoStillActive(product.promoPrice, product.price, promoEndsAt, Date.now())
+                            ? Number(product.promoPrice)
+                            : product.price,
+                            : product.price,
+                        }
+                        : undefined,
+                    });
                     toast.success("Produto adicionado ao carrinho!");
                   }}
                 >

@@ -44,6 +44,9 @@ type CartItemExtended = CartItem & {
   bumpForProductId?: string;
   bumpOfferId?: string;
   bumpProductId?: string;
+  flashOffer?: boolean;
+  flashReservationId?: string;
+  flashExpiresAt?: string;
 };
 
 function matchesCartLine(item: { id: string; lineKey?: string }, itemId: string): boolean {
@@ -103,7 +106,12 @@ interface CartState {
   setIsOpen: (isOpen: boolean) => void;
   addItem: (
     product: Product,
-    options?: { quantity?: number; unitPrice?: number; selectedVariants?: Array<{ groupName?: string; option?: string }> },
+    options?: {
+      quantity?: number;
+      unitPrice?: number;
+      selectedVariants?: Array<{ groupName?: string; option?: string }>;
+      flash?: { reservationId: string; expiresAt: string; catalogPrice?: number };
+    },
   ) => void;
   addBumpItem: (
     bumpOfferId: string,
@@ -177,6 +185,37 @@ export const useCart = create<CartState>()(
           const displayName = variantLabel ? `${product.name} - ${variantLabel}` : product.name;
           const lineKey = cartLineKey(product.id, selectedVariants);
           const lineImage = variantImageFromSelection(variantGroups, selectedVariants) || product.image;
+          const regularPrice = product.price;
+
+          if (options?.flash) {
+            const flashPrice = Number(options.unitPrice);
+            if (!Number.isFinite(flashPrice) || flashPrice <= 0) return state;
+            const kept = state.items.filter((item) => !sameCartLine(item, lineKey));
+            return {
+              items: [
+                ...kept,
+                {
+                  id: product.id,
+                  lineKey,
+                  name: displayName,
+                  price: flashPrice,
+                  baseUnitPrice: flashPrice,
+                  regularPrice: options.flash.catalogPrice ?? regularPrice,
+                  quantity: 1,
+                  image: lineImage,
+                  bulkDiscountEnabled: false,
+                  bulkDiscountTiers: [],
+                  selectedVariants,
+                  variantLabel: variantLabel || undefined,
+                  flashOffer: true,
+                  flashReservationId: options.flash.reservationId,
+                  flashExpiresAt: options.flash.expiresAt,
+                } as CartItemExtended,
+              ],
+              isOpen: true,
+            };
+          }
+
           const bulkDiscountEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
           const bulkDiscountTiers = bulkDiscountEnabled
             ? parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers)
@@ -184,7 +223,9 @@ export const useCart = create<CartState>()(
           const baseUnitPrice = getBaseUnitPrice(product);
 
           const existingItem = state.items.find((item) => sameCartLine(item, lineKey));
-          const regularPrice = product.price;
+          if (existingItem?.flashOffer) {
+            return { ...state, isOpen: true };
+          }
 
           if (existingItem) {
             const nextQuantity = existingItem.quantity + addQuantity;
@@ -262,19 +303,19 @@ export const useCart = create<CartState>()(
 
       updateQuantity: (itemId, quantity) => {
         set((state) => ({
-          items: state.items.map((item) =>
-            matchesCartLine(item, itemId)
-              ? {
-                ...item,
-                quantity: Math.max(1, quantity),
-                price: item.isBump === true
-                  ? Number(item.price)
-                  : (item.bulkDiscountEnabled === true)
-                    ? getTierUnitPrice(Number(item.baseUnitPrice ?? item.price), Math.max(1, quantity), item.bulkDiscountTiers ?? [])
-                    : Number(item.baseUnitPrice ?? item.price),
-              }
-              : item
-          ),
+          items: state.items.map((item) => {
+            if (!matchesCartLine(item, itemId)) return item;
+            if (item.flashOffer) return item;
+            return {
+              ...item,
+              quantity: Math.max(1, quantity),
+              price: item.isBump === true
+                ? Number(item.price)
+                : (item.bulkDiscountEnabled === true)
+                  ? getTierUnitPrice(Number(item.baseUnitPrice ?? item.price), Math.max(1, quantity), item.bulkDiscountTiers ?? [])
+                  : Number(item.baseUnitPrice ?? item.price),
+            };
+          }),
         }));
       },
 

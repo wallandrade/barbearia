@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { SitePasswordGate } from "@/components/SitePasswordGate";
 import SocialProofWidget from "@/components/SocialProofWidget";
+import { FlashOfferHost } from "@/components/FlashOfferHost";
 import PeptideChatWidget from "@/components/PeptideChatWidget";
 import { captureReferralFromCurrentUrl } from "@/lib/affiliate";
 import { applyStoreThemeAttribute, useStoreTheme } from "@/lib/store-theme";
@@ -239,6 +240,7 @@ function AppInner() {
         <Router />
       </SitePasswordGate>
       {!isAdmin && !isMotoboy && <SocialProofWidget />}
+      <FlashOfferHost />
       {showPeptideChat && <PeptideChatWidget />}
     </AppErrorBoundary>
   );

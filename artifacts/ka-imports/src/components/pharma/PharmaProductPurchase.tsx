@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import type { Product } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
+import { claimPendingFlashIfAny } from "@/lib/flash-offer";
 import { usePharmaAddedNotice } from "@/components/pharma/PharmaAddedNotice";
 import { parseBulkTiers, pharmaOffPercent, pharmaSalePrice, tierForQuantity } from "@/lib/pharma-catalog-query";
 import { ShoppingCart } from "lucide-react";
@@ -69,16 +70,40 @@ export function PharmaProductPurchase({
     return true;
   }
 
-  function add(closeDrawer: boolean) {
+  async function add(closeDrawer: boolean) {
     if (!guard()) return;
-    addItem(product, { quantity, unitPrice, selectedVariants });
+    const flash = await claimPendingFlashIfAny(product.id, quantity);
+    if (flash.error) {
+      toast.error(flash.error);
+      return;
+    }
+    addItem(product, {
+      quantity: flash.reservation ? 1 : quantity,
+      unitPrice: flash.reservation ? flash.reservation.flashPrice : unitPrice,
+      selectedVariants,
+      flash: flash.reservation
+        ? { reservationId: flash.reservation.id, expiresAt: flash.reservation.expiresAt, catalogPrice: unitPrice }
+        : undefined,
+    });
     if (closeDrawer) setIsOpen(false);
-    showNotice({ name: product.name, image: photo, addedQty: quantity });
+    showNotice({ name: product.name, image: photo, addedQty: flash.reservation ? 1 : quantity });
   }
 
-  function buyNow() {
+  async function buyNow() {
     if (!guard()) return;
-    addItem(product, { quantity, unitPrice, selectedVariants });
+    const flash = await claimPendingFlashIfAny(product.id, quantity);
+    if (flash.error) {
+      toast.error(flash.error);
+      return;
+    }
+    addItem(product, {
+      quantity: flash.reservation ? 1 : quantity,
+      unitPrice: flash.reservation ? flash.reservation.flashPrice : unitPrice,
+      selectedVariants,
+      flash: flash.reservation
+        ? { reservationId: flash.reservation.id, expiresAt: flash.reservation.expiresAt, catalogPrice: unitPrice }
+        : undefined,
+    });
     setIsOpen(false);
     setLocation(sellerSlug ? `/${encodeURIComponent(sellerSlug)}/checkout` : "/checkout");
   }
