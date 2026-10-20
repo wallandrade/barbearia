@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
+import { ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type ProductOption = { id: string; name: string; price: number };
+type ProductOption = { id: string; name: string; price: number; image: string | null };
+
+function ProductThumb({ src, alt }: { src?: string | null; alt: string }) {
+  const url = String(src || "").trim();
+  if (url) {
+    return <img src={url} alt={alt} className="h-10 w-10 shrink-0 rounded-md border border-border bg-white object-cover" />;
+  }
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+      <ImageOff className="h-4 w-4 text-muted-foreground/60" />
+    </div>
+  );
+}
 
 type CampaignItem = {
   id: string;
@@ -54,6 +67,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [endHour, setEndHour] = useState("");
   const [items, setItems] = useState<DraftItem[]>([]);
   const [productId, setProductId] = useState("");
+  const [productMenuOpen, setProductMenuOpen] = useState(false);
   const [flashPrice, setFlashPrice] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -67,12 +81,13 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
       return;
     }
     const campaignData = await campaignRes.json() as { campaigns?: Campaign[] };
-    const productData = await productRes.json() as { products?: Array<{ id: string; name: string; price: number }> };
+    const productData = await productRes.json() as { products?: Array<{ id: string; name: string; price: number; image?: string | null }> };
     setCampaigns(campaignData.campaigns || []);
     setProducts((productData.products || []).map((product) => ({
       id: product.id,
       name: product.name,
       price: Number(product.price),
+      image: product.image || null,
     })));
   }, [onUnauthorized]);
 
@@ -90,6 +105,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
     setEndHour("");
     setItems([]);
     setProductId("");
+    setProductMenuOpen(false);
     setFlashPrice("");
   }
 
@@ -178,6 +194,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   }
 
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  const selectedProduct = products.find((product) => product.id === productId);
 
   return (
     <div className="space-y-6">
@@ -216,23 +233,53 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
             </select>
           </label>
         </div>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-10 flex-1 rounded-lg border border-border px-3">
-            <option value="">Produto</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>{product.name} · {formatCurrency(product.price)}</option>
-            ))}
-          </select>
-          <input value={flashPrice} onChange={(event) => setFlashPrice(event.target.value)} placeholder="Preço relâmpago" className="h-10 w-full rounded-lg border border-border px-3 sm:w-40" />
-          <button type="button" onClick={addItem} className="h-10 rounded-lg border border-border px-4 text-sm font-semibold">Adicionar</button>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-start">
+          <div className="relative min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setProductMenuOpen((open) => !open)}
+              className="flex h-14 w-full items-center gap-3 rounded-lg border border-border bg-white px-3 text-left"
+            >
+              {selectedProduct ? <ProductThumb src={selectedProduct.image} alt={selectedProduct.name} /> : null}
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {selectedProduct ? `${selectedProduct.name} · ${formatCurrency(selectedProduct.price)}` : "Produto"}
+              </span>
+            </button>
+            {productMenuOpen ? (
+              <div className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-lg border border-border bg-white shadow-lg">
+                {products.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => {
+                      setProductId(product.id);
+                      setProductMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/60"
+                  >
+                    <ProductThumb src={product.image} alt={product.name} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{product.name}</span>
+                      <span className="text-xs text-muted-foreground">{formatCurrency(product.price)}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <input value={flashPrice} onChange={(event) => setFlashPrice(event.target.value)} placeholder="Preço relâmpago" className="h-14 w-full rounded-lg border border-border px-3 sm:w-40" />
+          <button type="button" onClick={addItem} className="h-14 rounded-lg border border-border px-4 text-sm font-semibold">Adicionar</button>
         </div>
         {items.length > 0 && (
           <ul className="mt-3 space-y-2">
             {items.map((item) => {
               const product = products.find((candidate) => candidate.id === item.productId);
               return (
-                <li key={item.productId} className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
-                  <span>{product?.name || item.productId} · {formatCurrency(Number(item.flashPrice))}</span>
+                <li key={item.productId} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <ProductThumb src={product?.image} alt={product?.name || item.productId} />
+                    <span className="truncate">{product?.name || item.productId} · {formatCurrency(Number(item.flashPrice))}</span>
+                  </span>
                   <button type="button" className="text-destructive" onClick={() => setItems((current) => current.filter((row) => row.productId !== item.productId))}>Tirar</button>
                 </li>
               );
@@ -269,10 +316,16 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
             <p className="mt-2 text-sm">
               {campaign.seenCount} viram · {campaign.activeCount} reservas ativas · {campaign.usedCount} viraram pedido
             </p>
-            <ul className="mt-2 text-sm text-muted-foreground">
-              {campaign.items.map((item) => (
-                <li key={item.id}>{item.productName} · {formatCurrency(item.flashPrice)}</li>
-              ))}
+            <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+              {campaign.items.map((item) => {
+                const product = products.find((candidate) => candidate.id === item.productId);
+                return (
+                  <li key={item.id} className="flex items-center gap-3">
+                    <ProductThumb src={product?.image} alt={item.productName} />
+                    <span>{item.productName} · {formatCurrency(item.flashPrice)}</span>
+                  </li>
+                );
+              })}
             </ul>
           </article>
         ))}

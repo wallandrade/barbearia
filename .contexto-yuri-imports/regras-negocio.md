@@ -44,7 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
-| 2026-10-19 | Promoção relâmpago por pessoa | Modal depois de 8s na loja. Vaga de 1h só no aceite. PIX e WhatsApp cobram o preço da reserva. Cartão cobra o catálogo. Cupom não soma | `promoPrice` do produto e a cópia 48h iguais |
+| 2026-10-19 | Lista da promoção relâmpago mostra a foto do cadastro | No admin, o produto da oferta aparece com a imagem ao lado do nome | Preço, vaga e sorteio iguais |
 | 2026-10-15 | Aba Lista negra em dois blocos | **Esta loja** fica em cima, com tirar da lista. **Outra loja** fica embaixo, só leitura | Cotação, snapshot e a cópia 48h iguais |
 | 2026-10-15 | Lista negra compartilhada com a outra loja | A cotação soma os extravios de lá (180 dias). A aba mostra **Outra loja** e não tira caso de lá. Eles leem `GET /api/integrations/loss-blacklist/snapshot` | Checkout, Motoboy, cópia 48h e estoque iguais. Sem a URL deles, a cotação segue só com a nossa lista |
 | 2026-10-14 | Checkout esconde saldo da loja sem valor | **Usar saldo da loja (seguro)** só aparece logado e com saldo maior que zero | Comissão, abater no card e a carteira iguais |
