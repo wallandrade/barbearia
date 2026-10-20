@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
@@ -50,6 +50,10 @@ function adminHeaders(): Record<string, string> {
     : { "Content-Type": "application/json" };
 }
 
+function foldProductName(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 function hourLabel(hour: number | null, empty: string): string {
   if (hour == null) return empty;
   return `${String(hour).padStart(2, "0")}h`;
@@ -68,6 +72,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [items, setItems] = useState<DraftItem[]>([]);
   const [productId, setProductId] = useState("");
   const [productMenuOpen, setProductMenuOpen] = useState(false);
+  const [productQuery, setProductQuery] = useState("");
   const [flashPrice, setFlashPrice] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -106,6 +111,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
     setItems([]);
     setProductId("");
     setProductMenuOpen(false);
+    setProductQuery("");
     setFlashPrice("");
   }
 
@@ -195,6 +201,11 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
 
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
   const selectedProduct = products.find((product) => product.id === productId);
+  const visibleProducts = useMemo(() => {
+    const query = foldProductName(productQuery.trim());
+    if (!query) return products;
+    return products.filter((product) => foldProductName(product.name).includes(query));
+  }, [productQuery, products]);
 
   return (
     <div className="space-y-6">
@@ -246,24 +257,38 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
               </span>
             </button>
             {productMenuOpen ? (
-              <div className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-lg border border-border bg-white shadow-lg">
-                {products.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => {
-                      setProductId(product.id);
-                      setProductMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/60"
-                  >
-                    <ProductThumb src={product.image} alt={product.name} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{product.name}</span>
-                      <span className="text-xs text-muted-foreground">{formatCurrency(product.price)}</span>
-                    </span>
-                  </button>
-                ))}
+              <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-white shadow-lg">
+                <div className="border-b border-border p-2">
+                  <input
+                    autoFocus
+                    value={productQuery}
+                    onChange={(event) => setProductQuery(event.target.value)}
+                    placeholder="Digite o nome do produto"
+                    className="h-10 w-full rounded-lg border border-border px-3 text-sm"
+                  />
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {visibleProducts.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground">Nenhum produto com esse nome.</p>
+                  ) : visibleProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => {
+                        setProductId(product.id);
+                        setProductQuery("");
+                        setProductMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/60"
+                    >
+                      <ProductThumb src={product.image} alt={product.name} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{product.name}</span>
+                        <span className="text-xs text-muted-foreground">{formatCurrency(product.price)}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>

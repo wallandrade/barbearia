@@ -111,7 +111,7 @@ export function FlashOfferHost() {
   return (
     <>
       {showModal && offer ? (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
