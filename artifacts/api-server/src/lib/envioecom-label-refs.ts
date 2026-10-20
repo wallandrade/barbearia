@@ -73,3 +73,29 @@ export function pickEnvioEcomLabelRefs(input: {
     trackingKey: "",
   };
 }
+
+function isCarrierBarcode(value: string): boolean {
+  return Boolean(value) && !/^EC/i.test(value);
+}
+
+/**
+ * Pacote com rastreio da transportadora (8880… / Correios): a etiqueta sai por esse código.
+ * O id numérico gravado na linha pode ser o do outro pacote; ele não entra na busca.
+ */
+export function packageLabelLookup(input: {
+  packages: ShipmentRefRow[];
+  packageId: string;
+  shipmentId?: string | null;
+  barcode?: string | null;
+  trackingKey?: string | null;
+}): { shipmentId: string; barcode: string; trackingKey: string; lockBarcode: boolean } {
+  let shipmentId = clean(input.shipmentId);
+  const barcode = clean(input.barcode);
+  const trackingKey = clean(input.trackingKey);
+  if (shipmentRefBelongsToSibling(input.packages, input.packageId, shipmentId, "")) {
+    shipmentId = "";
+  }
+  const lockBarcode = isCarrierBarcode(barcode);
+  if (lockBarcode) shipmentId = "";
+  return { shipmentId, barcode, trackingKey, lockBarcode };
+}

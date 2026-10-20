@@ -41,7 +41,7 @@ import {
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isSplitShipmentList } from "../lib/order-shipments-logic";
-import { pickEnvioEcomLabelRefs, shipmentRefBelongsToSibling } from "../lib/envioecom-label-refs";
+import { packageLabelLookup, pickEnvioEcomLabelRefs, shipmentRefBelongsToSibling } from "../lib/envioecom-label-refs";
 import {
   controlTowerSince,
   hasEnvioEcomTowerBinding,
@@ -82,6 +82,7 @@ import {
   shouldPollEnvioEcomStatus,
   nextEnvioEcomExternalOrderNumber,
   isProvisionalEnvioEcomBarcode,
+  isEnvioEcomPanelShipmentId,
   mergeStatusHistoryWithTimeline,
   parseCarriersInput,
   pickBestBarcode,
@@ -1341,6 +1342,20 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     let barcode = labelRefs.barcode;
     let shipmentId = labelRefs.shipmentId;
     let trackingKey = labelRefs.trackingKey;
+    const lookup = targetPackage
+      ? packageLabelLookup({
+          packages: shipmentPackages,
+          packageId: targetPackage.id,
+          shipmentId,
+          barcode,
+          trackingKey,
+        })
+      : null;
+    if (lookup) {
+      shipmentId = lookup.shipmentId;
+      barcode = lookup.barcode;
+      trackingKey = lookup.trackingKey;
+    }
 
     if (!barcode && !shipmentId && !trackingKey) {
       res.status(400).json({ error: "NO_BARCODE", message: "Pedido sem barcode/shipping_id EnvioEcom. Crie o envio antes." });
@@ -1363,9 +1378,23 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
       });
       const live = resolved.result;
       if (resolved.accountId) labelsAccountId = resolved.accountId;
-      if (live.shipmentId) shipmentId = live.shipmentId;
-      if (live.barcode) barcode = live.barcode;
-      if (live.trackingKey) trackingKey = live.trackingKey;
+      const liveBarcode = String(live.barcode || "").trim();
+      const liveShipmentId = String(live.shipmentId || "").trim();
+      const liveMatchesRow = !lookup?.lockBarcode || !liveBarcode || liveBarcode === lookup.barcode;
+      const liveIsSibling = Boolean(
+        targetPackage && shipmentRefBelongsToSibling(shipmentPackages, targetPackage.id, liveShipmentId, liveBarcode),
+      );
+      if (lookup?.lockBarcode) {
+        barcode = lookup.barcode;
+        if (liveMatchesRow && liveShipmentId && !liveIsSibling) shipmentId = liveShipmentId;
+        if (liveMatchesRow && live.trackingKey) trackingKey = live.trackingKey;
+      } else {
+        if (live.shipmentId) shipmentId = live.shipmentId;
+        if (live.barcode) barcode = live.barcode;
+        if (live.trackingKey) trackingKey = live.trackingKey;
+      }
+
+      const trustLive = liveMatchesRow && !liveIsSibling;
 
       console.log("[EnvioEcom] labels resolve", {
         shipmentId,
@@ -1373,14 +1402,15 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         status: live.status,
         provisional: isProvisionalEnvioEcomBarcode(barcode),
         accountId: labelsAccountId,
+        trustLive,
       });
 
-      if (live.status || live.shipmentId || live.barcode) {
+      if (trustLive && (live.status || live.shipmentId || live.barcode)) {
         await applyShipmentStatusToOrder({
           orderId: order.id,
           status: live.status || targetPackage?.envioecomStatus || order.envioecomStatus || "Pronto para envio",
-          barcode: live.barcode || barcode,
-          shipmentId: live.shipmentId || shipmentId,
+          barcode: lookup?.lockBarcode ? lookup.barcode : (live.barcode || barcode),
+          shipmentId: lookup?.lockBarcode ? (shipmentId || null) : (live.shipmentId || shipmentId),
           trackingKey: live.trackingKey || trackingKey,
           deliveryMode: live.deliveryMode,
           description: "IDs/barcode sincronizados antes de gerar etiqueta",
@@ -1392,7 +1422,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         });
       }
 
-      if (isAwaitingPaymentStatus(live.status || order.envioecomStatus)) {
+      if (trustLive && isAwaitingPaymentStatus(live.status || order.envioecomStatus)) {
         res.status(409).json({
           error: "AWAITING_PAYMENT",
           message:
@@ -1403,7 +1433,7 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
         });
         return;
       }
-      if (isEnvioEcomCancelStatus(live.status)) {
+      if (trustLive && isEnvioEcomCancelStatus(live.status)) {
         res.status(409).json({
           error: "SHIPMENT_CANCELLED",
           message:
@@ -1417,7 +1447,8 @@ router.post("/admin/envioecom/orders/:id/labels", requireAdminAuth, async (req, 
     }
 
     const mergeDce = Boolean(req.body?.merge_dce);
-    const numericId = shipmentId && /^\d+$/.test(shipmentId) ? Number(shipmentId) : null;
+    const panelShipmentId = shipmentId && isEnvioEcomPanelShipmentId(shipmentId) ? shipmentId : "";
+    const numericId = !lookup?.lockBarcode && panelShipmentId ? Number(panelShipmentId) : null;
     const labelBarcode = pickBestBarcode([barcode, trackingKey]);
 
     if (numericId == null && isProvisionalEnvioEcomBarcode(labelBarcode)) {
@@ -1642,15 +1673,24 @@ router.post("/admin/envioecom/orders/:id/sync", requireAdminAuth, async (req, re
     }
 
     const isLink = Boolean(bodyShipmentId || bodyBarcode);
+    const storedLookup = targetPackage && !isLink
+      ? packageLabelLookup({
+          packages: shipmentPackages,
+          packageId: targetPackage.id,
+          shipmentId: targetPackage.envioecomShipmentId,
+          barcode: targetPackage.envioecomBarcode,
+          trackingKey: targetPackage.envioecomTrackingKey,
+        })
+      : null;
     const livePack = await resolveLiveForOrder(order, {
-      shipmentId: bodyShipmentId || (isLink ? undefined : targetPackage?.envioecomShipmentId) || undefined,
-      barcode: bodyBarcode || (isLink ? undefined : targetPackage?.envioecomBarcode) || undefined,
-      trackingKey: isLink ? undefined : targetPackage?.envioecomTrackingKey || undefined,
+      shipmentId: bodyShipmentId || (isLink ? undefined : storedLookup?.shipmentId || targetPackage?.envioecomShipmentId) || undefined,
+      barcode: bodyBarcode || (isLink ? undefined : storedLookup?.barcode || targetPackage?.envioecomBarcode) || undefined,
+      trackingKey: isLink ? undefined : storedLookup?.trackingKey || targetPackage?.envioecomTrackingKey || undefined,
       externalOrderNumber: isLink ? undefined : targetPackage?.envioecomExternalOrderNumber || undefined,
       accountId: readAccountId(req.body)
         || String(targetPackage?.envioecomAccountId || (order as { envioecomAccountId?: string | null }).envioecomAccountId || "")
         || undefined,
-      strictIdentifier: isLink,
+      strictIdentifier: isLink || Boolean(storedLookup?.lockBarcode),
     });
     const live = livePack.result;
     if (targetPackage && livePack.accountId) {

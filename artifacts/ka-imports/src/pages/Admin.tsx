@@ -13907,7 +13907,7 @@ function OrdersPanel({
                         hasPdf={Boolean(pkg.envioecomLabelUrl)}
                         canUnlink={Boolean(pkg.id) && Boolean(pkg.envioecomBarcode || pkg.envioecomShipmentId || pkg.envioecomLabelUrl || pkg.envioecomStatus)}
                         onGenerateLabel={() => { void generateEnvioEcomLabel(order, pkg.id); }}
-                        onOpenPdf={() => window.open(String(pkg.envioecomLabelUrl), "_blank", "noopener,noreferrer")}
+                        onOpenPdf={() => { void generateEnvioEcomLabel(order, pkg.id); }}
                         onSyncStatus={() => { void syncEnvioEcomStatus({
                           ...order,
                           envioecomShipmentId: pkg.envioecomShipmentId,
