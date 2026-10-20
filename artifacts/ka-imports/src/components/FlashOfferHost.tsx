@@ -154,17 +154,17 @@ export function FlashOfferHost() {
                   <ChevronLeft className="h-5 w-5" />
                 </button>
               ) : null}
-              <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl bg-[#fff4ea] p-3 text-left">
-              {offer.image ? (
-                <img src={offer.image} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-white object-contain" />
-              ) : (
-                <div className="h-16 w-16 shrink-0 rounded-xl bg-white" />
-              )}
-              <div className="min-w-0">
-                <p className="text-[15px] font-bold leading-tight text-neutral-950">{offer.name}</p>
-                <p className="mt-1 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
-                <p className="text-[28px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
-              </div>
+              <div className="min-w-0 flex-1 overflow-hidden rounded-2xl bg-[#fff4ea] p-3 text-left">
+                <div className="flex items-center gap-3">
+                  {offer.image ? (
+                    <img src={offer.image} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-white object-contain" />
+                  ) : (
+                    <div className="h-16 w-16 shrink-0 rounded-xl bg-white" />
+                  )}
+                  <p className="min-w-0 flex-1 text-[15px] font-bold leading-tight text-neutral-950">{offer.name}</p>
+                </div>
+                <p className="mt-2 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
+                <p className="text-[26px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
               </div>
               {carousel ? (
                 <button

@@ -44,6 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-20 | Preço da oferta relâmpago fica dentro do card | O valor laranja desce para baixo da foto, na largura do card | Sorteio, carrossel e o botão iguais |
 | 2026-10-20 | Interruptor mostra a oferta na primeira visita | Ligado, ignora chance, horário, vaga e repetição. Cada cliente vê as campanhas ligadas uma vez | Desligado, o sorteio e o carrossel continuam iguais |
 | 2026-10-20 | Ofertas relâmpago que passam abrem em carrossel | Cada campanha sorteia a própria chance. Perder uma não esconde as outras. Duas ou mais viram carrossel | Vaga, horário e repetir iguais. Uma oferta continua o card único |
 | 2026-10-20 | Card Motoboy pega a escolha do checkout | Frete motoboy ou horário marcado vai para **Motoboy para Enviar**, mesmo com PIX pendente | Cancelado e etiqueta pronta continuam de fora. Cópia 48h igual |
