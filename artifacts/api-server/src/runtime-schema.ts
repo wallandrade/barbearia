@@ -1407,12 +1407,19 @@ async function ensureFlashOfferTables(databaseName: string): Promise<void> {
         is_active TINYINT(1) NOT NULL DEFAULT 0,
         slot_limit INT NOT NULL DEFAULT 5,
         chance INT NOT NULL DEFAULT 25,
+        repeat_after_hours INT NOT NULL DEFAULT 0,
         start_hour INT NULL,
         end_hour INT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
+  }
+  if (
+    await tableExists("flash_campaigns", databaseName)
+    && !(await columnExists("flash_campaigns", "repeat_after_hours", databaseName))
+  ) {
+    await pool.query(`ALTER TABLE flash_campaigns ADD COLUMN repeat_after_hours INT NOT NULL DEFAULT 0`);
   }
   if (!(await tableExists("flash_campaign_items", databaseName))) {
     await pool.query(`

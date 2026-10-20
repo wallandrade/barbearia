@@ -13,20 +13,20 @@ import { requirePrimaryAdmin } from "./admin-auth";
 import { getCustomerSession } from "../middlewares/customer-auth";
 import { parseVariantGroups } from "../lib/variant-groups";
 import {
-  accountCanDraw,
   chargedCatalogPrice,
   flashRollWins,
   flashVisitIpHash,
+  flashVisitStillBlocks,
   isFlashHourOpen,
   isFlashProductEligible,
   isFlashVisitorId,
   isValidFlashCatalogPrice,
   parseFlashChance,
+  parseRepeatAfterHours,
   parseFlashHour,
   parseFlashSlotLimit,
   saoPauloDateKey,
   saoPauloHour,
-  visitorCanDraw,
 } from "../lib/flash-offer-logic";
 
 const router: IRouter = Router();
@@ -82,6 +82,7 @@ async function recordVisit(input: {
       ipHash: input.ipHash,
       result: input.result,
       visitedOn: input.today,
+      createdAt: now,
       updatedAt: now,
     }).where(eq(flashVisitsTable.id, input.existingId));
     return;
@@ -105,6 +106,7 @@ async function recordVisit(input: {
       ipHash: input.ipHash,
       result: input.result,
       visitedOn: input.today,
+      createdAt: now,
       updatedAt: now,
     }).where(and(
       eq(flashVisitsTable.campaignId, input.campaignId),
@@ -155,32 +157,67 @@ router.post("/flash-offers/draw", async (req, res) => {
           eq(flashVisitsTable.visitorId, visitorId),
         ))
         .limit(1);
-      if (!visitorCanDraw(visitorVisit ? { result: visitorVisit.result, visitedOn: visitorVisit.visitedOn } : null, today)) {
+      if (visitorVisit && flashVisitStillBlocks({
+        result: visitorVisit.result,
+        visitedOn: visitorVisit.visitedOn,
+        createdAt: visitorVisit.createdAt,
+        repeatAfterHours: campaign.repeatAfterHours,
+        now,
+        today,
+      })) {
         continue;
       }
 
       if (userId) {
         const accountVisits = await db
-          .select({ result: flashVisitsTable.result, visitedOn: flashVisitsTable.visitedOn })
+          .select({
+            result: flashVisitsTable.result,
+            visitedOn: flashVisitsTable.visitedOn,
+            createdAt: flashVisitsTable.createdAt,
+          })
           .from(flashVisitsTable)
           .where(and(
             eq(flashVisitsTable.campaignId, campaign.id),
             eq(flashVisitsTable.userId, userId),
           ));
-        if (!accountCanDraw(accountVisits, today)) continue;
+        if (accountVisits.some((visit) => flashVisitStillBlocks({
+          result: visit.result,
+          visitedOn: visit.visitedOn,
+          createdAt: visit.createdAt,
+          repeatAfterHours: campaign.repeatAfterHours,
+          now,
+          today,
+        }))) continue;
       }
 
       if (realIp) {
-        const [ipVisit] = await db
-          .select({ id: flashVisitsTable.id })
-          .from(flashVisitsTable)
-          .where(and(
+        const ipWhere = campaign.repeatAfterHours > 0
+          ? and(
+            eq(flashVisitsTable.campaignId, campaign.id),
+            eq(flashVisitsTable.ipHash, ipHash),
+          )
+          : and(
             eq(flashVisitsTable.campaignId, campaign.id),
             eq(flashVisitsTable.visitedOn, today),
             eq(flashVisitsTable.ipHash, ipHash),
-          ))
-          .limit(1);
-        if (ipVisit && ipVisit.id !== visitorVisit?.id) continue;
+          );
+        const ipVisits = await db
+          .select({
+            id: flashVisitsTable.id,
+            result: flashVisitsTable.result,
+            visitedOn: flashVisitsTable.visitedOn,
+            createdAt: flashVisitsTable.createdAt,
+          })
+          .from(flashVisitsTable)
+          .where(ipWhere);
+        if (ipVisits.some((visit) => visit.id !== visitorVisit?.id && flashVisitStillBlocks({
+          result: visit.result,
+          visitedOn: visit.visitedOn,
+          createdAt: visit.createdAt,
+          repeatAfterHours: campaign.repeatAfterHours,
+          now,
+          today,
+        }))) continue;
       }
 
       const roll = crypto.randomInt(1, 101);
@@ -487,6 +524,7 @@ async function mapCampaign(row: typeof flashCampaignsTable.$inferSelect) {
     isActive: row.isActive,
     slotLimit: row.slotLimit,
     chance: row.chance,
+    repeatAfterHours: row.repeatAfterHours,
     startHour: row.startHour,
     endHour: row.endHour,
     items: items.map((item) => {
@@ -509,6 +547,7 @@ function readCampaignFields(body: unknown, creating: boolean): {
   isActive?: boolean;
   slotLimit?: number;
   chance?: number;
+  repeatAfterHours?: number;
   startHour?: number | null;
   endHour?: number | null;
 } | { ok: false; message: string } {
@@ -518,6 +557,7 @@ function readCampaignFields(body: unknown, creating: boolean): {
     isActive?: boolean;
     slotLimit?: number;
     chance?: number;
+    repeatAfterHours?: number;
     startHour?: number | null;
     endHour?: number | null;
   } = {};
@@ -538,6 +578,11 @@ function readCampaignFields(body: unknown, creating: boolean): {
     const chance = parseFlashChance(source.chance);
     if (!chance.ok) return { ok: false, message: "A chance fica entre 1 e 100." };
     result.chance = chance.value;
+  }
+  if (creating || source.repeatAfterHours !== undefined) {
+    const repeatAfterHours = parseRepeatAfterHours(source.repeatAfterHours);
+    if (!repeatAfterHours.ok) return { ok: false, message: "Repetir depois fica entre 0 e 2160 horas." };
+    result.repeatAfterHours = repeatAfterHours.value;
   }
   if (creating || source.startHour !== undefined) {
     const startHour = parseFlashHour(source.startHour);
@@ -595,6 +640,7 @@ router.post("/admin/flash-campaigns", requirePrimaryAdmin, async (req, res) => {
       isActive: fields.isActive ?? false,
       slotLimit: fields.slotLimit ?? 5,
       chance: fields.chance ?? 25,
+      repeatAfterHours: fields.repeatAfterHours ?? 0,
       startHour: fields.startHour ?? null,
       endHour: fields.endHour ?? null,
       updatedAt: now,
@@ -626,6 +672,7 @@ router.patch("/admin/flash-campaigns/:id", requirePrimaryAdmin, async (req, res)
     if (fields.isActive !== undefined) updates.isActive = fields.isActive;
     if (fields.slotLimit !== undefined) updates.slotLimit = fields.slotLimit;
     if (fields.chance !== undefined) updates.chance = fields.chance;
+    if (fields.repeatAfterHours !== undefined) updates.repeatAfterHours = fields.repeatAfterHours;
     if (fields.startHour !== undefined) updates.startHour = fields.startHour;
     if (fields.endHour !== undefined) updates.endHour = fields.endHour;
     await db.update(flashCampaignsTable).set(updates).where(eq(flashCampaignsTable.id, id));

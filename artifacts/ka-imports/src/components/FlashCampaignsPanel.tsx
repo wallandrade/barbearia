@@ -66,6 +66,7 @@ type Campaign = {
   isActive: boolean;
   slotLimit: number;
   chance: number;
+  repeatAfterHours: number;
   startHour: number | null;
   endHour: number | null;
   items: CampaignItem[];
@@ -100,6 +101,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [isActive, setIsActive] = useState(false);
   const [slotLimit, setSlotLimit] = useState("5");
   const [chance, setChance] = useState("25");
+  const [repeatAfterHours, setRepeatAfterHours] = useState("0");
   const [startHour, setStartHour] = useState("");
   const [endHour, setEndHour] = useState("");
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -154,6 +156,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
     setIsActive(false);
     setSlotLimit("5");
     setChance("25");
+    setRepeatAfterHours("0");
     setStartHour("");
     setEndHour("");
     setItems([]);
@@ -169,6 +172,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
     setIsActive(campaign.isActive);
     setSlotLimit(String(campaign.slotLimit));
     setChance(String(campaign.chance));
+    setRepeatAfterHours(String(campaign.repeatAfterHours ?? 0));
     setStartHour(campaign.startHour == null ? "" : String(campaign.startHour));
     setEndHour(campaign.endHour == null ? "" : String(campaign.endHour));
     setItems(campaign.items.map((item) => ({ productId: item.productId, flashPrice: String(item.flashPrice) })));
@@ -204,6 +208,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
         isActive,
         slotLimit: Number(slotLimit),
         chance: Number(chance),
+        repeatAfterHours: Number(repeatAfterHours),
         startHour: startHour === "" ? null : Number(startHour),
         endHour: endHour === "" ? null : Number(endHour),
         items: items.map((item) => ({ productId: item.productId, flashPrice: Number(item.flashPrice) })),
@@ -279,6 +284,11 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
           <label className="text-sm font-medium">
             Chance de aparecer (%)
             <input value={chance} onChange={(event) => setChance(event.target.value)} inputMode="numeric" className="mt-1 h-10 w-full rounded-lg border border-border px-3" />
+          </label>
+          <label className="text-sm font-medium sm:col-span-2">
+            Repetir depois de (horas)
+            <input value={repeatAfterHours} onChange={(event) => setRepeatAfterHours(event.target.value)} inputMode="numeric" className="mt-1 h-10 w-full rounded-lg border border-border px-3" />
+            <span className="mt-1 block text-xs font-normal text-muted-foreground">0: quem viu não vê de novo nesta campanha. 24 libera 24 horas depois que o modal apareceu. O máximo é 2160.</span>
           </label>
           <label className="text-sm font-medium">
             Hora inicial
@@ -386,7 +396,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
               <div>
                 <h3 className="font-bold">{campaign.name}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {campaign.isActive ? "Ligada" : "Desligada"} · {campaign.slotLimit} vagas · {campaign.chance}% · {hourLabel(campaign.startHour, "do início do dia")} até {hourLabel(campaign.endHour, "o fim do dia")}
+                  {campaign.isActive ? "Ligada" : "Desligada"} · {campaign.slotLimit} vagas · {campaign.chance}% · {campaign.repeatAfterHours > 0 ? `repete em ${campaign.repeatAfterHours}h` : "não repete"} · {hourLabel(campaign.startHour, "do início do dia")} até {hourLabel(campaign.endHour, "o fim do dia")}
                 </p>
               </div>
               <div className="flex gap-2">

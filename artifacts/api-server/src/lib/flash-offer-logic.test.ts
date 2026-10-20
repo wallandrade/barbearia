@@ -8,12 +8,14 @@ import {
   flashRejectsCoupon,
   flashRollWins,
   flashVisitIpHash,
+  flashVisitStillBlocks,
   hashFlashIp,
   isFlashHourOpen,
   isFlashProductEligible,
   isFlashVisitorId,
   isValidFlashCatalogPrice,
   parseFlashChance,
+  parseRepeatAfterHours,
   parseFlashHour,
   parseFlashSlotLimit,
   saoPauloDateKey,
@@ -73,6 +75,27 @@ test("visitante e hash do IP", () => {
   assert.equal(hash.includes("203.0.113.8"), false);
   assert.equal(hash.length, 64);
   assert.notEqual(flashVisitIpHash(null, "abcdefghijklmnop"), flashVisitIpHash(null, "outrovisitanteok"));
+});
+
+test("repetir a oferta usa createdAt quando as horas são maiores que zero", () => {
+  const createdAt = new Date("2026-10-19T21:00:00.000Z");
+  const base = {
+    result: "seen",
+    visitedOn: "2026-10-19",
+    createdAt,
+    now: new Date(createdAt.getTime() + 24 * 60 * 60 * 1000),
+    today: "2026-10-19",
+  };
+  assert.equal(parseRepeatAfterHours(undefined).ok && parseRepeatAfterHours(undefined).value === 0, true);
+  assert.equal(parseRepeatAfterHours(24).ok, true);
+  assert.equal(parseRepeatAfterHours(2160).ok, true);
+  assert.equal(parseRepeatAfterHours(2161).ok, false);
+  assert.equal(parseRepeatAfterHours(-1).ok, false);
+  assert.equal(flashVisitStillBlocks({ ...base, repeatAfterHours: 0 }), true);
+  assert.equal(flashVisitStillBlocks({ ...base, result: "miss", visitedOn: "2026-10-18", repeatAfterHours: 0, today: "2026-10-19" }), false);
+  assert.equal(flashVisitStillBlocks({ ...base, repeatAfterHours: 24 }), true);
+  assert.equal(flashVisitStillBlocks({ ...base, repeatAfterHours: 24, now: new Date(createdAt.getTime() + 24 * 60 * 60 * 1000 + 1) }), false);
+  assert.equal(flashVisitStillBlocks({ ...base, result: "miss", repeatAfterHours: 48, now: new Date(createdAt.getTime() + 47 * 60 * 60 * 1000) }), true);
 });
 
 test("seen trava a campanha e miss de ontem não trava hoje", () => {

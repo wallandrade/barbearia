@@ -6,6 +6,7 @@ export const flashCampaignsTable = mysqlTable("flash_campaigns", {
   isActive: boolean("is_active").notNull().default(false),
   slotLimit: int("slot_limit").notNull().default(5),
   chance: int("chance").notNull().default(25),
+  repeatAfterHours: int("repeat_after_hours").notNull().default(0),
   startHour: int("start_hour"),
   endHour: int("end_hour"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

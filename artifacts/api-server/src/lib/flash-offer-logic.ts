@@ -122,6 +122,29 @@ export type FlashVisitView = {
   visitedOn: string;
 };
 
+export function parseRepeatAfterHours(value: unknown, fallback = 0): { ok: true; value: number } | { ok: false } {
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 2160) return { ok: false };
+  return { ok: true, value: parsed };
+}
+
+/** Com horas > 0, o bloqueio acaba quando agora passa de createdAt + horas. Com 0, seen fica até o fim da campanha e miss só no dia de São Paulo. */
+export function flashVisitStillBlocks(input: {
+  result: string;
+  visitedOn: string;
+  createdAt: Date;
+  repeatAfterHours: number;
+  now: Date;
+  today: string;
+}): boolean {
+  if (input.repeatAfterHours > 0) {
+    const unlockAt = input.createdAt.getTime() + input.repeatAfterHours * 60 * 60 * 1000;
+    return input.now.getTime() <= unlockAt;
+  }
+  return !visitorCanDraw({ result: input.result, visitedOn: input.visitedOn }, input.today);
+}
+
 /** seen vale enquanto a campanha existir. miss de outro dia em São Paulo não trava. */
 export function visitorCanDraw(visit: FlashVisitView | null, today: string): boolean {
   if (!visit) return true;
