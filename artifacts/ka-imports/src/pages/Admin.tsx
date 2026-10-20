@@ -372,6 +372,110 @@ function SendCardProductThumbs({
   );
 }
 
+function SendQueueCard<T extends {
+  id: string;
+  createdAt?: string | null;
+  clientName?: string | null;
+  total?: number | string | null;
+}>({
+  title,
+  icon,
+  orders,
+  badge,
+  emptyText,
+  titleAttr,
+  onOpenList,
+  onCopy,
+  onOpenOrder,
+  catalog,
+  onPhotoOpen,
+  onPhotoHover,
+  onPhotoHoverEnd,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  orders: T[];
+  badge: number;
+  emptyText: string;
+  titleAttr: string;
+  onOpenList: () => void;
+  onCopy: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onOpenOrder: (order: T) => void;
+  catalog: SendCardCatalogProduct[];
+  onPhotoOpen: (src: string, name: string) => void;
+  onPhotoHover: (hover: { src: string; name: string; top: number; left: number }) => void;
+  onPhotoHoverEnd: () => void;
+}) {
+  return (
+    <div
+      className="mt-3 rounded-xl border p-4 bg-amber-50 border-amber-300 cursor-pointer hover:bg-amber-100 transition"
+      onClick={onOpenList}
+      title={titleAttr}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+          {icon} {title}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onCopy}
+            className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-900 bg-white border border-amber-300 px-2 py-0.5 rounded-full hover:bg-amber-100"
+          >
+            <Copy className="w-3 h-3" /> Copiar TXT
+          </button>
+          <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+            {badge}
+          </span>
+        </div>
+      </div>
+      {orders.length === 0 ? (
+        <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
+          <CheckCircle className="w-4 h-4 text-green-500" /> {emptyText}
+        </p>
+      ) : (
+        <div className="space-y-1.5 max-h-[320px] overflow-y-auto" onScroll={onPhotoHoverEnd}>
+          {orders.map((order) => {
+            const lateDays = daysSince(order.createdAt);
+            const late = lateDays > 3;
+            return (
+              <div
+                key={order.id}
+                title="Abrir este pedido"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenOrder(order);
+                }}
+                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border cursor-pointer hover:brightness-[0.98] ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
+              >
+                <SendCardProductThumbs
+                  items={sendCardThumbProducts(order as SendCardOrder)}
+                  catalog={catalog}
+                  onOpen={onPhotoOpen}
+                  onHover={onPhotoHover}
+                  onHoverEnd={onPhotoHoverEnd}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{order.clientName}</p>
+                  <p className={`text-xs ${late ? "text-red-800/80" : "text-amber-700/80"}`}>#{getOrderReference(order)} · {formatDateBR(order.createdAt)}</p>
+                </div>
+                {late ? (
+                  <span className="text-[10px] font-semibold text-red-800 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                    {lateDays} dias sem enviar
+                  </span>
+                ) : null}
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${late ? "text-red-800 bg-red-100" : "text-amber-700 bg-amber-100"}`}>
+                  {formatCurrency(Number(order.total))}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function getOrderProducts(raw: unknown): OrderProductLite[] {
   if (Array.isArray(raw)) return raw as OrderProductLite[];
   if (typeof raw === "string") {
@@ -719,7 +823,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, Motorbike, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -781,6 +885,7 @@ import { parseMotoboyDistanceEnabled } from "@/lib/motoboy-distance-config";
 import { parseInsurancePercent, parseOptionalInsurancePercent, parseInsuranceProductIds, computeCartInsuranceAmount, parseInsurancePlan, insurancePlanCustomerLabel, postPaymentInsuranceNotice, adminCanAuthorizeSupportReshipment, adminCanForceUninsuredSupportReshipment, FORCE_UNINSURED_RESHIP_CONFIRM } from "@/lib/checkout-insurance";
 import {
   adminOrdersKindForRow,
+  isAdminOrdersMotoboyRow,
   isAdminOrdersReshipmentRow,
   isReshipmentChildOrder,
   type AdminOrdersKind,
@@ -4362,18 +4467,26 @@ export default function Admin() {
   const sendCardOrders = sortSendCardOrders(
     orders.filter((order) => isOnSendCard(order as SendCardOrder)),
   );
-  const sendCardBadge = sendCardBadgeCount(sendCardOrders as SendCardOrder[]);
-  const copySendCardTxt = async (event: React.MouseEvent<HTMLButtonElement>) => {
+  const motoboySendCardOrders = sendCardOrders.filter((order) => isAdminOrdersMotoboyRow(order));
+  const postalSendCardOrders = sendCardOrders.filter((order) => !isAdminOrdersMotoboyRow(order));
+  const postalSendCardBadge = sendCardBadgeCount(postalSendCardOrders as SendCardOrder[]);
+  const motoboySendCardBadge = sendCardBadgeCount(motoboySendCardOrders as SendCardOrder[]);
+  const copySendQueueTxt = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    list: typeof sendCardOrders,
+    emptyMessage: string,
+    copiedLabel: string,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
-    if (sendCardOrders.length === 0) {
-      toast.info("Nao ha pedidos para enviar.");
+    if (list.length === 0) {
+      toast.info(emptyMessage);
       return;
     }
-    const text = sendCardOrders.map((order, index) => supplierOrderBlock(order, index + 1)).join("\n\n");
+    const text = list.map((order, index) => supplierOrderBlock(order, index + 1)).join("\n\n");
     try {
       const mode = await copyText(text);
-      toast.success(mode === "manual" ? "Texto aberto para copia manual." : `Pedidos para enviar copiados (${sendCardOrders.length}).`);
+      toast.success(mode === "manual" ? "Texto aberto para copia manual." : `${copiedLabel} (${list.length}).`);
     } catch {
       toast.error("Nao foi possivel copiar os pedidos.");
     }
@@ -4385,8 +4498,7 @@ export default function Admin() {
   }));
 
   /** Motoboy agendado entra na cópia mesmo se PIX ainda pendente (desde que não cancelado/enviado). */
-  const isMotoboyOrder = (o: AdminOrder) =>
-    String((o as { shippingType?: string }).shippingType || "").toLowerCase().trim() === "motoboy";
+  const isMotoboyOrder = (o: AdminOrder) => isAdminOrdersMotoboyRow(o);
 
   const motoboyOrdersParaCopiar = orders
     .filter((o) => {
@@ -5113,76 +5225,42 @@ export default function Admin() {
             </div>
           </div>
 
-          {/* Card Pedidos para Enviar */}
-          <div
-            className="mt-3 rounded-xl border p-4 bg-amber-50 border-amber-300 cursor-pointer hover:bg-amber-100 transition"
-            onClick={() => setTab("orders")}
-            title="Ver pedidos para enviar"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-                <Truck className="w-4 h-4" /> Pedidos para Enviar
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={copySendCardTxt}
-                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-900 bg-white border border-amber-300 px-2 py-0.5 rounded-full hover:bg-amber-100"
-                >
-                  <Copy className="w-3 h-3" /> Copiar TXT
-                </button>
-                <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
-                  {sendCardBadge}
-                </span>
-              </div>
-            </div>
-            {sendCardOrders.length === 0 ? (
-              <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
-                <CheckCircle className="w-4 h-4 text-green-500" /> Todos os pedidos pagos já foram enviados!
-              </p>
-            ) : (
-              <div className="space-y-1.5 max-h-[320px] overflow-y-auto" onScroll={() => setDashboardPhotoHover(null)}>
-                {sendCardOrders.map((o) => {
-                  const lateDays = daysSince(o.createdAt);
-                  const late = lateDays > 3;
-                  return (
-                    <div
-                      key={o.id}
-                      title="Abrir este pedido"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        goToOrder(o.id, o.createdAt, getOrderReference(o));
-                      }}
-                      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border cursor-pointer hover:brightness-[0.98] ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
-                    >
-                      <SendCardProductThumbs
-                        items={sendCardThumbProducts(o)}
-                        catalog={sendCardCatalog}
-                        onOpen={(src, name) => {
-                          setDashboardPhotoHover(null);
-                          setDashboardImagePreview({ src, name });
-                        }}
-                        onHover={setDashboardPhotoHover}
-                        onHoverEnd={() => setDashboardPhotoHover(null)}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{o.clientName}</p>
-                        <p className={`text-xs ${late ? "text-red-800/80" : "text-amber-700/80"}`}>#{getOrderReference(o)} · {formatDateBR(o.createdAt)}</p>
-                      </div>
-                      {late ? (
-                        <span className="text-[10px] font-semibold text-red-800 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-                          {lateDays} dias sem enviar
-                        </span>
-                      ) : null}
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${late ? "text-red-800 bg-red-100" : "text-amber-700 bg-amber-100"}`}>
-                        {formatCurrency(Number(o.total))}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <SendQueueCard
+            title="Pedidos para Enviar"
+            icon={<Truck className="w-4 h-4" />}
+            orders={postalSendCardOrders}
+            badge={postalSendCardBadge}
+            emptyText={motoboySendCardOrders.length === 0 ? "Todos os pedidos pagos já foram enviados!" : "Nenhum pedido normal para enviar."}
+            titleAttr="Ver pedidos para enviar"
+            onOpenList={() => setTab("orders")}
+            onCopy={(event) => { void copySendQueueTxt(event, postalSendCardOrders, "Nao ha pedidos para enviar.", "Pedidos para enviar copiados"); }}
+            onOpenOrder={(order) => goToOrder(order.id, order.createdAt, getOrderReference(order))}
+            catalog={sendCardCatalog}
+            onPhotoOpen={(src, name) => {
+              setDashboardPhotoHover(null);
+              setDashboardImagePreview({ src, name });
+            }}
+            onPhotoHover={setDashboardPhotoHover}
+            onPhotoHoverEnd={() => setDashboardPhotoHover(null)}
+          />
+          <SendQueueCard
+            title="Motoboy para Enviar"
+            icon={<Motorbike className="w-4 h-4" />}
+            orders={motoboySendCardOrders}
+            badge={motoboySendCardBadge}
+            emptyText="Nenhuma entrega de motoboy para enviar."
+            titleAttr="Ver entregas de motoboy"
+            onOpenList={() => setTab("orders")}
+            onCopy={(event) => { void copySendQueueTxt(event, motoboySendCardOrders, "Nao ha entregas de motoboy para enviar.", "Motoboy para enviar copiado"); }}
+            onOpenOrder={(order) => goToOrder(order.id, order.createdAt, getOrderReference(order))}
+            catalog={sendCardCatalog}
+            onPhotoOpen={(src, name) => {
+              setDashboardPhotoHover(null);
+              setDashboardImagePreview({ src, name });
+            }}
+            onPhotoHover={setDashboardPhotoHover}
+            onPhotoHoverEnd={() => setDashboardPhotoHover(null)}
+          />
 
           <div className="mt-3 rounded-xl border p-4 bg-indigo-50 border-indigo-200">
             <div className="flex items-center justify-between mb-2">
