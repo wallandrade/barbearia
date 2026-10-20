@@ -244,7 +244,7 @@ async function completeSupportAi(messages: Array<{ role: "system" | "user"; cont
   }
 }
 
-/** Resposta da frase solta. Null devolve o menu. Não lê pedido. */
+/** Resposta da frase solta. Null deixa o atendimento mandar o menu ou o lembrete. Não lê pedido. */
 export async function trySupportAiReply(question: string, line: WhatsappLine): Promise<string | null> {
   try {
     if (!await supportAiEnabled()) return null;

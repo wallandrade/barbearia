@@ -58,6 +58,43 @@ test("oi abre a lista e o pedido só entra depois do toque", () => {
   assert.equal(supportDocumentMatches("", "12345678909"), false);
 });
 
+test("frase sem toque não repete o menu", () => {
+  const first = decideSupportTurn({ text: "Kkkkkkkkk" });
+  assert.equal(first.kind, "list");
+
+  const laugh = decideSupportTurn({ text: "Kkkkkkkkk", session: { step: "menu", problem: null } });
+  assert.equal(laugh.kind, "nudge");
+  if (laugh.kind === "nudge") assert.equal(laugh.message, "Toque em Ver opções acima e escolha sua opção.");
+  assert.equal(laugh.session.step, "menu");
+
+  const chat = decideSupportTurn({ text: "Menos mal", session: { step: "menu", problem: null } });
+  assert.equal(chat.kind, "nudge");
+
+  const again = decideSupportTurn({ text: "Oi!", session: { step: "menu", problem: null } });
+  assert.equal(again.kind, "nudge");
+
+  const tapped = decideSupportTurn({ choiceId: "meu-pedido", session: { step: "menu", problem: null } });
+  assert.equal(tapped.kind, "text");
+  assert.equal(tapped.session.step, "await_lookup");
+
+  const submenu = decideSupportTurn({ text: "menos mal", session: { step: "problem_menu", problem: "problema" } });
+  assert.equal(submenu.kind, "nudge");
+  assert.equal(submenu.session.step, "problem_menu");
+  assert.equal(submenu.session.problem, "problema");
+
+  const custom = supportMenuSaveError({
+    greeting: "Oi da loja",
+    listTitle: "Menu",
+    buttonLabel: "Abrir",
+    items: [
+      { id: "pix", title: "Pagar agora", description: "Link da loja", action: "text", message: "Pague no site." },
+    ],
+  });
+  const named = decideSupportTurn({ text: "blz", session: { step: "menu", problem: null } }, custom.menu);
+  assert.equal(named.kind, "nudge");
+  if (named.kind === "nudge") assert.equal(named.message, "Toque em Abrir acima e escolha sua opção.");
+});
+
 test("falar com atendente cala o menu até a sessão acabar", () => {
   const handoff = decideSupportTurn({ choiceId: "atendente" });
   assert.equal(handoff.kind, "text");

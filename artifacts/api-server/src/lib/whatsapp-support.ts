@@ -64,6 +64,7 @@ export type SupportOption = {
 
 export type SupportTurn =
   | { kind: "text"; message: string; session: SupportSession }
+  | { kind: "nudge"; message: string; session: SupportSession }
   | { kind: "list"; message: string; buttonLabel: string; title: string; options: SupportOption[]; session: SupportSession }
   | { kind: "lookup"; intent: Extract<SupportIntent, { kind: "order" | "document" | "confirm" }>; followup: string; session: SupportSession }
   | { kind: "silent"; session: SupportSession };
@@ -278,6 +279,29 @@ function mainList(menu: SupportMenuConfig): SupportTurn {
   };
 }
 
+function listAlreadyOpen(session: SupportSession | null | undefined): session is SupportSession {
+  return session?.step === "menu" || session?.step === "problem_menu";
+}
+
+function nudgeButtonLabel(menu: SupportMenuConfig, session: SupportSession): string {
+  if (session.step === "problem_menu") {
+    const parent = findMenuItem(menu, session.problem);
+    const label = String(parent?.buttonLabel || "").trim();
+    if (label) return label;
+  }
+  return String(menu.buttonLabel || "").trim() || "Ver opções";
+}
+
+/** A lista já está na conversa. A frase solta não manda o menu de novo. */
+function nudgeTurn(menu: SupportMenuConfig, session: SupportSession): SupportTurn {
+  const label = nudgeButtonLabel(menu, session);
+  return {
+    kind: "nudge",
+    message: `Toque em ${label} acima e escolha sua opção.`,
+    session,
+  };
+}
+
 function turnForItem(item: SupportMenuItem): SupportTurn {
   if (item.action === "lookup") {
     return { kind: "text", message: item.message, session: { step: "await_lookup", problem: null } };
@@ -301,7 +325,7 @@ function turnForItem(item: SupportMenuItem): SupportTurn {
   };
 }
 
-/** Oi abre o menu. Número e CPF só depois de Meu pedido. Atendente cala o menu por 2 horas. */
+/** Oi abre o menu uma vez. Com a lista já aberta, a frase sem toque só lembra o botão. Número e CPF só depois de Meu pedido. Atendente cala o menu por 2 horas. */
 export function decideSupportTurn(input: {
   text?: string | null;
   choiceId?: string | null;
@@ -317,7 +341,10 @@ export function decideSupportTurn(input: {
       return { kind: "silent", session: humanSession() };
     }
   }
-  if (!choiceId && isGreeting(text)) return mainList(config);
+  if (!choiceId && isGreeting(text)) {
+    if (listAlreadyOpen(input.session)) return nudgeTurn(config, input.session);
+    return mainList(config);
+  }
 
   const choice = resolveChoice(choiceId, text, session.step, config, session);
   const picked = choice ? findMenuItem(config, choice) : null;
@@ -369,6 +396,7 @@ export function decideSupportTurn(input: {
     };
   }
 
+  if (listAlreadyOpen(input.session)) return nudgeTurn(config, input.session);
   return mainList(config);
 }
 
@@ -837,7 +865,7 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
   let nextSession = turn.session;
   let sent = false;
   if (
-    turn.kind === "list"
+    (turn.kind === "list" || turn.kind === "nudge")
     && isSupportAiCandidate({ text: inbound.text, choiceId: inbound.choiceId, session })
   ) {
     const aiText = await trySupportAiReply(inbound.text, line);
@@ -851,7 +879,7 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
   }
   if (turn.kind === "list") {
     sent = await sendList(inbound.phone, turn, line);
-  } else if (turn.kind === "text") {
+  } else if (turn.kind === "text" || turn.kind === "nudge") {
     sent = await sendText(inbound.phone, turn.message, line);
   } else {
     const found = await findSupportOrders(turn.intent);
