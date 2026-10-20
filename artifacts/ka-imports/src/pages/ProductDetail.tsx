@@ -388,7 +388,6 @@ export default function ProductDetail() {
                           catalogPrice: isPromoStillActive(product.promoPrice, product.price, promoEndsAt, Date.now())
                             ? Number(product.promoPrice)
                             : product.price,
-                            : product.price,
                         }
                         : undefined,
                     });
