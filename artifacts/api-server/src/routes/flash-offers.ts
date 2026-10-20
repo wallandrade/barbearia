@@ -434,8 +434,8 @@ async function validateItems(items: FlashItemInput[]): Promise<
     seen.add(productId);
     const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
     if (!product) return { ok: false, message: "Produto não encontrado." };
-    if (!isValidFlashCatalogPrice(flashPrice, Number(product.price))) {
-      return { ok: false, message: "O preço relâmpago tem de ser maior que zero e menor que o preço do cadastro." };
+    if (!isValidFlashCatalogPrice(flashPrice, chargedCatalogPrice(product))) {
+      return { ok: false, message: "O preço relâmpago tem de ser maior que zero e menor que o preço cobrado hoje." };
     }
     rows.push({ productId, flashPrice: flashPrice.toFixed(2) });
   }

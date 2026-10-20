@@ -2,10 +2,43 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
+import { isPromoStillActive } from "@/lib/promo-ends-at";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type ProductOption = { id: string; name: string; price: number; image: string | null };
+type ProductOption = {
+  id: string;
+  name: string;
+  price: number;
+  image: string | null;
+  promoPrice: number | null;
+  promoEndsAt: string | null;
+  promoUntilStock: boolean;
+  promoStockLeft: number | null;
+};
+
+function currentSellingPrice(product: ProductOption): { amount: number; promo: boolean } {
+  const promo = product.promoPrice;
+  const promoOn = product.promoUntilStock
+    ? (product.promoStockLeft ?? 0) > 0 && promo != null && promo > 0 && promo < product.price
+    : isPromoStillActive(promo, product.price, product.promoEndsAt, Date.now());
+  if (promoOn && promo != null) return { amount: promo, promo: true };
+  return { amount: product.price, promo: false };
+}
+
+function ProductPrice({ product }: { product: ProductOption }) {
+  const selling = currentSellingPrice(product);
+  if (!selling.promo) {
+    return <span className="text-xs text-muted-foreground">{formatCurrency(selling.amount)}</span>;
+  }
+  return (
+    <span className="text-xs text-muted-foreground">
+      <span className="line-through">{formatCurrency(product.price)}</span>
+      {" "}
+      <span className="font-semibold text-primary">{formatCurrency(selling.amount)}</span>
+    </span>
+  );
+}
 
 function ProductThumb({ src, alt }: { src?: string | null; alt: string }) {
   const url = String(src || "").trim();
@@ -86,13 +119,28 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
       return;
     }
     const campaignData = await campaignRes.json() as { campaigns?: Campaign[] };
-    const productData = await productRes.json() as { products?: Array<{ id: string; name: string; price: number; image?: string | null }> };
+    const productData = await productRes.json() as {
+      products?: Array<{
+        id: string;
+        name: string;
+        price: number;
+        image?: string | null;
+        promoPrice?: number | null;
+        promoEndsAt?: string | null;
+        promoUntilStock?: boolean;
+        promoStockLeft?: number | null;
+      }>;
+    };
     setCampaigns(campaignData.campaigns || []);
     setProducts((productData.products || []).map((product) => ({
       id: product.id,
       name: product.name,
       price: Number(product.price),
       image: product.image || null,
+      promoPrice: product.promoPrice == null ? null : Number(product.promoPrice),
+      promoEndsAt: product.promoEndsAt ?? null,
+      promoUntilStock: product.promoUntilStock === true,
+      promoStockLeft: product.promoStockLeft == null ? null : Number(product.promoStockLeft),
     })));
   }, [onUnauthorized]);
 
@@ -137,8 +185,11 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
       toast.error("Cada produto entra uma vez.");
       return;
     }
-    if (!Number.isFinite(price) || price <= 0 || price >= product.price) {
-      toast.error("O preço relâmpago tem de ser maior que zero e menor que o preço do cadastro.");
+    const ceiling = currentSellingPrice(product).amount;
+    if (!Number.isFinite(price) || price <= 0 || price >= ceiling) {
+      toast.error(currentSellingPrice(product).promo
+        ? "O preço relâmpago tem de ser maior que zero e menor que o preço da promoção."
+        : "O preço relâmpago tem de ser maior que zero e menor que o preço do cadastro.");
       return;
     }
     setItems((current) => [...current, { productId: product.id, flashPrice: price.toFixed(2) }]);
@@ -253,7 +304,12 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
             >
               {selectedProduct ? <ProductThumb src={selectedProduct.image} alt={selectedProduct.name} /> : null}
               <span className="min-w-0 flex-1 truncate text-sm">
-                {selectedProduct ? `${selectedProduct.name} · ${formatCurrency(selectedProduct.price)}` : "Produto"}
+                {selectedProduct ? (
+                  <span className="flex min-w-0 items-center gap-2 truncate text-sm">
+                    <span className="truncate">{selectedProduct.name}</span>
+                    <ProductPrice product={selectedProduct} />
+                  </span>
+                ) : "Produto"}
               </span>
             </button>
             {productMenuOpen ? (
@@ -284,7 +340,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
                       <ProductThumb src={product.image} alt={product.name} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{product.name}</span>
-                        <span className="text-xs text-muted-foreground">{formatCurrency(product.price)}</span>
+                        <ProductPrice product={product} />
                       </span>
                     </button>
                   ))}
