@@ -48,6 +48,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 | 2026-10-19 | Busca por nome na promoção relâmpago | No admin, o campo de produto filtra a lista pelo que for digitado, sem acento | Foto, preço e vaga iguais |
 | 2026-10-19 | Preço mostrado na promoção relâmpago | Se o produto está em promoção, a lista mostra esse valor menor. O preço relâmpago tem de ficar abaixo dele | A foto e a busca iguais |
 | 2026-10-19 | Campanha relâmpago pode repetir depois de algumas horas | `repeat_after_hours` 0 mantém o bloqueio atual. Acima de zero, navegador, conta e IP liberam depois de `created_at` + horas, no máximo 2160 | Outra campanha não herda o bloqueio |
+| 2026-10-19 | Modal da oferta relâmpago no modelo do card | Título, texto, foto ao lado do preço laranja e os botões Quero essa oferta e Agora não | Sorteio, vaga e preço iguais |
 | 2026-10-15 | Aba Lista negra em dois blocos | **Esta loja** fica em cima, com tirar da lista. **Outra loja** fica embaixo, só leitura | Cotação, snapshot e a cópia 48h iguais |
 | 2026-10-15 | Lista negra compartilhada com a outra loja | A cotação soma os extravios de lá (180 dias). A aba mostra **Outra loja** e não tira caso de lá. Eles leem `GET /api/integrations/loss-blacklist/snapshot` | Checkout, Motoboy, cópia 48h e estoque iguais. Sem a URL deles, a cotação segue só com a nossa lista |
 | 2026-10-14 | Checkout esconde saldo da loja sem valor | **Usar saldo da loja (seguro)** só aparece logado e com saldo maior que zero | Comissão, abater no card e a carteira iguais |

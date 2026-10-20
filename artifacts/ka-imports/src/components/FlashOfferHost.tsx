@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { X } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { useCart } from "@/store/use-cart";
@@ -111,30 +110,39 @@ export function FlashOfferHost() {
   return (
     <>
       {showModal && offer ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary">Oferta relâmpago</p>
-                <h2 className="text-lg font-bold text-neutral-900">{offer.name}</h2>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-[340px] rounded-[28px] bg-white px-5 pb-5 pt-6 text-center shadow-2xl">
+            <p className="text-[13px] font-bold uppercase tracking-wide text-[#ff6a00]">Promoção relâmpago</p>
+            <h2 className="mt-1 text-[28px] font-black leading-tight text-neutral-950">Essa oferta é sua</h2>
+            <p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-neutral-500">
+              Aparece uma vez. Se aceitar, tem 1 hora para pagar no PIX ou no WhatsApp.
+            </p>
+            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-[#fff4ea] p-3 text-left">
+              {offer.image ? (
+                <img src={offer.image} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-white object-contain" />
+              ) : (
+                <div className="h-16 w-16 shrink-0 rounded-xl bg-white" />
+              )}
+              <div className="min-w-0">
+                <p className="text-[15px] font-bold leading-tight text-neutral-950">{offer.name}</p>
+                <p className="mt-1 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
+                <p className="text-[28px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
               </div>
-              <button type="button" aria-label="Agora não" className="rounded-full p-1 text-neutral-500" onClick={() => setOffer(null)}>
-                <X className="h-5 w-5" />
-              </button>
             </div>
-            {offer.image ? (
-              <img src={offer.image} alt="" className="mb-3 h-40 w-full rounded-xl bg-neutral-100 object-contain" />
-            ) : null}
-            <p className="text-sm text-neutral-500 line-through">{formatCurrency(offer.chargedPrice)}</p>
-            <p className="text-2xl font-bold text-primary">{formatCurrency(offer.flashPrice)}</p>
-            <p className="mt-1 text-xs text-neutral-500">A vaga fica reservada por 1 hora, para 1 unidade.</p>
             <button
               type="button"
               disabled={claiming}
               onClick={() => void acceptOffer()}
-              className="mt-4 h-11 w-full rounded-xl bg-primary text-sm font-semibold text-white disabled:opacity-60"
+              className="mt-4 h-14 w-full rounded-full bg-[#ff6a00] text-lg font-bold text-white disabled:opacity-60"
             >
-              {claiming ? "Reservando..." : offer.hasVariants ? "Escolher variante" : "Quero essa oferta"}
+              {claiming ? "Reservando..." : "Quero essa oferta"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOffer(null)}
+              className="mt-3 text-base font-medium text-neutral-500"
+            >
+              Agora não
             </button>
           </div>
         </div>
