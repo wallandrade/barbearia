@@ -845,6 +845,8 @@ import {
   productsForShippingCopy,
 } from "@/lib/shipping-copy-list";
 import {
+  isCheckoutMotoboyOrder,
+  isOnMotoboySendCard,
   isOnSendCard,
   sendCardBadgeCount,
   sendCardImageForProductName,
@@ -4465,10 +4467,12 @@ export default function Admin() {
     });
 
   const sendCardOrders = sortSendCardOrders(
-    orders.filter((order) => isOnSendCard(order as SendCardOrder)),
+    orders.filter((order) => isOnSendCard(order as SendCardOrder) && !isCheckoutMotoboyOrder(order)),
   );
-  const motoboySendCardOrders = sendCardOrders.filter((order) => isAdminOrdersMotoboyRow(order));
-  const postalSendCardOrders = sendCardOrders.filter((order) => !isAdminOrdersMotoboyRow(order));
+  const motoboySendCardOrders = sortSendCardOrders(
+    orders.filter((order) => isOnMotoboySendCard(order)),
+  );
+  const postalSendCardOrders = sendCardOrders;
   const postalSendCardBadge = sendCardBadgeCount(postalSendCardOrders as SendCardOrder[]);
   const motoboySendCardBadge = sendCardBadgeCount(motoboySendCardOrders as SendCardOrder[]);
   const copySendQueueTxt = async (

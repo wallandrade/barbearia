@@ -57,10 +57,13 @@ async function postFlash<T>(path: string, body: Record<string, unknown>): Promis
   return { ok: response.ok, status: response.status, data };
 }
 
-export async function drawFlashOffer(): Promise<FlashOffer | null> {
-  const result = await postFlash<{ offer?: FlashOffer | null; message?: string }>("/api/flash-offers/draw", {});
-  if (!result.ok || !result.data.offer) return null;
-  return result.data.offer;
+export async function drawFlashOffers(): Promise<FlashOffer[]> {
+  const result = await postFlash<{ offers?: FlashOffer[] | null; offer?: FlashOffer | null }>("/api/flash-offers/draw", {});
+  if (!result.ok) return [];
+  if (Array.isArray(result.data.offers)) {
+    return result.data.offers.filter((offer) => offer && offer.campaignId && offer.productId);
+  }
+  return result.data.offer ? [result.data.offer] : [];
 }
 
 export async function claimFlashOffer(campaignId: string, productId: string): Promise<

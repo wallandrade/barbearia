@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { useCart } from "@/store/use-cart";
 import {
   claimFlashOffer,
-  drawFlashOffer,
+  drawFlashOffers,
   flashOfferAllowedPath,
   flashProductStub,
   productPathForOffer,
@@ -27,7 +28,8 @@ export function FlashOfferHost() {
   const addItem = useCart((state) => state.addItem);
   const removeItem = useCart((state) => state.removeItem);
   const items = useCart((state) => state.items);
-  const [offer, setOffer] = useState<FlashOffer | null>(null);
+  const [offers, setOffers] = useState<FlashOffer[]>([]);
+  const [offerIndex, setOfferIndex] = useState(0);
   const [claiming, setClaiming] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const flashReservationIds = useRef<string[]>([]);
@@ -37,13 +39,17 @@ export function FlashOfferHost() {
 
   useEffect(() => {
     if (!allowed) {
-      setOffer(null);
+      setOffers([]);
+      setOfferIndex(0);
       return;
     }
     const timer = window.setTimeout(() => {
-      void drawFlashOffer()
+      void drawFlashOffers()
         .then((next) => {
-          if (next) setOffer(next);
+          if (next.length > 0) {
+            setOffers(next);
+            setOfferIndex(0);
+          }
         })
         .catch(() => undefined);
     }, 8000);
@@ -76,11 +82,27 @@ export function FlashOfferHost() {
     return () => window.clearTimeout(timer);
   }, [flashLine?.flashExpiresAt, flashLine?.lineKey, flashLine?.id, removeItem]);
 
+  const offer = offers[offerIndex] ?? offers[0] ?? null;
+  const carousel = offers.length > 1;
+
+  function closeOffers() {
+    setOffers([]);
+    setOfferIndex(0);
+  }
+
+  function stepOffer(direction: -1 | 1) {
+    setOfferIndex((current) => {
+      const count = offers.length;
+      if (count < 2) return 0;
+      return (current + direction + count) % count;
+    });
+  }
+
   async function acceptOffer() {
     if (!offer || claiming) return;
     if (offer.hasVariants) {
       savePendingFlashOffer(offer);
-      setOffer(null);
+      closeOffers();
       setLocation(productPathForOffer(location, offer.productId));
       return;
     }
@@ -89,7 +111,8 @@ export function FlashOfferHost() {
     setClaiming(false);
     if (!claimed.ok) {
       toast.error(claimed.message);
-      setOffer(null);
+      setOffers((current) => current.filter((item) => item.campaignId !== offer.campaignId));
+      setOfferIndex(0);
       return;
     }
     addItem(flashProductStub(offer), {
@@ -101,7 +124,8 @@ export function FlashOfferHost() {
         catalogPrice: offer.chargedPrice,
       },
     });
-    setOffer(null);
+    setOffers((current) => current.filter((item) => item.campaignId !== offer.campaignId));
+    setOfferIndex(0);
   }
 
   const showModal = Boolean(offer) && allowed;
@@ -112,12 +136,25 @@ export function FlashOfferHost() {
       {showModal && offer ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4">
           <div className="w-full max-w-[340px] rounded-[28px] bg-white px-5 pb-5 pt-6 text-center shadow-2xl">
-            <p className="text-[13px] font-bold uppercase tracking-wide text-[#ff6a00]">Promoção relâmpago</p>
+            <p className="text-[13px] font-bold uppercase tracking-wide text-[#ff6a00]">
+              {carousel ? `Promoção relâmpago · ${offerIndex + 1} de ${offers.length}` : "Promoção relâmpago"}
+            </p>
             <h2 className="mt-1 text-[28px] font-black leading-tight text-neutral-950">Essa oferta é sua</h2>
             <p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-neutral-500">
               Aparece uma vez. Se aceitar, tem 1 hora para pagar no PIX ou no WhatsApp.
             </p>
-            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-[#fff4ea] p-3 text-left">
+            <div className="mt-4 flex items-center gap-2">
+              {carousel ? (
+                <button
+                  type="button"
+                  aria-label="Oferta anterior"
+                  onClick={() => stepOffer(-1)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ffd7b8] text-[#ff6a00]"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+              ) : null}
+              <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl bg-[#fff4ea] p-3 text-left">
               {offer.image ? (
                 <img src={offer.image} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-white object-contain" />
               ) : (
@@ -128,7 +165,31 @@ export function FlashOfferHost() {
                 <p className="mt-1 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
                 <p className="text-[28px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
               </div>
+              </div>
+              {carousel ? (
+                <button
+                  type="button"
+                  aria-label="Próxima oferta"
+                  onClick={() => stepOffer(1)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ffd7b8] text-[#ff6a00]"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              ) : null}
             </div>
+            {carousel ? (
+              <div className="mt-3 flex items-center justify-center gap-1.5">
+                {offers.map((item, index) => (
+                  <button
+                    key={item.campaignId}
+                    type="button"
+                    aria-label={`Oferta ${index + 1}`}
+                    onClick={() => setOfferIndex(index)}
+                    className={`h-1.5 rounded-full ${index === offerIndex ? "w-4 bg-[#ff6a00]" : "w-1.5 bg-[#ffd7b8]"}`}
+                  />
+                ))}
+              </div>
+            ) : null}
             <button
               type="button"
               disabled={claiming}
@@ -139,7 +200,7 @@ export function FlashOfferHost() {
             </button>
             <button
               type="button"
-              onClick={() => setOffer(null)}
+              onClick={closeOffers}
               className="mt-3 text-base font-medium text-neutral-500"
             >
               Agora não

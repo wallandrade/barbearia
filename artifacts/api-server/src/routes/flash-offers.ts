@@ -136,6 +136,16 @@ router.post("/flash-offers/draw", async (req, res) => {
       .where(eq(flashCampaignsTable.isActive, true))
       .orderBy(asc(flashCampaignsTable.createdAt));
 
+    const offers: Array<{
+      campaignId: string;
+      productId: string;
+      name: string;
+      image: string | null;
+      chargedPrice: number;
+      flashPrice: number;
+      hasVariants: boolean;
+    }> = [];
+
     for (const campaign of campaigns) {
       if (!isFlashHourOpen(campaign.startHour, campaign.endHour, hour)) continue;
 
@@ -221,21 +231,6 @@ router.post("/flash-offers/draw", async (req, res) => {
         }))) continue;
       }
 
-      const roll = crypto.randomInt(1, 101);
-      if (!flashRollWins(campaign.chance, roll)) {
-        await recordVisit({
-          campaignId: campaign.id,
-          visitorId,
-          userId,
-          ipHash,
-          result: "miss",
-          today,
-          existingId: visitorVisit?.id ?? null,
-        });
-        res.json({ offer: null });
-        return;
-      }
-
       const items = await db
         .select()
         .from(flashCampaignItemsTable)
@@ -252,6 +247,20 @@ router.post("/flash-offers/draw", async (req, res) => {
       });
       if (eligible.length === 0) continue;
 
+      const roll = crypto.randomInt(1, 101);
+      if (!flashRollWins(campaign.chance, roll)) {
+        await recordVisit({
+          campaignId: campaign.id,
+          visitorId,
+          userId,
+          ipHash,
+          result: "miss",
+          today,
+          existingId: visitorVisit?.id ?? null,
+        });
+        continue;
+      }
+
       const picked = eligible[crypto.randomInt(0, eligible.length)]!;
       const product = byId.get(picked.productId)!;
       await recordVisit({
@@ -264,21 +273,18 @@ router.post("/flash-offers/draw", async (req, res) => {
         existingId: visitorVisit?.id ?? null,
       });
       const groups = parseVariantGroups(product.variantGroups);
-      res.json({
-        offer: {
-          campaignId: campaign.id,
-          productId: product.id,
-          name: product.name,
-          image: product.image,
-          chargedPrice: chargedCatalogPrice(product, now),
-          flashPrice: Number(picked.flashPrice),
-          hasVariants: groups.length > 0,
-        },
+      offers.push({
+        campaignId: campaign.id,
+        productId: product.id,
+        name: product.name,
+        image: product.image,
+        chargedPrice: chargedCatalogPrice(product, now),
+        flashPrice: Number(picked.flashPrice),
+        hasVariants: groups.length > 0,
       });
-      return;
     }
 
-    res.json({ offer: null });
+    res.json({ offers, offer: offers[0] ?? null });
   } catch (err) {
     console.error("[flash-offers] draw", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });

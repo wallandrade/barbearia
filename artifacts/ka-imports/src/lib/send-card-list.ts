@@ -181,6 +181,28 @@ export function isOnSendCard(order: SendCardOrder): boolean {
   return !isSendCardLabelReady(order);
 }
 
+/** Cliente escolheu entrega Motoboy no checkout: frete começa com motoboy ou há horário marcado. */
+export function isCheckoutMotoboyOrder(order: {
+  shippingType?: string | null;
+  motoboySlotDate?: string | null;
+} | null | undefined): boolean {
+  const shipping = String(order?.shippingType || "").trim().toLowerCase();
+  if (shipping === "motoboy" || shipping.startsWith("motoboy")) return true;
+  return Boolean(String(order?.motoboySlotDate || "").trim());
+}
+
+/** Card Motoboy para Enviar. Inclui PIX ainda pendente. Cancelado e etiqueta pronta saem. */
+export function isOnMotoboySendCard(order: SendCardOrder & {
+  shippingType?: string | null;
+  motoboySlotDate?: string | null;
+}): boolean {
+  if (!isCheckoutMotoboyOrder(order)) return false;
+  if (isOnSendCard(order)) return true;
+  if (isCancelledStatus(order.status)) return false;
+  if (isSendCardLabelReady(order)) return false;
+  return true;
+}
+
 /** Reenvio aberto: `reship:` + id do pai. Pedido normal: `order:` + o próprio id. */
 export function sendCardBadgeKey(order: SendCardOrder): string {
   if (isSendCardOpenReshipment(order)) {

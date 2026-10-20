@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isCheckoutMotoboyOrder,
+  isOnMotoboySendCard,
   isOnSendCard,
   isSendCardLabelReady,
   isSendCardLabelReadyStatus,
@@ -89,6 +91,19 @@ test("quem entra: pago sem etiqueta, reenvio aberto mesmo enviado ou cancelado",
     status: "cancelled",
     reshipment: { id: "rs", status: "reenvio_cancelado" },
   }), false);
+});
+
+test("checkout Motoboy vai para o card de baixo, inclusive com PIX pendente", () => {
+  assert.equal(isCheckoutMotoboyOrder({ shippingType: "Motoboy" }), true);
+  assert.equal(isCheckoutMotoboyOrder({ shippingType: "Motoboy Centro" }), true);
+  assert.equal(isCheckoutMotoboyOrder({ shippingType: "Sedex", motoboySlotDate: "2026-10-20" }), true);
+  assert.equal(isCheckoutMotoboyOrder({ shippingType: "Sedex" }), false);
+  assert.equal(isOnMotoboySendCard({ id: "m", status: "awaiting_payment", shippingType: "Motoboy" }), true);
+  assert.equal(isOnMotoboySendCard({ id: "m", status: "paid", shippingType: "Motoboy" }), true);
+  assert.equal(isOnMotoboySendCard({ id: "m", status: "paid", shippingType: "Motoboy", enviado: true }), false);
+  assert.equal(isOnMotoboySendCard({ id: "m", status: "cancelled", shippingType: "Motoboy" }), false);
+  assert.equal(isOnMotoboySendCard({ id: "n", status: "paid", shippingType: "PAC" }), false);
+  assert.equal(isOnSendCard({ id: "m", status: "awaiting_payment", shippingType: "Motoboy" } as never), false);
 });
 
 test("selo: pai sem reenvio aberto e filho com reenvio aberto contam dois", () => {
