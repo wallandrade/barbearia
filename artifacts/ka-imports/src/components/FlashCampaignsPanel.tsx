@@ -405,7 +405,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
               </div>
             </div>
             <p className="mt-2 text-sm">
-              {campaign.seenCount} viram · {campaign.activeCount} reservas ativas · {campaign.usedCount} viraram pedido
+              {campaign.seenCount} viram · {campaign.activeCount} reservas ativas · {campaign.usedCount} {campaign.usedCount === 1 ? "venda" : "vendas"}
             </p>
             <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
               {campaign.items.map((item) => {

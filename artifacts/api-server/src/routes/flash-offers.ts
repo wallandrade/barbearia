@@ -6,6 +6,7 @@ import {
   flashCampaignsTable,
   flashReservationsTable,
   flashVisitsTable,
+  ordersTable,
   productsTable,
 } from "@workspace/db";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -496,9 +497,11 @@ async function campaignStats(campaignId: string): Promise<{ seenCount: number; a
   const [used] = await db
     .select({ total: sql<number>`count(*)` })
     .from(flashReservationsTable)
+    .innerJoin(ordersTable, eq(ordersTable.id, flashReservationsTable.orderId))
     .where(and(
       eq(flashReservationsTable.campaignId, campaignId),
       eq(flashReservationsTable.status, "used"),
+      inArray(ordersTable.status, ["paid", "completed"]),
     ));
   return {
     seenCount: Number(seen?.total ?? 0),
