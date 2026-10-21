@@ -444,7 +444,7 @@ export default function Checkout() {
     for (const bump of checkoutBumps) {
       if (bump.discountType !== "quantity_tiers" || !bump.tiers?.length) continue;
       const cartItem = items.find((i) => i.id === bump.productId);
-      if (!cartItem) continue;
+      if (!cartItem || cartItem.flashOffer) continue;
       const bumpCartId = `bump_${bump.id}`;
       const bumpItem = items.find((i) => i.id === bumpCartId);
       const cartQty = cartItem.quantity;
@@ -664,10 +664,14 @@ export default function Checkout() {
 
   // Smart quantity increase — respects order bump tiers
   const handleQtyIncrease = useCallback((item: (typeof items)[0]) => {
+    const lineId = cartLineId(item);
+    if (item.flashOffer) {
+      updateQuantity(lineId, item.quantity + 1);
+      return;
+    }
     const bump = checkoutBumps.find(
       (b) => b.productId === item.id && b.discountType === "quantity_tiers" && b.tiers?.length
     );
-    const lineId = cartLineId(item);
     if (!bump) { updateQuantity(lineId, item.quantity + 1); return; }
 
     const bumpCartId = `bump_${bump.id}`;
@@ -696,6 +700,15 @@ export default function Checkout() {
 
   // Smart quantity decrease — respects order bump tiers
   const handleQtyDecrease = useCallback((item: (typeof items)[0]) => {
+    const lineId = cartLineId(item);
+    if (item.flashOffer) {
+      if (item.quantity <= 1) {
+        removeItem(lineId);
+        return;
+      }
+      updateQuantity(lineId, item.quantity - 1);
+      return;
+    }
     const bump = checkoutBumps.find(
       (b) => b.productId === item.id && b.discountType === "quantity_tiers" && b.tiers?.length
     );
@@ -704,7 +717,6 @@ export default function Checkout() {
     const currentTotal = bump ? (bumpItem ? 1 + (bumpItem.quantity ?? 0) : item.quantity) : item.quantity;
     const newTotal = currentTotal - 1;
 
-    const lineId = cartLineId(item);
     if (newTotal <= 0) { removeItem(lineId); return; }
 
     if (!bump) { updateQuantity(lineId, newTotal); return; }
@@ -2417,6 +2429,7 @@ export default function Checkout() {
                                     disabled={alreadyApplied}
                                     onClick={() => {
                                       if (alreadyApplied) return;
+                                      if (cartItem.flashOffer) return;
                                       // Always restructure: set main item to qty 1, add bump for extras
                                       if (cartQty > 1) updateQuantity(cartLineId(cartItem), 1);
                                       addBumpItem(bump.id, cartItem.id, bumpProduct, pricePerExtraUnit, baseExtra);

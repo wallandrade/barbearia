@@ -414,10 +414,10 @@ router.post("/checkout/pix", async (req, res) => {
       return;
     }
 
-    if (flashPlan && flashUnits !== 1) {
+    if (flashPlan && flashUnits < 1) {
       res.status(400).json({
         error: "FLASH_QUANTITY",
-        message: "A oferta relâmpago vale para 1 unidade.",
+        message: "Inclua o produto da oferta relâmpago no pedido.",
       });
       return;
     }

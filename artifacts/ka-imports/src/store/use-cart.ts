@@ -224,7 +224,14 @@ export const useCart = create<CartState>()(
 
           const existingItem = state.items.find((item) => sameCartLine(item, lineKey));
           if (existingItem?.flashOffer) {
-            return { ...state, isOpen: true };
+            return {
+              items: state.items.map((item) =>
+                sameCartLine(item, lineKey)
+                  ? { ...item, quantity: item.quantity + addQuantity }
+                  : item,
+              ),
+              isOpen: true,
+            };
           }
 
           if (existingItem) {
@@ -305,7 +312,9 @@ export const useCart = create<CartState>()(
         set((state) => ({
           items: state.items.map((item) => {
             if (!matchesCartLine(item, itemId)) return item;
-            if (item.flashOffer) return item;
+            if (item.flashOffer) {
+              return { ...item, quantity: Math.max(1, quantity) };
+            }
             return {
               ...item,
               quantity: Math.max(1, quantity),

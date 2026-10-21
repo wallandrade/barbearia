@@ -58,7 +58,7 @@ export function CartDrawer() {
                           </button>
                         </div>
                         <p className="mt-1 text-xs text-neutral-500">
-                          {flash ? "Oferta relâmpago · 1 un" : `${formatCurrency(item.price)} cada`}
+                          {flash ? `Oferta relâmpago · ${item.quantity} un` : `${formatCurrency(item.price)} cada`}
                         </p>
                         <div className="mt-1.5 flex items-center justify-between gap-2">
                           <p className="text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(lineTotal)}</p>
@@ -66,21 +66,17 @@ export function CartDrawer() {
                             <button
                               type="button"
                               aria-label="Diminuir"
-                              disabled={flash || item.quantity <= 1}
+                              disabled={item.quantity <= 1}
                               onClick={() => updateQuantity(lineId, item.quantity - 1)}
                               className="flex h-8 w-8 items-center justify-center text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Minus className="h-3.5 w-3.5" />
                             </button>
-                            <span className="w-5 text-center text-sm font-semibold text-neutral-900">{flash ? 1 : item.quantity}</span>
+                            <span className="min-w-5 px-0.5 text-center text-sm font-semibold text-neutral-900">{item.quantity}</span>
                             <button
                               type="button"
                               aria-label="Aumentar"
-                              disabled={flash}
-                              onClick={() => {
-                                if (flash) return;
-                                updateQuantity(lineId, item.quantity + 1);
-                              }}
+                              onClick={() => updateQuantity(lineId, item.quantity + 1)}
                               className="flex h-8 w-8 items-center justify-center text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Plus className="h-3.5 w-3.5" />
@@ -218,7 +214,7 @@ export function CartDrawer() {
                               <p className="text-[11px] text-muted-foreground mt-0.5">{(item as { variantLabel?: string }).variantLabel}</p>
                             )}
                             {item.flashOffer ? (
-                              <p className="text-[11px] font-semibold text-primary mt-0.5">Oferta relâmpago · 1 un</p>
+                              <p className="text-[11px] font-semibold text-primary mt-0.5">Oferta relâmpago · {item.quantity} un</p>
                             ) : null}
                             {bumpItem && (
                               <span className="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold mt-0.5">
@@ -245,11 +241,7 @@ export function CartDrawer() {
                             <span className="text-sm font-medium w-4 text-center">{totalQty}</span>
                             <button
                               type="button"
-                              disabled={item.flashOffer === true}
-                              onClick={() => {
-                                if (item.flashOffer) return;
-                                updateQuantity(cartLineId(item), item.quantity + 1);
-                              }}
+                              onClick={() => updateQuantity(cartLineId(item), item.quantity + 1)}
                               className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Plus className="w-3 h-3" />
