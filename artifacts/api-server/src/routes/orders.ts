@@ -85,6 +85,7 @@ import {
   loadFlashLinePlan,
   type FlashLinePlan,
 } from "../lib/flash-offer-checkout";
+import { flashQuantityAllowed } from "../lib/flash-offer-logic";
 import { resolveCheckoutInsurance, computeInsuranceSnapshotForPlan, parseInsurancePlan } from "../lib/checkout-insurance";
 import { getCheckoutInsuranceConfig } from "../lib/checkout-insurance-settings";
 import { creditOrderEditSurplus } from "../lib/order-edit-surplus";
@@ -1236,7 +1237,7 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
-    if (flashPlan && flashUnits < 1) {
+    if (flashPlan && !flashQuantityAllowed(flashUnits)) {
       res.status(400).json({
         error: "FLASH_QUANTITY",
         message: "Inclua o produto da oferta relâmpago no pedido.",

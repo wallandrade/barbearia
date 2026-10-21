@@ -161,6 +161,6 @@ export function flashRejectsCoupon(reservationId: string, couponCode: string): b
   return reservationId.trim().length > 0 && couponCode.trim().length > 0;
 }
 
-export function flashQuantityIsOne(quantity: number): boolean {
-  return quantity === 1;
+export function flashQuantityAllowed(quantity: number): boolean {
+  return Number.isFinite(quantity) && quantity >= 1;
 }

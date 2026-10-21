@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   accountCanDraw,
   chargedCatalogPrice,
-  flashQuantityIsOne,
+  flashQuantityAllowed,
   flashRejectsCoupon,
   flashRollWins,
   flashVisitIpHash,
@@ -126,10 +126,11 @@ test("preço relâmpago fica abaixo do preço cobrado hoje", () => {
   assert.equal(isFlashProductEligible(70, { ...promo, isSoldOut: true }), false);
 });
 
-test("cupom junto e quantidade diferente de 1 não passam", () => {
+test("cupom junto não passa e a oferta aceita mais de uma unidade", () => {
   assert.equal(flashRejectsCoupon("reserva", "OFF10"), true);
   assert.equal(flashRejectsCoupon("", "OFF10"), false);
   assert.equal(flashRejectsCoupon("reserva", "  "), false);
-  assert.equal(flashQuantityIsOne(1), true);
-  assert.equal(flashQuantityIsOne(2), false);
+  assert.equal(flashQuantityAllowed(1), true);
+  assert.equal(flashQuantityAllowed(2), true);
+  assert.equal(flashQuantityAllowed(0), false);
 });

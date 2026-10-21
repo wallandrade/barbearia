@@ -34,6 +34,7 @@ import {
   loadFlashLinePlan,
   type FlashLinePlan,
 } from "../lib/flash-offer-checkout";
+import { flashQuantityAllowed } from "../lib/flash-offer-logic";
 
 const router: IRouter = Router();
 
@@ -414,7 +415,7 @@ router.post("/checkout/pix", async (req, res) => {
       return;
     }
 
-    if (flashPlan && flashUnits < 1) {
+    if (flashPlan && !flashQuantityAllowed(flashUnits)) {
       res.status(400).json({
         error: "FLASH_QUANTITY",
         message: "Inclua o produto da oferta relâmpago no pedido.",

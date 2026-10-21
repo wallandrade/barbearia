@@ -201,7 +201,7 @@ export const useCart = create<CartState>()(
                   price: flashPrice,
                   baseUnitPrice: flashPrice,
                   regularPrice: options.flash.catalogPrice ?? regularPrice,
-                  quantity: 1,
+                  quantity: addQuantity,
                   image: lineImage,
                   bulkDiscountEnabled: false,
                   bulkDiscountTiers: [],

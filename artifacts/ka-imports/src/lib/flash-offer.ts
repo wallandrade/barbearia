@@ -124,7 +124,7 @@ export async function claimPendingFlashIfAny(productId: string, quantity: number
   { reservation: null; error?: undefined } | { reservation: FlashReservation; error?: undefined } | { reservation: null; error: string }
 > {
   const pending = readPendingFlashOffer();
-  if (!pending || pending.productId !== productId || quantity !== 1) {
+  if (!pending || pending.productId !== productId || !(quantity >= 1)) {
     return { reservation: null };
   }
   const claimed = await claimFlashOffer(pending.campaignId, pending.productId);

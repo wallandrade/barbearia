@@ -380,6 +380,21 @@ export default function Checkout() {
         const product = byId.get(item.id);
         if (!product || isProductUnavailable(product as Parameters<typeof isProductUnavailable>[0])) continue;
 
+        const flashReservationId = (item as { flashReservationId?: string }).flashReservationId;
+        if ((item as { flashOffer?: boolean }).flashOffer && flashReservationId) {
+          addItem(product as Parameters<typeof addItem>[0], {
+            quantity: item.quantity,
+            unitPrice: item.price,
+            selectedVariants: (item as { selectedVariants?: Array<{ groupName?: string; option?: string }> }).selectedVariants,
+            flash: {
+              reservationId: flashReservationId,
+              expiresAt: (item as { flashExpiresAt?: string }).flashExpiresAt || "",
+              catalogPrice: (item as { regularPrice?: number }).regularPrice,
+            },
+          });
+          continue;
+        }
+
         addItem(product as Parameters<typeof addItem>[0], { quantity: item.quantity });
       }
 

@@ -338,7 +338,7 @@ export default function ProductDetail() {
                             return;
                           }
                           addItem(product, {
-                            quantity: flash.reservation ? 1 : option.quantity,
+                            quantity: option.quantity,
                             unitPrice: flash.reservation ? flash.reservation.flashPrice : option.unitPrice,
                             selectedVariants,
                             flash: flash.reservation

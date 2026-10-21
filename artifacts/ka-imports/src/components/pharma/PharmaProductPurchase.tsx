@@ -78,7 +78,7 @@ export function PharmaProductPurchase({
       return;
     }
     addItem(product, {
-      quantity: flash.reservation ? 1 : quantity,
+      quantity,
       unitPrice: flash.reservation ? flash.reservation.flashPrice : unitPrice,
       selectedVariants,
       flash: flash.reservation
@@ -86,7 +86,7 @@ export function PharmaProductPurchase({
         : undefined,
     });
     if (closeDrawer) setIsOpen(false);
-    showNotice({ name: product.name, image: photo, addedQty: flash.reservation ? 1 : quantity });
+    showNotice({ name: product.name, image: photo, addedQty: quantity });
   }
 
   async function buyNow() {
@@ -97,7 +97,7 @@ export function PharmaProductPurchase({
       return;
     }
     addItem(product, {
-      quantity: flash.reservation ? 1 : quantity,
+      quantity,
       unitPrice: flash.reservation ? flash.reservation.flashPrice : unitPrice,
       selectedVariants,
       flash: flash.reservation
