@@ -40,24 +40,54 @@ export function CartDrawer() {
                     Boolean((candidate as { isBump?: boolean }).isBump) &&
                     (candidate as { bumpForProductId?: string }).bumpForProductId === item.id,
                   );
+                  const lineId = cartLineId(item);
+                  const flash = item.flashOffer === true;
                   const lineTotal = item.price * item.quantity + (bump ? bump.price * bump.quantity : 0);
                   return (
-                    <div key={cartLineId(item)} className="flex gap-3">
+                    <div key={lineId} className="flex gap-3">
                       <img
                         src={item.image || "https://placehold.co/112x112/f3f4f6/9ca3af?text=+"}
                         alt=""
                         className="h-14 w-14 shrink-0 rounded-xl border border-neutral-200 object-contain bg-white"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="line-clamp-2 text-xs font-semibold uppercase text-neutral-900">{item.name}</p>
+                        <div className="flex items-start gap-2">
+                          <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold uppercase text-neutral-900">{item.name}</p>
+                          <button type="button" aria-label="Remover" className="shrink-0 text-neutral-400" onClick={() => removeItem(lineId)}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                         <p className="mt-1 text-xs text-neutral-500">
-                          {item.flashOffer ? "Oferta relâmpago · 1 un" : `${item.quantity} un · ${formatCurrency(item.price)}`}
+                          {flash ? "Oferta relâmpago · 1 un" : `${formatCurrency(item.price)} cada`}
                         </p>
-                        <p className="text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(lineTotal)}</p>
+                        <div className="mt-1.5 flex items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-[var(--pharma-green-ink)]">{formatCurrency(lineTotal)}</p>
+                          <div className="flex items-center rounded-full border border-neutral-200 bg-white">
+                            <button
+                              type="button"
+                              aria-label="Diminuir"
+                              disabled={flash || item.quantity <= 1}
+                              onClick={() => updateQuantity(lineId, item.quantity - 1)}
+                              className="flex h-8 w-8 items-center justify-center text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="w-5 text-center text-sm font-semibold text-neutral-900">{flash ? 1 : item.quantity}</span>
+                            <button
+                              type="button"
+                              aria-label="Aumentar"
+                              disabled={flash}
+                              onClick={() => {
+                                if (flash) return;
+                                updateQuantity(lineId, item.quantity + 1);
+                              }}
+                              className="flex h-8 w-8 items-center justify-center text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <button type="button" aria-label="Remover" className="text-neutral-400" onClick={() => removeItem(cartLineId(item))}>
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     </div>
                   );
                 })}
