@@ -60,6 +60,18 @@ type CampaignItem = {
   flashPrice: number;
 };
 
+type ReservationSituation = "active" | "awaiting_payment" | "paid" | "cancelled" | "expired" | "released";
+
+type CampaignReservation = {
+  id: string;
+  name: string;
+  productName: string;
+  flashPrice: number;
+  orderNumber: number | null;
+  situation: ReservationSituation;
+  minutesLeft: number | null;
+};
+
 type Campaign = {
   id: string;
   name: string;
@@ -73,7 +85,17 @@ type Campaign = {
   seenCount: number;
   activeCount: number;
   usedCount: number;
+  reservations?: CampaignReservation[];
 };
+
+function reservationLabel(row: CampaignReservation): string {
+  if (row.situation === "active") return `Aguardando finalizar · faltam ${row.minutesLeft ?? 1} min`;
+  if (row.situation === "awaiting_payment") return "Aguardando pagamento";
+  if (row.situation === "paid") return "Pago";
+  if (row.situation === "cancelled") return "Pedido cancelado";
+  if (row.situation === "expired") return "Perdeu a hora";
+  return "Tirou do carrinho";
+}
 
 type DraftItem = { productId: string; flashPrice: string };
 
@@ -452,7 +474,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
               </div>
             </div>
             <p className="mt-2 text-sm">
-              {campaign.seenCount} viram · {campaign.activeCount} reservas ativas · {campaign.usedCount} {campaign.usedCount === 1 ? "venda" : "vendas"}
+              {campaign.seenCount} viram a oferta · {campaign.activeCount} reservadas agora · {campaign.usedCount} viraram pedido
             </p>
             <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
               {campaign.items.map((item) => {
@@ -465,6 +487,19 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
                 );
               })}
             </ul>
+            {(campaign.reservations || []).length > 0 ? (
+              <ul className="mt-3 divide-y divide-border border-t border-border text-sm">
+                {(campaign.reservations || []).map((row) => (
+                  <li key={row.id} className="flex items-center gap-3 py-2">
+                    <span className="w-28 shrink-0 truncate font-medium" title={row.name}>{row.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.productName}</span>
+                    <span className="shrink-0 font-semibold text-[#ff6a00]">{formatCurrency(row.flashPrice)}</span>
+                    {row.orderNumber != null ? <span className="shrink-0 text-muted-foreground">#{row.orderNumber}</span> : null}
+                    <span className="w-44 shrink-0 text-right text-xs text-muted-foreground">{reservationLabel(row)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </article>
         ))}
       </div>

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import {
+  customerUsersTable,
   db,
   flashCampaignItemsTable,
   flashCampaignsTable,
@@ -612,6 +613,86 @@ async function campaignStats(campaignId: string): Promise<{ seenCount: number; a
   };
 }
 
+type FlashReservationRow = {
+  id: string;
+  name: string;
+  productName: string;
+  flashPrice: number;
+  orderNumber: number | null;
+  situation: "active" | "awaiting_payment" | "paid" | "cancelled" | "expired" | "released";
+  minutesLeft: number | null;
+};
+
+function reservationSituation(status: string, expiresAt: Date, orderStatus: string | null, now: Date): FlashReservationRow["situation"] {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "released") return "released";
+  if (value === "expired" || (value === "active" && expiresAt.getTime() <= now.getTime())) return "expired";
+  if (value === "active") return "active";
+  const order = String(orderStatus || "").trim().toLowerCase();
+  if (order === "paid" || order === "completed") return "paid";
+  if (order === "cancelled" || order === "cancelado" || order === "canceled") return "cancelled";
+  return "awaiting_payment";
+}
+
+const RESERVATION_SORT: Record<FlashReservationRow["situation"], number> = {
+  active: 0,
+  awaiting_payment: 1,
+  paid: 2,
+  cancelled: 3,
+  expired: 4,
+  released: 5,
+};
+
+async function campaignReservations(campaignId: string, now: Date): Promise<FlashReservationRow[]> {
+  const rows = await db
+    .select()
+    .from(flashReservationsTable)
+    .where(eq(flashReservationsTable.campaignId, campaignId));
+  if (rows.length === 0) return [];
+
+  const orderIds = Array.from(new Set(rows.map((row) => String(row.orderId || "").trim()).filter(Boolean)));
+  const userIds = Array.from(new Set(rows.map((row) => String(row.userId || "").trim()).filter(Boolean)));
+  const productIds = Array.from(new Set(rows.map((row) => row.productId)));
+  const [orders, users, products] = await Promise.all([
+    orderIds.length ? db.select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      clientName: ordersTable.clientName,
+      status: ordersTable.status,
+    }).from(ordersTable).where(inArray(ordersTable.id, orderIds)) : Promise.resolve([]),
+    userIds.length ? db.select({
+      id: customerUsersTable.id,
+      name: customerUsersTable.name,
+    }).from(customerUsersTable).where(inArray(customerUsersTable.id, userIds)) : Promise.resolve([]),
+    productIds.length ? db.select({
+      id: productsTable.id,
+      name: productsTable.name,
+    }).from(productsTable).where(inArray(productsTable.id, productIds)) : Promise.resolve([]),
+  ]);
+  const orderById = new Map(orders.map((order) => [order.id, order]));
+  const userById = new Map(users.map((user) => [user.id, user.name]));
+  const productById = new Map(products.map((product) => [product.id, product.name]));
+
+  return rows.map((row) => {
+    const order = row.orderId ? orderById.get(row.orderId) : undefined;
+    const situation = reservationSituation(row.status, row.expiresAt, order?.status ?? null, now);
+    const accountName = String(row.userId ? userById.get(row.userId) || "" : "").trim();
+    const orderName = String(order?.clientName || "").trim();
+    const minutesLeft = situation === "active"
+      ? Math.max(1, Math.ceil((row.expiresAt.getTime() - now.getTime()) / 60000))
+      : null;
+    return {
+      id: row.id,
+      name: accountName || orderName || "Visitante",
+      productName: productById.get(row.productId) || "Produto",
+      flashPrice: Number(row.flashPrice),
+      orderNumber: order?.orderNumber ?? null,
+      situation,
+      minutesLeft,
+    };
+  }).sort((a, b) => RESERVATION_SORT[a.situation] - RESERVATION_SORT[b.situation]);
+}
+
 async function mapCampaign(row: typeof flashCampaignsTable.$inferSelect) {
   const items = await db
     .select()
@@ -623,6 +704,7 @@ async function mapCampaign(row: typeof flashCampaignsTable.$inferSelect) {
     : [];
   const byId = new Map(products.map((product) => [product.id, product]));
   const stats = await campaignStats(row.id);
+  const reservations = await campaignReservations(row.id, new Date());
   return {
     id: row.id,
     name: row.name,
@@ -643,6 +725,7 @@ async function mapCampaign(row: typeof flashCampaignsTable.$inferSelect) {
       };
     }),
     ...stats,
+    reservations,
   };
 }
 
