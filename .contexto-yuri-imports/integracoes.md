@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-22 | Pacote guarda rastreio manual | `manual_tracking_code` no pacote. Código dos Correios pago no balcão. Marca enviado e não baixa estoque | Cotação EnvioEcom e Vincular EE iguais |
 | 2026-10-22 | Cotação EnvioEcom lê envios do mesmo CPF | Avisa transporte aberto e transportadora que já entregou. O clique continua gerando a etiqueta | Sem CPF não avisa. Extravio e a cópia 48h iguais |
 | 2026-10-20 | Frase sem toque não repete o menu | Com a lista já aberta, "Menos mal" ou "Oi" recebem "Toque em Ver opções acima e escolha sua opção." A primeira mensagem continua abrindo a lista | CPF, atendente e a cópia 48h iguais |
 | 2026-10-20 | Etiqueta do pacote sai pelo rastreio da linha | **Ver PDF** e **Etiqueta EE** no dividido pedem o código 8880… daquela linha. O id numérico do outro pacote não entra. O PDF antigo, salvo errado, é trocado ao abrir de novo | Pedido com um envio só e a cópia 48h iguais |

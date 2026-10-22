@@ -418,6 +418,17 @@ test("mesmo barcode em pai e filho: lookup prefere o pedido de reenvio", () => {
   );
 });
 
+test("rastreio manual do balcão tira o pacote da cópia", () => {
+  assert.equal(isPackageExcludedFromShippingCopyList({
+    enviado: false,
+    manualTrackingCode: "AA123456789BR",
+  }), true);
+  assert.equal(isPackageExcludedFromShippingCopyList({
+    enviado: false,
+    manualTrackingCode: "  ",
+  }), false);
+});
+
 test("SuperFrete released sai da cópia e do card; pending fica no card", () => {
   assert.equal(isPackageExcludedFromShippingCopyList({
     enviado: false,

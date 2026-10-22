@@ -16,6 +16,7 @@ Pedido **sai** da cópia 48h / Outros / POSTAR ATÉ / lista de compra se **qualq
 | Status etiqueta pronta: `Etiqueta emitida/gerada`, `Pronto para envio`, **Aguardando coleta**, **Aguardando ser coletado**, **Aguardando postagem**, DC-e, processando envio, aguardando expedição | Só **Vincular EE** (barcode, sem PDF) |
 | Postado: Coleta Recebida / coletado / recebido / expedido / trânsito / varredura Jadlog (**EM ROTA**, transferência, coleta efetuada, não entrou na unidade, depositado no PUDO) | Etiqueta ainda em processamento (HTTP 202). **Coleta Solicitada** e **Envio criado** não são postado |
 | Badge **Enviado** ou reenvio fechado | |
+| Código colado em **Rastreio manual** no pacote (`manualTrackingCode`). Marca enviado e não baixa estoque | |
 | **Aguardando estoque** (`orders.aguardando_estoque`, sub-aba Admin) | |
 
 **Envio dividido** (2+ pacotes em `order_shipments`): a tabela acima vale **por pacote** (exceto **Aguardando estoque**, que é flag do pedido inteiro). `orders.enviado` **não** tira o pedido da cópia se ainda falta pacote. O pedido só sai quando **todos** os pacotes já teriam saído. Um pacote Minas com PDF **não** remove o Motoboy ainda sem etiqueta. Se **parte** já tem etiqueta/DC-e/`enviado` e **parte** não: o pedido **fica** na lista, o card mostra **Enviado parcialmente**, e o texto copiado (48h / Outros / Copiar Resumo / lista de compra) traz **só os itens dos pacotes que ainda faltam**. Pedido com `aguardando_estoque` sai da cópia mesmo com split.
@@ -44,6 +45,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-22 | Pacote aceita rastreio pago no balcão | **Rastreio manual** grava o código dos Correios naquele pacote, marca enviado e o cliente vê o código. Sai da cópia 48h | Não baixa estoque. EnvioEcom e Vincular EE continuam |
 | 2026-10-22 | Cotação EnvioEcom mostra o histórico do CPF | No topo e na transportadora: há pedido em transporte, ou este cliente já recebeu por ela. Casa o nome sem “envioEcom” | Etiqueta pronta não conta como transporte. Sem CPF, nada aparece. A lista negra de extravio igual |
 | 2026-10-21 | Finalizar oferta aceita várias caixas | PIX e WhatsApp aceitam a quantidade. Cada caixa fica no preço da reserva. Escolher 2 caixas na página grava 2 | Cupom continua fora. Sem o produto da oferta, o pedido recusa |
 | 2026-10-21 | Carrinho Farmácia Compacta tem − e + | Cada linha mostra a quantidade e soma ou tira unidade. O total da linha acompanha | A lixeira continua. A reserva da oferta segue 1 hora |

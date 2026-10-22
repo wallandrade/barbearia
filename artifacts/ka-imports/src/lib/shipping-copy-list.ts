@@ -8,6 +8,7 @@ export type ShippingCopyPackage = {
   envioecomLabelUrl?: string | null;
   superfreteStatus?: string | null;
   superfreteLabelUrl?: string | null;
+  manualTrackingCode?: string | null;
   items?: Array<{
     productId?: string | null;
     productName?: string | null;
@@ -84,6 +85,7 @@ export function isClosedReshipmentStatus(status?: string | null): boolean {
 
 export function isSplitPackageDoneForCopy(pkg: ShippingCopyPackage | null | undefined): boolean {
   if (!pkg) return false;
+  if (String(pkg.manualTrackingCode || "").trim()) return true;
   if (pkg.enviado) return true;
   if (isSuperfreteExcludedFromCopy(pkg)) return true;
   if (isEnvioEcomLabelReadyStatus(pkg.envioecomStatus)) return true;

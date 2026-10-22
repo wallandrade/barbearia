@@ -30,6 +30,8 @@ export const orderShipmentsTable = mysqlTable("order_shipments", {
   superfreteFreightCost: decimal("superfrete_freight_cost", { precision: 10, scale: 2 }),
   superfreteServiceId: int("superfrete_service_id"),
   superfreteAccountId: varchar("superfrete_account_id", { length: 64 }),
+  /** Código colado no Admin, pago no balcão (Correios). Não é envio EnvioEcom. */
+  manualTrackingCode: varchar("manual_tracking_code", { length: 64 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

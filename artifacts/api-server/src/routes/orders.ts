@@ -3987,6 +3987,83 @@ router.patch("/admin/orders/:id/enviado", requireAdminAuth, async (req, res) => 
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/manual-tracking
+// Código pago no balcão (Correios). Fica no pacote, marca enviado e não baixa estoque.
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/manual-tracking", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+    const body = req.body as { packageId?: unknown; trackingCode?: unknown };
+    const packageId = String(body.packageId || "").trim();
+    if (!packageId) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe o pacote." });
+      return;
+    }
+    const raw = String(body.trackingCode || "").trim();
+    const normalized = raw ? normalizeTrackingCode(raw) : "";
+    if (normalized && !isTrackingCodeValid(normalized)) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Código de rastreio inválido." });
+      return;
+    }
+
+    const existing = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    const order = existing[0];
+    if (!order) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+    const pkg = await getOrderShipment(id, packageId);
+    if (!pkg) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pacote de envio não encontrado." });
+      return;
+    }
+
+    const poolLabel = inventoryPoolLabel(parseInventoryPool(pkg.inventoryPool) || "loja");
+    if (!normalized) {
+      const stillPosted = Boolean(
+        String(pkg.envioecomBarcode || "").trim()
+        || String(pkg.envioecomShipmentId || "").trim()
+        || String(pkg.envioecomLabelUrl || "").trim()
+        || String(pkg.superfreteTracking || "").trim()
+        || String(pkg.superfreteLabelUrl || "").trim(),
+      );
+      await db.update(orderShipmentsTable).set({
+        manualTrackingCode: null,
+        ...(stillPosted ? {} : { enviado: false, enviadoAt: null }),
+        updatedAt: new Date(),
+      }).where(eq(orderShipmentsTable.id, pkg.id));
+    } else {
+      await db.update(orderShipmentsTable).set({
+        manualTrackingCode: normalized,
+        enviado: true,
+        enviadoAt: pkg.enviadoAt ?? new Date(),
+        envioecomDeliveryMode: String(pkg.envioecomDeliveryMode || "").trim() || "Correios",
+        updatedAt: new Date(),
+      }).where(eq(orderShipmentsTable.id, pkg.id));
+    }
+    await rollupOrderFromPackages(id);
+
+    const updated = await db.select().from(ordersTable).where(buildAdminOrderWhere(id, adminScope)).limit(1);
+    const [mapped] = updated[0] ? await attachShipmentsToMappedOrders([mapOrder(updated[0])]) : [null];
+    recordAdminActivity(
+      req,
+      id,
+      "manual_tracking",
+      normalized
+        ? `Colou o rastreio manual do ${poolLabel}: ${normalized}`
+        : `Tirou o rastreio manual do ${poolLabel}`,
+    );
+    res.json({ ok: true, order: mapped, trackingCode: normalized || null });
+  } catch (err) {
+    console.error("Manual tracking error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar o rastreio manual." });
+  }
+});
+
 // PATCH /api/admin/orders/:id/tracking-code  (protected)
 // ---------------------------------------------------------------------------
 router.patch("/admin/orders/:id/tracking-code", requireAdminAuth, async (req, res) => {

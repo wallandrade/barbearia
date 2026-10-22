@@ -44,6 +44,7 @@ export type CustomerOrderPackage = {
   superfreteStatus?: string | null;
   superfreteTracking?: string | null;
   superfreteServiceId?: number | null;
+  manualTrackingCode?: string | null;
   shippingForecastDate?: string | null;
 };
 
@@ -164,7 +165,8 @@ export function customerPrimaryTracking(order: CustomerOrder): {
   const serviceName = superfreteServiceName(primary?.superfreteServiceId ?? order.superfreteServiceId);
   return {
     barcode: String(
-      primary?.envioecomBarcode
+      primary?.manualTrackingCode
+      || primary?.envioecomBarcode
       || primary?.superfreteTracking
       || order.envioecomBarcode
       || order.superfreteTracking
@@ -357,6 +359,7 @@ function orderCarrierStatus(order: CustomerOrder): string | null {
 function packageHasEnvioEcomLink(pkg: CustomerOrderPackage): boolean {
   return Boolean(
     pkg.envioecomBarcode ||
+      pkg.manualTrackingCode ||
       pkg.envioecomStatus ||
       pkg.envioecomShipmentId ||
       pkg.envioecomTrackingKey ||

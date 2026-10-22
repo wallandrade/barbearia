@@ -1063,6 +1063,7 @@ async function ensureOrderShipmentsTable(databaseName: string): Promise<void> {
       superfrete_freight_cost DECIMAL(10,2) NULL,
       superfrete_service_id INT NULL,
       superfrete_account_id VARCHAR(64) NULL,
+      manual_tracking_code VARCHAR(64) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY order_shipments_order_id_idx (order_id),
@@ -1084,6 +1085,7 @@ async function ensureOrderShipmentSuperfreteColumns(databaseName: string): Promi
     { name: "superfrete_service_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_service_id INT NULL" },
     { name: "superfrete_account_id", sql: "ALTER TABLE order_shipments ADD COLUMN superfrete_account_id VARCHAR(64) NULL" },
     { name: "shipping_forecast_date", sql: "ALTER TABLE order_shipments ADD COLUMN shipping_forecast_date VARCHAR(10) NULL" },
+    { name: "manual_tracking_code", sql: "ALTER TABLE order_shipments ADD COLUMN manual_tracking_code VARCHAR(64) NULL" },
   ];
   for (const definition of definitions) {
     if (!(await columnExists("order_shipments", definition.name, databaseName))) {

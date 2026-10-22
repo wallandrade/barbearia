@@ -88,6 +88,7 @@ export type OrderShipmentPublic = {
   superfreteFreightCost: number | null;
   superfreteServiceId: number | null;
   superfreteAccountId: string | null;
+  manualTrackingCode: string | null;
 };
 
 export function mapOrderShipmentPublic(row: OrderShipment): OrderShipmentPublic {
@@ -123,6 +124,7 @@ export function mapOrderShipmentPublic(row: OrderShipment): OrderShipmentPublic 
     superfreteFreightCost: row.superfreteFreightCost != null ? Number(row.superfreteFreightCost) : null,
     superfreteServiceId: row.superfreteServiceId != null ? Number(row.superfreteServiceId) : null,
     superfreteAccountId: row.superfreteAccountId || null,
+    manualTrackingCode: row.manualTrackingCode || null,
   };
 }
 
@@ -665,7 +667,7 @@ export async function rollupOrderFromPackages(orderId: string): Promise<OrderShi
     patch.superfreteFreightCost = least.superfreteFreightCost;
     patch.superfreteServiceId = least.superfreteServiceId;
     patch.superfreteAccountId = least.superfreteAccountId;
-    patch.trackingCode = least.envioecomBarcode || least.envioecomShipmentId || least.superfreteTracking;
+    patch.trackingCode = least.envioecomBarcode || least.envioecomShipmentId || least.superfreteTracking || least.manualTrackingCode;
     if (!split || allHaveLabel) {
       patch.envioecomLabelUrl = least.envioecomLabelUrl;
       patch.trackingLabelUrl = least.envioecomLabelUrl;

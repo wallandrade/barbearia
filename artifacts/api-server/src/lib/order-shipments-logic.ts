@@ -70,7 +70,9 @@ export function isPackageExcludedFromShippingCopyList(pkg: {
   envioecomLabelUrl?: string | null;
   superfreteStatus?: string | null;
   superfreteLabelUrl?: string | null;
+  manualTrackingCode?: string | null;
 }): boolean {
+  if (String(pkg.manualTrackingCode || "").trim()) return true;
   if (pkg.enviado) return true;
   if (isSuperfreteExcludedFromCopy(pkg)) return true;
   const status = String(pkg.envioecomStatus || "").trim();

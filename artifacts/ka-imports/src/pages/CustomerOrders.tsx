@@ -929,8 +929,8 @@ export default function CustomerOrders() {
                                           <p className="text-xs font-semibold text-sky-800 mt-1">{customerPackageForecastText(pkg)}</p>
                                         ) : null}
                                         <PackageProductRows order={order} pkg={pkg} />
-                                        {(pkg.envioecomBarcode || pkg.superfreteTracking) ? (
-                                          <p className="text-xs font-mono text-blue-950 break-all mt-1.5">Código: {pkg.envioecomBarcode || pkg.superfreteTracking}</p>
+                                        {(pkg.manualTrackingCode || pkg.envioecomBarcode || pkg.superfreteTracking) ? (
+                                          <p className="text-xs font-mono text-blue-950 break-all mt-1.5">Código: {pkg.manualTrackingCode || pkg.envioecomBarcode || pkg.superfreteTracking}</p>
                                         ) : null}
                                         {(pkg.envioecomDeliveryMode || superfreteServiceName(pkg.superfreteServiceId)) ? (
                                           <p className="text-xs text-blue-900/80 mt-1">{pkg.envioecomDeliveryMode || superfreteServiceName(pkg.superfreteServiceId)}</p>

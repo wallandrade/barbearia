@@ -11044,6 +11044,13 @@ function OrdersPanel({
     packageId?: string | null;
   }>(null);
   const [envioecomLinkDraft, setEnvioecomLinkDraft] = useState("");
+  const [manualTrackingModal, setManualTrackingModal] = useState<null | {
+    order: AdminOrder;
+    packageId: string;
+    poolLabel: string;
+    code: string;
+  }>(null);
+  const [manualTrackingSaving, setManualTrackingSaving] = useState(false);
   const [envioecomAccounts, setEnvioecomAccounts] = useState<EnvioEcomAccountPublic[]>([]);
   const [superfreteAccounts, setSuperfreteAccounts] = useState<SuperfreteAccountPublic[]>([]);
   const [freightChoice, setFreightChoice] = useState<null | { order: AdminOrder; packageId?: string | null }>(null);
@@ -11146,6 +11153,34 @@ function OrdersPanel({
       toast.error("Erro ao salvar a previsão de envio.");
     } finally {
       setShippingForecastSaving((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const saveManualTracking = async (trackingCode?: string) => {
+    if (!manualTrackingModal) return;
+    const code = trackingCode !== undefined ? trackingCode : manualTrackingModal.code;
+    setManualTrackingSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${manualTrackingModal.order.id}/manual-tracking`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          packageId: manualTrackingModal.packageId,
+          trackingCode: code,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string; order?: AdminOrder; trackingCode?: string | null };
+      if (!res.ok || !data.order) {
+        toast.error(data.message || "Não foi possível salvar o rastreio.");
+        return;
+      }
+      onSetOrderPatched(data.order);
+      setManualTrackingModal(null);
+      toast.success(data.trackingCode ? `Rastreio ${data.trackingCode} salvo neste pacote.` : "Rastreio manual removido.");
+    } catch {
+      toast.error("Erro ao salvar o rastreio manual.");
+    } finally {
+      setManualTrackingSaving(false);
     }
   };
 
@@ -13977,6 +14012,26 @@ function OrdersPanel({
                           Baixa OK
                         </span>
                       )}
+                      {!isCancelledCard && pkg.id && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-indigo-800 border-indigo-200"
+                        onClick={() => setManualTrackingModal({
+                          order,
+                          packageId: String(pkg.id),
+                          poolLabel: pkg.inventoryPoolLabel || pkg.inventoryPool,
+                          code: String(pkg.manualTrackingCode || ""),
+                        })}
+                      >
+                        Rastreio manual
+                      </Button>
+                      )}
+                      {pkg.manualTrackingCode ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-indigo-200 bg-white text-indigo-900">
+                          Correios · {pkg.manualTrackingCode}
+                        </span>
+                      ) : null}
                       {!isCancelledCard && !targetHasSuperfrete(order, pkg.id) && (
                       <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { startFreightEmit(order, pkg.id); }}>
                         {selectableSuperfreteAccounts.length && !targetHasEnvioEcom(order, pkg.id) && !targetHasSuperfrete(order, pkg.id) ? "Emitir frete" : "EnvioEcom"}
@@ -15073,6 +15128,57 @@ function OrdersPanel({
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {manualTrackingModal && (
+          <div className="fixed inset-0 z-[130] bg-black/45 flex items-center justify-center p-4">
+            <form
+              className="w-full max-w-md rounded-2xl border border-border bg-white shadow-2xl overflow-hidden"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveManualTracking();
+              }}
+            >
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Rastreio manual</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {manualTrackingModal.poolLabel} · pedido #{getOrderReference(manualTrackingModal.order)}
+                  </p>
+                </div>
+                <button type="button" className="p-1.5 rounded-lg hover:bg-muted" onClick={() => setManualTrackingModal(null)}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Código que sai no balcão dos Correios, pago na hora. Fica neste pacote e o cliente acompanha por ele.
+                </p>
+                <input
+                  autoFocus
+                  value={manualTrackingModal.code}
+                  onChange={(event) => setManualTrackingModal((current) => current ? { ...current, code: event.target.value } : current)}
+                  placeholder="AA123456789BR"
+                  className="h-11 w-full rounded-xl border border-border px-3 font-mono text-sm uppercase outline-none focus:border-indigo-400"
+                />
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1" disabled={manualTrackingSaving}>
+                    {manualTrackingSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar rastreio"}
+                  </Button>
+                  {manualTrackingModal.code.trim() ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={manualTrackingSaving}
+                      onClick={() => { void saveManualTracking(""); }}
+                    >
+                      Limpar
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </form>
           </div>
         )}
 
