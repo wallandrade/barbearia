@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-10-21
+> **Última atualização:** 2026-10-22
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -44,6 +44,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-22 | Cotação EnvioEcom mostra o histórico do CPF | No topo e na transportadora: há pedido em transporte, ou este cliente já recebeu por ela. Casa o nome sem “envioEcom” | Etiqueta pronta não conta como transporte. Sem CPF, nada aparece. A lista negra de extravio igual |
 | 2026-10-21 | Finalizar oferta aceita várias caixas | PIX e WhatsApp aceitam a quantidade. Cada caixa fica no preço da reserva. Escolher 2 caixas na página grava 2 | Cupom continua fora. Sem o produto da oferta, o pedido recusa |
 | 2026-10-21 | Carrinho Farmácia Compacta tem − e + | Cada linha mostra a quantidade e soma ou tira unidade. O total da linha acompanha | A lixeira continua. A reserva da oferta segue 1 hora |
 | 2026-10-20 | Card da oferta lista quem reservou | Nome, produto, preço do clique, número do pedido e a situação. Os três números seguem viram, reservadas agora e viraram pedido | O sorteio e a reserva de 1 hora iguais |

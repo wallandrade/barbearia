@@ -11024,7 +11024,9 @@ function OrdersPanel({
       price?: string | number;
       delivery_time?: string | number;
       lossAlert?: { level: "warn" | "danger"; count: number; message: string } | null;
+      customerCarrier?: { inTransit: boolean; received: boolean } | null;
     }>;
+    customerCarriers?: Array<{ carrier: string; inTransit: boolean; received: boolean }>;
     originZipcode?: string | null;
     accountId?: string | null;
     accountName?: string | null;
@@ -11201,7 +11203,9 @@ function OrdersPanel({
           price?: string | number;
           delivery_time?: string | number;
           lossAlert?: { level: "warn" | "danger"; count: number; message: string } | null;
+          customerCarrier?: { inTransit: boolean; received: boolean } | null;
         }>;
+        customerCarriers?: Array<{ carrier: string; inTransit: boolean; received: boolean }>;
         origin_zipcode?: string | null;
         accountId?: string | null;
         message?: string;
@@ -11219,6 +11223,7 @@ function OrdersPanel({
       setEnvioecomQuoteModal({
         order,
         quotes,
+        customerCarriers: data.customerCarriers || [],
         originZipcode: data.origin_zipcode ? String(data.origin_zipcode) : null,
         accountId: usedAccountId,
         accountName: envioecomAccountNameById(usedAccountId),
@@ -14972,8 +14977,25 @@ function OrdersPanel({
                 </div>
               </div>
               <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                {(() => {
+                  const notes = envioecomQuoteModal.customerCarriers || [];
+                  const inTransit = notes.filter((note) => note.inTransit).map((note) => note.carrier);
+                  const received = notes.filter((note) => note.received).map((note) => note.carrier);
+                  if (!inTransit.length && !received.length) return null;
+                  return (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 space-y-1">
+                      {inTransit.length > 0 && (
+                        <p className="text-xs font-medium text-sky-900">Há pedido em transporte: {inTransit.join(", ")}</p>
+                      )}
+                      {received.length > 0 && (
+                        <p className="text-xs font-medium text-emerald-900">Este cliente já recebeu por {received.join(", ")}</p>
+                      )}
+                    </div>
+                  );
+                })()}
                 {envioecomQuoteModal.quotes.map((quote, idx) => {
                   const lossAlert = quote.lossAlert;
+                  const customerCarrier = quote.customerCarrier;
                   const cardClass = lossAlert?.level === "danger"
                     ? "border-red-300 bg-red-50 hover:bg-red-100"
                     : lossAlert?.level === "warn"
@@ -14998,6 +15020,12 @@ function OrdersPanel({
                       {quote.price != null ? `R$ ${quote.price}` : "Preço n/d"}
                       {quote.delivery_time != null ? ` · ${quote.delivery_time} dia(s)` : ""}
                     </p>
+                    {customerCarrier?.inTransit && (
+                      <p className="text-xs mt-1.5 font-medium text-sky-800">Há pedido em transporte</p>
+                    )}
+                    {customerCarrier?.received && (
+                      <p className="text-xs mt-1.5 font-medium text-emerald-800">Este cliente já recebeu por esta transportadora</p>
+                    )}
                     {lossAlert?.message && (
                       <p className={`text-xs mt-1.5 font-medium ${lossAlert.level === "danger" ? "text-red-800" : "text-amber-900"}`}>
                         {lossAlert.message}

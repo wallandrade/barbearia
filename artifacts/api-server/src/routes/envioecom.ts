@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gt, gte, inArray, isNotNull, or, sql, type AnyColumn } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, ne, or, sql, type AnyColumn } from "drizzle-orm";
 import { db, orderShipmentsTable, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -20,6 +20,8 @@ import {
   recordCarrierLossFromStatus,
 } from "../lib/carrier-loss-store";
 import { inventoryPoolLabel, parseInventoryPool } from "../lib/order-inventory-debit";
+import { buildCustomerCarrierNotes, matchCustomerCarrier } from "../lib/customer-carrier-history";
+import { cpfForRelatedShipments, RELATED_SHIPMENTS_SCAN_LIMIT } from "../lib/related-shipments";
 import { grantInsuranceCashbackIfEligible } from "../lib/insurance-claims";
 import {
   getOrderShipment,
@@ -288,6 +290,45 @@ async function loadOrderForAdmin(req: import("express").Request, orderId: string
     return { error: "FORBIDDEN" as const };
   }
   return { order, adminScope };
+}
+
+async function loadCustomerCarrierNotes(orderId: string, document: string | null | undefined) {
+  const cpf = cpfForRelatedShipments(document);
+  if (!cpf) return [];
+  const others = await db
+    .select({
+      id: ordersTable.id,
+      envioecomDeliveryMode: ordersTable.envioecomDeliveryMode,
+      envioecomStatus: ordersTable.envioecomStatus,
+    })
+    .from(ordersTable)
+    .where(and(
+      inArray(ordersTable.status, ["paid", "completed"]),
+      ne(ordersTable.id, orderId),
+      sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${ordersTable.clientDocument}, '.', ''), '-', ''), '/', ''), ' ', ''), CHAR(9), '') = ${cpf}`,
+    ))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(RELATED_SHIPMENTS_SCAN_LIMIT);
+  if (!others.length) return [];
+  const packages = await db
+    .select({
+      orderId: orderShipmentsTable.orderId,
+      envioecomDeliveryMode: orderShipmentsTable.envioecomDeliveryMode,
+      envioecomStatus: orderShipmentsTable.envioecomStatus,
+    })
+    .from(orderShipmentsTable)
+    .where(inArray(orderShipmentsTable.orderId, others.map((row) => row.id)));
+  const byOrder = new Map<string, Array<{ deliveryMode: string | null; status: string | null }>>();
+  for (const pkg of packages) {
+    const list = byOrder.get(pkg.orderId) ?? [];
+    list.push({ deliveryMode: pkg.envioecomDeliveryMode, status: pkg.envioecomStatus });
+    byOrder.set(pkg.orderId, list);
+  }
+  return buildCustomerCarrierNotes(others.map((row) => ({
+    deliveryMode: row.envioecomDeliveryMode,
+    status: row.envioecomStatus,
+    packages: byOrder.get(row.id) ?? [],
+  })));
 }
 
 async function requirePackageForSplit(
@@ -841,6 +882,11 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
       },
       quotes: rawQuotes,
     });
+    const customerCarriers = await loadCustomerCarrierNotes(order.id, order.clientDocument);
+    const quotesWithCustomer = quotes.map((item) => ({
+      ...item,
+      customerCarrier: matchCustomerCarrier(item.carrier, customerCarriers),
+    }));
 
     res.json({
       orderId: order.id,
@@ -848,7 +894,8 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
       destinationCep: cep,
       products,
       carriers: carriers || null,
-      quotes,
+      quotes: quotesWithCustomer,
+      customerCarriers,
       unavailable_carriers: quote.unavailable_carriers || [],
       origin_zipcode: quote.origin_zipcode || null,
       accountId,
