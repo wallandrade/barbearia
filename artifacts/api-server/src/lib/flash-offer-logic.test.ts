@@ -10,8 +10,10 @@ import {
   flashVisitIpHash,
   flashVisitStillBlocks,
   hashFlashIp,
+  isFlashAlwaysShow,
   isFlashHourOpen,
   isFlashProductEligible,
+  mergeFlashDrawOffers,
   isFlashVisitorId,
   isValidFlashCatalogPrice,
   parseFlashChance,
@@ -96,6 +98,23 @@ test("repetir a oferta usa createdAt quando as horas são maiores que zero", () 
   assert.equal(flashVisitStillBlocks({ ...base, repeatAfterHours: 24 }), true);
   assert.equal(flashVisitStillBlocks({ ...base, repeatAfterHours: 24, now: new Date(createdAt.getTime() + 24 * 60 * 60 * 1000 + 1) }), false);
   assert.equal(flashVisitStillBlocks({ ...base, result: "miss", repeatAfterHours: 48, now: new Date(createdAt.getTime() + 47 * 60 * 60 * 1000) }), true);
+});
+
+test("produto habilitado entra em todo sorteio e não repete o par campanha e produto", () => {
+  assert.equal(isFlashAlwaysShow(true), true);
+  assert.equal(isFlashAlwaysShow(1), true);
+  assert.equal(isFlashAlwaysShow("1"), true);
+  assert.equal(isFlashAlwaysShow(false), false);
+  assert.equal(isFlashAlwaysShow(0), false);
+  assert.equal(isFlashAlwaysShow(null), false);
+  const always = [{ campaignId: "c1", productId: "p1" }, { campaignId: "c1", productId: "p2" }];
+  const drawn = [{ campaignId: "c1", productId: "p1" }, { campaignId: "c1", productId: "p3" }];
+  assert.deepEqual(mergeFlashDrawOffers(always, drawn), [
+    { campaignId: "c1", productId: "p1" },
+    { campaignId: "c1", productId: "p2" },
+    { campaignId: "c1", productId: "p3" },
+  ]);
+  assert.deepEqual(mergeFlashDrawOffers([], drawn), drawn);
 });
 
 test("seen trava a campanha e miss de ontem não trava hoje", () => {

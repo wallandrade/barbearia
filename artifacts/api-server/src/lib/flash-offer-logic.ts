@@ -157,6 +157,26 @@ export function accountCanDraw(visits: FlashVisitView[], today: string): boolean
   return visits.every((visit) => visitorCanDraw(visit, today));
 }
 
+export function isFlashAlwaysShow(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
+/** Produtos marcados entram primeiro. O sorteio normal não repete o mesmo par campanha+produto. */
+export function mergeFlashDrawOffers<T extends { campaignId: string; productId: string }>(
+  alwaysOffers: T[],
+  drawnOffers: T[],
+): T[] {
+  const seen = new Set<string>();
+  const merged: T[] = [];
+  for (const offer of [...alwaysOffers, ...drawnOffers]) {
+    const key = `${offer.campaignId}\0${offer.productId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(offer);
+  }
+  return merged;
+}
+
 export function flashRejectsCoupon(reservationId: string, couponCode: string): boolean {
   return reservationId.trim().length > 0 && couponCode.trim().length > 0;
 }

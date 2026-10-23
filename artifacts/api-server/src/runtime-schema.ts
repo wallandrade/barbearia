@@ -1430,10 +1430,17 @@ async function ensureFlashOfferTables(databaseName: string): Promise<void> {
         campaign_id VARCHAR(64) NOT NULL,
         product_id VARCHAR(255) NOT NULL,
         flash_price DECIMAL(10,2) NOT NULL,
+        always_show TINYINT(1) NOT NULL DEFAULT 0,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY flash_campaign_items_product_uq (campaign_id, product_id)
       )
     `);
+  }
+  if (
+    await tableExists("flash_campaign_items", databaseName)
+    && !(await columnExists("flash_campaign_items", "always_show", databaseName))
+  ) {
+    await pool.query(`ALTER TABLE flash_campaign_items ADD COLUMN always_show TINYINT(1) NOT NULL DEFAULT 0`);
   }
   if (!(await tableExists("flash_visits", databaseName))) {
     await pool.query(`

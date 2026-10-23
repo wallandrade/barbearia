@@ -58,6 +58,7 @@ type CampaignItem = {
   productName: string;
   catalogPrice: number | null;
   flashPrice: number;
+  alwaysShow?: boolean;
 };
 
 type ReservationSituation = "active" | "awaiting_payment" | "paid" | "cancelled" | "expired" | "released";
@@ -135,6 +136,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [forceFirstVisit, setForceFirstVisit] = useState(false);
   const [forceSaving, setForceSaving] = useState(false);
   const [openVisitorIds, setOpenVisitorIds] = useState<Record<string, boolean>>({});
+  const [alwaysSavingId, setAlwaysSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [campaignRes, productRes, settingsRes] = await Promise.all([
@@ -288,6 +290,32 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
       await load();
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleAlwaysShow(campaignId: string, item: CampaignItem) {
+    const next = item.alwaysShow !== true;
+    setAlwaysSavingId(item.id);
+    try {
+      const response = await fetch(`${BASE}/api/admin/flash-campaigns/${campaignId}/items/${item.id}`, {
+        method: "PATCH",
+        headers: adminHeaders(),
+        body: JSON.stringify({ alwaysShow: next }),
+      });
+      const data = await response.json().catch(() => ({})) as { message?: string; campaign?: Campaign };
+      if (response.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      if (!response.ok || !data.campaign) {
+        toast.error(data.message || "Não foi possível salvar o produto.");
+        return;
+      }
+      setCampaigns((current) => current.map((row) => row.id === campaignId ? data.campaign! : row));
+    } catch {
+      toast.error("Não foi possível salvar o produto.");
+    } finally {
+      setAlwaysSavingId(null);
     }
   }
 
@@ -483,7 +511,16 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
                 return (
                   <li key={item.id} className="flex items-center gap-3">
                     <ProductThumb src={product?.image} alt={item.productName} />
-                    <span>{item.productName} · {formatCurrency(item.flashPrice)}</span>
+                    <span className="min-w-0 flex-1 truncate">{item.productName} · {formatCurrency(item.flashPrice)}</span>
+                    <button
+                      type="button"
+                      disabled={alwaysSavingId === item.id}
+                      onClick={() => void toggleAlwaysShow(campaign.id, item)}
+                      title={item.alwaysShow ? "Este produto aparece em todo carregamento da loja" : "Habilitar para aparecer sempre que o cliente atualizar ou voltar ao início"}
+                      className={`h-8 shrink-0 rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-60 ${item.alwaysShow ? "bg-emerald-600" : "bg-neutral-400"}`}
+                    >
+                      {alwaysSavingId === item.id ? "Salvando..." : item.alwaysShow ? "Desabilitar" : "Habilitar"}
+                    </button>
                   </li>
                 );
               })}

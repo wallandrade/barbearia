@@ -20,8 +20,10 @@ import {
   flashRollWins,
   flashVisitIpHash,
   flashVisitStillBlocks,
+  isFlashAlwaysShow,
   isFlashHourOpen,
   isFlashProductEligible,
+  mergeFlashDrawOffers,
   isFlashVisitorId,
   isValidFlashCatalogPrice,
   parseFlashChance,
@@ -121,6 +123,7 @@ async function offerFromCampaign(campaignId: string, now: Date): Promise<FlashDr
   const products = await db.select().from(productsTable).where(inArray(productsTable.id, items.map((item) => item.productId)));
   const byId = new Map(products.map((product) => [product.id, product]));
   const eligible = items.filter((item) => {
+    if (isFlashAlwaysShow(item.alwaysShow)) return false;
     const product = byId.get(item.productId);
     if (!product) return false;
     return isFlashProductEligible(Number(item.flashPrice), product, now);
@@ -137,6 +140,53 @@ async function offerFromCampaign(campaignId: string, now: Date): Promise<FlashDr
     flashPrice: Number(picked.flashPrice),
     hasVariants: parseVariantGroups(product.variantGroups).length > 0,
   };
+}
+
+async function collectAlwaysShowOffers(
+  campaigns: Array<typeof flashCampaignsTable.$inferSelect>,
+  hour: number,
+): Promise<FlashDrawOffer[]> {
+  const offers: FlashDrawOffer[] = [];
+  const now = new Date();
+  for (const campaign of campaigns) {
+    if (!isFlashHourOpen(campaign.startHour, campaign.endHour, hour)) continue;
+    const activeRows = await db
+      .select({ id: flashReservationsTable.id })
+      .from(flashReservationsTable)
+      .where(and(
+        eq(flashReservationsTable.campaignId, campaign.id),
+        eq(flashReservationsTable.status, "active"),
+        gt(flashReservationsTable.expiresAt, now),
+      ));
+    if (activeRows.length >= campaign.slotLimit) continue;
+
+    const items = await db
+      .select()
+      .from(flashCampaignItemsTable)
+      .where(eq(flashCampaignItemsTable.campaignId, campaign.id));
+    const alwaysItems = items.filter((item) => isFlashAlwaysShow(item.alwaysShow));
+    if (alwaysItems.length === 0) continue;
+
+    const products = await db
+      .select()
+      .from(productsTable)
+      .where(inArray(productsTable.id, alwaysItems.map((item) => item.productId)));
+    const byId = new Map(products.map((product) => [product.id, product]));
+    for (const item of alwaysItems) {
+      const product = byId.get(item.productId);
+      if (!product || !isFlashProductEligible(Number(item.flashPrice), product, now)) continue;
+      offers.push({
+        campaignId: campaign.id,
+        productId: product.id,
+        name: product.name,
+        image: product.image,
+        chargedPrice: chargedCatalogPrice(product, now),
+        flashPrice: Number(item.flashPrice),
+        hasVariants: parseVariantGroups(product.variantGroups).length > 0,
+      });
+    }
+  }
+  return offers;
 }
 
 async function recordVisit(input: {
@@ -210,9 +260,10 @@ router.post("/flash-offers/draw", async (req, res) => {
 
     const offers: FlashDrawOffer[] = [];
     const forceFirstVisit = await isFlashForceFirstVisit();
+    const alwaysOffers = await collectAlwaysShowOffers(campaigns, hour);
     if (forceFirstVisit) {
       if (await forceFirstVisitAlreadyShown(visitorId, userId)) {
-        res.json({ offers: [], offer: null });
+        res.json({ offers: alwaysOffers, offer: alwaysOffers[0] ?? null });
         return;
       }
       const now = new Date();
@@ -239,7 +290,8 @@ router.post("/flash-offers/draw", async (req, res) => {
           today,
         });
       }
-      res.json({ offers, offer: offers[0] ?? null });
+      const merged = mergeFlashDrawOffers(alwaysOffers, offers);
+      res.json({ offers: merged, offer: merged[0] ?? null });
       return;
     }
 
@@ -332,12 +384,13 @@ router.post("/flash-offers/draw", async (req, res) => {
         .select()
         .from(flashCampaignItemsTable)
         .where(eq(flashCampaignItemsTable.campaignId, campaign.id));
-      if (items.length === 0) continue;
+      const drawable = items.filter((item) => !isFlashAlwaysShow(item.alwaysShow));
+      if (drawable.length === 0) continue;
 
-      const productIds = items.map((item) => item.productId);
+      const productIds = drawable.map((item) => item.productId);
       const products = await db.select().from(productsTable).where(inArray(productsTable.id, productIds));
       const byId = new Map(products.map((product) => [product.id, product]));
-      const eligible = items.filter((item) => {
+      const eligible = drawable.filter((item) => {
         const product = byId.get(item.productId);
         if (!product) return false;
         return isFlashProductEligible(Number(item.flashPrice), product, now);
@@ -381,7 +434,8 @@ router.post("/flash-offers/draw", async (req, res) => {
       });
     }
 
-    res.json({ offers, offer: offers[0] ?? null });
+    const merged = mergeFlashDrawOffers(alwaysOffers, offers);
+    res.json({ offers: merged, offer: merged[0] ?? null });
   } catch (err) {
     console.error("[flash-offers] draw", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
@@ -404,6 +458,14 @@ router.post("/flash-offers/claim", async (req, res) => {
     const session = getCustomerSession(req);
     const userId = session?.userId ?? null;
 
+    const [alwaysItem] = await db
+      .select({ alwaysShow: flashCampaignItemsTable.alwaysShow })
+      .from(flashCampaignItemsTable)
+      .where(and(
+        eq(flashCampaignItemsTable.campaignId, campaignId),
+        eq(flashCampaignItemsTable.productId, productId),
+      ))
+      .limit(1);
     const [visit] = await db
       .select()
       .from(flashVisitsTable)
@@ -423,7 +485,7 @@ router.post("/flash-offers/claim", async (req, res) => {
         ))
         .limit(1)
       : [];
-    if (visit?.result !== "seen" && accountSeen.length === 0) {
+    if (!isFlashAlwaysShow(alwaysItem?.alwaysShow) && visit?.result !== "seen" && accountSeen.length === 0) {
       jsonError(res, 403, "FLASH_FORBIDDEN", "Oferta inválida.");
       return;
     }
@@ -722,6 +784,7 @@ async function mapCampaign(row: typeof flashCampaignsTable.$inferSelect) {
         productName: product?.name ?? "Produto removido",
         catalogPrice: product ? Number(product.price) : null,
         flashPrice: Number(item.flashPrice),
+        alwaysShow: isFlashAlwaysShow(item.alwaysShow),
       };
     }),
     ...stats,
@@ -786,6 +849,11 @@ function readCampaignFields(body: unknown, creating: boolean): {
 }
 
 async function replaceItems(campaignId: string, rows: Array<{ productId: string; flashPrice: string }>): Promise<void> {
+  const existing = await db
+    .select({ productId: flashCampaignItemsTable.productId, alwaysShow: flashCampaignItemsTable.alwaysShow })
+    .from(flashCampaignItemsTable)
+    .where(eq(flashCampaignItemsTable.campaignId, campaignId));
+  const alwaysByProduct = new Map(existing.map((row) => [row.productId, isFlashAlwaysShow(row.alwaysShow)]));
   await db.delete(flashCampaignItemsTable).where(eq(flashCampaignItemsTable.campaignId, campaignId));
   if (rows.length === 0) return;
   await db.insert(flashCampaignItemsTable).values(rows.map((row) => ({
@@ -793,6 +861,7 @@ async function replaceItems(campaignId: string, rows: Array<{ productId: string;
     campaignId,
     productId: row.productId,
     flashPrice: row.flashPrice,
+    alwaysShow: alwaysByProduct.get(row.productId) === true,
   })));
 }
 
@@ -876,6 +945,36 @@ router.patch("/admin/flash-campaigns/:id", requirePrimaryAdmin, async (req, res)
     res.json({ campaign: await mapCampaign(row!) });
   } catch (err) {
     console.error("[flash-offers] update", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
+router.patch("/admin/flash-campaigns/:id/items/:itemId", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    const itemId = String(req.params.itemId || "");
+    const [item] = await db
+      .select()
+      .from(flashCampaignItemsTable)
+      .where(and(
+        eq(flashCampaignItemsTable.id, itemId),
+        eq(flashCampaignItemsTable.campaignId, id),
+      ))
+      .limit(1);
+    if (!item) {
+      jsonError(res, 404, "NOT_FOUND", "Produto da campanha não encontrado.");
+      return;
+    }
+    const alwaysShow = isFlashAlwaysShow((req.body as { alwaysShow?: unknown } | null)?.alwaysShow);
+    await db.update(flashCampaignItemsTable).set({ alwaysShow }).where(eq(flashCampaignItemsTable.id, itemId));
+    const [row] = await db.select().from(flashCampaignsTable).where(eq(flashCampaignsTable.id, id)).limit(1);
+    if (!row) {
+      jsonError(res, 404, "NOT_FOUND", "Campanha não encontrada.");
+      return;
+    }
+    res.json({ campaign: await mapCampaign(row) });
+  } catch (err) {
+    console.error("[flash-offers] always-show", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
   }
 });
