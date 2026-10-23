@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImageOff } from "lucide-react";
+import { ChevronDown, ChevronUp, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { isPromoStillActive } from "@/lib/promo-ends-at";
@@ -134,6 +134,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [saving, setSaving] = useState(false);
   const [forceFirstVisit, setForceFirstVisit] = useState(false);
   const [forceSaving, setForceSaving] = useState(false);
+  const [openVisitorIds, setOpenVisitorIds] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     const [campaignRes, productRes, settingsRes] = await Promise.all([
@@ -488,17 +489,32 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
               })}
             </ul>
             {(campaign.reservations || []).length > 0 ? (
-              <ul className="mt-3 divide-y divide-border border-t border-border text-sm">
-                {(campaign.reservations || []).map((row) => (
-                  <li key={row.id} className="flex items-center gap-3 py-2">
-                    <span className="w-28 shrink-0 truncate font-medium" title={row.name}>{row.name}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.productName}</span>
-                    <span className="shrink-0 font-semibold text-[#ff6a00]">{formatCurrency(row.flashPrice)}</span>
-                    {row.orderNumber != null ? <span className="shrink-0 text-muted-foreground">#{row.orderNumber}</span> : null}
-                    <span className="w-44 shrink-0 text-right text-xs text-muted-foreground">{reservationLabel(row)}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-3 border-t border-border pt-2">
+                <button
+                  type="button"
+                  aria-expanded={openVisitorIds[campaign.id] === true}
+                  onClick={() => setOpenVisitorIds((current) => ({ ...current, [campaign.id]: !current[campaign.id] }))}
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-primary"
+                >
+                  {openVisitorIds[campaign.id] ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {openVisitorIds[campaign.id]
+                    ? "Ocultar visitantes"
+                    : `Ver visitantes (${(campaign.reservations || []).length})`}
+                </button>
+                {openVisitorIds[campaign.id] ? (
+                  <ul className="mt-1 max-h-96 divide-y divide-border overflow-y-auto text-sm">
+                    {(campaign.reservations || []).map((row) => (
+                      <li key={row.id} className="flex items-center gap-3 py-2">
+                        <span className="w-28 shrink-0 truncate font-medium" title={row.name}>{row.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.productName}</span>
+                        <span className="shrink-0 font-semibold text-[#ff6a00]">{formatCurrency(row.flashPrice)}</span>
+                        {row.orderNumber != null ? <span className="shrink-0 text-muted-foreground">#{row.orderNumber}</span> : null}
+                        <span className="w-44 shrink-0 text-right text-xs text-muted-foreground">{reservationLabel(row)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
             ) : null}
           </article>
         ))}
