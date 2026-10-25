@@ -199,43 +199,20 @@ async function recordVisit(input: {
   existingId?: string | null;
 }): Promise<void> {
   const now = new Date();
-  if (input.existingId) {
-    await db.update(flashVisitsTable).set({
-      userId: input.userId,
-      ipHash: input.ipHash,
-      result: input.result,
-      visitedOn: input.today,
-      createdAt: now,
-      updatedAt: now,
-    }).where(eq(flashVisitsTable.id, input.existingId));
-    return;
-  }
-  try {
-    await db.insert(flashVisitsTable).values({
-      id: crypto.randomBytes(12).toString("hex"),
-      campaignId: input.campaignId,
-      visitorId: input.visitorId,
-      userId: input.userId,
-      ipHash: input.ipHash,
-      result: input.result,
-      visitedOn: input.today,
-      updatedAt: now,
-    });
-  } catch (err) {
-    const code = String((err as { code?: string })?.code || "");
-    if (code !== "ER_DUP_ENTRY") throw err;
-    await db.update(flashVisitsTable).set({
-      userId: input.userId,
-      ipHash: input.ipHash,
-      result: input.result,
-      visitedOn: input.today,
-      createdAt: now,
-      updatedAt: now,
-    }).where(and(
-      eq(flashVisitsTable.campaignId, input.campaignId),
-      eq(flashVisitsTable.visitorId, input.visitorId),
-    ));
-  }
+  const visit = {
+    userId: input.userId,
+    ipHash: input.ipHash,
+    result: input.result,
+    visitedOn: input.today,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.insert(flashVisitsTable).values({
+    id: input.existingId || crypto.randomBytes(12).toString("hex"),
+    campaignId: input.campaignId,
+    visitorId: input.visitorId,
+    ...visit,
+  }).onDuplicateKeyUpdate({ set: visit });
 }
 
 router.post("/flash-offers/draw", async (req, res) => {

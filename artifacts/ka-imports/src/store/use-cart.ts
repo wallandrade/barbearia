@@ -100,10 +100,22 @@ function getTierUnitPrice(baseUnitPrice: number, quantity: number, tiers: BulkDi
   return match?.unitPrice ?? baseUnitPrice;
 }
 
+export type ServerUnitPrice = {
+  id: string;
+  sentPrice: number;
+  currentPrice: number;
+};
+
+type CatalogProduct = Product & {
+  bulkDiscountEnabled?: boolean;
+  bulkDiscountTiers?: unknown;
+};
+
 interface CartState {
   items: CartItemExtended[];
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
+  resyncFromCatalog: (catalog: CatalogProduct[] | null, serverPrices?: ServerUnitPrice[]) => void;
   addItem: (
     product: Product,
     options?: {
@@ -134,6 +146,48 @@ export const useCart = create<CartState>()(
       isOpen: false,
 
       setIsOpen: (isOpen) => set({ isOpen }),
+
+      resyncFromCatalog: (catalog, serverPrices = []) => {
+        const byId = catalog ? new Map(catalog.map((product) => [product.id, product])) : null;
+        set((state) => {
+          const pending = serverPrices.map((row) => ({ ...row }));
+          return {
+            items: state.items.flatMap((item) => {
+              if (item.isBump) return byId ? [] : [item];
+              const product = byId?.get(item.id);
+              if (byId && (!product || isProductUnavailable(product))) return [];
+
+              const changeIndex = pending.findIndex((row) =>
+                row.id === item.id && Math.abs(row.sentPrice - item.price) < 0.001,
+              );
+              const accepted = changeIndex >= 0 ? pending.splice(changeIndex, 1)[0]?.currentPrice : null;
+              if (item.flashOffer && item.flashReservationId) {
+                const price = accepted ?? item.price;
+                return [{ ...item, price, baseUnitPrice: price }];
+              }
+              if (!product) {
+                if (accepted == null) return [item];
+                return [{ ...item, price: accepted }];
+              }
+
+              const bulkDiscountEnabled = product.bulkDiscountEnabled === true;
+              const bulkDiscountTiers = bulkDiscountEnabled
+                ? parseBulkDiscountTiers(product.bulkDiscountTiers)
+                : [];
+              const baseUnitPrice = getBaseUnitPrice(product);
+              const price = accepted ?? getTierUnitPrice(baseUnitPrice, item.quantity, bulkDiscountTiers);
+              return [{
+                ...item,
+                price,
+                baseUnitPrice,
+                regularPrice: Number(product.price) || item.regularPrice,
+                bulkDiscountEnabled,
+                bulkDiscountTiers,
+              }];
+            }),
+          };
+        });
+      },
 
       addBumpItem: (bumpOfferId, anchorProductId, product, bumpedPrice, bumpedQty) => {
         const cartId = `bump_${bumpOfferId}`;

@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { cartLineId } from "@/lib/product-variants";
-import { isProductUnavailable, useCart } from "@/store/use-cart";
+import { isProductUnavailable, useCart, type ServerUnitPrice } from "@/store/use-cart";
 import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
@@ -164,9 +164,23 @@ const checkoutSchema = z.object({
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
 
+function readServerUnitPrices(value: unknown): ServerUnitPrice[] {
+  if (!value || typeof value !== "object") return [];
+  const items = (value as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const id = String((row as { id?: unknown }).id || "").trim();
+    const sentPrice = Number((row as { sentPrice?: unknown }).sentPrice);
+    const currentPrice = Number((row as { currentPrice?: unknown }).currentPrice);
+    if (!id || !Number.isFinite(sentPrice) || !Number.isFinite(currentPrice)) return [];
+    return [{ id, sentPrice, currentPrice }];
+  });
+}
+
 export default function Checkout() {
   const [location, setLocation] = useLocation();
-  const { items, getSubtotal, getCardSubtotal, clearCart, addItem, addBumpItem, removeItem, updateQuantity, setIsOpen } = useCart();
+  const { items, getSubtotal, getCardSubtotal, clearCart, addItem, addBumpItem, removeItem, updateQuantity, setIsOpen, resyncFromCatalog } = useCart();
 
   // Garante que o carrinho lateral não abre no checkout
   useEffect(() => { setIsOpen(false); }, [setIsOpen]);
@@ -348,62 +362,27 @@ export default function Checkout() {
     }
   }, [items, removeItem]);
 
-  const syncCartWithLatestProducts = useCallback(async () => {
-    const previousItems = [...items];
-
+  const syncCartWithLatestProducts = useCallback(async (serverPrices?: ServerUnitPrice[]) => {
     try {
       const res = await fetch(`${BASE}/api/products`);
-      if (!res.ok) return false;
-
-      const data = await res.json() as { products?: Array<{
-        id: string;
-        name: string;
-        price: number;
-        promoPrice?: number | null;
-        promoEndsAt?: string | null;
-        image?: string | null;
-        unit?: string;
-        category?: string;
-        description?: string;
-        isActive?: boolean;
-        isSoldOut?: boolean;
-        stock?: number;
-      }> };
-
-      const byId = new Map((data.products ?? []).map((product) => [product.id, product]));
-
-      clearCart();
-      for (const item of previousItems) {
-        const isBump = (item as { isBump?: boolean }).isBump === true;
-        if (isBump) continue;
-
-        const product = byId.get(item.id);
-        if (!product || isProductUnavailable(product as Parameters<typeof isProductUnavailable>[0])) continue;
-
-        const flashReservationId = (item as { flashReservationId?: string }).flashReservationId;
-        if ((item as { flashOffer?: boolean }).flashOffer && flashReservationId) {
-          addItem(product as Parameters<typeof addItem>[0], {
-            quantity: item.quantity,
-            unitPrice: item.price,
-            selectedVariants: (item as { selectedVariants?: Array<{ groupName?: string; option?: string }> }).selectedVariants,
-            flash: {
-              reservationId: flashReservationId,
-              expiresAt: (item as { flashExpiresAt?: string }).flashExpiresAt || "",
-              catalogPrice: (item as { regularPrice?: number }).regularPrice,
-            },
-          });
-          continue;
-        }
-
-        addItem(product as Parameters<typeof addItem>[0], { quantity: item.quantity });
+      if (!res.ok) {
+        if (!serverPrices?.length) return false;
+        resyncFromCatalog(null, serverPrices);
+        setAppliedCoupon(null);
+        return true;
       }
 
+      const data = await res.json() as { products?: Parameters<typeof resyncFromCatalog>[0] };
+      resyncFromCatalog(data.products ?? [], serverPrices ?? []);
       setAppliedCoupon(null);
       return true;
     } catch {
-      return false;
+      if (!serverPrices?.length) return false;
+      resyncFromCatalog(null, serverPrices);
+      setAppliedCoupon(null);
+      return true;
     }
-  }, [items, clearCart, addItem]);
+  }, [resyncFromCatalog]);
 
   // Order bumps for checkout
   interface CheckoutBump {
@@ -537,11 +516,12 @@ export default function Checkout() {
 
       if (!resp.ok) {
         const error = new Error(String(result.message || "Erro ao registrar pedido.")) as Error & {
-          data?: { error?: string; message?: string };
+          data?: { error?: string; message?: string; items?: ServerUnitPrice[] };
         };
         error.data = {
           error: typeof result.error === "string" ? result.error : undefined,
           message: typeof result.message === "string" ? result.message : undefined,
+          items: readServerUnitPrices(result),
         };
         throw error;
       }
@@ -1542,7 +1522,7 @@ export default function Checkout() {
 
       if (!resp.ok) {
         if (result.error === "PRICE_CHANGED") {
-          const synced = await syncCartWithLatestProducts();
+          const synced = await syncCartWithLatestProducts(readServerUnitPrices(result));
           toast.error(result.message || "Os preços mudaram e o carrinho foi atualizado.");
           if (synced) toast.info("Revise os novos valores e finalize novamente.");
           return;
@@ -1874,9 +1854,9 @@ export default function Checkout() {
       clearCart();
       setIsOpen(false);
     } catch (error) {
-      const apiError = error as { data?: { error?: string; message?: string } };
+      const apiError = error as { data?: { error?: string; message?: string; items?: ServerUnitPrice[] } };
       if (apiError?.data?.error === "PRICE_CHANGED") {
-        const synced = await syncCartWithLatestProducts();
+        const synced = await syncCartWithLatestProducts(apiError.data.items);
         toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
         if (synced) toast.info("Revise os novos valores e tente novamente.");
         return;
@@ -1996,9 +1976,9 @@ export default function Checkout() {
       setKycWhatsAppUrl(waUrl);
       setCardModalStep("kyc_link");
     } catch (error) {
-      const apiError = error as { data?: { error?: string; message?: string } };
+      const apiError = error as { data?: { error?: string; message?: string; items?: ServerUnitPrice[] } };
       if (apiError?.data?.error === "PRICE_CHANGED") {
-        const synced = await syncCartWithLatestProducts();
+        const synced = await syncCartWithLatestProducts(apiError.data.items);
         toast.error(apiError?.data?.message || "Os preços mudaram e o carrinho foi atualizado.");
         if (synced) toast.info("Revise os novos valores e tente novamente.");
         return;
