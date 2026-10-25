@@ -47,6 +47,7 @@ type CartItemExtended = CartItem & {
   bumpProductId?: string;
   flashOffer?: boolean;
   flashReservationId?: string;
+  flashUnitPrice?: number;
   flashExpiresAt?: string;
 };
 
@@ -152,13 +153,16 @@ export const useCart = create<CartState>()(
               const product = byId?.get(item.id);
               if (byId && (!product || isProductUnavailable(product))) return [];
 
+              const sentPrice = item.flashOffer && item.flashReservationId
+                ? Number(item.flashUnitPrice ?? item.price)
+                : item.price;
               const changeIndex = pending.findIndex((row) =>
-                row.id === item.id && Math.abs(row.sentPrice - item.price) < 0.001,
+                row.id === item.id && Math.abs(row.sentPrice - sentPrice) < 0.001,
               );
               const accepted = changeIndex >= 0 ? pending.splice(changeIndex, 1)[0]?.currentPrice : null;
               if (item.flashOffer && item.flashReservationId) {
-                const price = accepted ?? item.price;
-                return [{ ...item, price, baseUnitPrice: price }];
+                const price = accepted ?? sentPrice;
+                return [{ ...item, price, baseUnitPrice: price, flashUnitPrice: price }];
               }
               if (!product) {
                 if (accepted == null) return [item];
@@ -284,6 +288,7 @@ export const useCart = create<CartState>()(
                   variantLabel: variantLabel || undefined,
                   flashOffer: true,
                   flashReservationId: options.flash.reservationId,
+                  flashUnitPrice: flashPrice,
                   flashExpiresAt: options.flash.expiresAt,
                 } as CartItemExtended,
               ],

@@ -34,7 +34,7 @@ import {
   loadFlashLinePlan,
   type FlashLinePlan,
 } from "../lib/flash-offer-checkout";
-import { flashQuantityAllowed } from "../lib/flash-offer-logic";
+import { flashQuantityAllowed, isFlashCheckoutLine } from "../lib/flash-offer-logic";
 
 const router: IRouter = Router();
 
@@ -328,6 +328,10 @@ router.post("/checkout/pix", async (req, res) => {
     const variantErrors: string[] = [];
     const priceChanges: Array<{ id: string; name: string; sentPrice: number; currentPrice: number }> = [];
     let flashUnits = 0;
+    const anyLineMarkedFlash = productItems.some((item) => {
+      const row = item as { flashOffer?: boolean; isBump?: boolean };
+      return row.flashOffer === true && row.isBump !== true;
+    });
     const orderProducts = productItems
       .map((item) => {
         const productId = String(item.id || "").trim();
@@ -342,7 +346,13 @@ router.post("/checkout/pix", async (req, res) => {
 
         const sentUnitPrice = Number(item.price) || 0;
         const isBump = item.isBump === true;
-        const isFlashLine = Boolean(flashPlan && !isBump && productId === flashPlan.productId);
+        const isFlashLine = isFlashCheckoutLine({
+          flashPlanProductId: flashPlan?.productId ?? null,
+          lineProductId: productId,
+          isBump,
+          lineMarkedFlash: (item as { flashOffer?: boolean }).flashOffer === true,
+          anyLineMarkedFlash,
+        });
         if (isFlashLine) flashUnits += quantity;
         const serverUnitPrice = isBump
           ? sentUnitPrice

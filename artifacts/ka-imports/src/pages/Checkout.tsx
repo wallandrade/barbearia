@@ -142,6 +142,39 @@ function resolveVariantLabel(item: Record<string, unknown>): string {
   return selected.map((variant) => `${variant.groupName}: ${variant.option}`).join(" / ");
 }
 
+type CheckoutCartLine = {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  regularPrice?: number;
+  isBump?: boolean;
+  bumpProductId?: string;
+  flashOffer?: boolean;
+  flashReservationId?: string;
+  flashUnitPrice?: number;
+  selectedVariants?: unknown;
+  variantLabel?: string;
+};
+
+function checkoutProductLines(items: CheckoutCartLine[], mode: "charged" | "card") {
+  return items.map((item) => {
+    const isFlash = item.flashOffer === true && Boolean(item.flashReservationId);
+    const reserved = Number(item.flashUnitPrice ?? item.price);
+    const charged = isFlash && Number.isFinite(reserved) && reserved > 0 ? reserved : item.price;
+    return {
+      id: item.bumpProductId ?? item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: mode === "card" ? (item.regularPrice ?? item.price) : charged,
+      isBump: item.isBump === true,
+      flashOffer: mode === "charged" && isFlash ? true as const : undefined,
+      selectedVariants: normalizeSelectedVariants(item.selectedVariants),
+      variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
+    };
+  });
+}
+
 function formatCEP(value: string) {
   const d = value.replace(/\D/g, "").slice(0, 8);
   if (d.length <= 5) return d;
@@ -1478,67 +1511,68 @@ export default function Checkout() {
         state: data.state,
       };
 
-      const productsPayload = (await checkoutItemsAtCatalogPrice()).map((item) => ({
-        id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        isBump: (item as { isBump?: boolean }).isBump === true,
-        selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
-        variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
-      }));
+      let productsPayload = checkoutProductLines(await checkoutItemsAtCatalogPrice() as CheckoutCartLine[], "charged");
 
       const affiliateCode = getStoredReferralCode();
 
-      const resp = await fetch(`${BASE}/api/checkout/pix`, {
-        method: "POST",
-        headers: await getCheckoutSecurityHeaders(getCustomerAuthHeaders() as Record<string, string>),
-        body: JSON.stringify({
-          client: clientPayload,
-          address: addressPayload,
-          products: productsPayload,
-          shippingType:    selectedShipping?.name ?? "Frete",
-          includeInsurance,
-          insurancePlan,
-          subtotal,
-          shippingCost,
-          insuranceAmount,
-          total,
-          sellerCode,
-          affiliateCode:   affiliateCode || undefined,
-          useAffiliateCredit,
-          useStoreCredit,
-          couponCode:      hasFlashOffer ? undefined : appliedCoupon?.code,
-          discountAmount:  discountAmount > 0 ? discountAmount : undefined,
-          ...flashCheckoutBody(),
-          draftId: sessionStorage.getItem("yury_checkout_draft_id") || undefined,
-        }),
-      });
-
-      const result = await resp.json() as {
-        error?: string;
-        orderId?: string;
-        orderNumber?: number | null;
-        transactionId?: string;
-        status?: string;
-        pixCode?: string;
-        pixBase64?: string;
-        pixImage?: string;
-        expiresAt?: string;
-        coveredByAffiliateCredit?: boolean;
-        coveredByStoreCredit?: boolean;
-        affiliateCreditUsed?: number;
-        remainingToPay?: number;
-        message?: string;
-        sellerCode?: string | null;
-        sellerWhatsapp?: string | null;
+      const postPix = async () => {
+        const response = await fetch(`${BASE}/api/checkout/pix`, {
+          method: "POST",
+          headers: await getCheckoutSecurityHeaders(getCustomerAuthHeaders() as Record<string, string>),
+          body: JSON.stringify({
+            client: clientPayload,
+            address: addressPayload,
+            products: productsPayload,
+            shippingType:    selectedShipping?.name ?? "Frete",
+            includeInsurance,
+            insurancePlan,
+            subtotal,
+            shippingCost,
+            insuranceAmount,
+            total,
+            sellerCode,
+            affiliateCode:   affiliateCode || undefined,
+            useAffiliateCredit,
+            useStoreCredit,
+            couponCode:      hasFlashOffer ? undefined : appliedCoupon?.code,
+            discountAmount:  discountAmount > 0 ? discountAmount : undefined,
+            ...flashCheckoutBody(),
+            draftId: sessionStorage.getItem("yury_checkout_draft_id") || undefined,
+          }),
+        });
+        const body = await response.json() as {
+          error?: string;
+          orderId?: string;
+          orderNumber?: number | null;
+          transactionId?: string;
+          status?: string;
+          pixCode?: string;
+          pixBase64?: string;
+          pixImage?: string;
+          expiresAt?: string;
+          coveredByAffiliateCredit?: boolean;
+          coveredByStoreCredit?: boolean;
+          affiliateCreditUsed?: number;
+          remainingToPay?: number;
+          message?: string;
+          sellerCode?: string | null;
+          sellerWhatsapp?: string | null;
+          items?: unknown;
+        };
+        return { response, body };
       };
+
+      let { response: resp, body: result } = await postPix();
+      if (!resp.ok && result.error === "PRICE_CHANGED") {
+        await syncCartWithLatestProducts(readServerUnitPrices(result));
+        productsPayload = checkoutProductLines(useCart.getState().items as CheckoutCartLine[], "charged");
+        ({ response: resp, body: result } = await postPix());
+      }
 
       if (!resp.ok) {
         if (result.error === "PRICE_CHANGED") {
-          const synced = await syncCartWithLatestProducts(readServerUnitPrices(result));
           toast.error(result.message || "Os preços mudaram e o carrinho foi atualizado.");
-          if (synced) toast.info("Revise os novos valores e finalize novamente.");
+          toast.info("Revise os novos valores e finalize novamente.");
           return;
         }
         toast.error(result.message || "Erro ao gerar pagamento PIX. Verifique os dados e tente novamente.");
@@ -1737,22 +1771,14 @@ export default function Checkout() {
     const cartAvailable = await validateCartAvailability();
     if (!cartAvailable) return;
 
-    const productsPayload = (await checkoutItemsAtCatalogPrice()).map((item) => ({
-      id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-      isBump: (item as { isBump?: boolean }).isBump === true,
-      selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
-      variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
-    }));
-    const pricedSubtotal = productsPayload.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const pricedPayable = Math.max(0, payableTotal - subtotal + pricedSubtotal);
+    let productsPayload = checkoutProductLines(await checkoutItemsAtCatalogPrice() as CheckoutCartLine[], "charged");
+    let pricedSubtotal = productsPayload.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    let pricedPayable = Math.max(0, payableTotal - subtotal + pricedSubtotal);
 
     const affiliateCode = getStoredReferralCode();
 
     try {
-      const order = await createOrderWithSecurity({
+      const orderBody = () => ({
         client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
         address: {
           cep: data.cep,
@@ -1771,13 +1797,25 @@ export default function Checkout() {
         shippingCost,
         insuranceAmount,
         total,
-        paymentMethod: "whatsapp_pix",
+        paymentMethod: "whatsapp_pix" as const,
         sellerCode,
         affiliateCode: affiliateCode || undefined,
         couponCode: hasFlashOffer ? undefined : appliedCoupon?.code,
         discountAmount: discountAmount > 0 ? discountAmount : undefined,
         ...flashCheckoutBody(),
       });
+      let order;
+      try {
+        order = await createOrderWithSecurity(orderBody());
+      } catch (error) {
+        const apiError = error as { data?: { error?: string; items?: ServerUnitPrice[] } };
+        if (apiError?.data?.error !== "PRICE_CHANGED") throw error;
+        await syncCartWithLatestProducts(apiError.data.items);
+        productsPayload = checkoutProductLines(useCart.getState().items as CheckoutCartLine[], "charged");
+        pricedSubtotal = productsPayload.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        pricedPayable = Math.max(0, payableTotal - subtotal + pricedSubtotal);
+        order = await createOrderWithSecurity(orderBody());
+      }
 
       const itemsText = productsPayload
         .map((item) => {
@@ -1897,19 +1935,11 @@ export default function Checkout() {
     const cardFee = installments <= 3 ? 100 : 0;
     // Card uses regular (non-promo) prices
     const cardTotal = cardNetTotal + cardFee;
-    const cardProductsPayload = (await checkoutItemsAtCatalogPrice()).map((i) => ({
-      id: (i as { bumpProductId?: string }).bumpProductId ?? i.id,
-      name: i.name,
-      quantity: i.quantity,
-      price: (i as { regularPrice?: number }).regularPrice ?? i.price,
-      isBump: (i as { isBump?: boolean }).isBump === true,
-      selectedVariants: normalizeSelectedVariants((i as Record<string, unknown>).selectedVariants),
-      variantLabel: resolveVariantLabel(i as unknown as Record<string, unknown>) || undefined,
-    }));
+    let cardProductsPayload = checkoutProductLines(await checkoutItemsAtCatalogPrice() as CheckoutCartLine[], "card");
     const affiliateCode = getStoredReferralCode();
 
     try {
-      const order = await createOrderWithSecurity({
+      const orderBody = () => ({
         client: { name: data.name, email: data.email, phone: data.phone, document: data.document },
         address: {
           cep: data.cep,
@@ -1928,7 +1958,7 @@ export default function Checkout() {
         shippingCost,
         insuranceAmount: cardInsuranceAmount,
         total: cardTotal,
-        paymentMethod: "card_simulation",
+        paymentMethod: "card_simulation" as const,
         cardInstallments: installments,
         sellerCode,
         affiliateCode: affiliateCode || undefined,
@@ -1936,6 +1966,16 @@ export default function Checkout() {
         discountAmount: cardDiscountAmount > 0 ? cardDiscountAmount : undefined,
         ...flashCheckoutBody(),
       });
+      let order;
+      try {
+        order = await createOrderWithSecurity(orderBody());
+      } catch (error) {
+        const apiError = error as { data?: { error?: string; items?: ServerUnitPrice[] } };
+        if (apiError?.data?.error !== "PRICE_CHANGED") throw error;
+        await syncCartWithLatestProducts(apiError.data.items);
+        cardProductsPayload = checkoutProductLines(useCart.getState().items as CheckoutCartLine[], "card");
+        order = await createOrderWithSecurity(orderBody());
+      }
 
       await bookMotoboySlotForOrder(order.id, {
         neighborhood: data.neighborhood,

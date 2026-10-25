@@ -6,6 +6,7 @@ import {
   chargedCatalogPrice,
   flashQuantityAllowed,
   flashRejectsCoupon,
+  isFlashCheckoutLine,
   flashRollWins,
   flashVisitIpHash,
   flashVisitStillBlocks,
@@ -152,4 +153,13 @@ test("cupom junto não passa e a oferta aceita mais de uma unidade", () => {
   assert.equal(flashQuantityAllowed(1), true);
   assert.equal(flashQuantityAllowed(2), true);
   assert.equal(flashQuantityAllowed(0), false);
+});
+
+test("preço da reserva só na linha marcada como oferta", () => {
+  const base = { flashPlanProductId: "prod", lineProductId: "prod", isBump: false, lineMarkedFlash: false, anyLineMarkedFlash: false };
+  assert.equal(isFlashCheckoutLine(base), true);
+  assert.equal(isFlashCheckoutLine({ ...base, isBump: true }), false);
+  assert.equal(isFlashCheckoutLine({ ...base, lineProductId: "outro" }), false);
+  assert.equal(isFlashCheckoutLine({ ...base, anyLineMarkedFlash: true, lineMarkedFlash: false }), false);
+  assert.equal(isFlashCheckoutLine({ ...base, anyLineMarkedFlash: true, lineMarkedFlash: true }), true);
 });

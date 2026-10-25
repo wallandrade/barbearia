@@ -184,3 +184,17 @@ export function flashRejectsCoupon(reservationId: string, couponCode: string): b
 export function flashQuantityAllowed(quantity: number): boolean {
   return Number.isFinite(quantity) && quantity >= 1;
 }
+
+/** Preço da reserva só na linha marcada. Sem marca, vale em toda linha daquele produto. */
+export function isFlashCheckoutLine(input: {
+  flashPlanProductId: string | null;
+  lineProductId: string;
+  isBump: boolean;
+  lineMarkedFlash: boolean;
+  anyLineMarkedFlash: boolean;
+}): boolean {
+  if (!input.flashPlanProductId || input.isBump) return false;
+  if (input.lineProductId !== input.flashPlanProductId) return false;
+  if (input.anyLineMarkedFlash) return input.lineMarkedFlash;
+  return true;
+}
