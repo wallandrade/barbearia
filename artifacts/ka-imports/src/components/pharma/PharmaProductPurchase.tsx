@@ -5,7 +5,8 @@ import { formatCurrency } from "@/lib/utils";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { claimPendingFlashIfAny } from "@/lib/flash-offer";
 import { usePharmaAddedNotice } from "@/components/pharma/PharmaAddedNotice";
-import { parseBulkTiers, pharmaOffPercent, pharmaSalePrice, tierForQuantity } from "@/lib/pharma-catalog-query";
+import { catalogUnitPrice } from "@/lib/catalog-unit-price";
+import { pharmaOffPercent, pharmaSalePrice } from "@/lib/pharma-catalog-query";
 import { ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,29 +35,26 @@ export function PharmaProductPurchase({
   const [quantity, setQuantity] = useState(1);
   const isSoldOut = isProductUnavailable(product);
   const bulkEnabled = Boolean((product as { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled);
-  const tiers = useMemo(
-    () => parseBulkTiers((product as { bulkDiscountTiers?: unknown }).bulkDiscountTiers),
-    [product],
-  );
-  const hasTiers = bulkEnabled && tiers.length > 0;
+  const tiers = (product as { bulkDiscountTiers?: unknown }).bulkDiscountTiers;
+  const hasTiers = bulkEnabled && Array.isArray(tiers) && tiers.length > 0;
   const listPrice = Number(product.price) || 0;
-  const oneBox = tierForQuantity(1, tiers)?.unitPrice ?? pharmaSalePrice(product as never);
-  const unitPrice = hasTiers ? (tierForQuantity(quantity, tiers)?.unitPrice ?? oneBox) : pharmaSalePrice(product as never);
+  const oneBox = catalogUnitPrice(product, 1);
+  const unitPrice = catalogUnitPrice(product, quantity);
   const total = unitPrice * quantity;
   const photo = image || product.image || FALLBACK;
   const selectedCard = quantity >= 4 ? 4 : quantity;
 
   const wholesaleHint = useMemo(() => {
     if (!hasTiers) return null;
-    const current = tierForQuantity(quantity, tiers)?.unitPrice ?? oneBox;
+    const current = catalogUnitPrice(product, quantity);
     const next = [1, 2, 3, 4]
       .filter((qty) => qty > quantity)
-      .map((qty) => ({ qty, price: tierForQuantity(qty, tiers)?.unitPrice ?? current }))
+      .map((qty) => ({ qty, price: catalogUnitPrice(product, qty) }))
       .find((item) => item.price < current - 0.001);
     if (!next || !(oneBox > 0)) return null;
     const percent = Math.max(1, Math.round((1 - next.price / oneBox) * 100));
     return { more: next.qty - quantity, price: next.price, percent };
-  }, [hasTiers, quantity, tiers, oneBox]);
+  }, [hasTiers, quantity, product, oneBox]);
 
   function guard(): boolean {
     if (isSoldOut) {
@@ -124,7 +122,7 @@ export function PharmaProductPurchase({
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Tabela de preços</h2>
           <div className="grid grid-cols-4 gap-1.5">
             {[1, 2, 3, 4].map((qty) => {
-              const price = tierForQuantity(qty, tiers)?.unitPrice ?? oneBox;
+              const price = catalogUnitPrice(product, qty);
               const cheaper = price < oneBox - 0.001;
               const percent = cheaper ? pharmaOffPercent(oneBox, price) : null;
               const selected = selectedCard === qty;

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CartItem, Product } from "@workspace/api-client-react";
+import { catalogBaseUnitPrice, catalogUnitPrice } from "@/lib/catalog-unit-price";
 import {
   buildVariantLabel,
   cartLineKey,
@@ -61,14 +62,7 @@ function sameCartLine(item: CartItemExtended, lineKey: string): boolean {
 }
 
 function getBaseUnitPrice(product: Product): number {
-  const bulkEnabled = (product as Product & { bulkDiscountEnabled?: boolean }).bulkDiscountEnabled === true;
-  if (bulkEnabled) {
-    const tiers = parseBulkDiscountTiers((product as Product & { bulkDiscountTiers?: unknown }).bulkDiscountTiers);
-    const oneBoxTier = tiers.find((tier) => tier.minQty <= 1 && (tier.maxQty == null || tier.maxQty >= 1));
-    if (oneBoxTier) return oneBoxTier.unitPrice;
-  }
-  const promoActive = product.promoPrice != null && product.promoPrice < product.price;
-  return promoActive ? product.promoPrice! : product.price;
+  return catalogBaseUnitPrice(product);
 }
 
 function parseBulkDiscountTiers(raw: unknown): BulkDiscountTier[] {
@@ -116,6 +110,7 @@ interface CartState {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   resyncFromCatalog: (catalog: CatalogProduct[] | null, serverPrices?: ServerUnitPrice[]) => void;
+  alignCatalogPrices: (catalog: CatalogProduct[]) => void;
   addItem: (
     product: Product,
     options?: {
@@ -170,12 +165,12 @@ export const useCart = create<CartState>()(
                 return [{ ...item, price: accepted }];
               }
 
-              const bulkDiscountEnabled = product.bulkDiscountEnabled === true;
-              const bulkDiscountTiers = bulkDiscountEnabled
-                ? parseBulkDiscountTiers(product.bulkDiscountTiers)
-                : [];
-              const baseUnitPrice = getBaseUnitPrice(product);
-              const price = accepted ?? getTierUnitPrice(baseUnitPrice, item.quantity, bulkDiscountTiers);
+            const bulkDiscountEnabled = product.bulkDiscountEnabled === true;
+            const bulkDiscountTiers = bulkDiscountEnabled
+              ? parseBulkDiscountTiers(product.bulkDiscountTiers)
+              : [];
+            const baseUnitPrice = getBaseUnitPrice(product);
+            const price = accepted ?? catalogUnitPrice(product, item.quantity);
               return [{
                 ...item,
                 price,
@@ -186,6 +181,32 @@ export const useCart = create<CartState>()(
               }];
             }),
           };
+        });
+      },
+
+      alignCatalogPrices: (catalog) => {
+        const byId = new Map(catalog.map((product) => [product.id, product]));
+        set((state) => {
+          let changed = false;
+          const items = state.items.map((item) => {
+            if (item.isBump || (item.flashOffer && item.flashReservationId)) return item;
+            const product = byId.get(item.id);
+            if (!product || isProductUnavailable(product)) return item;
+            const price = catalogUnitPrice(product, item.quantity);
+            const baseUnitPrice = catalogBaseUnitPrice(product);
+            const bulkDiscountEnabled = product.bulkDiscountEnabled === true;
+            const bulkDiscountTiers = bulkDiscountEnabled
+              ? parseBulkDiscountTiers(product.bulkDiscountTiers)
+              : [];
+            const regularPrice = Number(product.price) || item.regularPrice;
+            const samePrice = Math.abs(price - item.price) < 0.001;
+            const sameBase = Math.abs(baseUnitPrice - Number(item.baseUnitPrice ?? item.price)) < 0.001;
+            const sameBulk = bulkDiscountEnabled === (item.bulkDiscountEnabled === true);
+            if (samePrice && sameBase && sameBulk) return item;
+            changed = true;
+            return { ...item, price, baseUnitPrice, regularPrice, bulkDiscountEnabled, bulkDiscountTiers };
+          });
+          return changed ? { items } : state;
         });
       },
 

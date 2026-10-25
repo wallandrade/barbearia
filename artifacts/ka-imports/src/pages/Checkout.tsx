@@ -180,7 +180,7 @@ function readServerUnitPrices(value: unknown): ServerUnitPrice[] {
 
 export default function Checkout() {
   const [location, setLocation] = useLocation();
-  const { items, getSubtotal, getCardSubtotal, clearCart, addItem, addBumpItem, removeItem, updateQuantity, setIsOpen, resyncFromCatalog } = useCart();
+  const { items, getSubtotal, getCardSubtotal, clearCart, addItem, addBumpItem, removeItem, updateQuantity, setIsOpen, resyncFromCatalog, alignCatalogPrices } = useCart();
 
   // Garante que o carrinho lateral não abre no checkout
   useEffect(() => { setIsOpen(false); }, [setIsOpen]);
@@ -310,6 +310,7 @@ export default function Checkout() {
         }
         setProductCategoryById(nextMap);
         setProductCatalogById(nextCatalog);
+        alignCatalogPrices((data.products ?? []) as Parameters<typeof alignCatalogPrices>[0]);
       })
       .catch(() => {
         if (!cancelled) {
@@ -321,7 +322,7 @@ export default function Checkout() {
     return () => {
       cancelled = true;
     };
-  }, [items]);
+  }, [items, alignCatalogPrices]);
 
   const validateCartAvailability = useCallback(async () => {
     const nonBumpItems = items.filter((item) => !(item as { isBump?: boolean }).isBump);
@@ -383,6 +384,19 @@ export default function Checkout() {
       return true;
     }
   }, [resyncFromCatalog]);
+
+  const checkoutItemsAtCatalogPrice = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/products`);
+      if (res.ok) {
+        const data = await res.json() as { products?: Parameters<typeof alignCatalogPrices>[0] };
+        alignCatalogPrices(data.products ?? []);
+      }
+    } catch {
+      // segue com o preço já mostrado
+    }
+    return useCart.getState().items;
+  }, [alignCatalogPrices]);
 
   // Order bumps for checkout
   interface CheckoutBump {
@@ -1464,7 +1478,7 @@ export default function Checkout() {
         state: data.state,
       };
 
-      const productsPayload = items.map((item) => ({
+      const productsPayload = (await checkoutItemsAtCatalogPrice()).map((item) => ({
         id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
         name: item.name,
         quantity: item.quantity,
@@ -1723,7 +1737,7 @@ export default function Checkout() {
     const cartAvailable = await validateCartAvailability();
     if (!cartAvailable) return;
 
-    const productsPayload = items.map((item) => ({
+    const productsPayload = (await checkoutItemsAtCatalogPrice()).map((item) => ({
       id: (item as { bumpProductId?: string }).bumpProductId ?? item.id,
       name: item.name,
       quantity: item.quantity,
@@ -1732,6 +1746,8 @@ export default function Checkout() {
       selectedVariants: normalizeSelectedVariants((item as Record<string, unknown>).selectedVariants),
       variantLabel: resolveVariantLabel(item as unknown as Record<string, unknown>) || undefined,
     }));
+    const pricedSubtotal = productsPayload.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const pricedPayable = Math.max(0, payableTotal - subtotal + pricedSubtotal);
 
     const affiliateCode = getStoredReferralCode();
 
@@ -1802,10 +1818,10 @@ export default function Checkout() {
             ? `🗓️ *Receber:* ${new Date(motoboySlotDate + "T12:00:00").toLocaleDateString("pt-BR")} — ${motoboySlotLabel || motoboySlotTime} (alguém em casa nesse intervalo)\n`
             : "") +
           `\n📦 *Itens:*\n${motoboyItemsText}\n\n` +
-          `💰 *Subtotal:* ${formatCurrency(subtotal)}\n` +
+          `💰 *Subtotal:* ${formatCurrency(pricedSubtotal)}\n` +
           (discountAmount > 0 ? `🏷️ *Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}:* -${formatCurrency(discountAmount)}\n` : "") +
           `🏍️ *Motoboy:* ${formatCurrency(shippingCost)}\n` +
-          `💵 *TOTAL: ${formatCurrency(payableTotal)}*\n\n` +
+          `💵 *TOTAL: ${formatCurrency(pricedPayable)}*\n\n` +
           `━━━━━━━━━━━━━━━━━━`
         : `Olá! Quero finalizar meu pedido.\n\n` +
           `Pedido: #${order.orderNumber != null ? String(order.orderNumber) : order.id}\n` +
@@ -1815,13 +1831,13 @@ export default function Checkout() {
           `E-mail: ${data.email}\n\n` +
           `Endereço: ${addressFull}\n\n` +
           `Itens:\n${itemsText}\n\n` +
-          `Subtotal: ${formatCurrency(subtotal)}\n` +
+          `Subtotal: ${formatCurrency(pricedSubtotal)}\n` +
           `Frete (${selectedShipping?.name ?? "Frete"}): ${formatCurrency(shippingCost)}${isFreeShippingEligible ? " (frete gratis)" : ""}\n` +
           (includeInsurance ? `${insurancePlanCustomerLabel(insurancePlan, insuranceCopy)}: +${formatCurrency(insuranceAmount)}\n` : "") +
           (discountAmount > 0
             ? `Desconto${appliedCoupon?.code ? ` (${appliedCoupon.code})` : ""}: -${formatCurrency(discountAmount)}\n`
             : "") +
-          `Total: ${formatCurrency(payableTotal)}\n\n` +
+          `Total: ${formatCurrency(pricedPayable)}\n\n` +
           `Pode me enviar a chave PIX para pagamento?`;
 
       rememberAssignedSeller(order.sellerCode, order.sellerWhatsapp);
@@ -1881,7 +1897,7 @@ export default function Checkout() {
     const cardFee = installments <= 3 ? 100 : 0;
     // Card uses regular (non-promo) prices
     const cardTotal = cardNetTotal + cardFee;
-    const cardProductsPayload = items.map((i) => ({
+    const cardProductsPayload = (await checkoutItemsAtCatalogPrice()).map((i) => ({
       id: (i as { bumpProductId?: string }).bumpProductId ?? i.id,
       name: i.name,
       quantity: i.quantity,

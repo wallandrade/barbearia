@@ -4,6 +4,7 @@ import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { PromoCountdown } from "@/components/product/PromoCountdown";
+import { catalogUnitPrice, promoPriceStillApplies } from "@/lib/catalog-unit-price";
 import { isPromoStillActive } from "@/lib/promo-ends-at";
 import { normalizeSelectedVariants, parseVariantGroups, variantGalleryImages, variantImageFromSelection, variantSelectionError } from "@/lib/product-variants";
 import { isProductUnavailable, useCart } from "@/store/use-cart";
@@ -84,7 +85,9 @@ export default function ProductDetail() {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [promoEndsAt]);
-  const hasPromo = product ? isPromoStillActive(product.promoPrice, product.price, promoEndsAt, nowMs) : false;
+  const hasPromo = product
+    ? promoPriceStillApplies(product, new Date(nowMs)) && Number(product.promoPrice) < Number(product.price)
+    : false;
   const isBulkDiscountEnabled = Boolean((product as { bulkDiscountEnabled?: boolean } | null)?.bulkDiscountEnabled);
   const bulkDiscountTiers = useMemo(
     () => parseBulkDiscountTiers((product as { bulkDiscountTiers?: unknown } | null)?.bulkDiscountTiers),
@@ -109,11 +112,9 @@ export default function ProductDetail() {
 
   const progressiveOptions = useMemo(() => {
     if (!product || !isBulkDiscountEnabled || bulkDiscountTiers.length === 0) return [];
-    const basePrice = displayUnitPrice;
 
     return [1, 2, 3, 4].map((quantity) => {
-      const tier = tierForQuantity(quantity, bulkDiscountTiers);
-      const unitPrice = tier?.unitPrice ?? basePrice;
+      const unitPrice = catalogUnitPrice(product, quantity, new Date(nowMs));
       const quantityLabel = quantity >= 4 ? "4cx+" : `${quantity}cx`;
       return {
         quantity,
@@ -122,7 +123,7 @@ export default function ProductDetail() {
         totalPrice: unitPrice * quantity,
       };
     });
-  }, [product, bulkDiscountTiers, displayUnitPrice, isBulkDiscountEnabled]);
+  }, [product, bulkDiscountTiers, isBulkDiscountEnabled, nowMs]);
   const variantGroups = useMemo(
     () => parseVariantGroups((product as { variantGroups?: unknown } | null)?.variantGroups),
     [product],
