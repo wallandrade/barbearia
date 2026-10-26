@@ -145,7 +145,7 @@ export function isSupportFloodText(text: string): boolean {
 }
 
 /** Atendente que não deve receber o menu. O n8n continua recebendo; a loja não responde. */
-export const ATTENDANT_LINE_PHONES = ["5511917739912"];
+export const ATTENDANT_LINE_PHONES = ["5511917739912", "5541996554887", "5545999127358"];
 
 /** Telefone de vendedor ou do checkout. Os dois números da loja não se respondem. */
 export function isStoreLinePhone(phone: string, lineNumbers: readonly string[]): boolean {

@@ -211,6 +211,10 @@ test("número da loja e a frase de limite não geram resposta", () => {
   assert.equal(isStoreLinePhone("553511917739912", ["3511917739912"]), true);
   assert.equal(isStoreLinePhone("5511999998888", ["35992420559", "3511917739912"]), false);
   assert.equal(isStoreLinePhone("+55 11 91773-9912", ATTENDANT_LINE_PHONES), true);
+  assert.equal(isStoreLinePhone("41996554887", ATTENDANT_LINE_PHONES), true);
+  assert.equal(isStoreLinePhone("5541996554887", ATTENDANT_LINE_PHONES), true);
+  assert.equal(isStoreLinePhone("45999127358", ATTENDANT_LINE_PHONES), true);
+  assert.equal(isStoreLinePhone("5545999127358", ATTENDANT_LINE_PHONES), true);
   assert.equal(isStoreLinePhone("5511999998888", ATTENDANT_LINE_PHONES), false);
   assert.equal(isSupportFloodText("Recebi muitas mensagens agora. Espera um minuto e tenta de novo."), true);
   assert.equal(isSupportFloodText("oi"), false);
