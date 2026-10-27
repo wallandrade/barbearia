@@ -45,6 +45,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-26 | Lista do banner mostra a foto do produto | Em **Produto ao clicar**, cada linha traz a imagem ao lado do nome. O produto escolhido também aparece com a foto | O destino do clique e a chave salva continuam iguais |
 | 2026-10-26 | Banner pode abrir um produto | Em Configurações, cada banner (home e catálogo, desktop e mobile) tem **Produto ao clicar**. O clique na loja abre a página desse produto. **Nenhum** deixa o banner só como imagem | Logo, tamanho da logo e o upload da arte iguais |
 | 2026-10-25 | Oferta relâmpago conclui no primeiro clique | A linha da oferta manda o preço da reserva. Outra linha do mesmo produto fica no preço normal. Se a API ainda recusar, o checkout tenta de novo no mesmo clique | Faixa e promoção dos outros produtos iguais |
 | 2026-10-25 | Primeiro clique do checkout manda o preço da API | Fora da faixa de quantidade vale promoção ou tabela, não o preço de 1 caixa. O carrinho ajusta isso antes de criar o pedido | Oferta relâmpago e bump continuam com o preço próprio |
@@ -502,7 +503,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 - Social proof (settings + entradas fake) — `social-proof`.
 - `site_settings` / rotas `settings.ts`: canais, WhatsApp, gateways por checkout, etc.
-- Banners da home e do topo do catálogo: `banner_desktop_product_id`, `banner_mobile_product_id`, `catalog_banner_desktop_product_id`, `catalog_banner_mobile_product_id`. Chaves públicas em `GET /api/settings`. O id tem de existir em `products`. Vazio apaga a chave. Na loja, o clique abre `/produto/:id` (ou `/:seller/produto/:id`). Sem produto, o banner não é link. Desktop e mobile podem apontar para produtos diferentes. A logo não tem destino.
+- Banners da home e do topo do catálogo: `banner_desktop_product_id`, `banner_mobile_product_id`, `catalog_banner_desktop_product_id`, `catalog_banner_mobile_product_id`. Chaves públicas em `GET /api/settings`. O id tem de existir em `products`. Vazio apaga a chave. Na loja, o clique abre `/produto/:id` (ou `/:seller/produto/:id`). Sem produto, o banner não é link. Desktop e mobile podem apontar para produtos diferentes. A logo não tem destino. A lista do admin mostra a foto do catálogo ao lado do nome.
 
 ## Chat informativo (biblioteca de compostos)
 

@@ -8125,6 +8125,7 @@ export default function Admin() {
               products={(Array.isArray(products) ? products : []).map((product) => ({
                 id: product.id,
                 name: product.name,
+                image: product.image ?? null,
                 isActive: product.isActive !== false,
               }))}
               productsLoading={productsLoading}
@@ -19378,6 +19379,19 @@ function parseLogoScalePercent(raw: string | undefined): number {
   return Math.min(180, Math.max(60, Math.round(parsed)));
 }
 
+type BannerLinkProduct = { id: string; name: string; image?: string | null; isActive?: boolean };
+
+function BannerProductThumb({ src }: { src?: string | null }) {
+  if (!src) {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <ImageOff className="h-4 w-4" />
+      </span>
+    );
+  }
+  return <img src={src} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover bg-white" />;
+}
+
 function BannerProductSelect({
   products,
   productsLoading,
@@ -19385,55 +19399,118 @@ function BannerProductSelect({
   saving,
   onChange,
 }: {
-  products: { id: string; name: string; isActive?: boolean }[];
+  products: BannerLinkProduct[];
   productsLoading: boolean;
   value: string;
   saving: boolean;
   onChange: (productId: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const needle = query.trim().toLocaleLowerCase("pt-BR");
   const selected = products.find((product) => product.id === value);
   const options = [...products]
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }))
-    .filter((product) => {
-      if (product.id === value) return true;
-      if (!needle) return true;
-      return product.name.toLocaleLowerCase("pt-BR").includes(needle);
-    });
+    .filter((product) => !needle || product.name.toLocaleLowerCase("pt-BR").includes(needle));
   const missing = Boolean(value) && !selected;
+  const busy = saving || productsLoading;
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = boxRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuBox({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (boxRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest("[data-banner-product-menu]")) return;
+      setOpen(false);
+    };
+    place();
+    document.addEventListener("mousedown", close);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  const choose = (productId: string) => {
+    onChange(productId);
+    setQuery("");
+    setOpen(false);
+  };
 
   return (
     <div className="mb-4 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Produto ao clicar</p>
       <p className="text-xs text-muted-foreground mb-2">Quem clicar no banner abre a página deste produto.</p>
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Filtrar por nome"
-        disabled={saving || productsLoading}
-        className="mb-2 h-10 w-full px-3 rounded-xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary"
-      />
-      <select
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setQuery("");
-        }}
-        disabled={saving || productsLoading}
-        className="h-10 w-full px-3 rounded-xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary cursor-pointer"
-      >
-        <option value="">{productsLoading ? "Carregando produtos..." : "Nenhum"}</option>
-        {missing && (
-          <option value={value}>{productsLoading ? "Carregando..." : "Produto removido do catálogo"}</option>
+      <div ref={boxRef} className="relative">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setOpen((current) => !current)}
+          className="flex h-12 w-full items-center gap-2 rounded-xl border border-input bg-white px-2 text-left text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary disabled:opacity-60"
+        >
+          {selected ? <BannerProductThumb src={selected.image} /> : <BannerProductThumb />}
+          <span className="min-w-0 flex-1 truncate">
+            {productsLoading ? "Carregando produtos..." : selected ? selected.name : missing ? "Produto removido do catálogo" : "Nenhum"}
+            {selected && selected.isActive === false ? " (inativo)" : ""}
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && menuBox && createPortal(
+          <div
+            data-banner-product-menu
+            className="fixed z-[80] overflow-hidden rounded-xl border border-border bg-white shadow-lg"
+            style={{ top: menuBox.top, left: menuBox.left, width: menuBox.width }}
+          >
+            <div className="border-b border-border p-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filtrar por nome"
+                autoFocus
+                className="h-10 w-full px-3 rounded-xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary"
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto p-1">
+              <button
+                type="button"
+                onClick={() => choose("")}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted/60 ${value ? "" : "bg-primary/10"}`}
+              >
+                <BannerProductThumb />
+                <span className="min-w-0 flex-1 truncate">Nenhum</span>
+              </button>
+              {options.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => choose(product.id)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted/60 ${product.id === value ? "bg-primary/10" : ""}`}
+                >
+                  <BannerProductThumb src={product.image} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {product.name}{product.isActive === false ? " (inativo)" : ""}
+                  </span>
+                </button>
+              ))}
+              {options.length === 0 && (
+                <p className="px-2 py-3 text-sm text-muted-foreground">Nenhum produto com esse nome.</p>
+              )}
+            </div>
+          </div>,
+          document.body,
         )}
-        {options.map((product) => (
-          <option key={product.id} value={product.id}>
-            {product.name}{product.isActive === false ? " (inativo)" : ""}
-          </option>
-        ))}
-      </select>
+      </div>
       {missing && !productsLoading && (
         <p className="mt-2 text-xs text-amber-700">Esse produto saiu do catálogo. Escolha outro ou deixe em Nenhum.</p>
       )}
@@ -19461,7 +19538,7 @@ function ImageUploadCard({
   logoScaleLoading?: boolean;
   onLogoScaleChange?: (next: number) => void;
   onLogoScaleCommit?: (next: number) => void;
-  products?: { id: string; name: string; isActive?: boolean }[];
+  products?: BannerLinkProduct[];
   productsLoading?: boolean;
   linkedProductId?: string;
   linkLoading?: boolean;
@@ -19811,7 +19888,7 @@ function ReportanaSettingsCard() {
 function ConfiguracoesPanel({ settings, loading, products, productsLoading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
-  products: { id: string; name: string; isActive?: boolean }[];
+  products: BannerLinkProduct[];
   productsLoading: boolean;
   clientErrors: ClientErrorEvent[];
   clientErrorsLoading: boolean;
