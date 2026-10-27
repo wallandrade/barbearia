@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, siteSettingsTable } from "@workspace/db";
+import { db, productsTable, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { getR2MissingConfig, isR2Configured, uploadSiteSettingImageToR2 } from "../lib/r2";
@@ -28,8 +28,17 @@ function normalizeStoreThemeColor(raw: unknown): string | null {
   return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
 }
 
+const BANNER_PRODUCT_SETTING_KEYS = new Set([
+  "banner_desktop_product_id",
+  "banner_mobile_product_id",
+  "catalog_banner_desktop_product_id",
+  "catalog_banner_mobile_product_id",
+]);
+
 const PUBLIC_KEYS  = [
-  "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile", "site_name", "site_protected", "payment_protected",
+  "logo", "banner_desktop", "banner_mobile", "catalog_banner_desktop", "catalog_banner_mobile",
+  ...BANNER_PRODUCT_SETTING_KEYS,
+  "site_name", "site_protected", "payment_protected",
   "logo_scale_pct",
   "checkout_enable_pix", "checkout_enable_card", "checkout_enable_whatsapp", "checkout_pix_gateway", "checkout_free_shipping_min_subtotal", "checkout_free_shipping_min_motoboy",
   "motoboy_eligible_product_ids",
@@ -147,6 +156,33 @@ router.put("/admin/settings/:key", requirePrimaryAdmin, async (req, res) => {
       return;
     }
     const { value } = req.body as { value?: string };
+    if (BANNER_PRODUCT_SETTING_KEYS.has(key)) {
+      const productId = String(value ?? "").trim();
+      if (!productId) {
+        await db.delete(siteSettingsTable).where(eq(siteSettingsTable.key, key));
+        res.json({ ok: true });
+        return;
+      }
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(productId)) {
+        res.status(400).json({ error: "INVALID_VALUE", message: "Escolha um produto da loja." });
+        return;
+      }
+      const [product] = await db
+        .select({ id: productsTable.id })
+        .from(productsTable)
+        .where(eq(productsTable.id, productId))
+        .limit(1);
+      if (!product) {
+        res.status(400).json({ error: "INVALID_VALUE", message: "Produto não encontrado." });
+        return;
+      }
+      await db
+        .insert(siteSettingsTable)
+        .values({ key, value: productId, updatedAt: new Date() })
+        .onDuplicateKeyUpdate({ set: { value: productId, updatedAt: new Date() } });
+      res.json({ ok: true });
+      return;
+    }
     if (key === "store_theme_preset" && value) {
       const normalized = String(value).trim();
       if (normalized !== "pharma_compact" && normalized !== "default") {

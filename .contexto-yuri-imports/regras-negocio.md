@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-10-25
+> **Última atualização:** 2026-10-26
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -45,6 +45,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-26 | Banner pode abrir um produto | Em Configurações, cada banner (home e catálogo, desktop e mobile) tem **Produto ao clicar**. O clique na loja abre a página desse produto. **Nenhum** deixa o banner só como imagem | Logo, tamanho da logo e o upload da arte iguais |
 | 2026-10-25 | Oferta relâmpago conclui no primeiro clique | A linha da oferta manda o preço da reserva. Outra linha do mesmo produto fica no preço normal. Se a API ainda recusar, o checkout tenta de novo no mesmo clique | Faixa e promoção dos outros produtos iguais |
 | 2026-10-25 | Primeiro clique do checkout manda o preço da API | Fora da faixa de quantidade vale promoção ou tabela, não o preço de 1 caixa. O carrinho ajusta isso antes de criar o pedido | Oferta relâmpago e bump continuam com o preço próprio |
 | 2026-10-25 | Visita repetida da oferta não derruba o sorteio | A mesma campanha e o mesmo navegador atualizam a linha de `flash_visits`. O draw segue e devolve as ofertas | Chance, vaga, horário e a reserva de 1 hora iguais |
@@ -501,6 +502,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 - Social proof (settings + entradas fake) — `social-proof`.
 - `site_settings` / rotas `settings.ts`: canais, WhatsApp, gateways por checkout, etc.
+- Banners da home e do topo do catálogo: `banner_desktop_product_id`, `banner_mobile_product_id`, `catalog_banner_desktop_product_id`, `catalog_banner_mobile_product_id`. Chaves públicas em `GET /api/settings`. O id tem de existir em `products`. Vazio apaga a chave. Na loja, o clique abre `/produto/:id` (ou `/:seller/produto/:id`). Sem produto, o banner não é link. Desktop e mobile podem apontar para produtos diferentes. A logo não tem destino.
 
 ## Chat informativo (biblioteca de compostos)
 

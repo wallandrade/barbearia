@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { useSearch, useRoute, Link } from "wouter";
 import { useGetProducts } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -113,6 +113,70 @@ function FilterContent({
         </div>
       )}
     </div>
+  );
+}
+
+function bannerProductHref(sellerSlug: string | undefined, productId: string | undefined): string | null {
+  const id = String(productId || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  return sellerSlug
+    ? `/${encodeURIComponent(sellerSlug)}/produto/${encodeURIComponent(id)}`
+    : `/produto/${encodeURIComponent(id)}`;
+}
+
+function BannerLink({ href, className, children }: { href: string | null; className?: string; children: ReactNode }) {
+  if (!href) return <div className={className}>{children}</div>;
+  return (
+    <Link href={href} className={`block cursor-pointer ${className ?? ""}`.trim()} aria-label="Abrir produto do banner">
+      {children}
+    </Link>
+  );
+}
+
+function StoreBanner({
+  desktopSrc,
+  mobileSrc,
+  desktopProductId,
+  mobileProductId,
+  sellerSlug,
+  alt,
+  frameClassName,
+}: {
+  desktopSrc?: string;
+  mobileSrc?: string;
+  desktopProductId?: string;
+  mobileProductId?: string;
+  sellerSlug?: string;
+  alt: string;
+  frameClassName?: string;
+}) {
+  if (!desktopSrc && !mobileSrc) return null;
+  const desktopHref = bannerProductHref(sellerSlug, desktopSrc ? desktopProductId : mobileProductId);
+  const mobileHref = bannerProductHref(sellerSlug, mobileSrc ? mobileProductId : desktopProductId);
+  const picture = (
+    <picture className="block w-full">
+      {mobileSrc ? <source media="(max-width: 639px)" srcSet={mobileSrc} /> : null}
+      {desktopSrc ? (
+        <img src={desktopSrc} alt={alt} fetchPriority="high" className="block h-auto w-full" />
+      ) : (
+        <img src={mobileSrc || ""} alt={alt} fetchPriority="high" className="block h-auto w-full" />
+      )}
+    </picture>
+  );
+
+  if (desktopHref === mobileHref) {
+    return <BannerLink href={desktopHref} className={frameClassName}>{picture}</BannerLink>;
+  }
+
+  return (
+    <>
+      <BannerLink href={mobileHref} className={`sm:hidden ${frameClassName ?? ""}`.trim()}>
+        <img src={mobileSrc || desktopSrc || ""} alt={alt} fetchPriority="high" className="block h-auto w-full" />
+      </BannerLink>
+      <BannerLink href={desktopHref} className={`hidden sm:block ${frameClassName ?? ""}`.trim()}>
+        <img src={desktopSrc || mobileSrc || ""} alt={alt} fetchPriority="high" className="block h-auto w-full" />
+      </BannerLink>
+    </>
   );
 }
 
@@ -281,26 +345,15 @@ export default function Home() {
       {shouldRenderHero && (
         <section className="w-full bg-muted/20">
           {hasHeroBanner ? (
-            <picture className="block w-full">
-              {banners["banner_mobile"] ? (
-                <source media="(max-width: 639px)" srcSet={banners["banner_mobile"]} />
-              ) : null}
-              {banners["banner_desktop"] ? (
-                <img
-                  src={banners["banner_desktop"]}
-                  alt="Yury Premium Banner"
-                  fetchPriority="high"
-                  className="block h-auto w-full"
-                />
-              ) : banners["banner_mobile"] ? (
-                <img
-                  src={banners["banner_mobile"]}
-                  alt="Yury Banner"
-                  fetchPriority="high"
-                  className="block h-auto w-full"
-                />
-              ) : null}
-            </picture>
+            <StoreBanner
+              desktopSrc={banners["banner_desktop"]}
+              mobileSrc={banners["banner_mobile"]}
+              desktopProductId={banners["banner_desktop_product_id"]}
+              mobileProductId={banners["banner_mobile_product_id"]}
+              sellerSlug={sellerSlug}
+              alt="Yury Premium Banner"
+              frameClassName="block w-full"
+            />
           ) : (
             <div className="w-full aspect-[4/1] bg-muted/30 animate-pulse" aria-hidden="true" />
           )}
@@ -310,26 +363,15 @@ export default function Home() {
       {hasCatalogBanner && (
         <section className="w-full bg-background border-b border-border/40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
-            <picture className="block w-full overflow-hidden rounded-3xl bg-muted/20 shadow-sm border border-border/40">
-              {banners["catalog_banner_mobile"] ? (
-                <source media="(max-width: 639px)" srcSet={banners["catalog_banner_mobile"]} />
-              ) : null}
-              {banners["catalog_banner_desktop"] ? (
-                <img
-                  src={banners["catalog_banner_desktop"]}
-                  alt="Banner do catálogo"
-                  fetchPriority="high"
-                  className="block h-auto w-full"
-                />
-              ) : banners["catalog_banner_mobile"] ? (
-                <img
-                  src={banners["catalog_banner_mobile"]}
-                  alt="Banner do catálogo"
-                  fetchPriority="high"
-                  className="block h-auto w-full"
-                />
-              ) : null}
-            </picture>
+            <StoreBanner
+              desktopSrc={banners["catalog_banner_desktop"]}
+              mobileSrc={banners["catalog_banner_mobile"]}
+              desktopProductId={banners["catalog_banner_desktop_product_id"]}
+              mobileProductId={banners["catalog_banner_mobile_product_id"]}
+              sellerSlug={sellerSlug}
+              alt="Banner do catálogo"
+              frameClassName="block w-full overflow-hidden rounded-3xl bg-muted/20 shadow-sm border border-border/40"
+            />
           </div>
         </section>
       )}

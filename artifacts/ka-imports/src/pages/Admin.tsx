@@ -3270,7 +3270,7 @@ export default function Admin() {
     else if (tab === "inventory")  { fetchInventoryOverview(); fetchProducts(); }
     else if (tab === "coupons")    { fetchCoupons(); fetchProducts(); }
     else if (tab === "products")   fetchProducts();
-    else if (tab === "configuracoes") { fetchSettings(); fetchClientErrors(); fetchBrevoStatus(); }
+    else if (tab === "configuracoes") { fetchSettings(); fetchProducts(); fetchClientErrors(); fetchBrevoStatus(); }
     else if (tab === "atendimento") { fetchSettings(); setLoading(false); }
     else if (tab === "sellers")    { fetchSellers(); fetchSellerData(); }
     else if (tab === "commissions") fetchCommissions();
@@ -8122,6 +8122,12 @@ export default function Admin() {
             <ConfiguracoesPanel
               settings={settings}
               loading={settingsLoading}
+              products={(Array.isArray(products) ? products : []).map((product) => ({
+                id: product.id,
+                name: product.name,
+                isActive: product.isActive !== false,
+              }))}
+              productsLoading={productsLoading}
               clientErrors={clientErrors}
               clientErrorsLoading={clientErrorsLoading}
               onRefreshClientErrors={fetchClientErrors}
@@ -19372,6 +19378,69 @@ function parseLogoScalePercent(raw: string | undefined): number {
   return Math.min(180, Math.max(60, Math.round(parsed)));
 }
 
+function BannerProductSelect({
+  products,
+  productsLoading,
+  value,
+  saving,
+  onChange,
+}: {
+  products: { id: string; name: string; isActive?: boolean }[];
+  productsLoading: boolean;
+  value: string;
+  saving: boolean;
+  onChange: (productId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLocaleLowerCase("pt-BR");
+  const selected = products.find((product) => product.id === value);
+  const options = [...products]
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }))
+    .filter((product) => {
+      if (product.id === value) return true;
+      if (!needle) return true;
+      return product.name.toLocaleLowerCase("pt-BR").includes(needle);
+    });
+  const missing = Boolean(value) && !selected;
+
+  return (
+    <div className="mb-4 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Produto ao clicar</p>
+      <p className="text-xs text-muted-foreground mb-2">Quem clicar no banner abre a página deste produto.</p>
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Filtrar por nome"
+        disabled={saving || productsLoading}
+        className="mb-2 h-10 w-full px-3 rounded-xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary"
+      />
+      <select
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setQuery("");
+        }}
+        disabled={saving || productsLoading}
+        className="h-10 w-full px-3 rounded-xl border border-input bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary cursor-pointer"
+      >
+        <option value="">{productsLoading ? "Carregando produtos..." : "Nenhum"}</option>
+        {missing && (
+          <option value={value}>{productsLoading ? "Carregando..." : "Produto removido do catálogo"}</option>
+        )}
+        {options.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.name}{product.isActive === false ? " (inativo)" : ""}
+          </option>
+        ))}
+      </select>
+      {missing && !productsLoading && (
+        <p className="mt-2 text-xs text-amber-700">Esse produto saiu do catálogo. Escolha outro ou deixe em Nenhum.</p>
+      )}
+    </div>
+  );
+}
+
 function ImageUploadCard({
   title, description, settingKey, currentSrc, loading,
   targetWidth, targetHeight, showResizeModeSelector = false,
@@ -19379,6 +19448,10 @@ function ImageUploadCard({
   logoScaleLoading = false,
   onLogoScaleChange,
   onLogoScaleCommit,
+  products = [],
+  productsLoading = false,
+  linkedProductId = "",
+  linkLoading = false,
   onSave, onDelete,
 }: {
   title: string; description: string; settingKey: string;
@@ -19388,6 +19461,10 @@ function ImageUploadCard({
   logoScaleLoading?: boolean;
   onLogoScaleChange?: (next: number) => void;
   onLogoScaleCommit?: (next: number) => void;
+  products?: { id: string; name: string; isActive?: boolean }[];
+  productsLoading?: boolean;
+  linkedProductId?: string;
+  linkLoading?: boolean;
   onSave: (key: string, value: string) => void;
   onDelete: (key: string) => void;
 }) {
@@ -19485,6 +19562,16 @@ function ImageUploadCard({
             </select>
           </div>
         </div>
+      )}
+
+      {isBannerSettingKey(settingKey) && (
+        <BannerProductSelect
+          products={products}
+          productsLoading={productsLoading}
+          value={linkedProductId}
+          saving={linkLoading}
+          onChange={(productId) => onSave(`${settingKey}_product_id`, productId)}
+        />
       )}
 
       {settingKey === "logo" && typeof logoScalePercent === "number" && onLogoScaleChange && onLogoScaleCommit && (
@@ -19721,9 +19808,11 @@ function ReportanaSettingsCard() {
   );
 }
 
-function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
+function ConfiguracoesPanel({ settings, loading, products, productsLoading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
+  products: { id: string; name: string; isActive?: boolean }[];
+  productsLoading: boolean;
   clientErrors: ClientErrorEvent[];
   clientErrorsLoading: boolean;
   onRefreshClientErrors: () => void;
@@ -20118,6 +20207,10 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             targetWidth={1920}
             targetHeight={480}
             showResizeModeSelector
+            products={products}
+            productsLoading={productsLoading}
+            linkedProductId={settings["banner_desktop_product_id"] ?? ""}
+            linkLoading={!!loading["banner_desktop_product_id"]}
             onSave={onSave}
             onDelete={onDelete}
           />
@@ -20130,6 +20223,10 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
             targetWidth={800}
             targetHeight={400}
             showResizeModeSelector
+            products={products}
+            productsLoading={productsLoading}
+            linkedProductId={settings["banner_mobile_product_id"] ?? ""}
+            linkLoading={!!loading["banner_mobile_product_id"]}
             onSave={onSave}
             onDelete={onDelete}
           />
@@ -20150,6 +20247,10 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               targetWidth={1920}
               targetHeight={420}
               showResizeModeSelector
+              products={products}
+              productsLoading={productsLoading}
+              linkedProductId={settings["catalog_banner_desktop_product_id"] ?? ""}
+              linkLoading={!!loading["catalog_banner_desktop_product_id"]}
               onSave={onSave}
               onDelete={onDelete}
             />
@@ -20162,6 +20263,10 @@ function ConfiguracoesPanel({ settings, loading, clientErrors, clientErrorsLoadi
               targetWidth={800}
               targetHeight={420}
               showResizeModeSelector
+              products={products}
+              productsLoading={productsLoading}
+              linkedProductId={settings["catalog_banner_mobile_product_id"] ?? ""}
+              linkLoading={!!loading["catalog_banner_mobile_product_id"]}
               onSave={onSave}
               onDelete={onDelete}
             />
