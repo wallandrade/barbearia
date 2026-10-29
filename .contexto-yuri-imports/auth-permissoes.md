@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-10-19
+> **Última atualização:** 2026-10-28
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-10-28 | Baixa do espelho Motoboy/Minas sem senha | `POST /api/integrations/inventory/exit` aceita só o token. `GET .../exit-status` devolve `passwordRequired: false` | Dar baixa agora no Admin, hash da senha e token do snapshot iguais |
 | 2026-10-19 | Aba Promoções e `/api/admin/flash-campaigns` só com `requirePrimaryAdmin` | Admin de vendedor não vê e não grava a oferta relâmpago | Cupons, produtos e a sessão iguais |
 | 2026-10-15 | Lista negra compartilhada: pull por `LOSS_SYNC_TOKEN` (Bearer / `X-Api-Key`); webhook com `LOSS_SYNC_WEBHOOK_SECRET`; leitura da outra loja com `LOSS_PEER_TOKEN` | Sem token o snapshot responde 503. A cotação não usa sessão admin | Snapshot de estoque e cobertura Motoboy iguais |
 | 2026-10-05 | Login da loja pharma: dois botões, **Não tenho conta** (cadastro) e **Esqueci minha senha** (WhatsApp com o e-mail) | O cliente não cai mais no cadastro quando só esqueceu a senha | Login/cadastro e `set-password` do admin iguais; sem reset por e-mail |
@@ -62,7 +63,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 ## Sync estoque Motoboy + Minas (espelho externo)
 
 - Pull: `GET /api/integrations/inventory/snapshot` — Bearer ou `X-Api-Key` = `INVENTORY_SYNC_TOKEN` ou, se vazio, `MOTOBOY_SYNC_TOKEN`. Sem token → 503.
-- Baixa: `POST /api/integrations/inventory/exit` — mesmo token **e** senha (janela 30 min). `POST .../unlock` ou `password` no body. Sem isso → 403 `PASSWORD_REQUIRED`.
+- Baixa: `POST /api/integrations/inventory/exit` — mesmo token, **sem senha**. `GET .../exit-status` devolve `passwordRequired: false`. `POST .../unlock` continua; o exit não exige a janela.
 - Admin Pedidos: Dar baixa agora Motoboy/Minas — mesma senha (modal). Foz sem senha.
 - Admin: `GET /api/admin/integrations/inventory/exit-access` e `POST .../unlock` = `requireAdminAuth`. `PUT .../exit-password` = `requirePrimaryAdmin`. Hash, senha não volta no GET.
 - Push: `INVENTORY_SYNC_WEBHOOK_URL` + `INVENTORY_SYNC_WEBHOOK_SECRET` (secret pode cair no da cobertura). Sem URL = no-op.

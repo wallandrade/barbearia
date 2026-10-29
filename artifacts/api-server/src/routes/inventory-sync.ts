@@ -29,7 +29,6 @@ import {
   registerMotoboyInventoryEntry,
 } from "../lib/reshipments";
 import {
-  authorizeInventoryExit,
   getInventoryExitAccessStatus,
   readPasswordFromBody,
   setInventoryExitPassword,
@@ -120,18 +119,6 @@ async function debitSkuItems(params: {
   return { ok: true };
 }
 
-async function requireInventoryExitUnlocked(req: Request, res: Response): Promise<boolean> {
-  const access = await authorizeInventoryExit(readPasswordFromBody(req.body));
-  if (access.ok) return true;
-  res.status(403).json({
-    error: access.error,
-    message: access.message,
-    passwordRequired: true,
-    remainingMs: 0,
-  });
-  return false;
-}
-
 /**
  * GET /api/integrations/inventory/snapshot
  * Pull: estoque Motoboy + Minas juntos.
@@ -150,7 +137,7 @@ router.get("/integrations/inventory/snapshot", async (req, res) => {
 
 /**
  * GET /api/integrations/inventory/exit-status
- * O espelho pergunta se a janela de 30 min está aberta.
+ * O espelho pergunta se precisa de senha. A baixa do KA entra sem senha.
  */
 router.get("/integrations/inventory/exit-status", async (req, res) => {
   try {
@@ -160,7 +147,7 @@ router.get("/integrations/inventory/exit-status", async (req, res) => {
       unlocked: status.unlocked,
       remainingMs: status.remainingMs,
       unlockedUntil: status.unlockedUntil,
-      passwordRequired: !status.unlocked,
+      passwordRequired: false,
     });
   } catch (err) {
     console.error("[INVENTORY_SYNC] exit-status error:", err);
@@ -256,13 +243,12 @@ router.put("/admin/integrations/inventory/exit-password", requirePrimaryAdmin, a
 
 /**
  * POST /api/integrations/inventory/exit
- * Baixa Motoboy/Minas. Mesmo token do snapshot. Exige senha se a janela de 30 min estiver fechada.
- * Body: { pool, productId, quantity } ou { pool, items[] } ou { pool, orderId }. Opcional password.
+ * Baixa Motoboy/Minas. Mesmo token do snapshot. Sem senha e sem janela.
+ * Body: { pool, productId, quantity } ou { pool, items[] } ou { pool, orderId }.
  */
 router.post("/integrations/inventory/exit", async (req, res) => {
   try {
     if (rejectIfSyncAuthInvalid(req, res)) return;
-    if (!(await requireInventoryExitUnlocked(req, res))) return;
 
     const parsed = parseInventoryExitBody(req.body);
     if (!parsed.ok) {
