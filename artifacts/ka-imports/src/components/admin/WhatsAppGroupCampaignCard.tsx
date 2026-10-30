@@ -514,8 +514,11 @@ export default function WhatsAppGroupCampaignCard() {
         </div>
         <ul className="space-y-2">
           {posts.map((post) => (
-            <li key={post.id} className="flex items-start justify-between gap-2 text-sm">
-              <span className="min-w-0 break-words">{postWhen(post)} · {post.caption || post.linkUrl}</span>
+            <li key={post.id} className="flex items-start gap-2 text-sm">
+              {post.imageUrl.startsWith("https://") ? (
+                <img src={post.imageUrl} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-border object-cover" />
+              ) : null}
+              <span className="min-w-0 flex-1 break-words">{postWhen(post)} · {post.caption || post.linkUrl}</span>
               <span className="flex shrink-0 gap-1">
                 <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => startEdit(post)} aria-label="Editar">
                   <Pencil className="w-4 h-4" />
