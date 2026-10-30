@@ -78,12 +78,19 @@ export function productCaption(name: string, productId: string): string {
   return `${name}\nhttps://www.yury-imports.com/produto/${encodeURIComponent(productId)}`;
 }
 
-export function customCaption(text: string, link: string): string {
-  const message = text.trim().slice(0, 1000);
+function captionWithoutImageUrl(message: string, imageUrl: string): string {
+  const image = imageUrl.trim();
+  if (!image || !message.includes(image)) return message;
+  return message.split(image).join("").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function customCaption(text: string, link: string, imageUrl = ""): string {
+  const message = captionWithoutImageUrl(text.trim().slice(0, 1000), imageUrl);
   const url = link.trim();
-  if (!message) return url;
-  if (url && message.includes(url)) return message;
-  return url ? `${message}\n${url}` : message;
+  const image = imageUrl.trim();
+  if (!message) return url && url !== image ? url : "";
+  if (!url || url === image || message.includes(url)) return message;
+  return `${message}\n${url}`;
 }
 
 export function customCaptionError(text: string): string | null {
@@ -93,10 +100,13 @@ export function customCaptionError(text: string): string | null {
   return null;
 }
 
-export function customLink(text: string, link: string): string | null {
+export function customLink(text: string, link: string, imageUrl = ""): string | null {
+  const image = imageUrl.trim();
   const typed = link.trim();
-  if (typed) return typed.slice(0, 500);
-  const found = text.match(/https:\/\/[^\s<>"']+/i)?.[0]?.replace(/[.,;)]+$/, "") || "";
+  if (typed && typed !== image) return typed.slice(0, 500);
+  const found = String(text || "").match(/https:\/\/[^\s<>"']+/gi)
+    ?.map((item) => item.replace(/[.,;)]+$/, ""))
+    .find((item) => item !== image) || "";
   return found ? found.slice(0, 500) : null;
 }
 

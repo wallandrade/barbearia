@@ -192,7 +192,7 @@ export async function runWhatsappGroupTick(now = new Date()): Promise<void> {
       }, now, index);
       if (!chat || !slot) continue;
       const claimId = slot === "once" ? `c:${post.id}:${chat.phone}` : `c:${post.id}:${slot}:${chat.phone}`;
-      await deliver(creds, claimId, chat.phone, post.imageUrl, customCaption(post.caption || "", post.linkUrl), `${chat.name} avulso`);
+      await deliver(creds, claimId, chat.phone, post.imageUrl, customCaption(post.caption || "", post.linkUrl, post.imageUrl), `${chat.name} avulso`);
     }
   }
 }

@@ -206,7 +206,7 @@ function readCustomPost(
   | { error: string } {
   const imageUrl = String(body.imageUrl || "").trim();
   const caption = String(body.caption || "").trim().slice(0, 1000);
-  const linkUrl = customLink(caption, String(body.linkUrl || "")) || "";
+  const linkUrl = customLink(caption, String(body.linkUrl || ""), imageUrl) || "";
   const mode = body.scheduleMode === "times" || body.scheduleMode === "interval" ? body.scheduleMode : "once";
   const times = parseScheduleTimes(body.times);
   const intervalHours = Math.min(12, Math.max(0, Math.round(Number(body.intervalHours) || 0)));

@@ -56,8 +56,12 @@ test("cada grupo sai 3 minutos depois do anterior", () => {
 test("o texto do aviso vai junto com o link", () => {
   assert.equal(customCaption("Chegou reposição", "https://www.yury-imports.com/yuri"), "Chegou reposição\nhttps://www.yury-imports.com/yuri");
   assert.equal(customCaption("Veja https://www.yury-imports.com/yuri", "https://www.yury-imports.com/yuri"), "Veja https://www.yury-imports.com/yuri");
+  const image = "https://pub-example.r2.dev/whatsapp-groups/foto.jpg";
+  assert.equal(customCaption("👉 https://www.yury-imports.com", image, image), "👉 https://www.yury-imports.com");
+  assert.equal(customCaption(`👉 https://www.yury-imports.com\n${image}`, image, image), "👉 https://www.yury-imports.com");
   assert.equal(customCaptionError("  "), "Escreva o texto da mensagem.");
   assert.equal(customLink("Compre por aqui:https://www.yury-imports.com/yuri", ""), "https://www.yury-imports.com/yuri");
+  assert.equal(customLink("👉 https://www.yury-imports.com", image, image), "https://www.yury-imports.com");
   assert.equal(customLink("sem link", ""), null);
   assert.equal(scheduleLocal("2026-10-11 19:21"), "2026-10-11T19:21");
   const past = new Date("2026-10-11T22:26:00.000Z");
