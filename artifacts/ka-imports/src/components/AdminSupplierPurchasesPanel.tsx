@@ -587,6 +587,7 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
           purchases.map((purchase) => {
             const expanded = Boolean(expandedIds[purchase.id]);
             const paid = purchase.status === "completed" && !purchase.expenseMissing;
+            const expenseOk = paid && !purchase.inventoryMissing;
             return (
               <div key={purchase.id} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
@@ -651,17 +652,11 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                   </div>
                 )}
 
-                {purchase.status === "completed" && (
-                  <div className={`rounded-lg border px-3 py-2 text-xs ${
-                    purchase.inventoryMissing || purchase.expenseMissing
-                      ? "border-rose-200 bg-rose-50 text-rose-800"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  }`}>
+                {purchase.status === "completed" && (purchase.inventoryMissing || purchase.expenseMissing) && (
+                  <div className="rounded-lg border px-3 py-2 text-xs border-rose-200 bg-rose-50 text-rose-800">
                     {purchase.inventoryMissing
                       ? "A despesa está lançada, mas o estoque ainda não entrou. Atualize a página — o sistema tenta dar a entrada no pool certo."
-                      : purchase.expenseMissing
-                        ? "Estoque já entrou, mas a despesa não foi gravada. Atualize a página — o sistema tenta gerar o lançamento pago."
-                        : `Despesa paga · ${formatCurrency(purchase.totalAmount)} · entrou no estoque ${purchase.inventoryPoolLabel || "escolhido"}.`}
+                      : "Estoque já entrou, mas a despesa não foi gravada. Atualize a página — o sistema tenta gerar o lançamento pago."}
                   </div>
                 )}
 
@@ -671,10 +666,17 @@ export function AdminSupplierPurchasesPanel({ isPrimary, onCompleted }: Props) {
                   onClick={() => setExpandedIds((c) => ({ ...c, [purchase.id]: !expanded }))}
                 >
                   {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  {expanded ? "Ocultar itens" : "Ver itens"}
+                  {expenseOk
+                    ? (expanded ? "Ocultar gasto" : "Ver gasto")
+                    : (expanded ? "Ocultar itens" : "Ver itens")}
                 </button>
                 {expanded && (
                   <div className="space-y-2">
+                    {expenseOk && (
+                      <div className="rounded-lg border px-3 py-2 text-xs border-emerald-200 bg-emerald-50 text-emerald-900">
+                        {`Despesa paga · ${formatCurrency(purchase.totalAmount)} · entrou no estoque ${purchase.inventoryPoolLabel || "escolhido"}.`}
+                      </div>
+                    )}
                     {purchase.items.map((item) => {
                       const catalogProduct = catalog.find((p) => p.id === item.productId);
                       return (
