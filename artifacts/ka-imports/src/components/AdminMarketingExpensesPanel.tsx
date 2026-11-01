@@ -50,6 +50,30 @@ type Props = {
   onUnauthorized: () => void;
 };
 
+type MetaAdsStatus = {
+  configured: boolean;
+  autoSync: boolean;
+  accountIdMasked: string | null;
+  lookbackDays: number;
+  lastSync: {
+    at: string;
+    ok: boolean;
+    message: string | null;
+    written: number;
+    removed: number;
+    unchanged: number;
+    manualOverlapDays: string[];
+  } | null;
+};
+
+function isMetaAdsExpense(id: string): boolean {
+  return /^meta-ads-\d+-\d{4}-\d{2}-\d{2}$/.test(id);
+}
+
+function isManualFacebookChannel(channel: string): boolean {
+  return /^facebook\b/i.test(channel.trim());
+}
+
 function emptyForm(): ExpenseForm {
   const today = saoPauloTodayYmd();
   return {
@@ -91,11 +115,37 @@ export function AdminMarketingExpensesPanel({
   const [registeredTotal, setRegisteredTotal] = useState(0);
   const [listLoading, setListLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [metaStatus, setMetaStatus] = useState<MetaAdsStatus | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [metaSyncing, setMetaSyncing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [nets, setNets] = useState<Record<string, number | null>>({});
   const [netsLoading, setNetsLoading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const loadMetaStatus = async () => {
+    setMetaLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/meta-ads`, { headers: authHeaders() });
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      const data = await res.json().catch(() => null) as MetaAdsStatus | null;
+      if (res.ok && data) setMetaStatus(data);
+    } catch {
+      setMetaStatus(null);
+    } finally {
+      setMetaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadMetaStatus();
+    // A conta não muda com o filtro de período.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const todayMonth = calendarMonthBounds(saoPauloTodayYmd());
   const parentKey = summaryRangeKey(dateFrom, dateTo, seller);
@@ -223,6 +273,54 @@ export function AdminMarketingExpensesPanel({
     onChanged();
   };
 
+  const syncMetaAds = async () => {
+    setMetaSyncing(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/meta-ads/sync`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      const data = await res.json().catch(() => null) as { message?: string; manualOverlapDays?: string[] } | null;
+      if (!res.ok) {
+        toast.error(data?.message || "Não foi possível ler o gasto do Facebook.");
+        await loadMetaStatus();
+        return;
+      }
+      const overlap = data?.manualOverlapDays ?? [];
+      toast.success("Gasto do Facebook atualizado.");
+      if (overlap.length > 0) {
+        toast.error(`Há lançamento manual de Facebook em ${overlap.join(", ")}. Os dois entram no líquido.`);
+      }
+      await loadMetaStatus();
+      refreshAfterChange();
+    } catch {
+      toast.error("Não foi possível ler o gasto do Facebook.");
+    } finally {
+      setMetaSyncing(false);
+    }
+  };
+
+  const manualFacebookDays = items.flatMap((item) => {
+    if (isMetaAdsExpense(item.id) || !isManualFacebookChannel(item.channel)) return [];
+    const start = expenseYmd(item.expenseStartDate || item.expenseDate);
+    const end = expenseYmd(item.expenseEndDate || item.expenseDate);
+    return start && end ? [`${start}|${end}|${item.id}`] : [];
+  });
+  const metaDays = items
+    .filter((item) => isMetaAdsExpense(item.id))
+    .map((item) => expenseYmd(item.expenseStartDate || item.expenseDate))
+    .filter(Boolean);
+  const overlappingManual = manualFacebookDays.length > 0 && metaDays.some((day) => (
+    manualFacebookDays.some((range) => {
+      const [start, end] = range.split("|");
+      return start <= day && day <= end;
+    })
+  ));
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const amount = Number(String(form.amount).replace(",", "."));
@@ -309,6 +407,41 @@ export function AdminMarketingExpensesPanel({
         <p className="text-sm text-rose-800/80">
           A lista mostra tudo que foi salvo. O De/até da Visão Geral só altera o gasto do período, o líquido desse período e a linha Gastos marketing.
         </p>
+      </div>
+
+      <div className="rounded-xl border border-rose-200 bg-white px-4 py-3 space-y-2">
+        {metaLoading && !metaStatus ? (
+          <p className="text-sm text-rose-700/80">....</p>
+        ) : metaStatus?.configured ? (
+          <>
+            <p className="text-sm text-rose-950">
+              {metaStatus.autoSync
+                ? `Conta ${metaStatus.accountIdMasked}. O gasto dos últimos ${metaStatus.lookbackDays} dias entra sozinho no canal Facebook.`
+                : `Conta ${metaStatus.accountIdMasked}. O automático está desligado. O botão lê os últimos ${metaStatus.lookbackDays} dias.`}
+            </p>
+            {metaStatus.lastSync?.ok === false && metaStatus.lastSync.message ? (
+              <p className="text-xs text-red-700">{metaStatus.lastSync.message}</p>
+            ) : null}
+            {overlappingManual ? (
+              <p className="text-xs text-red-700">
+                Há lançamento manual de Facebook no mesmo dia. Os dois entram no líquido. Apague o manual se for o mesmo anúncio.
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-xl border-rose-200 text-rose-800"
+              disabled={metaSyncing}
+              onClick={() => void syncMetaAds()}
+            >
+              {metaSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Atualizar gasto do Facebook"}
+            </Button>
+          </>
+        ) : (
+          <p className="text-sm text-rose-800/80">
+            Para o gasto da conta de anúncio entrar sozinho, configure no servidor META_ADS_ACCOUNT_ID e META_ADS_ACCESS_TOKEN.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -432,35 +565,40 @@ export function AdminMarketingExpensesPanel({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-rose-900">{item.channel}</p>
+                        {isMetaAdsExpense(item.id) ? (
+                          <p className="text-[11px] font-semibold text-rose-700">Conta de anúncio</p>
+                        ) : null}
                         <p className="text-xs text-muted-foreground">
                           {formatExpenseDay(start)} até {formatExpenseDay(end)}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
-                        <div className="flex gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-8 px-2"
-                            onClick={() => startEdit(item)}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span className="ml-1">Editar</span>
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-8 px-2 border-rose-200 text-rose-700 hover:bg-rose-50"
-                            disabled={deletingId === item.id}
-                            onClick={() => handleDelete(item.id)}
-                          >
-                            {deletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            <span className="ml-1">Remover</span>
-                          </Button>
-                        </div>
+                        {isMetaAdsExpense(item.id) ? null : (
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2"
+                              onClick={() => startEdit(item)}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span className="ml-1">Editar</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2 border-rose-200 text-rose-700 hover:bg-rose-50"
+                              disabled={deletingId === item.id}
+                              onClick={() => handleDelete(item.id)}
+                            >
+                              {deletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                              <span className="ml-1">Remover</span>
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                     {item.note ? <p className="text-xs text-rose-700/80 mt-2">{item.note}</p> : null}

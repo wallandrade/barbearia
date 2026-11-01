@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-10-10
+> **Última atualização:** 2026-11-01
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-01 | Token da conta de anúncio fica só na variável `META_ADS_ACCESS_TOKEN` | `GET /api/admin/meta-ads` devolve a conta mascarada. O log tira `access_token=` | Checkout token e o pixel do afiliado iguais |
 | 2026-10-10 | `POST /api/whatsapp/support/inbound` não é barrado pelo CORS | A Z-API manda `Origin` e a loja respondia 500 antes da rota. A senha do atendimento continua obrigatória | Demais rotas seguem na allowlist |
 | 2026-10-10 | `POST /api/whatsapp/support/inbound` exige token (`n8n_whatsapp_support_token` ou `N8N_WHATSAPP_SUPPORT_TOKEN`, mínimo 8) | Busca de pedido por número ou CPF no WhatsApp não fica aberta. 20 mensagens / 10 min por telefone | Checkout token e a lista de writes públicos iguais. O token não vai em `PUBLIC_KEYS` |
 | 2026-09-17 | Admin fila: `GET /api/admin/shipping-queue` devolve todas as alocações ativas; o FE parou o N+1 por pedido pago (poll 20 s) | Menos carga no Railway; fallback em lote de 8 se a rota nova ainda não existir | Slot/prazo iguais; GET `/:orderId` permanece |

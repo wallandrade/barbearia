@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-10-30
+> **Última atualização:** 2026-11-01
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-01 | Conta de anúncio do Facebook grava o gasto do dia | `META_ADS_ACCESS_TOKEN` + `META_ADS_ACCOUNT_ID`. Job a cada 60 min. Botão na aba Despesas | Pixel do afiliado, PIX e EnvioEcom iguais |
 | 2026-10-30 | Aviso dos grupos não manda o endereço da foto | A legenda fica com o link do texto. A URL da imagem no R2 não entra na mensagem | A foto continua saindo como imagem. Horário e rodada de produtos iguais |
 | 2026-10-30 | Lista de avisos dos grupos mostra a foto | Cada agendamento na aba Automação traz a miniatura da imagem ao lado do texto | O envio, o horário e o lápis iguais |
 | 2026-10-28 | Baixa do espelho Motoboy/Minas sem senha | `GET .../inventory/exit-status` devolve `passwordRequired: false`. `POST .../inventory/exit` baixa com o token, sem janela | Token do snapshot, pool `loja` recusado, Dar baixa agora no Admin e Foz Guaçu iguais |
@@ -212,6 +213,15 @@ Providers externos **presentes no código**. Precedência: código > memória.
 | 2026-08-13 | EnvioEcom: cancelamento, `items` no create, filtro `carriers` na cotação | Operação admin mais completa | Webhook/rastreio cliente iguais |
 | 2026-08-13 | Integração EnvioEcom (cotação, create, etiqueta, webhook, rastreio cliente) | Frete/rastreio automatizável via API | OCR/upload de etiqueta manual permanece como fallback |
 | 2026-08-11 | Baseline de integrações | Mapa de providers | Sem mudança de código |
+
+## Meta Ads (gasto da conta de anúncio)
+
+- Uma conta. Variáveis no Railway: `META_ADS_ACCESS_TOKEN` (usuário do sistema, `ads_read`) e `META_ADS_ACCOUNT_ID` (`act_…` ou só os dígitos).
+- Opcional: `META_ADS_SELLER_CODE` (vazio = sem vendedor), `META_ADS_LOOKBACK_DAYS` (1–31, padrão 7), `META_ADS_SYNC_INTERVAL_MS` (mínimo 15 min, padrão 60), `META_ADS_AUTO_SYNC=0` desliga o job e deixa o botão.
+- Job `meta-ads-job.ts` chama a Marketing API (`act_…/insights`, `spend` por dia) e grava em `marketing_expenses`. Canal `Facebook`. Id `meta-ads-{conta}-{dia}`.
+- Conta em moeda diferente de BRL, ou fuso fora de Brasília (UTC−3), não grava.
+- `GET /api/admin/meta-ads` e `POST /api/admin/meta-ads/sync`: admin primário. A resposta não leva o token.
+- Pixel do afiliado (`facebook_pixel_id`) continua só rastreio de conversão.
 
 ## PIX / gateways
 

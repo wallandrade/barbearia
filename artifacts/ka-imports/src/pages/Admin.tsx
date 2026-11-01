@@ -5990,17 +5990,21 @@ export default function Admin() {
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <span className="text-sm font-semibold text-rose-700 whitespace-nowrap">{formatCurrency(Number(item.amount) || 0)}</span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-2"
-                          disabled={expenseDeletingId === item.id}
-                          onClick={() => handleDeleteExpense(item.id)}
-                        >
-                          {expenseDeletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                          <span className="ml-1">Remover</span>
-                        </Button>
+                        {/^meta-ads-\d+-\d{4}-\d{2}-\d{2}$/.test(String(item.id || "")) ? (
+                          <span className="text-[11px] font-semibold text-rose-700">Conta de anúncio</span>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2"
+                            disabled={expenseDeletingId === item.id}
+                            onClick={() => handleDeleteExpense(item.id)}
+                          >
+                            {expenseDeletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            <span className="ml-1">Remover</span>
+                          </Button>
+                        )}
                       </div>
                     </div>
                     );

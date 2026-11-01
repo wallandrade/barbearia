@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-10-23
+> **Última atualização:** 2026-11-01
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-01 | Job `meta-ads-job.ts` na subida da API | Lê o gasto da conta de anúncio e grava em `marketing_expenses`. Sem tabela nova | Sem as variáveis, o job fica quieto |
 | 2026-10-23 | Coluna `flash_campaign_items.always_show` (+ runtime) | Cada produto da oferta pode voltar em todo carregamento | Sem `tenant_id`. Visita e repetição dos outros produtos iguais |
 | 2026-10-19 | Tabelas `flash_campaigns`, `flash_campaign_items`, `flash_visits`, `flash_reservations` (+ runtime) | Oferta relâmpago da loja inteira, sem `tenant_id` | Catálogo, cupom e `orders` iguais; a linha do pedido só ganha `flashOffer` no JSON |
 | 2026-10-19 | Coluna `flash_campaigns.repeat_after_hours` (+ runtime) | 0 a 2160. Acima de zero, a visita libera depois de `created_at` + horas | Sem `tenant_id` |

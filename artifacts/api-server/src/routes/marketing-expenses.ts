@@ -2,7 +2,9 @@ import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { db, marketingExpensesTable } from "@workspace/db";
-import { getAdminScope, requireAdminAuth } from "./admin-auth";
+import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
+import { isMetaAdsExpenseId } from "../lib/meta-ads";
+import { getMetaAdsPublicStatus, runMetaAdsSync } from "../lib/meta-ads-sync";
 
 const router: IRouter = Router();
 
@@ -241,6 +243,10 @@ async function deleteExpense(req: Parameters<typeof router.delete>[1] extends (r
       res.status(400).json({ error: "INVALID_INPUT", message: "ID inválido." });
       return;
     }
+    if (isMetaAdsExpenseId(id)) {
+      res.status(409).json({ error: "META_ADS_LOCKED", message: "Esse gasto vem da conta de anúncio do Facebook e é atualizado sozinho." });
+      return;
+    }
 
     const conditions = [eq(marketingExpensesTable.id, id)];
     if (!scope.hasGlobalAccess) {
@@ -279,6 +285,10 @@ async function updateExpense(req: Parameters<typeof router.patch>[1] extends (re
     const id = String(req.params.id || "").trim();
     if (!id) {
       res.status(400).json({ error: "INVALID_INPUT", message: "ID inválido." });
+      return;
+    }
+    if (isMetaAdsExpenseId(id)) {
+      res.status(409).json({ error: "META_ADS_LOCKED", message: "Esse gasto vem da conta de anúncio do Facebook e é atualizado sozinho." });
       return;
     }
 
@@ -358,6 +368,27 @@ async function updateExpense(req: Parameters<typeof router.patch>[1] extends (re
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar despesa." });
   }
 }
+
+router.get("/admin/meta-ads", requirePrimaryAdmin, (_req, res) => {
+  res.json(getMetaAdsPublicStatus());
+});
+
+router.post("/admin/meta-ads/sync", requirePrimaryAdmin, async (_req, res) => {
+  const result = await runMetaAdsSync();
+  if (!result.ok && result.code === "NOT_CONFIGURED") {
+    res.status(400).json({ error: "NOT_CONFIGURED", message: result.message });
+    return;
+  }
+  if (!result.ok && result.code === "BUSY") {
+    res.status(409).json({ error: "BUSY", message: result.message });
+    return;
+  }
+  if (!result.ok) {
+    res.status(502).json({ error: "META_ADS_ERROR", message: result.message });
+    return;
+  }
+  res.json(result);
+});
 
 router.get("/admin/marketing-expenses", requireAdminAuth, listExpenses);
 router.post("/admin/marketing-expenses", requireAdminAuth, createExpense);
