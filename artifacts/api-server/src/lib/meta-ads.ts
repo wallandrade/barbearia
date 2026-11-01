@@ -1,8 +1,10 @@
 /**
  * Gasto diário de uma conta de anúncio da Meta (Facebook Ads).
- * Uma conta só, via META_ADS_ACCOUNT_ID + META_ADS_ACCESS_TOKEN.
- * O valor entra em marketing_expenses no canal Facebook.
+ * A loja grava uma conta (META_ADS_ACCOUNT_ID) em marketing_expenses.
+ * Outra conta (META_ADS_SHARE_ACCOUNT_ID) só sai na API compartilhada.
  */
+
+import { timingSafeEqual } from "crypto";
 
 import { brazilCalendarDay } from "./brazil-expense-period";
 
@@ -301,4 +303,121 @@ export function manualFacebookOverlaps(
     if (hit) overlaps.push(day);
   }
   return overlaps;
+}
+
+const MIN_SHARE_TOKEN_LENGTH = 16;
+const SHARE_MAX_DAYS = 31;
+
+export type MetaAdsShareSettings = {
+  enabled: boolean;
+  shareToken: string;
+  accountId: string | null;
+  facebookToken: string;
+  lookbackDays: number;
+  sameAsStoreAccount: boolean;
+};
+
+export function readMetaAdsShareSettings(env: NodeJS.ProcessEnv): MetaAdsShareSettings {
+  const shareToken = String(env.META_ADS_SHARE_TOKEN ?? "").trim();
+  const accountId = normalizeMetaAdAccountId(env.META_ADS_SHARE_ACCOUNT_ID);
+  const facebookToken = String(env.META_ADS_ACCESS_TOKEN ?? "").trim();
+  const storeAccountId = normalizeMetaAdAccountId(env.META_ADS_ACCOUNT_ID);
+  const lookbackParsed = Number(env.META_ADS_LOOKBACK_DAYS);
+  const sameAsStoreAccount = Boolean(accountId && storeAccountId && accountId === storeAccountId);
+  const enabled = shareToken.length >= MIN_SHARE_TOKEN_LENGTH
+    && Boolean(accountId)
+    && facebookToken.length >= MIN_TOKEN_LENGTH
+    && !sameAsStoreAccount;
+  return {
+    enabled,
+    shareToken: enabled ? shareToken : "",
+    accountId: enabled ? accountId : accountId,
+    facebookToken: enabled ? facebookToken : "",
+    lookbackDays: clampLookback(lookbackParsed),
+    sameAsStoreAccount,
+  };
+}
+
+export function metaShareTokenMatches(expected: string, presented: string): boolean {
+  if (!expected || !presented || expected.length !== presented.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(presented));
+  } catch {
+    return false;
+  }
+}
+
+export function presentedShareToken(headers: Record<string, unknown>): string {
+  const auth = String(headers.authorization || headers.Authorization || "").trim();
+  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  return String(headers["x-api-key"] || headers["X-Api-Key"] || "").trim();
+}
+
+export function resolveShareWindow(
+  todayYmd: string,
+  dateFrom: string,
+  dateTo: string,
+  lookbackDays: number,
+): { since: string; until: string } | { error: string } {
+  const from = dateFrom.trim();
+  const to = dateTo.trim();
+  if (!from && !to) return metaAdsSyncWindow(todayYmd, lookbackDays);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return { error: "Informe dateFrom e dateTo no formato AAAA-MM-DD." };
+  }
+  if (from > to) return { error: "A data inicial é posterior à data final." };
+  let count = 0;
+  let cursor = from;
+  while (cursor <= to) {
+    count += 1;
+    if (count > SHARE_MAX_DAYS) return { error: "O período máximo é de 31 dias." };
+    cursor = addCalendarDays(cursor, 1);
+  }
+  return { since: from, until: to };
+}
+
+async function readMetaJson(url: string, fetchImpl: typeof fetch): Promise<unknown> {
+  const response = await fetchImpl(url, { method: "GET", signal: AbortSignal.timeout(20_000) });
+  const text = await response.text();
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  const graphMessage = metaGraphErrorMessage(body);
+  if (!response.ok || graphMessage) {
+    throw new MetaAdsRequestError(graphMessage || `A Meta respondeu HTTP ${response.status}.`);
+  }
+  return body;
+}
+
+export async function fetchMetaDailySpend(input: {
+  accountId: string;
+  facebookToken: string;
+  since: string;
+  until: string;
+  fetchImpl?: typeof fetch;
+}): Promise<{ days: Array<{ date: string; amount: number }>; total: number }> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const account = parseMetaAdAccount(await readMetaJson(metaAdAccountUrl(input.accountId, input.facebookToken), fetchImpl));
+  if (!metaCurrencyOk(account.currency)) {
+    throw new MetaAdsRequestError(`A conta está em ${account.currency}. O painel só entrega gasto em BRL.`);
+  }
+  if (!metaAccountTimezoneOk(account.timezoneName)) {
+    throw new MetaAdsRequestError(`A conta está no fuso ${account.timezoneName}. Ajuste para América/São Paulo no Gerenciador.`);
+  }
+
+  let url: string | null = metaInsightsUrl(input.accountId, input.facebookToken, input.since, input.until);
+  const rows: unknown[] = [];
+  for (let page = 0; page < 4 && url; page += 1) {
+    const body = await readMetaJson(url, fetchImpl);
+    const parsed = parseMetaInsightsPage(body);
+    rows.push(...parsed.rows);
+    url = parsed.nextUrl;
+  }
+  const plan = planMetaAdsDays(input.accountId, input.since, input.until, parseMetaInsightRows(rows));
+  const days = plan.map((day) => ({ date: day.day, amount: day.amount }));
+  const total = Math.round(days.reduce((sum, day) => sum + day.amount, 0) * 100) / 100;
+  return { days, total };
 }

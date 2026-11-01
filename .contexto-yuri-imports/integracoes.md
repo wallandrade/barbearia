@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-01 | Outro sistema lê o gasto de uma segunda conta | `GET /api/integrations/meta-ads/spend` com `META_ADS_SHARE_TOKEN`. A conta é `META_ADS_SHARE_ACCOUNT_ID`. Não grava despesa aqui | A conta da loja (`META_ADS_ACCOUNT_ID`) e o líquido iguais |
 | 2026-11-01 | Conta de anúncio do Facebook grava o gasto do dia | `META_ADS_ACCESS_TOKEN` + `META_ADS_ACCOUNT_ID`. Job a cada 60 min. Botão na aba Despesas | Pixel do afiliado, PIX e EnvioEcom iguais |
 | 2026-10-30 | Aviso dos grupos não manda o endereço da foto | A legenda fica com o link do texto. A URL da imagem no R2 não entra na mensagem | A foto continua saindo como imagem. Horário e rodada de produtos iguais |
 | 2026-10-30 | Lista de avisos dos grupos mostra a foto | Cada agendamento na aba Automação traz a miniatura da imagem ao lado do texto | O envio, o horário e o lápis iguais |
@@ -221,6 +222,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - Job `meta-ads-job.ts` chama a Marketing API (`act_…/insights`, `spend` por dia) e grava em `marketing_expenses`. Canal `Facebook`. Id `meta-ads-{conta}-{dia}`.
 - Conta em moeda diferente de BRL, ou fuso fora de Brasília (UTC−3), não grava.
 - `GET /api/admin/meta-ads` e `POST /api/admin/meta-ads/sync`: admin primário. A resposta não leva o token.
+- Segunda conta, para outro sistema: `META_ADS_SHARE_ACCOUNT_ID` + `META_ADS_SHARE_TOKEN` (mínimo 16). Reusa o `META_ADS_ACCESS_TOKEN`. `GET /api/integrations/meta-ads/spend` com `Authorization: Bearer` ou `X-Api-Key`. Sem data, últimos 7 dias. `dateFrom` e `dateTo` (`AAAA-MM-DD`) no máximo 31. Resposta: `days` (`date`, `amount`), `total`, conta mascarada. Não grava em `marketing_expenses`. Se o id for o mesmo da loja, responde 503. Cache de 5 min.
 - Pixel do afiliado (`facebook_pixel_id`) continua só rastreio de conversão.
 
 ## PIX / gateways

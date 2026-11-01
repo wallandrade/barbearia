@@ -45,6 +45,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-01 | Gasto de outra conta sai só para o sistema externo | `GET /api/integrations/meta-ads/spend` lê `META_ADS_SHARE_ACCOUNT_ID`. Não entra no líquido nem na aba Despesas | A conta da loja continua em `META_ADS_ACCOUNT_ID` |
 | 2026-11-01 | Gasto da conta de anúncio do Facebook entra sozinho | Com `META_ADS_ACCOUNT_ID` e `META_ADS_ACCESS_TOKEN`, um lançamento por dia no canal Facebook. Id `meta-ads-{conta}-{dia}`. Admin primário atualiza em Despesas. `PATCH`/`DELETE` desse id responde 409 | Lançamento manual continua. Pixel do afiliado igual. Cópia 48h igual |
 | 2026-10-28 | Baixa do espelho Motoboy/Minas sem senha | `POST /api/integrations/inventory/exit` desconta com o token. O KA não mostra o campo de senha | Dar baixa agora no Admin, Foz Guaçu e a cópia 48h iguais |
 | 2026-10-26 | Lista do banner mostra a foto do produto | Em **Produto ao clicar**, cada linha traz a imagem ao lado do nome. O produto escolhido também aparece com a foto | O destino do clique e a chave salva continuam iguais |

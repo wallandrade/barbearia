@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   addCalendarDays,
   eachCalendarDay,
+  fetchMetaDailySpend,
   isManualFacebookChannel,
   isMetaAdsExpenseId,
   manualFacebookOverlaps,
@@ -13,14 +14,19 @@ import {
   metaAdsSyncWindow,
   metaCurrencyOk,
   metaGraphErrorMessage,
+  metaShareTokenMatches,
   normalizeMetaAdAccountId,
   parseMetaInsightRows,
   parseSpendAmount,
   planMetaAdsDays,
+  presentedShareToken,
   readMetaAdsSettings,
+  readMetaAdsShareSettings,
   redactMetaSecret,
+  resolveShareWindow,
   safeMetaNextUrl,
 } from "./meta-ads";
+import { clearMetaShareCache, readSharedMetaSpend } from "./meta-ads-share";
 
 test("conta act_ vira só os dígitos", () => {
   assert.equal(normalizeMetaAdAccountId(" act_1234567890 "), "1234567890");
@@ -149,6 +155,96 @@ test("lançamento manual de Facebook no mesmo dia é aviso, não é a linha da M
     { id: "meta-ads-99-2026-11-01", channel: "Facebook", expenseStartDate: start, expenseEndDate: end, expenseDate: start },
   ], ["2026-11-01", "2026-11-02"]);
   assert.deepEqual(overlaps, ["2026-11-01"]);
+});
+
+test("conta compartilhada não é a conta da loja e exige senha longa", () => {
+  const same = readMetaAdsShareSettings({
+    META_ADS_ACCESS_TOKEN: "f".repeat(20),
+    META_ADS_ACCOUNT_ID: "11111",
+    META_ADS_SHARE_ACCOUNT_ID: "11111",
+    META_ADS_SHARE_TOKEN: "s".repeat(16),
+  });
+  assert.equal(same.enabled, false);
+  assert.equal(same.sameAsStoreAccount, true);
+
+  const ready = readMetaAdsShareSettings({
+    META_ADS_ACCESS_TOKEN: "f".repeat(20),
+    META_ADS_ACCOUNT_ID: "11111",
+    META_ADS_SHARE_ACCOUNT_ID: "act_22222",
+    META_ADS_SHARE_TOKEN: "senha-da-outra-loja",
+  });
+  assert.equal(ready.enabled, true);
+  assert.equal(ready.accountId, "22222");
+  assert.equal(metaShareTokenMatches(ready.shareToken, "senha-da-outra-loja"), true);
+  assert.equal(metaShareTokenMatches(ready.shareToken, "outra"), false);
+  assert.equal(presentedShareToken({ authorization: "Bearer senha-da-outra-loja" }), "senha-da-outra-loja");
+});
+
+test("janela compartilhada usa os últimos dias ou recusa mais de 31", () => {
+  assert.deepEqual(resolveShareWindow("2026-11-01", "", "", 7), { since: "2026-10-26", until: "2026-11-01" });
+  assert.deepEqual(resolveShareWindow("2026-11-01", "2026-11-01", "2026-11-01", 7), { since: "2026-11-01", until: "2026-11-01" });
+  const tooLong = resolveShareWindow("2026-11-01", "2026-09-01", "2026-11-01", 7);
+  assert.equal("error" in tooLong, true);
+});
+
+test("leitura da Meta devolve o dia e o zero que ela omitiu", async () => {
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = String(input);
+    const body = url.includes("/insights")
+      ? { data: [{ spend: "8.5", date_start: "2026-11-01", date_stop: "2026-11-01" }] }
+      : { name: "C2", currency: "BRL", timezone_name: "America/Sao_Paulo" };
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const spend = await fetchMetaDailySpend({
+    accountId: "22222",
+    facebookToken: "f".repeat(20),
+    since: "2026-10-31",
+    until: "2026-11-01",
+    fetchImpl,
+  });
+  assert.deepEqual(spend.days, [
+    { date: "2026-10-31", amount: 0 },
+    { date: "2026-11-01", amount: 8.5 },
+  ]);
+  assert.equal(spend.total, 8.5);
+});
+
+test("API compartilhada exige a senha e não devolve o token do Facebook", async () => {
+  clearMetaShareCache();
+  const env = {
+    META_ADS_ACCESS_TOKEN: "facebook-token-secreto",
+    META_ADS_ACCOUNT_ID: "11111",
+    META_ADS_SHARE_ACCOUNT_ID: "22222",
+    META_ADS_SHARE_TOKEN: "senha-da-outra-loja",
+  } as NodeJS.ProcessEnv;
+  const denied = await readSharedMetaSpend({
+    env,
+    headers: {},
+    now: new Date("2026-11-01T15:00:00.000Z"),
+  });
+  assert.equal(denied.status, 401);
+
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = String(input);
+    const body = url.includes("/insights")
+      ? { data: [{ spend: "4", date_start: "2026-11-01", date_stop: "2026-11-01" }] }
+      : { currency: "BRL", timezone_name: "America/Sao_Paulo" };
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const ok = await readSharedMetaSpend({
+    env,
+    headers: { "x-api-key": "senha-da-outra-loja" },
+    dateFrom: "2026-11-01",
+    dateTo: "2026-11-01",
+    now: new Date("2026-11-01T15:00:00.000Z"),
+    fetchImpl,
+  });
+  assert.equal(ok.status, 200);
+  const encoded = JSON.stringify(ok.body);
+  assert.equal(encoded.includes("facebook-token-secreto"), false);
+  assert.equal(encoded.includes("22222"), false);
+  assert.equal((ok.body as { total: number }).total, 4);
+  assert.equal((ok.body as { accountIdMasked: string }).accountIdMasked, "act_••••2222");
 });
 
 test("erro e paginação da Meta não levam o token nem saem do graph", () => {
