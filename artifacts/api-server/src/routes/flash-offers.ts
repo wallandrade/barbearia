@@ -23,7 +23,9 @@ import {
   isFlashAlwaysShow,
   isFlashHourOpen,
   isFlashProductEligible,
+  flashCampaignIdsWithFirst,
   mergeFlashDrawOffers,
+  orderFlashOffersByCampaign,
   isFlashVisitorId,
   isValidFlashCatalogPrice,
   parseFlashChance,
@@ -233,14 +235,15 @@ router.post("/flash-offers/draw", async (req, res) => {
       .select()
       .from(flashCampaignsTable)
       .where(eq(flashCampaignsTable.isActive, true))
-      .orderBy(asc(flashCampaignsTable.createdAt));
+      .orderBy(asc(flashCampaignsTable.sortOrder), asc(flashCampaignsTable.createdAt));
 
     const offers: FlashDrawOffer[] = [];
     const forceFirstVisit = await isFlashForceFirstVisit();
     const alwaysOffers = await collectAlwaysShowOffers(campaigns, hour);
     if (forceFirstVisit) {
       if (await forceFirstVisitAlreadyShown(visitorId, userId)) {
-        res.json({ offers: alwaysOffers, offer: alwaysOffers[0] ?? null });
+        const visible = orderFlashOffersByCampaign(alwaysOffers, campaigns.map((campaign) => campaign.id));
+        res.json({ offers: visible, offer: visible[0] ?? null });
         return;
       }
       const now = new Date();
@@ -267,7 +270,10 @@ router.post("/flash-offers/draw", async (req, res) => {
           today,
         });
       }
-      const merged = mergeFlashDrawOffers(alwaysOffers, offers);
+      const merged = orderFlashOffersByCampaign(
+        mergeFlashDrawOffers(alwaysOffers, offers),
+        campaigns.map((campaign) => campaign.id),
+      );
       res.json({ offers: merged, offer: merged[0] ?? null });
       return;
     }
@@ -411,7 +417,10 @@ router.post("/flash-offers/draw", async (req, res) => {
       });
     }
 
-    const merged = mergeFlashDrawOffers(alwaysOffers, offers);
+    const merged = orderFlashOffersByCampaign(
+      mergeFlashDrawOffers(alwaysOffers, offers),
+      campaigns.map((campaign) => campaign.id),
+    );
     res.json({ offers: merged, offer: merged[0] ?? null });
   } catch (err) {
     console.error("[flash-offers] draw", err);
@@ -844,7 +853,10 @@ async function replaceItems(campaignId: string, rows: Array<{ productId: string;
 
 router.get("/admin/flash-campaigns", requirePrimaryAdmin, async (_req, res) => {
   try {
-    const rows = await db.select().from(flashCampaignsTable).orderBy(asc(flashCampaignsTable.createdAt));
+    const rows = await db
+      .select()
+      .from(flashCampaignsTable)
+      .orderBy(asc(flashCampaignsTable.sortOrder), asc(flashCampaignsTable.createdAt));
     const campaigns = [];
     for (const row of rows) campaigns.push(await mapCampaign(row));
     res.json({ campaigns });
@@ -868,6 +880,10 @@ router.post("/admin/flash-campaigns", requirePrimaryAdmin, async (req, res) => {
     }
     const id = crypto.randomBytes(12).toString("hex");
     const now = new Date();
+    const existingOrders = await db
+      .select({ sortOrder: flashCampaignsTable.sortOrder })
+      .from(flashCampaignsTable);
+    const sortOrder = existingOrders.reduce((max, row) => Math.max(max, row.sortOrder), -1) + 1;
     await db.insert(flashCampaignsTable).values({
       id,
       name: fields.name!,
@@ -877,6 +893,7 @@ router.post("/admin/flash-campaigns", requirePrimaryAdmin, async (req, res) => {
       repeatAfterHours: fields.repeatAfterHours ?? 0,
       startHour: fields.startHour ?? null,
       endHour: fields.endHour ?? null,
+      sortOrder,
       updatedAt: now,
     });
     await replaceItems(id, items.rows);
@@ -952,6 +969,43 @@ router.patch("/admin/flash-campaigns/:id/items/:itemId", requirePrimaryAdmin, as
     res.json({ campaign: await mapCampaign(row) });
   } catch (err) {
     console.error("[flash-offers] always-show", err);
+    res.status(500).json({ error: "INTERNAL_ERROR" });
+  }
+});
+
+router.post("/admin/flash-campaigns/:id/show-first", requirePrimaryAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    const rows = await db
+      .select({
+        id: flashCampaignsTable.id,
+        sortOrder: flashCampaignsTable.sortOrder,
+        createdAt: flashCampaignsTable.createdAt,
+      })
+      .from(flashCampaignsTable);
+    if (!rows.some((row) => row.id === id)) {
+      jsonError(res, 404, "NOT_FOUND", "Campanha não encontrada.");
+      return;
+    }
+    const orderedIds = flashCampaignIdsWithFirst(rows, id);
+    const now = new Date();
+    for (let index = 0; index < orderedIds.length; index += 1) {
+      const current = rows.find((row) => row.id === orderedIds[index]);
+      if (!current || current.sortOrder === index) continue;
+      await db
+        .update(flashCampaignsTable)
+        .set({ sortOrder: index, updatedAt: now })
+        .where(eq(flashCampaignsTable.id, orderedIds[index]!));
+    }
+    const listed = await db
+      .select()
+      .from(flashCampaignsTable)
+      .orderBy(asc(flashCampaignsTable.sortOrder), asc(flashCampaignsTable.createdAt));
+    const campaigns = [];
+    for (const row of listed) campaigns.push(await mapCampaign(row));
+    res.json({ campaigns });
+  } catch (err) {
+    console.error("[flash-offers] show-first", err);
     res.status(500).json({ error: "INTERNAL_ERROR" });
   }
 });

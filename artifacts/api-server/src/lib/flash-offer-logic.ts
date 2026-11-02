@@ -177,6 +177,37 @@ export function mergeFlashDrawOffers<T extends { campaignId: string; productId: 
   return merged;
 }
 
+/** A campanha escolhida abre o card. Na mesma campanha, a ordem de entrada fica. */
+export function orderFlashOffersByCampaign<T extends { campaignId: string }>(
+  offers: T[],
+  campaignIdsInOrder: string[],
+): T[] {
+  const rank = new Map(campaignIdsInOrder.map((id, index) => [id, index]));
+  return offers
+    .map((offer, index) => ({
+      offer,
+      index,
+      rank: rank.get(offer.campaignId) ?? campaignIdsInOrder.length,
+    }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((row) => row.offer);
+}
+
+/** Coloca a campanha na frente e mantém a ordem relativa das outras. */
+export function flashCampaignIdsWithFirst(
+  rows: Array<{ id: string; sortOrder: number; createdAt: Date }>,
+  firstId: string,
+): string[] {
+  const ordered = [...rows].sort((a, b) => (
+    a.sortOrder - b.sortOrder
+    || a.createdAt.getTime() - b.createdAt.getTime()
+    || a.id.localeCompare(b.id)
+  ));
+  const ids = ordered.map((row) => row.id);
+  if (!ids.includes(firstId)) return ids;
+  return [firstId, ...ids.filter((id) => id !== firstId)];
+}
+
 export function flashRejectsCoupon(reservationId: string, couponCode: string): boolean {
   return reservationId.trim().length > 0 && couponCode.trim().length > 0;
 }

@@ -137,6 +137,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
   const [forceSaving, setForceSaving] = useState(false);
   const [openVisitorIds, setOpenVisitorIds] = useState<Record<string, boolean>>({});
   const [alwaysSavingId, setAlwaysSavingId] = useState<string | null>(null);
+  const [firstSavingId, setFirstSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [campaignRes, productRes, settingsRes] = await Promise.all([
@@ -319,6 +320,31 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
     }
   }
 
+  async function showFirst(id: string) {
+    setFirstSavingId(id);
+    try {
+      const response = await fetch(`${BASE}/api/admin/flash-campaigns/${id}/show-first`, {
+        method: "POST",
+        headers: adminHeaders(),
+      });
+      const data = await response.json().catch(() => ({})) as { message?: string; campaigns?: Campaign[] };
+      if (response.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      if (!response.ok || !data.campaigns) {
+        toast.error(data.message || "Não foi possível colocar essa campanha na frente.");
+        return;
+      }
+      setCampaigns(data.campaigns);
+      toast.success("Essa campanha abre primeiro para o cliente.");
+    } catch {
+      toast.error("Não foi possível colocar essa campanha na frente.");
+    } finally {
+      setFirstSavingId(null);
+    }
+  }
+
   async function remove(id: string) {
     const response = await fetch(`${BASE}/api/admin/flash-campaigns/${id}`, {
       method: "DELETE",
@@ -488,7 +514,7 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
       <div className="space-y-3">
         {campaigns.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhuma campanha ainda.</p>
-        ) : campaigns.map((campaign) => (
+        ) : campaigns.map((campaign, index) => (
           <article key={campaign.id} className="rounded-xl border border-border bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -498,6 +524,18 @@ export function FlashCampaignsPanel({ onUnauthorized }: { onUnauthorized: () => 
                 </p>
               </div>
               <div className="flex gap-2">
+                {index === 0 ? (
+                  <span className="text-sm font-semibold text-[#ff6a00]">Aparece primeiro</span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={firstSavingId === campaign.id}
+                    onClick={() => void showFirst(campaign.id)}
+                    className="text-sm font-semibold text-primary disabled:opacity-60"
+                  >
+                    {firstSavingId === campaign.id ? "Salvando..." : "Aparecer primeiro"}
+                  </button>
+                )}
                 <button type="button" onClick={() => edit(campaign)} className="text-sm font-semibold text-primary">Editar</button>
                 <button type="button" onClick={() => void remove(campaign.id)} className="text-sm font-semibold text-destructive">Apagar</button>
               </div>

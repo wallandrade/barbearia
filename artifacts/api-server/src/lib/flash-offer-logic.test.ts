@@ -14,7 +14,9 @@ import {
   isFlashAlwaysShow,
   isFlashHourOpen,
   isFlashProductEligible,
+  flashCampaignIdsWithFirst,
   mergeFlashDrawOffers,
+  orderFlashOffersByCampaign,
   isFlashVisitorId,
   isValidFlashCatalogPrice,
   parseFlashChance,
@@ -116,6 +118,32 @@ test("produto habilitado entra em todo sorteio e não repete o par campanha e pr
     { campaignId: "c1", productId: "p3" },
   ]);
   assert.deepEqual(mergeFlashDrawOffers([], drawn), drawn);
+});
+
+test("a campanha marcada abre o card e as outras mantêm a ordem", () => {
+  const created = (iso: string) => new Date(iso);
+  const rows = [
+    { id: "lipoless", sortOrder: 0, createdAt: created("2026-10-01T00:00:00.000Z") },
+    { id: "ghk", sortOrder: 0, createdAt: created("2026-10-02T00:00:00.000Z") },
+    { id: "kit", sortOrder: 0, createdAt: created("2026-10-03T00:00:00.000Z") },
+  ];
+  assert.deepEqual(flashCampaignIdsWithFirst(rows, "kit"), ["kit", "lipoless", "ghk"]);
+  assert.deepEqual(flashCampaignIdsWithFirst(rows, "ausente"), ["lipoless", "ghk", "kit"]);
+  const offers = [
+    { campaignId: "lipoless", productId: "p1" },
+    { campaignId: "ghk", productId: "p2" },
+    { campaignId: "kit", productId: "p3" },
+  ];
+  assert.deepEqual(orderFlashOffersByCampaign(offers, ["kit", "lipoless", "ghk"]), [
+    { campaignId: "kit", productId: "p3" },
+    { campaignId: "lipoless", productId: "p1" },
+    { campaignId: "ghk", productId: "p2" },
+  ]);
+  const sameCampaign = orderFlashOffersByCampaign([
+    { campaignId: "kit", productId: "always" },
+    { campaignId: "kit", productId: "drawn" },
+  ], ["kit"]);
+  assert.deepEqual(sameCampaign.map((offer) => offer.productId), ["always", "drawn"]);
 });
 
 test("seen trava a campanha e miss de ontem não trava hoje", () => {
