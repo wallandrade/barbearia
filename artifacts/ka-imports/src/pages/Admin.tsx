@@ -13924,11 +13924,105 @@ function OrdersPanel({
                   )}
                   </div>
                   )}
-                  {isSplitShipment && envioecomPackages.map((pkg) => (
-                    <div key={pkg.id || pkg.inventoryPool} className="w-full flex flex-wrap items-center gap-1.5 rounded-xl border border-teal-100 bg-teal-50/40 px-2 py-1.5">
-                      <span className="text-[11px] font-bold text-teal-900">
-                        {pkg.inventoryPoolLabel || pkg.inventoryPool}
-                      </span>
+                  {isSplitShipment && envioecomPackages.map((pkg) => {
+                    const poolLabel = pkg.inventoryPoolLabel || pkg.inventoryPool;
+                    const eeCode = String(pkg.envioecomBarcode || "").trim();
+                    const manualCode = String(pkg.manualTrackingCode || "").trim();
+                    const sfTracking = String(pkg.superfreteTracking || "").trim();
+                    const sfStatus = String(pkg.superfreteStatus || "").toLowerCase();
+                    const sfActive = Boolean(pkg.superfreteOrderId) && sfStatus !== "cancelled" && sfStatus !== "canceled";
+                    const packageItems = (pkg.items || []).filter(Boolean);
+                    const hasTracking = Boolean(pkg.envioecomStatus || eeCode || manualCode || sfActive);
+                    return (
+                    <div key={pkg.id || pkg.inventoryPool} className="w-full flex flex-col gap-2 rounded-xl border border-teal-100 bg-teal-50/40 px-2.5 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs font-bold text-teal-950 shrink-0 pt-0.5">
+                          {poolLabel}
+                        </span>
+                        <div className="flex flex-col items-end gap-1 min-w-0">
+                          {(pkg.envioecomStatus || eeCode) ? (
+                            <span className={`inline-flex flex-col items-end max-w-full px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>
+                              <span>{pkg.envioecomStatus || "EnvioEcom"}</span>
+                              {eeCode ? <span className="font-mono text-xs font-bold tracking-tight break-all">{eeCode}</span> : null}
+                            </span>
+                          ) : null}
+                          {manualCode ? (
+                            <span className="inline-flex flex-col items-end max-w-full px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-indigo-200 bg-white text-indigo-900">
+                              <span>Correios</span>
+                              <span className="font-mono text-xs font-bold tracking-tight break-all">{manualCode}</span>
+                            </span>
+                          ) : null}
+                          {sfActive ? (
+                            <span className="inline-flex flex-col items-end max-w-full px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-900">
+                              <span>SuperFrete{pkg.superfreteStatus ? ` · ${pkg.superfreteStatus}` : ""}</span>
+                              {sfTracking ? <span className="font-mono text-xs font-bold tracking-tight break-all">{sfTracking}</span> : null}
+                            </span>
+                          ) : null}
+                          {!hasTracking ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-dashed border-slate-300 bg-white text-slate-500">
+                              Sem rastreio
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      {packageItems.length > 0 && (
+                        <div className="flex flex-col gap-1">
+                          <p className="text-[11px] font-semibold text-teal-900">
+                            {packageItems.length} {packageItems.length === 1 ? "item" : "itens"} {hasTracking ? "neste rastreio" : "neste pacote"}
+                          </p>
+                          {packageItems.map((item, itemIndex) => {
+                            const name = String(item.productName || "Produto").trim() || "Produto";
+                            const qty = Number(item.quantity) || 0;
+                            const fromOrder = findOrderProductForShipmentItem(orderProducts, item);
+                            const imageSrc = resolveProductImage({
+                              id: String(item.productId || fromOrder?.id || ""),
+                              name,
+                              quantity: qty,
+                              price: Number(fromOrder?.price) || 0,
+                              image: item.image || fromOrder?.image,
+                            });
+                            return (
+                              <div
+                                key={`${pkg.id || pkg.inventoryPool}-${item.productId || name}-${itemIndex}`}
+                                className="flex items-center gap-2 min-w-0"
+                              >
+                                <div
+                                  title={`${qty}x ${name}`}
+                                  className={`group relative h-8 w-8 rounded-md overflow-visible shrink-0 ${imageSrc ? "cursor-zoom-in" : ""}`}
+                                  onClick={() => {
+                                    if (!imageSrc) return;
+                                    setImagePreview({ src: imageSrc, name });
+                                  }}
+                                >
+                                  <div className="h-8 w-8 rounded-md overflow-hidden border border-teal-200 bg-white">
+                                    {imageSrc ? (
+                                      <img src={imageSrc} alt={name} className="h-full w-full object-cover" loading="lazy" />
+                                    ) : (
+                                      <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                                        <ShoppingBag className="w-3.5 h-3.5" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  {imageSrc && (
+                                    <div className="pointer-events-none absolute left-9 top-1/2 z-30 hidden -translate-y-1/2 rounded-xl border border-border bg-white p-1 shadow-2xl opacity-0 scale-95 invisible transition-all duration-200 ease-out group-hover:opacity-100 group-hover:scale-100 group-hover:visible sm:block">
+                                      <img
+                                        src={imageSrc}
+                                        alt={`Zoom ${name}`}
+                                        className="h-28 w-28 rounded-lg object-cover"
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-foreground leading-snug break-words min-w-0">
+                                  {qty}× {name}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-teal-100">
                       {!isCancelledCard && pkg.id && (
                         <ShippingForecastField
                           value={pkg.shippingForecastDate}
@@ -13936,58 +14030,6 @@ function OrdersPanel({
                           onChange={(date) => { void saveShippingForecast(order, date, pkg.id); }}
                         />
                       )}
-                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        {(pkg.items || []).filter(Boolean).map((item, itemIndex) => {
-                          const name = String(item.productName || "Produto").trim() || "Produto";
-                          const qty = Number(item.quantity) || 0;
-                          const fromOrder = findOrderProductForShipmentItem(orderProducts, item);
-                          const imageSrc = resolveProductImage({
-                            id: String(item.productId || fromOrder?.id || ""),
-                            name,
-                            quantity: qty,
-                            price: Number(fromOrder?.price) || 0,
-                            image: item.image || fromOrder?.image,
-                          });
-                          return (
-                            <div
-                              key={`${pkg.id || pkg.inventoryPool}-${item.productId || name}-${itemIndex}`}
-                              className="flex items-center gap-1 min-w-0"
-                            >
-                              <div
-                                title={`${qty}x ${name}`}
-                                className={`group relative h-8 w-8 rounded-md overflow-visible shrink-0 ${imageSrc ? "cursor-zoom-in" : ""}`}
-                                onClick={() => {
-                                  if (!imageSrc) return;
-                                  setImagePreview({ src: imageSrc, name });
-                                }}
-                              >
-                                <div className="h-8 w-8 rounded-md overflow-hidden border border-teal-200 bg-white">
-                                  {imageSrc ? (
-                                    <img src={imageSrc} alt={name} className="h-full w-full object-cover" loading="lazy" />
-                                  ) : (
-                                    <div className="h-full w-full flex items-center justify-center text-muted-foreground">
-                                      <ShoppingBag className="w-3.5 h-3.5" />
-                                    </div>
-                                  )}
-                                </div>
-                                {imageSrc && (
-                                  <div className="pointer-events-none absolute left-9 top-1/2 z-30 hidden -translate-y-1/2 rounded-xl border border-border bg-white p-1 shadow-2xl opacity-0 scale-95 invisible transition-all duration-200 ease-out group-hover:opacity-100 group-hover:scale-100 group-hover:visible sm:block">
-                                    <img
-                                      src={imageSrc}
-                                      alt={`Zoom ${name}`}
-                                      className="h-28 w-28 rounded-lg object-cover"
-                                      loading="lazy"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                              <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">
-                                {qty}× {name}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
                       {!isCancelledCard && pkg.id && !pkg.inventoryReserved && (
                         <>
                           {inventoryPoolNeedsExitPassword(pkg.inventoryPool) && (
@@ -13999,22 +14041,22 @@ function OrdersPanel({
                               className="h-6 w-32 px-2 rounded-full border border-amber-300 bg-white text-[11px] outline-none focus:border-emerald-600"
                             />
                           )}
-                        <button
-                          type="button"
-                          disabled={!!inventoryPoolSaving[`${order.id}:${pkg.id}`]}
-                          onClick={() => {
-                            void debitInventoryNowForPackage(
-                              order.id,
-                              String(pkg.id),
-                              pkg.inventoryPoolLabel || inventoryPoolLabel(pkg.inventoryPool),
-                              undefined,
-                              pkg.inventoryPool,
-                            );
-                          }}
-                          title={`Dar baixa agora no estoque ${pkg.inventoryPoolLabel || pkg.inventoryPool}`}
-                          className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
-                        >
-                          {inventoryPoolSaving[`${order.id}:${pkg.id}`] ? "..." : "Dar baixa agora"}
+                          <button
+                            type="button"
+                            disabled={!!inventoryPoolSaving[`${order.id}:${pkg.id}`]}
+                            onClick={() => {
+                              void debitInventoryNowForPackage(
+                                order.id,
+                                String(pkg.id),
+                                poolLabel || inventoryPoolLabel(pkg.inventoryPool),
+                                undefined,
+                                pkg.inventoryPool,
+                              );
+                            }}
+                            title={`Dar baixa agora no estoque ${poolLabel || pkg.inventoryPool}`}
+                            className="h-6 px-2 rounded-full border border-emerald-600 bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-60"
+                          >
+                            {inventoryPoolSaving[`${order.id}:${pkg.id}`] ? "..." : "Dar baixa agora"}
                           </button>
                         </>
                       )}
@@ -14024,34 +14066,29 @@ function OrdersPanel({
                         </span>
                       )}
                       {!isCancelledCard && pkg.id && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-indigo-800 border-indigo-200"
-                        onClick={() => setManualTrackingModal({
-                          order,
-                          packageId: String(pkg.id),
-                          poolLabel: pkg.inventoryPoolLabel || pkg.inventoryPool,
-                          code: String(pkg.manualTrackingCode || ""),
-                        })}
-                      >
-                        Rastreio manual
-                      </Button>
-                      )}
-                      {pkg.manualTrackingCode ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-indigo-200 bg-white text-indigo-900">
-                          Correios · {pkg.manualTrackingCode}
-                        </span>
-                      ) : null}
-                      {!isCancelledCard && !targetHasSuperfrete(order, pkg.id) && (
-                      <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { startFreightEmit(order, pkg.id); }}>
-                        {selectableSuperfreteAccounts.length && !targetHasEnvioEcom(order, pkg.id) && !targetHasSuperfrete(order, pkg.id) ? "Emitir frete" : "EnvioEcom"}
-                      </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-indigo-800 border-indigo-200"
+                          onClick={() => setManualTrackingModal({
+                            order,
+                            packageId: String(pkg.id),
+                            poolLabel: poolLabel || pkg.inventoryPool,
+                            code: String(pkg.manualTrackingCode || ""),
+                          })}
+                        >
+                          Rastreio manual
+                        </Button>
                       )}
                       {!isCancelledCard && !targetHasSuperfrete(order, pkg.id) && (
-                      <Button size="sm" variant="outline" className="h-7 text-teal-800 border-teal-300" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomLink(order, { packageId: pkg.id }); }}>
-                        Vincular
-                      </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-teal-700 border-teal-200" disabled={!!envioecomBusy[order.id]} onClick={() => { startFreightEmit(order, pkg.id); }}>
+                          {selectableSuperfreteAccounts.length && !targetHasEnvioEcom(order, pkg.id) && !targetHasSuperfrete(order, pkg.id) ? "Emitir frete" : "EnvioEcom"}
+                        </Button>
+                      )}
+                      {!isCancelledCard && !targetHasSuperfrete(order, pkg.id) && (
+                        <Button size="sm" variant="outline" className="h-7 text-teal-800 border-teal-300" disabled={!!envioecomBusy[order.id]} onClick={() => { void startEnvioEcomLink(order, { packageId: pkg.id }); }}>
+                          Vincular
+                        </Button>
                       )}
                       <EnvioEcomManageMenu
                         compact
@@ -14084,24 +14121,18 @@ function OrdersPanel({
                             : undefined
                         }
                       />
-                      {pkg.envioecomStatus && (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${freightStatusBadgeClass(pkg.envioecomStatus)}`}>
-                          {pkg.envioecomStatus}{pkg.envioecomBarcode ? ` · ${pkg.envioecomBarcode}` : ""}
-                        </span>
-                      )}
-                      {pkg.superfreteOrderId && String(pkg.superfreteStatus || "").toLowerCase() !== "cancelled" && String(pkg.superfreteStatus || "").toLowerCase() !== "canceled" && (
+                      {sfActive && (
                         <>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-900">
-                            SF: {pkg.superfreteStatus}{pkg.superfreteTracking ? ` · ${pkg.superfreteTracking}` : ""}
-                          </span>
                           <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "labels", pkg.id); }}>PDF</Button>
                           <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "sync", pkg.id); }}>Sync</Button>
                           <Button size="sm" variant="outline" className="h-7" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "unlink", pkg.id); }}>Desvincular</Button>
                           <Button size="sm" variant="outline" className="h-7 text-red-700" disabled={!!envioecomBusy[order.id]} onClick={() => { void runSuperfreteAction(order, "cancel", pkg.id); }}>Cancelar</Button>
                         </>
                       )}
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
