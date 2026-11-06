@@ -17,6 +17,7 @@ import {
 } from "./order-inventory-debit";
 import { inventoryOrderLabel } from "./inventory-movement-reason";
 import {
+  alignShipmentItemsToOrderProducts,
   isPackageExcludedFromShippingCopyList,
   packageHasEnvioEcomBinding,
   packageInventoryReferenceId,
@@ -701,32 +702,16 @@ export async function rollupOrderFromPackages(orderId: string): Promise<OrderShi
   return packages;
 }
 
-export async function attachShipmentsToMappedOrders<T extends { id?: string | null; products?: unknown }>(
+export async function attachShipmentsToMappedOrders<T extends { id?: string | null }>(
   orders: T[],
 ): Promise<Array<T & { envioecomPackages: OrderShipmentPublic[] }>> {
   const map = await listOrderShipmentsByOrderIds(
     orders.map((order) => String(order.id || "")).filter(Boolean),
   );
-  const writes: Array<Promise<void>> = [];
-  const attached = orders.map((order) => {
-    const rows = map.get(String(order.id || "")) || [];
-    if (rows.length > 0 && order.products != null) {
-      const aligned = alignShipmentItemsToOrderProducts(order.products, rows);
-      if (aligned.changed) {
-        rows.forEach((row, index) => {
-          const items = aligned.packages[index] || [];
-          row.items = items;
-          writes.push(updateOrderShipment(row.id, { items }));
-        });
-      }
-    }
-    return {
-      ...order,
-      envioecomPackages: rows.map(mapOrderShipmentPublic),
-    };
-  });
-  if (writes.length > 0) await Promise.all(writes);
-  return attached;
+  return orders.map((order) => ({
+    ...order,
+    envioecomPackages: (map.get(String(order.id || "")) || []).map(mapOrderShipmentPublic),
+  }));
 }
 
 export function matchPackageForShipmentRefs(
