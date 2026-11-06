@@ -214,6 +214,22 @@ test("avisos da OS no grupo", () => {
   assert.deepEqual(openAlerts(done, morning, { created: false, deadline: false }), []);
 });
 
+test("concretizada entra no mês em que foi atualizada", () => {
+  const clock = saoPauloClock(new Date("2026-11-06T12:30:00.000Z"));
+  const order = parseCellTechOrder({
+    id: "30",
+    codigo: "100",
+    nome_cliente: "Ana",
+    nome_situacao: "CONCRETIZADO O.S",
+    modificado_em: "2026-10-15",
+  }, flags, clock);
+  assert.equal(order?.finished, true);
+  assert.equal(order?.finishedDay, "2026-10-15");
+  const report = buildMonthlyReport(order ? [order] : [], clock);
+  assert.match(report, /Feitas em outubro de 2026\* \(1\)/);
+  assert.match(report, /Ana/);
+});
+
 test("webhook só https", () => {
   assert.equal(normalizeCellTechWebhookUrl("http://wallandrade.app.n8n.cloud/webhook/cell"), "");
   assert.equal(

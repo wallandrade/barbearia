@@ -332,6 +332,10 @@ export function parseCellTechOrder(
   const situationId = situation.id;
   const situationName = situation.name;
   const finishedAt = parseGestaoMoment(row.data_conclusao ?? row.data_finalizacao, row.hora_conclusao);
+  const updatedAt = parseGestaoMoment(
+    row.modificado_em ?? row.data_modificacao ?? row.data_alteracao ?? row.atualizado_em,
+    row.hora_modificacao,
+  );
   const doneConfigured = flags.doneSituationIds.length > 0;
   const finished = Boolean(finishedAt)
     || (doneConfigured && flags.doneSituationIds.includes(situationId))
@@ -392,7 +396,7 @@ export function parseCellTechOrder(
     equipment: equipmentLabel(row),
     entryDay: entry?.dayKey ?? null,
     deadlineDay: deadline?.dayKey ?? null,
-    finishedDay: finished ? (finishedAt?.dayKey ?? null) : null,
+    finishedDay: finished ? (finishedAt?.dayKey ?? updatedAt?.dayKey ?? null) : null,
     deadlineLabel: deadlineLabel(deadline),
     finished,
     working,
@@ -535,6 +539,7 @@ export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock
   const current = monthKey(clock.dayKey);
   const donePrevious = orders.filter((order) => finishedInMonth(order, previous));
   const doneCurrent = orders.filter((order) => finishedInMonth(order, current));
+  const doneUndated = orders.filter((order) => order.finished && !order.finishedDay);
   const open = orders.filter((order) => !order.finished);
   return [
     `*Cell Tech — relatório de ${formatMonth(previous)}*`,
@@ -544,6 +549,7 @@ export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock
     ...block("Ainda abertas", open),
     "",
     ...block(`Feitas em ${formatMonth(current)}`, doneCurrent),
+    ...(doneUndated.length > 0 ? ["", ...block("Finalizadas sem data da baixa", doneUndated)] : []),
   ].join("\n");
 }
 
