@@ -9,6 +9,7 @@ import {
   monthlyReportDue,
   normalizeCellTechWebhookUrl,
   parseCellTechOrder,
+  situationIsWorking,
   saoPauloClock,
   unwrapRows,
 } from "./cell-tech-logic";
@@ -130,6 +131,27 @@ test("filtro e relatório", () => {
   assert.match(monthly, /novembro de 2026/);
   assert.match(monthly, /Caio/);
   assert.deepEqual(cellTechWebhookBody("daily", "oi"), { source: "cell-tech", kind: "daily", message: "oi", text: "oi" });
+});
+
+test("situação e nome do serviço", () => {
+  assert.equal(situationIsWorking("EM ANDAMENTO"), true);
+  assert.equal(situationIsWorking("EM REPARO"), true);
+  assert.equal(situationIsWorking("SEM REPARO"), false);
+  const noRepair = parseCellTechOrder({
+    id: "11",
+    nome_situacao: "SEM REPARO",
+    nome_tecnico: "CASSIO",
+    servicos: [{ servico_id: "4", nome: "", detalhes: "Troca de tela" }],
+  }, flags, morning);
+  assert.equal(noRepair?.working, false);
+  assert.deepEqual(noRepair?.services, ["Troca de tela"]);
+  const running = parseCellTechOrder({
+    id: "12",
+    nome_situacao: "EM ANDAMENTO",
+    itens_servicos: [{ nome_servico: "Bateria" }],
+  }, flags, morning);
+  assert.equal(running?.working, true);
+  assert.deepEqual(running?.services, ["Bateria"]);
 });
 
 test("webhook só https", () => {

@@ -54,7 +54,13 @@ export type CellTechListQuery = {
 };
 
 const DONE_NAME = /finaliz|conclu|entregue|cancel|baixad|concretiz/i;
-const WORKING_NAME = /execu|andamento|bancada|fazendo|repar/i;
+
+/** "SEM REPARO" não é técnico trabalhando. "EM REPARO" e "EM ANDAMENTO" são. */
+export function situationIsWorking(name: string): boolean {
+  const text = name.trim();
+  if (!text || /\bsem\s+reparo\b/i.test(text)) return false;
+  return /execu[cç][aã]o|\bandamento\b|\bbancada\b|\bfazendo\b|\breparo\b/i.test(text);
+}
 const EMPTY_DATE = /^(0{4}-0{2}-0{2}|0{2}\/0{2}\/0{4})/;
 
 export function saoPauloClock(now = new Date()): CellTechClock {
@@ -193,7 +199,7 @@ export function unwrapRows(body: unknown): Record<string, unknown>[] {
   return [];
 }
 
-const TEXT_KEYS = ["nome_servico", "nome", "descricao", "name", "servico"];
+const TEXT_KEYS = ["nome_servico", "nome", "detalhes", "detalhe", "descricao", "observacao", "defeito", "laudo", "solucao", "name", "titulo", "servico", "produto"];
 
 function textValue(value: unknown, depth = 0): string {
   if (depth > 4 || value == null) return "";
@@ -245,24 +251,33 @@ function pickId(row: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
-function serviceNames(row: Record<string, unknown>): string[] {
-  const raw = row.servicos ?? row.servicos_os ?? row.services;
-  if (Array.isArray(raw)) {
-    const names: string[] = [];
-    for (const item of raw) {
-      if (typeof item === "string") {
-        const text = item.trim();
-        if (text) names.push(text);
-        continue;
-      }
-      const record = asRecord(item);
-      if (!record) continue;
-      const name = textValue(record);
-      if (name) names.push(name);
-    }
-    return names;
+function namesFromList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    const record = asRecord(raw);
+    const name = record ? textValue(record) : "";
+    return name ? [name] : [];
   }
-  const single = pickText(row, ["nome_servico", "servico"]);
+  const names: string[] = [];
+  for (const item of raw) {
+    if (typeof item === "string") {
+      const text = item.trim();
+      if (text) names.push(text);
+      continue;
+    }
+    const record = asRecord(item);
+    if (!record) continue;
+    const name = textValue(record);
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+function serviceNames(row: Record<string, unknown>): string[] {
+  for (const key of ["servicos", "servicos_os", "services", "itens_servicos", "itens"]) {
+    const names = namesFromList(row[key]);
+    if (names.length > 0) return names;
+  }
+  const single = pickText(row, ["nome_servico", "servico", "detalhes", "defeito", "defeitos"]);
   return single ? [single] : [];
 }
 
@@ -323,7 +338,7 @@ export function parseCellTechOrder(
   const working = !finished && (
     workingConfigured
       ? flags.workingSituationIds.includes(situationId)
-      : WORKING_NAME.test(situationName)
+      : situationIsWorking(situationName)
   );
   const deadline = parseGestaoMoment(
     row.previsao_entrega ?? row.data_saida ?? row.previsao_termino ?? row.data_previsao ?? row.prazo,

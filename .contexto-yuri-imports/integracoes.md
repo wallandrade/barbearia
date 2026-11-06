@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-11-05
+> **Última atualização:** 2026-11-06
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-06 | Cell Tech não trata SEM REPARO como técnico trabalhando | O nome do serviço sai de `detalhes` ou `itens_servicos`. EM ANDAMENTO continua “fazendo agora” | Prazo, data de saída e o grupo iguais |
 | 2026-11-05 | Cell Tech lê o serviço aninhado e a data de saída como prazo | O card mostra o nome do serviço. Data de saída atrasada fica vermelha e continua aberta. Concretizado sai da lista de abertas | O grupo, o webhook e o horário das 8h iguais |
 | 2026-11-04 | Aba Cell Tech lê ordens de serviço do Gestão Click | Admin principal vê OS, prazo e técnico. Job manda atraso e relatórios das 8h para um webhook n8n próprio. Tokens não entram na loja pública | Pedido, PIX, frete, EnvioEcom e os webhooks de WhatsApp da Yuri iguais |
 | 2026-11-01 | Outro sistema lê o gasto de uma segunda conta | `GET /api/integrations/meta-ads/spend` com `META_ADS_SHARE_TOKEN`. A conta é `META_ADS_SHARE_ACCOUNT_ID`. Não grava despesa aqui | A conta da loja (`META_ADS_ACCOUNT_ID`) e o líquido iguais |
