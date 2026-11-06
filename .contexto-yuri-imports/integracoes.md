@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-11-04
+> **Última atualização:** 2026-11-05
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-05 | Cell Tech lê o serviço aninhado e a data de saída como prazo | O card mostra o nome do serviço. Data de saída atrasada fica vermelha e continua aberta. Concretizado sai da lista de abertas | O grupo, o webhook e o horário das 8h iguais |
 | 2026-11-04 | Aba Cell Tech lê ordens de serviço do Gestão Click | Admin principal vê OS, prazo e técnico. Job manda atraso e relatórios das 8h para um webhook n8n próprio. Tokens não entram na loja pública | Pedido, PIX, frete, EnvioEcom e os webhooks de WhatsApp da Yuri iguais |
 | 2026-11-01 | Outro sistema lê o gasto de uma segunda conta | `GET /api/integrations/meta-ads/spend` com `META_ADS_SHARE_TOKEN`. A conta é `META_ADS_SHARE_ACCOUNT_ID`. Não grava despesa aqui | A conta da loja (`META_ADS_ACCOUNT_ID`) e o líquido iguais |
 | 2026-11-01 | Conta de anúncio do Facebook grava o gasto do dia | `META_ADS_ACCESS_TOKEN` + `META_ADS_ACCOUNT_ID`. Job a cada 60 min. Botão na aba Despesas | Pixel do afiliado, PIX e EnvioEcom iguais |
@@ -319,7 +320,7 @@ Módulo isolado da loja. Não lê `orders`, PIX nem frete.
 - Tokens e webhook em `site_settings` (`cell_tech_*`). Fora de `PUBLIC_KEYS`. O GET da aba devolve só o final do token.
 - Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https: uma mensagem por OS atrasada por dia (no máximo 20 por ciclo). Relatório diário às 8h e mensal no dia 1 às 8h, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
 - O POST para o n8n manda `{ source, kind, message, text }`. A Z-API e o grupo ficam no n8n. O fluxo lê `message`.
-- Sem as situações marcadas, finalizada = data de saída ou nome Finalizada/Concluída/Entregue/Cancelada. Trabalhando = nome Em execução/Em andamento. Com a lista marcada, vale a lista (data de saída continua finalizando).
+- Sem as situações marcadas, finalizada = nome Finalizada/Concluída/Entregue/Cancelada/Concretizado. A data de saída é o prazo, não a conclusão. Trabalhando = nome Em execução/Em andamento. Com a lista marcada, vale a lista.
 
 ## Storage
 

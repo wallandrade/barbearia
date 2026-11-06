@@ -80,12 +80,31 @@ test("cores do prazo", () => {
   const done = parseCellTechOrder({
     id: "3",
     previsao_entrega: "2026-11-01",
-    data_saida: "2026-11-03",
-    nome_situacao: "Aberta",
+    data_conclusao: "2026-11-03",
+    nome_situacao: "Finalizada",
   }, flags, morning);
   assert.equal(done?.finished, true);
   assert.equal(done?.overdue, false);
   assert.equal(done?.finishedDay, "2026-11-03");
+
+  const forecast = parseCellTechOrder({
+    id: "2",
+    data_saida: "2026-11-06",
+    nome_situacao: "Em execução",
+    servicos: [{ servico: { nome: "Troca de tela" } }],
+  }, flags, morning);
+  assert.equal(forecast?.finished, false);
+  assert.equal(forecast?.tone, "green");
+  assert.equal(forecast?.deadlineLabel, "06/11/2026");
+  assert.deepEqual(forecast?.services, ["Troca de tela"]);
+
+  const concretizada = parseCellTechOrder({
+    id: "1",
+    nome_situacao: "CONCRETIZADO O.S",
+    data_saida: "2026-11-02",
+  }, flags, morning);
+  assert.equal(concretizada?.finished, true);
+  assert.equal(concretizada?.overdue, false);
 });
 
 test("filtro e relatório", () => {
@@ -93,7 +112,7 @@ test("filtro e relatório", () => {
     data: [
       { id: "1", nome_cliente: "Ana Lima", tecnico_id: "2", nome_tecnico: "Carlos", previsao_entrega: "2026-11-04", nome_situacao: "Aberta", servicos: [{ nome_servico: "Bateria" }] },
       { id: "2", nome_cliente: "Bruno", tecnico_id: "9", nome_tecnico: "Lia", previsao_entrega: "2026-11-01", nome_situacao: "Aberta", servicos: [{ nome_servico: "Tela" }] },
-      { id: "3", nome_cliente: "Caio", data_saida: "2026-11-03", nome_situacao: "Finalizada", servicos: [{ nome_servico: "Bateria" }] },
+      { id: "3", nome_cliente: "Caio", data_conclusao: "2026-11-03", nome_situacao: "Finalizada", servicos: [{ nome_servico: "Bateria" }] },
     ],
   });
   const orders = rows.map((row) => parseCellTechOrder(row, flags, morning)).filter((order) => order != null);

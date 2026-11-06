@@ -53,7 +53,7 @@ export type CellTechListQuery = {
   scope?: "open" | "done" | "all";
 };
 
-const DONE_NAME = /finaliz|conclu|entregue|cancel|baixad/i;
+const DONE_NAME = /finaliz|conclu|entregue|cancel|baixad|concretiz/i;
 const WORKING_NAME = /execu|andamento|bancada|fazendo|repar/i;
 const EMPTY_DATE = /^(0{4}-0{2}-0{2}|0{2}\/0{2}\/0{4})/;
 
@@ -114,7 +114,15 @@ export function formatMonth(key: string): string {
   return names[index] ? `${names[index]} de ${year}` : key;
 }
 
-export function parseGestaoMoment(raw: unknown, timeRaw?: unknown): CellTechMoment | null {
+export function parseGestaoMoment(raw: unknown, timeRaw?: unknown, nested = false): CellTechMoment | null {
+  const record = nested ? null : asRecord(raw);
+  if (record) {
+    return parseGestaoMoment(
+      record.data ?? record.date ?? record.previsao_entrega ?? record.data_saida,
+      timeRaw ?? record.hora ?? record.hora_saida,
+      true,
+    );
+  }
   const text = String(raw ?? "").trim();
   if (!text || EMPTY_DATE.test(text)) return null;
   const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(text);
@@ -185,12 +193,28 @@ export function unwrapRows(body: unknown): Record<string, unknown>[] {
   return [];
 }
 
+const TEXT_KEYS = ["nome_servico", "nome", "descricao", "name", "servico"];
+
+function textValue(value: unknown, depth = 0): string {
+  if (depth > 4 || value == null) return "";
+  if (typeof value === "string" || typeof value === "number") {
+    const text = String(value).trim();
+    if (!text || (text === "0" && depth > 0) || text.toLowerCase() === "null" || text === "[object Object]") return "";
+    return text;
+  }
+  const record = asRecord(value);
+  if (!record) return "";
+  for (const key of TEXT_KEYS) {
+    const found = textValue(record[key], depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
 function pickText(row: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
-    const value = row[key];
-    if (value == null) continue;
-    const text = String(value).trim();
-    if (text && text.toLowerCase() !== "null") return text;
+    const found = textValue(row[key]);
+    if (found && found !== "[object Object]") return found;
   }
   return "";
 }
@@ -211,9 +235,14 @@ function nestedName(
 }
 
 function pickId(row: Record<string, unknown>, keys: string[]): string {
-  const text = pickText(row, keys);
-  if (!text || text === "0") return "";
-  return text;
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return String(value);
+    if (typeof value !== "string") continue;
+    const text = value.trim();
+    if (text && text !== "0" && text.toLowerCase() !== "null") return text;
+  }
+  return "";
 }
 
 function serviceNames(row: Record<string, unknown>): string[] {
@@ -228,7 +257,7 @@ function serviceNames(row: Record<string, unknown>): string[] {
       }
       const record = asRecord(item);
       if (!record) continue;
-      const name = pickText(record, ["nome_servico", "nome", "servico", "descricao"]);
+      const name = textValue(record);
       if (name) names.push(name);
     }
     return names;
@@ -285,7 +314,7 @@ export function parseCellTechOrder(
   const technician = nestedName(row, "tecnico", ["tecnico_id", "funcionario_id"], ["nome_tecnico", "tecnico_nome", "nome_funcionario"]);
   const situationId = situation.id;
   const situationName = situation.name;
-  const finishedAt = parseGestaoMoment(row.data_saida ?? row.data_conclusao, row.hora_saida);
+  const finishedAt = parseGestaoMoment(row.data_conclusao ?? row.data_finalizacao, row.hora_conclusao);
   const doneConfigured = flags.doneSituationIds.length > 0;
   const finished = Boolean(finishedAt)
     || (doneConfigured && flags.doneSituationIds.includes(situationId))
@@ -297,8 +326,8 @@ export function parseCellTechOrder(
       : WORKING_NAME.test(situationName)
   );
   const deadline = parseGestaoMoment(
-    row.previsao_entrega ?? row.previsao_termino ?? row.data_previsao ?? row.prazo,
-    row.hora_previsao ?? row.hora_previsao_entrega,
+    row.previsao_entrega ?? row.data_saida ?? row.previsao_termino ?? row.data_previsao ?? row.prazo,
+    row.hora_previsao ?? row.hora_saida ?? row.hora_previsao_entrega,
   );
   const entry = parseGestaoMoment(row.data_entrada ?? row.data ?? row.cadastrado_em, row.hora_entrada);
 

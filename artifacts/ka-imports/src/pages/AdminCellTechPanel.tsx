@@ -345,7 +345,7 @@ export default function AdminCellTechPanel() {
             </div>
             <p className="text-sm mt-2">{order.clientName}</p>
             <p className="text-sm">{order.services[0] || order.equipment || "Serviço"}</p>
-            <p className="text-sm text-muted-foreground">{order.technicianName} · {order.working ? "fazendo agora" : order.situationName}</p>
+            <p className="text-sm text-muted-foreground">{order.technicianName} · {order.situationName}{order.working ? " · fazendo agora" : ""}</p>
             <p className="text-sm mt-1">Prazo: {order.deadlineLabel}</p>
           </article>
         ))}
