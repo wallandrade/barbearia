@@ -9,6 +9,7 @@ import {
   isSplitOrderPartiallyShipped,
   nextPackageEnvioEcomExternalOrderNumber,
   unlinkedExternalOrderNumberForNewPackage,
+  alignShipmentItemsToOrderProducts,
   parseShipmentItems,
   pendingCopyItemsFromSplitPackages,
   shipmentItemsForInventory,
@@ -479,6 +480,71 @@ test("SuperFrete released sai da cópia e do card; pending fica no card", () => 
     { envioecomLabelUrl: "https://ee/a.pdf" },
     { superfreteStatus: "released" },
   ]), true);
+});
+
+test("editar o pedido troca o produto antigo de cada pacote", () => {
+  const orderProducts = [
+    { id: "new-a", name: "Retatrutide 10mg", quantity: 1, image: "https://cdn.example/reta.jpg" },
+    { id: "new-b", name: "TB-500 10mg", quantity: 1 },
+  ];
+  const first = alignShipmentItemsToOrderProducts(orderProducts, [
+    { items: [{ productId: "old-a", productName: "GHK-Cu 100mg BioTech", quantity: 1 }] },
+    { items: [{ productId: "old-b", productName: "CBL 514 60mg XL Peptides", quantity: 1 }] },
+  ]);
+  assert.equal(first.changed, true);
+  assert.equal(first.packages[0]?.[0]?.productName, "Retatrutide 10mg");
+  assert.equal(first.packages[0]?.[0]?.productId, "new-a");
+  assert.equal(first.packages[0]?.[0]?.image, "https://cdn.example/reta.jpg");
+  assert.equal(first.packages[1]?.[0]?.productName, "TB-500 10mg");
+  assert.equal(first.packages[1]?.[0]?.quantity, 1);
+
+  const again = alignShipmentItemsToOrderProducts(orderProducts, [
+    { items: first.packages[0] },
+    { items: first.packages[1] },
+  ]);
+  assert.equal(again.changed, false);
+});
+
+test("editar troca só o produto que saiu e mantém o que ficou", () => {
+  const aligned = alignShipmentItemsToOrderProducts(
+    [
+      { id: "keep", name: "CBL 514 60mg XL Peptides", quantity: 1 },
+      { id: "new-b", name: "TB-500 10mg", quantity: 1 },
+    ],
+    [
+      { items: [{ productId: "keep", productName: "CBL 514 60mg XL Peptides", quantity: 1 }] },
+      { items: [{ productId: "old-b", productName: "GHK-Cu 100mg BioTech", quantity: 1 }] },
+    ],
+  );
+  assert.equal(aligned.changed, true);
+  assert.equal(aligned.packages[0]?.[0]?.productId, "keep");
+  assert.equal(aligned.packages[1]?.[0]?.productName, "TB-500 10mg");
+});
+
+test("pacote com baixa feita não troca o produto que já saiu do estoque", () => {
+  const aligned = alignShipmentItemsToOrderProducts(
+    [{ id: "new-a", name: "Retatrutide 10mg", quantity: 1 }],
+    [{
+      inventoryReserved: true,
+      items: [{ productId: "old-a", productName: "GHK-Cu 100mg BioTech", quantity: 1 }],
+    }],
+  );
+  assert.equal(aligned.changed, false);
+  assert.equal(aligned.packages[0]?.[0]?.productName, "GHK-Cu 100mg BioTech");
+});
+
+test("mesmo produto no pacote acompanha o nome novo e a quantidade", () => {
+  const aligned = alignShipmentItemsToOrderProducts(
+    [{ id: "prod-a", name: "Produto A atualizado", quantity: 3 }],
+    [
+      { items: [{ productId: "prod-a", productName: "Produto A", quantity: 1 }] },
+      { items: [{ productId: "prod-a", productName: "Produto A", quantity: 1 }] },
+    ],
+  );
+  assert.equal(aligned.changed, true);
+  assert.equal(aligned.packages[0]?.[0]?.productName, "Produto A atualizado");
+  assert.equal(aligned.packages[0]?.[0]?.quantity, 1);
+  assert.equal(aligned.packages[1]?.[0]?.quantity, 2);
 });
 
 test("webhook não cola no pai só pelo número do pedido sem vínculo EE", () => {

@@ -365,11 +365,13 @@ export function expandOrderProductsForShipment(raw: unknown): OrderShipmentItem[
       productName?: unknown;
       quantity?: unknown;
       selectedVariants?: unknown;
+      image?: unknown;
     };
     const quantity = Number(item.quantity || 0);
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
     const productId = String(item.productId || item.id || "").trim();
     const productName = String(item.productName || item.name || "Produto").trim() || "Produto";
+    const image = shipmentImageUrl(item.image);
     const choices = readShipmentVariantChoices(item.selectedVariants);
     const units: OrderShipmentItem[] = choices.length >= 2
       ? choices.map((choice) => ({
@@ -378,9 +380,9 @@ export function expandOrderProductsForShipment(raw: unknown): OrderShipmentItem[
           quantity,
           variantGroup: choice.groupName,
           variantOption: choice.option,
-          image: choice.image,
+          image: choice.image || image,
         }))
-      : [{ productId, productName, quantity }];
+      : [{ productId, productName, quantity, image }];
     for (const unit of units) {
       const key = shipmentItemKey(unit);
       const prev = grouped.get(key);
@@ -395,6 +397,170 @@ export function expandOrderProductsForShipment(raw: unknown): OrderShipmentItem[
     }
   }
   return [...grouped.values()];
+}
+
+function cloneShipmentLine(line: OrderShipmentItem, quantity: number): OrderShipmentItem {
+  return {
+    productId: line.productId,
+    productName: line.productName,
+    quantity,
+    ...(line.variantGroup ? { variantGroup: line.variantGroup } : {}),
+    ...(line.variantOption ? { variantOption: line.variantOption } : {}),
+    image: line.image || null,
+  };
+}
+
+function shipmentItemsIdentity(items: OrderShipmentItem[]): string {
+  return JSON.stringify(items.map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    quantity: item.quantity,
+    variantGroup: item.variantGroup || "",
+    variantOption: item.variantOption || "",
+  })));
+}
+
+/**
+ * Pacote guarda uma cópia dos itens. Depois de editar o pedido, essa cópia
+ * acompanha os produtos atuais. Pacote que já deu baixa fica como saiu do estoque.
+ */
+export function alignShipmentItemsToOrderProducts(
+  orderProducts: unknown,
+  packages: Array<{ items: unknown; inventoryReserved?: boolean | null }>,
+): { changed: boolean; packages: OrderShipmentItem[][] } {
+  const parsed = packages.map((pkg) => parseShipmentItems(pkg.items));
+  const desired = expandOrderProductsForShipment(orderProducts);
+  if (desired.length === 0 || parsed.every((items) => items.length === 0)) {
+    return { changed: false, packages: parsed };
+  }
+
+  const desiredByKey = new Map(desired.map((line) => [shipmentItemKey(line), line]));
+  const remaining = new Map(desired.map((line) => [shipmentItemKey(line), line.quantity]));
+  const out: OrderShipmentItem[][] = parsed.map(() => []);
+  const placed = new Map<string, Array<{ pkgIndex: number; outIndex: number }>>();
+  const stale: Array<{ pkgIndex: number; item: OrderShipmentItem }> = [];
+
+  parsed.forEach((items, pkgIndex) => {
+    const reserved = Boolean(packages[pkgIndex]?.inventoryReserved);
+    if (reserved) {
+      for (const item of items) {
+        out[pkgIndex]!.push(item);
+        const key = shipmentItemKey(item);
+        const left = remaining.get(key);
+        if (left != null) remaining.set(key, Math.max(0, left - item.quantity));
+      }
+      return;
+    }
+    for (const item of items) {
+      const key = shipmentItemKey(item);
+      const live = desiredByKey.get(key);
+      const left = remaining.get(key) ?? 0;
+      if (!live || left <= 0) {
+        stale.push({ pkgIndex, item });
+        continue;
+      }
+      const qty = Math.min(item.quantity, left);
+      remaining.set(key, left - qty);
+      const bucket = out[pkgIndex]!;
+      bucket.push(cloneShipmentLine(live, qty));
+      const spots = placed.get(key) || [];
+      spots.push({ pkgIndex, outIndex: bucket.length - 1 });
+      placed.set(key, spots);
+    }
+  });
+
+  for (const line of desired) {
+    const key = shipmentItemKey(line);
+    const left = remaining.get(key) || 0;
+    const spots = placed.get(key);
+    if (left <= 0 || !spots || spots.length === 0) continue;
+    const last = spots[spots.length - 1]!;
+    const target = out[last.pkgIndex]![last.outIndex];
+    if (!target) continue;
+    target.quantity += left;
+    remaining.set(key, 0);
+  }
+
+  const fresh: OrderShipmentItem[] = [];
+  for (const line of desired) {
+    const key = shipmentItemKey(line);
+    if (placed.has(key)) continue;
+    const left = remaining.get(key) || 0;
+    if (left > 0) fresh.push(cloneShipmentLine(line, left));
+  }
+
+  const groups: Array<{ slots: Array<{ pkgIndex: number; item: OrderShipmentItem }>; total: number }> = [];
+  const groupIndex = new Map<string, number>();
+  for (const slot of stale) {
+    const key = shipmentItemKey(slot.item);
+    const found = groupIndex.get(key);
+    if (found == null) {
+      groupIndex.set(key, groups.length);
+      groups.push({ slots: [slot], total: slot.item.quantity });
+    } else {
+      groups[found]!.slots.push(slot);
+      groups[found]!.total += slot.item.quantity;
+    }
+  }
+
+  const usedFresh = new Set<number>();
+  const paired = new Map<number, OrderShipmentItem>();
+  for (let groupAt = 0; groupAt < groups.length; groupAt += 1) {
+    const match = fresh.findIndex((line, index) => !usedFresh.has(index) && line.quantity === groups[groupAt]!.total);
+    if (match < 0) continue;
+    usedFresh.add(match);
+    paired.set(groupAt, fresh[match]!);
+  }
+  let cursor = 0;
+  for (let groupAt = 0; groupAt < groups.length; groupAt += 1) {
+    if (paired.has(groupAt)) continue;
+    while (cursor < fresh.length && usedFresh.has(cursor)) cursor += 1;
+    if (cursor >= fresh.length) break;
+    usedFresh.add(cursor);
+    paired.set(groupAt, fresh[cursor]!);
+    cursor += 1;
+  }
+
+  for (let groupAt = 0; groupAt < groups.length; groupAt += 1) {
+    const line = paired.get(groupAt);
+    const group = groups[groupAt]!;
+    if (!line) continue;
+    const qtys = group.slots.map((slot) => slot.item.quantity);
+    let delta = line.quantity - group.total;
+    if (delta > 0) {
+      qtys[qtys.length - 1] = (qtys[qtys.length - 1] || 0) + delta;
+    } else if (delta < 0) {
+      let extra = -delta;
+      for (let index = qtys.length - 1; index >= 0 && extra > 0; index -= 1) {
+        const cut = Math.min(qtys[index] || 0, extra);
+        qtys[index] = (qtys[index] || 0) - cut;
+        extra -= cut;
+      }
+    }
+    group.slots.forEach((slot, index) => {
+      const qty = qtys[index] || 0;
+      if (qty <= 0) return;
+      out[slot.pkgIndex]!.push(cloneShipmentLine(line, qty));
+    });
+  }
+
+  const unpaired = fresh.filter((_, index) => !usedFresh.has(index));
+  if (unpaired.length > 0) {
+    let dest = -1;
+    for (let index = packages.length - 1; index >= 0; index -= 1) {
+      if (!packages[index]?.inventoryReserved) {
+        dest = index;
+        break;
+      }
+    }
+    if (dest >= 0) {
+      for (const line of unpaired) out[dest]!.push(line);
+    }
+  }
+
+  const nextPackages = out.map((items) => parseShipmentItems(items));
+  const changed = nextPackages.some((items, index) => shipmentItemsIdentity(items) !== shipmentItemsIdentity(parsed[index] || []));
+  return { changed, packages: nextPackages };
 }
 
 /** Variante dividida baixa o produto do catálogo com o nome da opção, não o kit. */

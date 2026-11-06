@@ -47,6 +47,7 @@ import {
   OrderShipmentError,
   rollupOrderFromPackages,
   saveOrderShipmentAllocation,
+  syncOrderShipmentItems,
   updateOrderShipment,
 } from "../lib/order-shipments";
 import { isOpenShippingListOrder } from "../lib/order-shipments-logic";
@@ -2590,6 +2591,12 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     await db.update(ordersTable)
       .set(updates)
       .where(buildAdminOrderWhere(id, adminScope));
+
+    try {
+      await syncOrderShipmentItems(id, resolvedProducts);
+    } catch (err) {
+      console.warn("[edit-order] shipment items sync failed", id, err);
+    }
 
     if (convertedShippingType) {
       await db.update(motoboyBookingsTable)
