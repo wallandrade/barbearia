@@ -868,6 +868,7 @@ import AdminEnvioEcomAccountsPanel, { type EnvioEcomAccountPublic } from "@/page
 import AdminSuperfreteAccountsPanel, { type SuperfreteAccountPublic } from "@/pages/AdminSuperfreteAccountsPanel";
 import { superfreteServiceName } from "@/lib/superfrete-status";
 import AdminInventoryExitAccessPanel from "@/pages/AdminInventoryExitAccessPanel";
+import AdminCellTechPanel from "@/pages/AdminCellTechPanel";
 import { AdminSplitShipmentModal, type SplitPoolKind, type SplitShipmentItem, type SplitShipmentPackage } from "@/pages/AdminSplitShipmentModal";
 import { orderCanSplitShipment } from "@/lib/split-shipment-lines";
 import { CpfQuoteWarningModal, CpfRelatedShipmentsBlock } from "@/pages/AdminCpfRelatedShipments";
@@ -1417,7 +1418,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "flashCampaigns" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "flashCampaigns" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro" | "cellTech";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1486,6 +1487,7 @@ const PRIMARY_ONLY_TABS = new Set<TabType>([
   "checkout",
   "seguro",
   "listaNegra",
+  "cellTech",
 ]);
 
 interface AdminRaffle {
@@ -5392,6 +5394,9 @@ export default function Admin() {
               { key: "checkout",      label: "Checkout",         icon: "ShoppingBag" },
               { key: "seguro",        label: "Seguro",           icon: "ShieldCheck" },
             ] : []),
+            ...(isPrimary ? [
+              { key: "cellTech",      label: "Cell Tech",        icon: "Smartphone" },
+            ] : []),
             { key: "webhook",       label: "Webhook",          icon: "Link" },
           ] as Array<{ key: TabType; label: string; icon: string; count?: number }>).map(({ key, label, icon, count }) => (
             <button key={key}
@@ -8121,6 +8126,8 @@ export default function Admin() {
           <WhatsAppGroupCampaignCard />
         ) : tab === "imagens" ? (
           <AdminImagesPanel />
+        ) : tab === "cellTech" ? (
+          <AdminCellTechPanel />
         ) : tab === "configuracoes" ? (
           <div className="space-y-6">
             <ConfiguracoesPanel

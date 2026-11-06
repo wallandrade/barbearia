@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-11-01
+> **Última atualização:** 2026-11-04
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-04 | Aba Cell Tech lê ordens de serviço do Gestão Click | Admin principal vê OS, prazo e técnico. Job manda atraso e relatórios das 8h para um webhook n8n próprio. Tokens não entram na loja pública | Pedido, PIX, frete, EnvioEcom e os webhooks de WhatsApp da Yuri iguais |
 | 2026-11-01 | Outro sistema lê o gasto de uma segunda conta | `GET /api/integrations/meta-ads/spend` com `META_ADS_SHARE_TOKEN`. A conta é `META_ADS_SHARE_ACCOUNT_ID`. Não grava despesa aqui | A conta da loja (`META_ADS_ACCOUNT_ID`) e o líquido iguais |
 | 2026-11-01 | Conta de anúncio do Facebook grava o gasto do dia | `META_ADS_ACCESS_TOKEN` + `META_ADS_ACCOUNT_ID`. Job a cada 60 min. Botão na aba Despesas | Pixel do afiliado, PIX e EnvioEcom iguais |
 | 2026-10-30 | Aviso dos grupos não manda o endereço da foto | A legenda fica com o link do texto. A URL da imagem no R2 não entra na mensagem | A foto continua saindo como imagem. Horário e rodada de produtos iguais |
@@ -307,6 +308,18 @@ Cada loja continua dona da própria lista. O snapshot não leva nome, pedido, CE
 - **Aviso:** `LOSS_SYNC_WEBHOOK_URL` + `LOSS_SYNC_WEBHOOK_SECRET` (secret cai no `MOTOBOY_SYNC_WEBHOOK_SECRET` se vazio). Sem URL = no-op. Evento `loss.changed` ao gravar, repor ou tirar da lista. Atualização de rastreio de um caso que já está na lista não dispara de novo. Headers iguais ao estoque (`X-Yury-Signature`).
 - **A gente lê eles:** `LOSS_PEER_SNAPSHOT_URL` + `LOSS_PEER_TOKEN`. O JSON deles segue o mesmo formato (`incidents[]`). Cache 12 min. Timeout 3 s. Falha não trava a cotação nem a aba: segue só com a lista daqui. Caso de lá entra no `lossAlert` (âmbar/vermelho iguais) e o texto diz **outra loja**. A aba Lista negra mostra dois blocos, **Esta loja** e **Outra loja**, e não oferece **Tirar da lista negra** no caso de lá.
 - Lib: `lib/loss-blacklist-sync.ts`; rota: `routes/loss-blacklist-sync.ts`.
+
+## Cell Tech (Gestão Click)
+
+Módulo isolado da loja. Não lê `orders`, PIX nem frete.
+
+- Aba **Cell Tech**, só admin principal. Painel com filtro por técnico, cliente, serviço e data.
+- Cor do card: verde no prazo, amarelo vence hoje, vermelho atrasado, cinza sem prazo. Data sem hora vira atraso só no dia seguinte. Com hora, atrasa quando passa do minuto.
+- API `https://api.gestaoclick.com/api`, headers `access-token` e `secret-access-token`. Lista `GET /ordens_servicos` (últimos 120 dias) e situações em `GET /situacoes_ordens_servicos`. Teto respeitado com pausa de 400 ms. Cache de 60 s.
+- Tokens e webhook em `site_settings` (`cell_tech_*`). Fora de `PUBLIC_KEYS`. O GET da aba devolve só o final do token.
+- Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https: uma mensagem por OS atrasada por dia (no máximo 20 por ciclo). Relatório diário às 8h e mensal no dia 1 às 8h, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
+- O POST para o n8n manda `{ source, kind, message, text }`. A Z-API e o grupo ficam no n8n. O fluxo lê `message`.
+- Sem as situações marcadas, finalizada = data de saída ou nome Finalizada/Concluída/Entregue/Cancelada. Trabalhando = nome Em execução/Em andamento. Com a lista marcada, vale a lista (data de saída continua finalizando).
 
 ## Storage
 

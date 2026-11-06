@@ -1498,6 +1498,21 @@ async function ensureAdminImagesTable(databaseName: string): Promise<void> {
   `);
 }
 
+async function ensureCellTechAlertsTable(databaseName: string): Promise<void> {
+  if (await tableExists("cell_tech_alerts", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE cell_tech_alerts (
+      id VARCHAR(64) NOT NULL PRIMARY KEY,
+      kind VARCHAR(16) NOT NULL,
+      os_id VARCHAR(64) NOT NULL DEFAULT '',
+      period_key VARCHAR(16) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY cell_tech_alerts_kind_os_period (kind, os_id, period_key)
+    )
+  `);
+  console.log("[RuntimeSchema] Created table cell_tech_alerts");
+}
+
 async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   if (await tableExists("checkout_drafts", databaseName)) return;
   await pool.query(`
@@ -1564,6 +1579,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureWhatsappGroupCampaignTables(databaseName);
     await ensureAdminImagesTable(databaseName);
     await ensureFlashOfferTables(databaseName);
+    await ensureCellTechAlertsTable(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

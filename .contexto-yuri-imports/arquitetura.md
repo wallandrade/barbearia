@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-11-01
+> **Última atualização:** 2026-11-04
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-04 | Tabela `cell_tech_alerts` (+ runtime) e job `cell-tech-job.ts` | Marca aviso de OS já enviado. Sem essa tabela o ciclo não manda mensagem | Pedidos, PIX e frete iguais. Sem `tenant_id` |
 | 2026-11-01 | Coluna `flash_campaigns.sort_order` (+ runtime) | `POST /api/admin/flash-campaigns/:id/show-first` põe a campanha na frente do card | Sem `tenant_id`. Chance e visita iguais |
 | 2026-11-01 | `GET /api/integrations/meta-ads/spend` | Outro sistema lê o gasto de `META_ADS_SHARE_ACCOUNT_ID`. Sem tabela e sem lançamento na loja | O job da conta da loja igual |
 | 2026-11-01 | Job `meta-ads-job.ts` na subida da API | Lê o gasto da conta de anúncio e grava em `marketing_expenses`. Sem tabela nova | Sem as variáveis, o job fica quieto |

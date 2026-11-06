@@ -7,6 +7,7 @@ import { startEnvioEcomStatusSyncJob } from "./envioecom-status-job";
 import { startSuperfreteStatusSyncJob } from "./superfrete-status-job";
 import { startWhatsappGroupJob } from "./whatsapp-group-job";
 import { startMetaAdsSyncJob } from "./meta-ads-job";
+import { startCellTechJob } from "./cell-tech-job";
 import { closeTrackedOpenReshipments } from "./lib/reshipment-label-tracked-apply";
 import { bootstrapShippingQueue } from "./lib/shipping-queue-allocator";
 
@@ -45,6 +46,7 @@ async function bootstrap(): Promise<void> {
     startSuperfreteStatusSyncJob();
     startWhatsappGroupJob();
     startMetaAdsSyncJob();
+    startCellTechJob();
     void bootstrapShippingQueue();
     void closeTrackedOpenReshipments()
       .then((closed) => {

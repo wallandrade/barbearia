@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-11-03
+> **Última atualização:** 2026-11-04
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -45,6 +45,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-04 | Aba Admin **Cell Tech** | OS do Gestão Click, cores de prazo e aviso no grupo via n8n. Não entra em pedido, estoque nem frete | Cópia 48h, PIX e checkout iguais |
 | 2026-11-03 | Card do envio dividido separa rastreio e itens | Cada origem (Minas / Motoboy / Foz) mostra status e código no topo e a lista dos produtos daquele rastreio. Sem código, aparece **Sem rastreio** | Botões, baixa, cópia 48h e a conta do cliente iguais |
 | 2026-11-01 | Campanha relâmpago escolhe quem abre primeiro | **Aparecer primeiro** grava `sort_order`. O card abre nessa campanha. Campanha nova entra no fim | Chance, vaga, horário, primeira visita e Habilitar iguais |
 | 2026-11-01 | Recibo da compra esconde a faixa “Despesa paga” | Abre no clique em **Ver gasto**, junto com os itens. Aviso vermelho de estoque ou despesa faltando continua visível | Selos Paga/estoque, entrada no pool e o lançamento avulso iguais |
@@ -523,6 +524,12 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 - Fichas: 5-Amino-1MQ, AOD-9604, HGH Fragment 176-191, SLU-PP-332, DSIP, GHK-Cu, Tesamorelin, MOTS-C, Adamax, AICAR, Tirzepatida/Tirzec, Retatrutide. **Ara-290**, **BPC-157**, **Cardiogen**, **Cartalax**, **Cerebrolysin**, **Chonluten**, **CJC-1295**, **CJC-1295 DAC**, **Cortagen**, **Crystagen**, **Dihexa**, **DSIP** (esta substitui a ficha antiga), **Epithalon**, **Follistatin 344**, **FOXO4-DRI**, **GHK-Cu** (esta substitui a ficha antiga), **GHRP-2**, **GHRP-6**, **Glutationa**, **Gonadorelin**, **HCG**, **Hexarelin**, **HGH 191AA**, **HGH Fragment 176-191** (esta substitui a ficha antiga), **HMG**, **IGF-1 DES**, **IGF-1 LR3**, **Ipamorelin**, **Kisspeptin**, **KLOW**, **KPV**, **L-Carnitina Injetável**, **Livagen**, **LL-37**, **Mazdutide**, **Melanotan II**, **MGF**, **MOTS-C** (esta substitui a ficha antiga), **NAD+ Injetável**, **Noopept**, **Ocitocina**, **Ovagen**, **P21**, **PE-22-28**, **Pinealon**, **PNC-27**, **Prostamax**, **PT-141**, **Retatrutide** (esta substitui a ficha antiga), **Selank**, **Semaglutida**, **Semax**, **Sermorelin**, **SLU-PP-332** (esta substitui a ficha antiga), **SNAP-8**, **Survodutide**, **SS-31**, **TB-500**, **Tesamorelin** (esta substitui a ficha antiga) e **Tesamorelin + Ipamorelin (Blend 10mg)**, **Testagen**, **Thymalin**, **Timosina Alfa-1** e **Tirzepatida** (esta substitui a ficha antiga) e **Vesugen** e **Vilon** são as fichas completas do card (`peptide-atlas-sheets.ts`: dose por indicação, fases, sinergias e papers). As próximas entram nesse arquivo, no mesmo formato. Sem prescrição inventada; pedido/PIX/rastreio não são função do bot.
 - `POST /api/chat/ask` (OpenAI opcional) permanece no backend, mas o widget **não** usa.
 - Fetch direto no FE (não client Orval).
+
+## Cell Tech
+
+- Aba do admin principal, separada da loja. OS, técnico, prazo e serviço vêm do Gestão Click. Pedido, PIX, estoque e frete não entram.
+- Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo.
+- Grupo da loja: um aviso por OS atrasada por dia. Relatório diário às 8h e mensal no dia 1 às 8h (Brasília), pelo webhook n8n da própria aba.
 
 ## Multi-tenant
 

@@ -51,6 +51,7 @@ import whatsappSupportRouter from "./whatsapp-support";
 import whatsappGroupsRouter from "./whatsapp-groups";
 import adminImagesRouter from "./admin-images";
 import flashOffersRouter from "./flash-offers";
+import cellTechRouter from "./cell-tech";
 const router: IRouter = Router();
 
 router.use(healthRouter);
@@ -104,5 +105,6 @@ router.use(whatsappSupportRouter);
 router.use(whatsappGroupsRouter);
 router.use(adminImagesRouter);
 router.use(flashOffersRouter);
+router.use(cellTechRouter);
 
 export default router;

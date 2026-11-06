@@ -1,0 +1,474 @@
+/** Regras da aba Cell Tech. Não lê pedido, PIX nem frete da loja. */
+
+export type CellTechTone = "green" | "yellow" | "red" | "gray";
+
+export type CellTechClock = {
+  dayKey: string;
+  year: number;
+  month: number;
+  day: number;
+  minutes: number;
+};
+
+export type CellTechMoment = {
+  dayKey: string;
+  /** Minutos desde meia-noite. Null = a data veio sem hora. */
+  minutes: number | null;
+};
+
+export type CellTechOrder = {
+  id: string;
+  code: string;
+  clientName: string;
+  technicianId: string;
+  technicianName: string;
+  situationId: string;
+  situationName: string;
+  priority: string;
+  services: string[];
+  equipment: string;
+  entryDay: string | null;
+  deadlineDay: string | null;
+  finishedDay: string | null;
+  deadlineLabel: string;
+  finished: boolean;
+  working: boolean;
+  tone: CellTechTone;
+  overdue: boolean;
+  dueToday: boolean;
+  statusLabel: string;
+};
+
+export type CellTechFlags = {
+  doneSituationIds: string[];
+  workingSituationIds: string[];
+};
+
+export type CellTechListQuery = {
+  technicianId?: string;
+  client?: string;
+  service?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  scope?: "open" | "done" | "all";
+};
+
+const DONE_NAME = /finaliz|conclu|entregue|cancel|baixad/i;
+const WORKING_NAME = /execu|andamento|bancada|fazendo|repar/i;
+const EMPTY_DATE = /^(0{4}-0{2}-0{2}|0{2}\/0{2}\/0{4})/;
+
+export function saoPauloClock(now = new Date()): CellTechClock {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const hour = Number(pick("hour"));
+  const minute = Number(pick("minute"));
+  return {
+    dayKey: `${pick("year")}-${pick("month")}-${pick("day")}`,
+    year: Number(pick("year")),
+    month: Number(pick("month")),
+    day: Number(pick("day")),
+    minutes: (hour === 24 ? 0 : hour) * 60 + minute,
+  };
+}
+
+export function addDays(dayKey: string, delta: number): string {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + delta);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function monthKey(dayKey: string): string {
+  return dayKey.slice(0, 7);
+}
+
+export function previousMonthKey(dayKey: string): string {
+  const [year, month] = dayKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 2, 1));
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+export function formatDay(dayKey: string | null): string {
+  if (!dayKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return "";
+  const [year, month, day] = dayKey.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+export function formatMonth(key: string): string {
+  const [year, month] = key.split("-");
+  const names = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  const index = Number(month) - 1;
+  return names[index] ? `${names[index]} de ${year}` : key;
+}
+
+export function parseGestaoMoment(raw: unknown, timeRaw?: unknown): CellTechMoment | null {
+  const text = String(raw ?? "").trim();
+  if (!text || EMPTY_DATE.test(text)) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(text);
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2}))?/.exec(text);
+  let dayKey = "";
+  let minutes: number | null = null;
+  if (iso) {
+    dayKey = `${iso[1]}-${iso[2]}-${iso[3]}`;
+    if (iso[4]) minutes = Number(iso[4]) * 60 + Number(iso[5]);
+  } else if (br) {
+    dayKey = `${br[3]}-${br[2]}-${br[1]}`;
+    if (br[4]) minutes = Number(br[4]) * 60 + Number(br[5]);
+  } else {
+    return null;
+  }
+  if (minutes == null) {
+    const clock = String(timeRaw ?? "").trim();
+    const hm = /^(\d{2}):(\d{2})/.exec(clock);
+    if (hm) minutes = Number(hm[1]) * 60 + Number(hm[2]);
+  }
+  return { dayKey, minutes };
+}
+
+export function normalizeCellTechWebhookUrl(raw: string | null | undefined): string {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+export function reportWindowOpen(clock: CellTechClock): boolean {
+  return clock.minutes >= 8 * 60 && clock.minutes < 8 * 60 + 15;
+}
+
+export function dailyReportDue(clock: CellTechClock, alreadySent: boolean): boolean {
+  return !alreadySent && reportWindowOpen(clock);
+}
+
+export function monthlyReportDue(clock: CellTechClock, alreadySent: boolean): boolean {
+  return !alreadySent && clock.day === 1 && reportWindowOpen(clock);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+export function unwrapRows(body: unknown): Record<string, unknown>[] {
+  if (Array.isArray(body)) return body.map(asRecord).filter((row): row is Record<string, unknown> => Boolean(row));
+  const root = asRecord(body);
+  if (!root) return [];
+  const buckets = [root.data, root.dados, root.items, root.registros];
+  for (const bucket of buckets) {
+    if (Array.isArray(bucket)) return bucket.map(asRecord).filter((row): row is Record<string, unknown> => Boolean(row));
+    const nested = asRecord(bucket);
+    if (!nested) continue;
+    for (const key of ["data", "items", "registros", "ordens_servicos"]) {
+      if (Array.isArray(nested[key])) {
+        return (nested[key] as unknown[]).map(asRecord).filter((row): row is Record<string, unknown> => Boolean(row));
+      }
+    }
+  }
+  return [];
+}
+
+function pickText(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text && text.toLowerCase() !== "null") return text;
+  }
+  return "";
+}
+
+function nestedName(
+  row: Record<string, unknown>,
+  nestedKey: string,
+  idKeys: string[],
+  nameKeys: string[],
+): { id: string; name: string } {
+  const raw = row[nestedKey];
+  const nested = asRecord(raw);
+  const stringName = typeof raw === "string" ? raw.trim() : "";
+  return {
+    id: pickId(row, idKeys) || (nested ? pickId(nested, ["id"]) : ""),
+    name: pickText(row, nameKeys) || (stringName && stringName !== "0" ? stringName : "") || (nested ? pickText(nested, ["nome", "name", "descricao"]) : ""),
+  };
+}
+
+function pickId(row: Record<string, unknown>, keys: string[]): string {
+  const text = pickText(row, keys);
+  if (!text || text === "0") return "";
+  return text;
+}
+
+function serviceNames(row: Record<string, unknown>): string[] {
+  const raw = row.servicos ?? row.servicos_os ?? row.services;
+  if (Array.isArray(raw)) {
+    const names: string[] = [];
+    for (const item of raw) {
+      if (typeof item === "string") {
+        const text = item.trim();
+        if (text) names.push(text);
+        continue;
+      }
+      const record = asRecord(item);
+      if (!record) continue;
+      const name = pickText(record, ["nome_servico", "nome", "servico", "descricao"]);
+      if (name) names.push(name);
+    }
+    return names;
+  }
+  const single = pickText(row, ["nome_servico", "servico"]);
+  return single ? [single] : [];
+}
+
+function equipmentLabel(row: Record<string, unknown>): string {
+  const list = Array.isArray(row.equipamentos) ? row.equipamentos : [];
+  const first = asRecord(list[0]) ?? row;
+  return [pickText(first, ["equipamento", "nome_equipamento"]), pickText(first, ["marca"]), pickText(first, ["modelo"])]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function dayDistance(fromDay: string, toDay: string): number {
+  const [fy, fm, fd] = fromDay.split("-").map(Number);
+  const [ty, tm, td] = toDay.split("-").map(Number);
+  const from = Date.UTC(fy, fm - 1, fd);
+  const to = Date.UTC(ty, tm - 1, td);
+  return Math.round((to - from) / 86_400_000);
+}
+
+function lateLabel(deadline: CellTechMoment, clock: CellTechClock): string {
+  const days = dayDistance(deadline.dayKey, clock.dayKey);
+  if (days > 0) return days === 1 ? "Atraso de 1 dia" : `Atraso de ${days} dias`;
+  if (deadline.minutes == null) return "Atraso";
+  const late = clock.minutes - deadline.minutes;
+  const hours = Math.floor(late / 60);
+  const mins = late % 60;
+  if (hours <= 0) return `Atraso de ${mins} min`;
+  if (mins <= 0) return `Atraso de ${hours}h`;
+  return `Atraso de ${hours}h ${mins}min`;
+}
+
+function deadlineLabel(moment: CellTechMoment | null): string {
+  if (!moment) return "Sem prazo";
+  const day = formatDay(moment.dayKey);
+  if (moment.minutes == null) return day;
+  const hours = String(Math.floor(moment.minutes / 60)).padStart(2, "0");
+  const mins = String(moment.minutes % 60).padStart(2, "0");
+  return `${day} ${hours}:${mins}`;
+}
+
+export function parseCellTechOrder(
+  row: Record<string, unknown>,
+  flags: CellTechFlags,
+  clock: CellTechClock,
+): CellTechOrder | null {
+  const id = pickId(row, ["id", "ordem_servico_id"]);
+  if (!id) return null;
+  const situation = nestedName(row, "situacao", ["situacao_id"], ["nome_situacao", "situacao_nome"]);
+  const technician = nestedName(row, "tecnico", ["tecnico_id", "funcionario_id"], ["nome_tecnico", "tecnico_nome", "nome_funcionario"]);
+  const situationId = situation.id;
+  const situationName = situation.name;
+  const finishedAt = parseGestaoMoment(row.data_saida ?? row.data_conclusao, row.hora_saida);
+  const doneConfigured = flags.doneSituationIds.length > 0;
+  const finished = Boolean(finishedAt)
+    || (doneConfigured && flags.doneSituationIds.includes(situationId))
+    || (!doneConfigured && DONE_NAME.test(situationName));
+  const workingConfigured = flags.workingSituationIds.length > 0;
+  const working = !finished && (
+    workingConfigured
+      ? flags.workingSituationIds.includes(situationId)
+      : WORKING_NAME.test(situationName)
+  );
+  const deadline = parseGestaoMoment(
+    row.previsao_entrega ?? row.previsao_termino ?? row.data_previsao ?? row.prazo,
+    row.hora_previsao ?? row.hora_previsao_entrega,
+  );
+  const entry = parseGestaoMoment(row.data_entrada ?? row.data ?? row.cadastrado_em, row.hora_entrada);
+
+  let tone: CellTechTone = "gray";
+  let overdue = false;
+  let dueToday = false;
+  let statusLabel = "Sem prazo";
+  if (finished) {
+    tone = "green";
+    statusLabel = "Finalizada";
+  } else if (!deadline) {
+    tone = "gray";
+    statusLabel = "Sem prazo";
+  } else if (deadline.dayKey > clock.dayKey) {
+    tone = "green";
+    statusLabel = "No prazo";
+  } else if (deadline.dayKey === clock.dayKey) {
+    dueToday = true;
+    if (deadline.minutes != null && clock.minutes > deadline.minutes) {
+      tone = "red";
+      overdue = true;
+      statusLabel = lateLabel(deadline, clock);
+    } else {
+      tone = "yellow";
+      statusLabel = "Vence hoje";
+    }
+  } else {
+    tone = "red";
+    overdue = true;
+    dueToday = false;
+    statusLabel = lateLabel(deadline, clock);
+  }
+
+  const services = serviceNames(row);
+  return {
+    id,
+    code: pickText(row, ["codigo", "numero"]) || id,
+    clientName: pickText(row, ["nome_cliente", "cliente_nome", "nome_cliente_os"]) || "Cliente",
+    technicianId: technician.id,
+    technicianName: technician.name || "Sem técnico",
+    situationId,
+    situationName: situationName || "Sem situação",
+    priority: pickText(row, ["prioridade"]),
+    services,
+    equipment: equipmentLabel(row),
+    entryDay: entry?.dayKey ?? null,
+    deadlineDay: deadline?.dayKey ?? null,
+    finishedDay: finished ? (finishedAt?.dayKey ?? null) : null,
+    deadlineLabel: deadlineLabel(deadline),
+    finished,
+    working,
+    tone,
+    overdue,
+    dueToday,
+    statusLabel,
+  };
+}
+
+export function filterCellTechOrders(orders: CellTechOrder[], query: CellTechListQuery): CellTechOrder[] {
+  const technicianId = String(query.technicianId || "").trim();
+  const client = String(query.client || "").trim().toLocaleLowerCase("pt-BR");
+  const service = String(query.service || "").trim().toLocaleLowerCase("pt-BR");
+  const dateFrom = String(query.dateFrom || "").trim();
+  const dateTo = String(query.dateTo || "").trim();
+  const scope = query.scope || "open";
+  return orders.filter((order) => {
+    if (scope === "open" && order.finished) return false;
+    if (scope === "done" && !order.finished) return false;
+    if (technicianId && order.technicianId !== technicianId) return false;
+    if (client && !order.clientName.toLocaleLowerCase("pt-BR").includes(client)) return false;
+    if (service && !order.services.some((name) => name.toLocaleLowerCase("pt-BR").includes(service)) && !order.equipment.toLocaleLowerCase("pt-BR").includes(service)) {
+      return false;
+    }
+    if (dateFrom || dateTo) {
+      const day = order.entryDay || order.deadlineDay;
+      if (!day) return false;
+      if (dateFrom && day < dateFrom) return false;
+      if (dateTo && day > dateTo) return false;
+    }
+    return true;
+  });
+}
+
+export function cellTechCounts(orders: CellTechOrder[]) {
+  return {
+    open: orders.filter((order) => !order.finished).length,
+    overdue: orders.filter((order) => order.overdue).length,
+    dueToday: orders.filter((order) => order.dueToday && !order.overdue && !order.finished).length,
+    noDeadline: orders.filter((order) => !order.finished && order.tone === "gray").length,
+    working: orders.filter((order) => order.working).length,
+    done: orders.filter((order) => order.finished).length,
+  };
+}
+
+function line(order: CellTechOrder): string {
+  const service = order.services[0] || order.equipment || "Serviço";
+  return `• OS ${order.code} — ${order.clientName} — ${service} — ${order.technicianName} — ${order.deadlineLabel}`;
+}
+
+function block(title: string, orders: CellTechOrder[]): string[] {
+  const shown = orders.slice(0, 20).map(line);
+  const extra = orders.length - shown.length;
+  const lines = [`*${title}* (${orders.length})`, ...(shown.length ? shown : ["• Nenhuma"])];
+  if (extra > 0) lines.push(`• + ${extra} no painel`);
+  return lines;
+}
+
+export function buildOverdueMessage(order: CellTechOrder): string {
+  const service = order.services.join(", ") || order.equipment || "Serviço";
+  return [
+    "*Cell Tech — OS atrasada*",
+    `OS ${order.code}`,
+    `Cliente: ${order.clientName}`,
+    `Serviço: ${service}`,
+    `Técnico: ${order.technicianName}`,
+    `Prazo: ${order.deadlineLabel}`,
+    order.statusLabel,
+    order.working ? "Situação: técnico em execução" : `Situação: ${order.situationName}`,
+  ].join("\n");
+}
+
+export function buildDailyReport(orders: CellTechOrder[], clock: CellTechClock): string {
+  const yesterday = addDays(clock.dayKey, -1);
+  const dueToday = orders.filter((order) => !order.finished && order.dueToday && !order.overdue);
+  const overdue = orders.filter((order) => order.overdue);
+  const finishedRecent = orders.filter((order) => order.finishedDay === yesterday || order.finishedDay === clock.dayKey);
+  return [
+    `*Cell Tech — relatório do dia ${formatDay(clock.dayKey)}*`,
+    "",
+    ...block("Para fechar hoje", dueToday),
+    "",
+    ...block("Atrasadas", overdue),
+    "",
+    ...block("Finalizadas desde ontem", finishedRecent),
+  ].join("\n");
+}
+
+function finishedInMonth(order: CellTechOrder, key: string): boolean {
+  return Boolean(order.finishedDay && monthKey(order.finishedDay) === key);
+}
+
+export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock): string {
+  const previous = previousMonthKey(clock.dayKey);
+  const current = monthKey(clock.dayKey);
+  const donePrevious = orders.filter((order) => finishedInMonth(order, previous));
+  const doneCurrent = orders.filter((order) => finishedInMonth(order, current));
+  const open = orders.filter((order) => !order.finished);
+  return [
+    `*Cell Tech — relatório de ${formatMonth(previous)}*`,
+    "",
+    ...block(`Feitas em ${formatMonth(previous)}`, donePrevious),
+    "",
+    ...block("Ainda abertas", open),
+    "",
+    ...block(`Feitas em ${formatMonth(current)}`, doneCurrent),
+  ].join("\n");
+}
+
+export function cellTechWebhookBody(kind: string, message: string) {
+  return { source: "cell-tech", kind, message, text: message };
+}
+
+export function splitIdList(raw: string | null | undefined): string[] {
+  return String(raw || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item && item !== "0");
+}
+
+export function joinIdList(ids: unknown): string {
+  if (!Array.isArray(ids)) return "";
+  return ids.map((id) => String(id).trim()).filter((id) => id && id !== "0").join(",");
+}
