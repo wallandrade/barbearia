@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   isMotoboyShippingType,
+  NORMAL_ORDER_SHIPPING_TYPE,
   parseFreeShippingMinSubtotalSetting,
   pickFreeShippingMinSubtotal,
   resolveShippingCostWithFreeThreshold,
+  shippingTypeAfterMotoboyToNormal,
 } from "./free-shipping";
 
 test("frete normal quando subtotal abaixo do limite", () => {
@@ -56,4 +58,12 @@ test("pick usa minimo Motoboy quando shippingType e Motoboy", () => {
   );
   assert.equal(isMotoboyShippingType("motoboy"), true);
   assert.equal(isMotoboyShippingType("Expresso"), false);
+});
+
+test("edicao troca Motoboy para frete normal e ignora os outros", () => {
+  assert.equal(shippingTypeAfterMotoboyToNormal("Motoboy", true), NORMAL_ORDER_SHIPPING_TYPE);
+  assert.equal(shippingTypeAfterMotoboyToNormal("Motoboy Centro", true), NORMAL_ORDER_SHIPPING_TYPE);
+  assert.equal(shippingTypeAfterMotoboyToNormal("Motoboy", false), null);
+  assert.equal(shippingTypeAfterMotoboyToNormal("Sedex", true), null);
+  assert.equal(shippingTypeAfterMotoboyToNormal("Frete", true), null);
 });

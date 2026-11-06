@@ -72,7 +72,7 @@ import { formatShippingForecastDateBR, normalizeShippingForecastDate } from "../
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
 import { diffEditedOrderProducts, snapshotProductImage, type OrderEditProductLine } from "../lib/order-activity-format";
 import { clampLineDiscount, lineNetAmount } from "../lib/line-discount";
-import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
+import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold, shippingTypeAfterMotoboyToNormal } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveCheckoutSeller } from "../lib/assign-checkout-seller";
@@ -2341,7 +2341,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
 
     let id = req.params.id;
     if (Array.isArray(id)) id = id[0];
-    const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument, skipWalletCredit } = req.body as {
+    const { products: newProducts, address, discountAmount, clientPhone, clientEmail, clientDocument, skipWalletCredit, convertMotoboyToNormal } = req.body as {
       products: Array<{
         id: string;
         name: string;
@@ -2353,6 +2353,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       }>;
       discountAmount?: number;
       skipWalletCredit?: boolean;
+      convertMotoboyToNormal?: boolean;
       clientPhone?: string | null;
       clientEmail?: string | null;
       clientDocument?: string | null;
@@ -2554,6 +2555,11 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       }
     }
 
+    const convertedShippingType = shippingTypeAfterMotoboyToNormal(
+      current[0].shippingType,
+      convertMotoboyToNormal === true,
+    );
+
     const updates: Partial<typeof ordersTable.$inferInsert> = {
       products: resolvedProducts,
       subtotal: String(computedSubtotal),
@@ -2565,6 +2571,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       status: newStatus,
       updatedAt: new Date(),
     };
+    if (convertedShippingType) updates.shippingType = convertedShippingType;
 
     if (nextAddressCep !== undefined) updates.addressCep = nextAddressCep;
     if (nextAddressStreet !== undefined) updates.addressStreet = nextAddressStreet;
@@ -2583,6 +2590,15 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     await db.update(ordersTable)
       .set(updates)
       .where(buildAdminOrderWhere(id, adminScope));
+
+    if (convertedShippingType) {
+      await db.update(motoboyBookingsTable)
+        .set({ isReleased: true, orderId: null })
+        .where(eq(motoboyBookingsTable.orderId, id));
+      if (newStatus === "paid" || newStatus === "completed") {
+        void allocateShippingSlot(id);
+      }
+    }
 
     let walletCredit: Awaited<ReturnType<typeof creditOrderEditSurplus>> = {
       credited: 0,
@@ -2648,7 +2664,7 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
       label: "Editou o pedido",
       actorType: "admin",
       actorName: String(req.adminSession?.username || "").trim() || "admin",
-      detail: `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${walletNote}${resolvedProducts.some((p) => Number(p.lineDiscount) > 0) ? ` · desconto item: ${resolvedProducts.filter((p) => Number(p.lineDiscount) > 0).map((p) => `${p.name} -${Number(p.lineDiscount).toFixed(2)}`).join(", ")}` : ""}`,
+      detail: `Total ${currentTotal.toFixed(2)} → ${Number(updated[0].total).toFixed(2)}${convertedShippingType ? " · frete Motoboy → pedido normal" : ""}${walletNote}${resolvedProducts.some((p) => Number(p.lineDiscount) > 0) ? ` · desconto item: ${resolvedProducts.filter((p) => Number(p.lineDiscount) > 0).map((p) => `${p.name} -${Number(p.lineDiscount).toFixed(2)}`).join(", ")}` : ""}`,
       meta: changedProducts.length > 0 ? { products: changedProducts } : null,
     });
     queueReportanaOrderSync(id);

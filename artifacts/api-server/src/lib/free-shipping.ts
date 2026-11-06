@@ -4,10 +4,25 @@ export function parseFreeShippingMinSubtotalSetting(raw: unknown): number | null
   return threshold;
 }
 
+/** Frete gravado quando o admin tira o pedido da entrega Motoboy. */
+export const NORMAL_ORDER_SHIPPING_TYPE = "Frete";
+
 /** Pedido Motoboy: shippingType costuma ser "Motoboy" (nome da opção no checkout). */
 export function isMotoboyShippingType(shippingType: string | null | undefined): boolean {
   const lower = String(shippingType || "").toLowerCase().trim();
   return lower === "motoboy" || lower.startsWith("motoboy");
+}
+
+/**
+ * Edição admin: Motoboy vira o frete padrão.
+ * Devolve o novo tipo, ou null quando a troca não se aplica.
+ */
+export function shippingTypeAfterMotoboyToNormal(
+  current: string | null | undefined,
+  convertToNormal: boolean,
+): string | null {
+  if (!convertToNormal || !isMotoboyShippingType(current)) return null;
+  return NORMAL_ORDER_SHIPPING_TYPE;
 }
 
 /** Escolhe o mínimo de frete grátis conforme o tipo de frete (normal vs Motoboy). */

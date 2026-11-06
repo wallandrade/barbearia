@@ -1860,6 +1860,7 @@ export default function Admin() {
     document: "",
   });
   const [editDiscount, setEditDiscount] = useState(0);
+  const [editConvertToNormal, setEditConvertToNormal] = useState(false);
   const [skipEditWalletCredit, setSkipEditWalletCredit] = useState(false);
   const [editProductSearch, setEditProductSearch] = useState("");
   const [editSaving, setEditSaving] = useState(false);
@@ -3847,6 +3848,7 @@ export default function Admin() {
       selectedVariants: readOrderVariantChoices(p.selectedVariants),
     })));
     setEditDiscount(order.discountAmount || 0);
+    setEditConvertToNormal(false);
     setSkipEditWalletCredit(false);
     setEditAddress({
       cep: String(order.addressCep || ""),
@@ -4087,6 +4089,7 @@ export default function Admin() {
         body: JSON.stringify({
           products: editItems,
           discountAmount: discountAmount,
+          convertMotoboyToNormal: editConvertToNormal,
           clientPhone: editContact.phone,
           clientEmail: editContact.email,
           clientDocument: editContact.document,
@@ -8597,6 +8600,23 @@ export default function Admin() {
                       />
                     </div>
                   </div>
+
+                  {String(editOrderModal.shippingType || "").trim().toLowerCase().startsWith("motoboy") && (
+                    <label className="flex items-start gap-2 p-3 rounded-lg border border-orange-200 bg-orange-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded border-border"
+                        checked={editConvertToNormal}
+                        onChange={(e) => setEditConvertToNormal(e.target.checked)}
+                      />
+                      <span>
+                        <span className="text-sm font-semibold text-orange-950">Trocar para pedido normal</span>
+                        <span className="block text-xs text-orange-900/80 mt-0.5 leading-snug">
+                          Sai da aba Motoboy e do card Motoboy para Enviar. O horário reservado fica livre. O valor do frete continua o mesmo.
+                        </span>
+                      </span>
+                    </label>
+                  )}
 
                   {/* Coupon/Discount */}
                   <div>
