@@ -8,6 +8,10 @@ import {
   filterCellTechOrders,
   monthlyReportDue,
   normalizeCellTechWebhookUrl,
+  buildCreatedMessage,
+  buildDeadlineMissedMessage,
+  buildNextDayReminder,
+  openAlerts,
   parseCellTechOrder,
   situationIsWorking,
   saoPauloClock,
@@ -17,16 +21,18 @@ import {
 const flags = { doneSituationIds: [], workingSituationIds: [] };
 const morning = saoPauloClock(new Date("2026-11-04T11:05:00.000Z"));
 
-test("8h em Brasília", () => {
+test("8h30 em Brasília", () => {
   assert.equal(morning.dayKey, "2026-11-04");
   assert.equal(morning.minutes, 8 * 60 + 5);
-  assert.equal(morning.day, 4);
-  assert.equal(dailyReportDue(morning, false), true);
-  assert.equal(dailyReportDue(morning, true), false);
-  assert.equal(monthlyReportDue(morning, false), false);
-  const first = saoPauloClock(new Date("2026-11-01T11:00:00.000Z"));
+  assert.equal(dailyReportDue(morning, false), false);
+  const reportAt = saoPauloClock(new Date("2026-11-04T11:30:00.000Z"));
+  assert.equal(reportAt.minutes, 8 * 60 + 30);
+  assert.equal(dailyReportDue(reportAt, false), true);
+  assert.equal(dailyReportDue(reportAt, true), false);
+  assert.equal(monthlyReportDue(reportAt, false), false);
+  const first = saoPauloClock(new Date("2026-11-01T11:30:00.000Z"));
   assert.equal(monthlyReportDue(first, false), true);
-  assert.equal(dailyReportDue(saoPauloClock(new Date("2026-11-04T10:59:00.000Z")), false), false);
+  assert.equal(dailyReportDue(saoPauloClock(new Date("2026-11-04T11:29:00.000Z")), false), false);
 });
 
 test("cores do prazo", () => {
@@ -152,6 +158,60 @@ test("situação e nome do serviço", () => {
   }, flags, morning);
   assert.equal(running?.working, true);
   assert.deepEqual(running?.services, ["Bateria"]);
+});
+
+test("avisos da OS no grupo", () => {
+  const fresh = parseCellTechOrder({
+    id: "20",
+    codigo: "1400",
+    nome_cliente: "Ana",
+    nome_tecnico: "Cassio",
+    nome_situacao: "Em andamento",
+    data: "2026-11-04",
+    previsao_entrega: "2026-11-04 18:00",
+    servicos: [{ detalhes: "Troca de tela" }],
+  }, flags, morning);
+  assert.ok(fresh);
+  assert.deepEqual(openAlerts(fresh, morning, { created: false, deadline: false }), ["created"]);
+  assert.match(buildCreatedMessage(fresh), /OS cadastrada/);
+  assert.match(buildCreatedMessage(fresh), /Troca de tela/);
+  assert.match(buildCreatedMessage(fresh), /18:00/);
+
+  const missed = parseCellTechOrder({
+    ...{
+      id: "21",
+      codigo: "1401",
+      nome_cliente: "Ana",
+      nome_tecnico: "Cassio",
+      nome_situacao: "Em andamento",
+      data: "2026-11-03",
+      previsao_entrega: "2026-11-04 07:00",
+    },
+  }, flags, morning);
+  assert.ok(missed);
+  assert.deepEqual(openAlerts(missed, morning, { created: false, deadline: false }), ["deadline"]);
+  assert.match(buildDeadlineMissedMessage(missed), /não foi feito/);
+  assert.deepEqual(openAlerts(missed, morning, { created: true, deadline: true }), []);
+
+  const nextDay = saoPauloClock(new Date("2026-11-05T11:00:00.000Z"));
+  const stillOpen = parseCellTechOrder({
+    id: "21",
+    nome_situacao: "Em andamento",
+    data: "2026-11-03",
+    previsao_entrega: "2026-11-04 07:00",
+  }, flags, nextDay);
+  assert.ok(stillOpen);
+  assert.deepEqual(openAlerts(stillOpen, nextDay, { created: true, deadline: true }), ["reminder"]);
+  assert.match(buildNextDayReminder(stillOpen), /programado para ontem não saiu/);
+
+  const done = parseCellTechOrder({
+    id: "22",
+    nome_situacao: "CONCRETIZADO O.S",
+    data: "2026-11-04",
+    previsao_entrega: "2026-11-04 07:00",
+  }, flags, morning);
+  assert.ok(done);
+  assert.deepEqual(openAlerts(done, morning, { created: false, deadline: false }), []);
 });
 
 test("webhook só https", () => {

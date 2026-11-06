@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-11-04
+> **Última atualização:** 2026-11-06
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -45,6 +45,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-06 | Cell Tech avisa no cadastro, no prazo e no dia seguinte | Relatório diário e o do dia 1 saem às 8h30 | Cópia 48h, PIX e checkout iguais |
 | 2026-11-04 | Aba Admin **Cell Tech** | OS do Gestão Click, cores de prazo e aviso no grupo via n8n. Não entra em pedido, estoque nem frete | Cópia 48h, PIX e checkout iguais |
 | 2026-11-03 | Card do envio dividido separa rastreio e itens | Cada origem (Minas / Motoboy / Foz) mostra status e código no topo e a lista dos produtos daquele rastreio. Sem código, aparece **Sem rastreio** | Botões, baixa, cópia 48h e a conta do cliente iguais |
 | 2026-11-01 | Campanha relâmpago escolhe quem abre primeiro | **Aparecer primeiro** grava `sort_order`. O card abre nessa campanha. Campanha nova entra no fim | Chance, vaga, horário, primeira visita e Habilitar iguais |
@@ -529,7 +530,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 - Aba do admin principal, separada da loja. OS, técnico, prazo e serviço vêm do Gestão Click. Pedido, PIX, estoque e frete não entram.
 - Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo.
-- Grupo da loja: um aviso por OS atrasada por dia. Relatório diário às 8h e mensal no dia 1 às 8h (Brasília), pelo webhook n8n da própria aba.
+- Grupo da loja: aviso no cadastro, no prazo estourado e lembrete nos dias seguintes. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
 
 ## Multi-tenant
 

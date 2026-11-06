@@ -164,8 +164,10 @@ export function normalizeCellTechWebhookUrl(raw: string | null | undefined): str
   }
 }
 
+const REPORT_AT = 8 * 60 + 30;
+
 export function reportWindowOpen(clock: CellTechClock): boolean {
-  return clock.minutes >= 8 * 60 && clock.minutes < 8 * 60 + 15;
+  return clock.minutes >= REPORT_AT && clock.minutes < REPORT_AT + 15;
 }
 
 export function dailyReportDue(clock: CellTechClock, alreadySent: boolean): boolean {
@@ -450,18 +452,62 @@ function block(title: string, orders: CellTechOrder[]): string[] {
   return lines;
 }
 
-export function buildOverdueMessage(order: CellTechOrder): string {
-  const service = order.services.join(", ") || order.equipment || "Serviço";
+function serviceLabel(order: CellTechOrder): string {
+  return order.services.join(", ") || order.equipment || "Serviço não informado";
+}
+
+function orderLines(order: CellTechOrder, deadlineTitle: string): string[] {
   return [
-    "*Cell Tech — OS atrasada*",
     `OS ${order.code}`,
     `Cliente: ${order.clientName}`,
-    `Serviço: ${service}`,
+    `Serviço: ${serviceLabel(order)}`,
     `Técnico: ${order.technicianName}`,
-    `Prazo: ${order.deadlineLabel}`,
-    order.statusLabel,
-    order.working ? "Situação: técnico em execução" : `Situação: ${order.situationName}`,
+    `${deadlineTitle}: ${order.deadlineLabel}`,
+  ];
+}
+
+export type CellTechAlertKind = "created" | "deadline" | "reminder";
+
+/** Quais avisos desta OS saem agora. O de atraso sai uma vez. O lembrete só nos dias seguintes. */
+export function openAlerts(
+  order: CellTechOrder,
+  clock: CellTechClock,
+  sent: { created: boolean; deadline: boolean },
+): CellTechAlertKind[] {
+  if (order.finished) return [];
+  const alerts: CellTechAlertKind[] = [];
+  if (!sent.created && order.entryDay === clock.dayKey) alerts.push("created");
+  if (!order.overdue || !order.deadlineDay) return alerts;
+  if (!sent.deadline) {
+    alerts.push("deadline");
+    return alerts;
+  }
+  if (order.deadlineDay < clock.dayKey) alerts.push("reminder");
+  return alerts;
+}
+
+export function buildCreatedMessage(order: CellTechOrder): string {
+  return ["*Cell Tech — OS cadastrada*", ...orderLines(order, "Prazo de entrega")].join("\n");
+}
+
+export function buildDeadlineMissedMessage(order: CellTechOrder): string {
+  return [
+    "*Cell Tech — prazo não cumprido*",
+    ...orderLines(order, "Prazo"),
+    "O prazo não foi cumprido. O serviço ainda não foi feito.",
   ].join("\n");
+}
+
+export function buildNextDayReminder(order: CellTechOrder): string {
+  return [
+    "*Cell Tech — lembrete*",
+    ...orderLines(order, "Prazo"),
+    "O serviço programado para ontem não saiu. Se organizem para ficar pronto hoje.",
+  ].join("\n");
+}
+
+export function buildOverdueMessage(order: CellTechOrder): string {
+  return buildDeadlineMissedMessage(order);
 }
 
 export function buildDailyReport(orders: CellTechOrder[], clock: CellTechClock): string {

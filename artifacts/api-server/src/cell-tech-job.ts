@@ -10,9 +10,9 @@ async function runOnce(): Promise<void> {
   running = true;
   try {
     const result = await runCellTechTick(new Date());
-    if (result.overdueSent > 0 || result.dailySent || result.monthlySent) {
+    if (result.noticesSent > 0 || result.dailySent || result.monthlySent) {
       console.log(
-        `[Cell Tech] atrasos ${result.overdueSent}, diário ${result.dailySent ? "enviado" : "não"}, mensal ${result.monthlySent ? "enviado" : "não"}`,
+        `[Cell Tech] avisos ${result.noticesSent}, diário ${result.dailySent ? "enviado" : "não"}, mensal ${result.monthlySent ? "enviado" : "não"}`,
       );
     }
   } catch (error) {
@@ -23,7 +23,7 @@ async function runOnce(): Promise<void> {
 }
 
 export function startCellTechJob(): void {
-  console.log("[Cell Tech] consulta de OS a cada 2 min. Relatórios às 8h, horário de Brasília.");
+  console.log("[Cell Tech] consulta de OS a cada 2 min. Relatórios às 8h30, horário de Brasília.");
   setTimeout(() => {
     void runOnce();
   }, START_DELAY_MS);

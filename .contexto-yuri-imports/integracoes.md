@@ -8,6 +8,8 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-06 | Relatório da Cell Tech sai às 8h30 | Diário e o do dia 1 usam 8h30 em Brasília, com 15 minutos de janela | O aviso de cadastro, de prazo e o lembrete do dia seguinte iguais |
+| 2026-11-06 | Cell Tech avisa o grupo no cadastro, no prazo e no dia seguinte | Cada OS manda a própria mensagem. Baixa (concretizada, finalizada ou cancelada) para os avisos. O relatório das 8h continua | O teste do grupo e a Z-API iguais |
 | 2026-11-06 | Cell Tech não trata SEM REPARO como técnico trabalhando | O nome do serviço sai de `detalhes` ou `itens_servicos`. EM ANDAMENTO continua “fazendo agora” | Prazo, data de saída e o grupo iguais |
 | 2026-11-05 | Cell Tech lê o serviço aninhado e a data de saída como prazo | O card mostra o nome do serviço. Data de saída atrasada fica vermelha e continua aberta. Concretizado sai da lista de abertas | O grupo, o webhook e o horário das 8h iguais |
 | 2026-11-04 | Aba Cell Tech lê ordens de serviço do Gestão Click | Admin principal vê OS, prazo e técnico. Job manda atraso e relatórios das 8h para um webhook n8n próprio. Tokens não entram na loja pública | Pedido, PIX, frete, EnvioEcom e os webhooks de WhatsApp da Yuri iguais |
@@ -319,7 +321,7 @@ Módulo isolado da loja. Não lê `orders`, PIX nem frete.
 - Cor do card: verde no prazo, amarelo vence hoje, vermelho atrasado, cinza sem prazo. Data sem hora vira atraso só no dia seguinte. Com hora, atrasa quando passa do minuto.
 - API `https://api.gestaoclick.com/api`, headers `access-token` e `secret-access-token`. Lista `GET /ordens_servicos` (últimos 120 dias) e situações em `GET /situacoes_ordens_servicos`. Teto respeitado com pausa de 400 ms. Cache de 60 s.
 - Tokens e webhook em `site_settings` (`cell_tech_*`). Fora de `PUBLIC_KEYS`. O GET da aba devolve só o final do token.
-- Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https: uma mensagem por OS atrasada por dia (no máximo 20 por ciclo). Relatório diário às 8h e mensal no dia 1 às 8h, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
+- Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https, cada OS manda a própria mensagem: no dia do cadastro, uma vez quando o prazo estoura, e nos dias seguintes o lembrete para ficar pronto hoje. No máximo 20 por ciclo. Baixa (concretizada, finalizada ou cancelada) para os avisos daquela OS. Relatório diário às 8h30 e mensal no dia 1 às 8h30, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
 - O POST para o n8n manda `{ source, kind, message, text }`. A Z-API e o grupo ficam no n8n. O fluxo lê `message`.
 - Sem as situações marcadas, finalizada = nome Finalizada/Concluída/Entregue/Cancelada/Concretizado. A data de saída é o prazo, não a conclusão. Trabalhando = nome Em execução/Em andamento. Com a lista marcada, vale a lista.
 

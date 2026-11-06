@@ -1,13 +1,17 @@
 import {
+  buildCreatedMessage,
   buildDailyReport,
+  buildDeadlineMissedMessage,
   buildMonthlyReport,
-  buildOverdueMessage,
+  buildNextDayReminder,
   cellTechCounts,
   cellTechWebhookBody,
   filterCellTechOrders,
   monthKey,
+  openAlerts,
   reportWindowOpen,
   saoPauloClock,
+  type CellTechAlertKind,
   type CellTechListQuery,
   type CellTechOrder,
 } from "./cell-tech-logic";
@@ -16,13 +20,14 @@ import {
   claimCellTechAlert,
   publicCellTechSettings,
   readCellTechSettings,
+  readSentCellTechAlerts,
   releaseCellTechAlert,
   saveCellTechSettings,
   type CellTechSettings,
   type CellTechSettingsInput,
 } from "./cell-tech-store";
 
-const OVERDUE_CAP = 20;
+const ALERT_CAP = 20;
 
 async function postCellTech(url: string, kind: string, message: string): Promise<void> {
   const controller = new AbortController();
@@ -128,22 +133,39 @@ export async function sendCellTechReport(kind: "daily" | "monthly") {
   return { alreadySent: !sent };
 }
 
-export async function runCellTechTick(now = new Date()): Promise<{ overdueSent: number; dailySent: boolean; monthlySent: boolean }> {
+function alertMessage(kind: CellTechAlertKind, order: CellTechOrder): string {
+  if (kind === "created") return buildCreatedMessage(order);
+  if (kind === "deadline") return buildDeadlineMissedMessage(order);
+  return buildNextDayReminder(order);
+}
+
+export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean }> {
   const settings = await readCellTechSettings();
   if (!settings.alertsEnabled || !settings.webhookUrl || !settings.accessToken || !settings.secretAccessToken) {
-    return { overdueSent: 0, dailySent: false, monthlySent: false };
+    return { noticesSent: 0, dailySent: false, monthlySent: false };
   }
   const clock = saoPauloClock(now);
   const loaded = await snapshotOrders(settings, false, clock);
-  let overdueSent = 0;
+  const sent = await readSentCellTechAlerts();
+  let noticesSent = 0;
   for (const order of loaded.orders) {
-    if (!order.overdue || overdueSent >= OVERDUE_CAP) continue;
-    try {
-      const sent = await sendClaimed(settings, "overdue", order.id, clock.dayKey, buildOverdueMessage(order));
-      if (sent) overdueSent += 1;
-    } catch (error) {
-      console.error("[Cell Tech] aviso de atraso:", error instanceof Error ? error.message : error);
-      break;
+    if (noticesSent >= ALERT_CAP) break;
+    const flags = sent.get(order.id) ?? { created: false, deadline: false };
+    for (const kind of openAlerts(order, clock, flags)) {
+      if (noticesSent >= ALERT_CAP) break;
+      try {
+        const posted = await sendClaimed(
+          settings,
+          kind,
+          order.id,
+          kind === "reminder" ? clock.dayKey : "once",
+          alertMessage(kind, order),
+        );
+        if (posted) noticesSent += 1;
+      } catch (error) {
+        console.error("[Cell Tech] aviso:", error instanceof Error ? error.message : error);
+        break;
+      }
     }
   }
   let dailySent = false;
@@ -162,7 +184,7 @@ export async function runCellTechTick(now = new Date()): Promise<{ overdueSent: 
       }
     }
   }
-  return { overdueSent, dailySent, monthlySent };
+  return { noticesSent, dailySent, monthlySent };
 }
 
 export { GestaoClickError };
