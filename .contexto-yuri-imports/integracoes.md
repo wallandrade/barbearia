@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-06 | Relatório da Cell Tech no grupo fica em blocos com emoji | Cada OS em duas linhas: cliente, serviço, técnico e prazo. No máximo 8 por bloco | O horário das 8h30 e os avisos individuais iguais |
 | 2026-11-06 | Relatório da Cell Tech conta a baixa pela situação | OS concretizada entra no mês de `modificado_em`. Sem essa data, aparece em "Finalizadas sem data da baixa" | O prazo continua na data de saída |
 | 2026-11-06 | Relatório da Cell Tech sai às 8h30 | Diário e o do dia 1 usam 8h30 em Brasília, com 15 minutos de janela | O aviso de cadastro, de prazo e o lembrete do dia seguinte iguais |
 | 2026-11-06 | Cell Tech avisa o grupo no cadastro, no prazo e no dia seguinte | Cada OS manda a própria mensagem. Baixa (concretizada, finalizada ou cancelada) para os avisos. O relatório das 8h continua | O teste do grupo e a Z-API iguais |

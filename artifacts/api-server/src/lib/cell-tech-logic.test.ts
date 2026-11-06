@@ -174,7 +174,7 @@ test("avisos da OS no grupo", () => {
   assert.ok(fresh);
   assert.deepEqual(openAlerts(fresh, morning, { created: false, deadline: false }), ["created"]);
   assert.match(buildCreatedMessage(fresh), /OS cadastrada/);
-  assert.match(buildCreatedMessage(fresh), /Troca de tela/);
+  assert.match(buildCreatedMessage(fresh), /Troca de Tela/);
   assert.match(buildCreatedMessage(fresh), /18:00/);
 
   const missed = parseCellTechOrder({
@@ -202,7 +202,7 @@ test("avisos da OS no grupo", () => {
   }, flags, nextDay);
   assert.ok(stillOpen);
   assert.deepEqual(openAlerts(stillOpen, nextDay, { created: true, deadline: true }), ["reminder"]);
-  assert.match(buildNextDayReminder(stillOpen), /programado para ontem não saiu/);
+  assert.match(buildNextDayReminder(stillOpen), /serviço de ontem não saiu/);
 
   const done = parseCellTechOrder({
     id: "22",
@@ -226,7 +226,7 @@ test("concretizada entra no mês em que foi atualizada", () => {
   assert.equal(order?.finished, true);
   assert.equal(order?.finishedDay, "2026-10-15");
   const report = buildMonthlyReport(order ? [order] : [], clock);
-  assert.match(report, /Feitas em outubro de 2026\* \(1\)/);
+  assert.match(report, /Feitas em outubro de 2026\* · 1/);
   assert.match(report, /Ana/);
 });
 

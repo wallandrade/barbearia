@@ -127,7 +127,7 @@ export async function sendCellTechReport(kind: "daily" | "monthly") {
   const settings = await readCellTechSettings();
   const clock = saoPauloClock();
   const loaded = await snapshotOrders(settings, true, clock);
-  const periodKey = kind === "daily" ? clock.dayKey : `${monthKey(clock.dayKey)}:baixa`;
+  const periodKey = kind === "daily" ? `${clock.dayKey}:visual` : `${monthKey(clock.dayKey)}:visual`;
   const message = kind === "daily" ? buildDailyReport(loaded.orders, clock) : buildMonthlyReport(loaded.orders, clock);
   const sent = await sendClaimed(settings, kind, "", periodKey, message);
   return { alreadySent: !sent };
@@ -172,13 +172,13 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
   let monthlySent = false;
   if (reportWindowOpen(clock)) {
     try {
-      dailySent = await sendClaimed(settings, "daily", "", clock.dayKey, buildDailyReport(loaded.orders, clock));
+      dailySent = await sendClaimed(settings, "daily", "", `${clock.dayKey}:visual`, buildDailyReport(loaded.orders, clock));
     } catch (error) {
       console.error("[Cell Tech] relatório diário:", error instanceof Error ? error.message : error);
     }
     if (clock.day === 1) {
       try {
-        monthlySent = await sendClaimed(settings, "monthly", "", `${monthKey(clock.dayKey)}:baixa`, buildMonthlyReport(loaded.orders, clock));
+        monthlySent = await sendClaimed(settings, "monthly", "", `${monthKey(clock.dayKey)}:visual`, buildMonthlyReport(loaded.orders, clock));
       } catch (error) {
         console.error("[Cell Tech] relatório mensal:", error instanceof Error ? error.message : error);
       }

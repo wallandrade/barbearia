@@ -443,31 +443,34 @@ export function cellTechCounts(orders: CellTechOrder[]) {
   };
 }
 
-function line(order: CellTechOrder): string {
-  const service = order.services[0] || order.equipment || "Serviço";
-  return `• OS ${order.code} — ${order.clientName} — ${service} — ${order.technicianName} — ${order.deadlineLabel}`;
-}
+const REPORT_LIMIT = 8;
 
-function block(title: string, orders: CellTechOrder[]): string[] {
-  const shown = orders.slice(0, 20).map(line);
-  const extra = orders.length - shown.length;
-  const lines = [`*${title}* (${orders.length})`, ...(shown.length ? shown : ["• Nenhuma"])];
-  if (extra > 0) lines.push(`• + ${extra} no painel`);
-  return lines;
+function prettyText(value: string): string {
+  const titled = value
+    .toLocaleLowerCase("pt-BR")
+    .replace(/(^|[\s(/-])(\p{L})/gu, (_match, sep: string, letter: string) => `${sep}${letter.toLocaleUpperCase("pt-BR")}`);
+  return titled.replace(/\s(De|Da|Do|Das|Dos|E)\s/g, (word) => word.toLocaleLowerCase("pt-BR"));
 }
 
 function serviceLabel(order: CellTechOrder): string {
-  return order.services.join(", ") || order.equipment || "Serviço não informado";
+  const raw = order.services.join(", ") || order.equipment || "Serviço não informado";
+  return prettyText(raw);
 }
 
-function orderLines(order: CellTechOrder, deadlineTitle: string): string[] {
+function card(order: CellTechOrder): string {
+  const deadline = order.deadlineLabel === "Sem prazo" ? "⚠️ Sem prazo" : `📅 ${order.deadlineLabel}`;
   return [
-    `OS ${order.code}`,
-    `Cliente: ${order.clientName}`,
-    `Serviço: ${serviceLabel(order)}`,
-    `Técnico: ${order.technicianName}`,
-    `${deadlineTitle}: ${order.deadlineLabel}`,
-  ];
+    `📱 *OS ${order.code}* · ${prettyText(order.clientName)}`,
+    `🔧 ${serviceLabel(order)} · 👨‍🔧 ${prettyText(order.technicianName)} · ${deadline}`,
+  ].join("\n");
+}
+
+function block(emoji: string, title: string, orders: CellTechOrder[]): string[] {
+  const shown = orders.slice(0, REPORT_LIMIT).map(card);
+  const extra = orders.length - shown.length;
+  const lines = [`${emoji} *${title}* · ${orders.length}`, ...(shown.length ? shown : ["• Nenhuma"])];
+  if (extra > 0) lines.push(`📌 + ${extra} no painel da Cell Tech`);
+  return lines;
 }
 
 export type CellTechAlertKind = "created" | "deadline" | "reminder";
@@ -491,22 +494,26 @@ export function openAlerts(
 }
 
 export function buildCreatedMessage(order: CellTechOrder): string {
-  return ["*Cell Tech — OS cadastrada*", ...orderLines(order, "Prazo de entrega")].join("\n");
+  return ["🆕 *OS cadastrada*", "", card(order)].join("\n");
 }
 
 export function buildDeadlineMissedMessage(order: CellTechOrder): string {
   return [
-    "*Cell Tech — prazo não cumprido*",
-    ...orderLines(order, "Prazo"),
-    "O prazo não foi cumprido. O serviço ainda não foi feito.",
+    "⏰ *Prazo não cumprido*",
+    "",
+    card(order),
+    "",
+    "⚠️ O serviço ainda não foi feito.",
   ].join("\n");
 }
 
 export function buildNextDayReminder(order: CellTechOrder): string {
   return [
-    "*Cell Tech — lembrete*",
-    ...orderLines(order, "Prazo"),
-    "O serviço programado para ontem não saiu. Se organizem para ficar pronto hoje.",
+    "🔔 *Lembrete*",
+    "",
+    card(order),
+    "",
+    "📌 O serviço de ontem não saiu. Se organizem para ficar pronto hoje.",
   ].join("\n");
 }
 
@@ -520,13 +527,14 @@ export function buildDailyReport(orders: CellTechOrder[], clock: CellTechClock):
   const overdue = orders.filter((order) => order.overdue);
   const finishedRecent = orders.filter((order) => order.finishedDay === yesterday || order.finishedDay === clock.dayKey);
   return [
-    `*Cell Tech — relatório do dia ${formatDay(clock.dayKey)}*`,
+    "📊 *Cell Tech*",
+    `Relatório de *${formatDay(clock.dayKey)}*`,
     "",
-    ...block("Para fechar hoje", dueToday),
+    ...block("🟡", "Para fechar hoje", dueToday),
     "",
-    ...block("Atrasadas", overdue),
+    ...block("🔴", "Atrasadas", overdue),
     "",
-    ...block("Finalizadas desde ontem", finishedRecent),
+    ...block("✅", "Finalizadas desde ontem", finishedRecent),
   ].join("\n");
 }
 
@@ -542,14 +550,15 @@ export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock
   const doneUndated = orders.filter((order) => order.finished && !order.finishedDay);
   const open = orders.filter((order) => !order.finished);
   return [
-    `*Cell Tech — relatório de ${formatMonth(previous)}*`,
+    "📊 *Cell Tech*",
+    `Relatório de *${formatMonth(previous)}*`,
     "",
-    ...block(`Feitas em ${formatMonth(previous)}`, donePrevious),
+    ...block("✅", `Feitas em ${formatMonth(previous)}`, donePrevious),
     "",
-    ...block("Ainda abertas", open),
+    ...block("🟡", "Ainda abertas", open),
     "",
-    ...block(`Feitas em ${formatMonth(current)}`, doneCurrent),
-    ...(doneUndated.length > 0 ? ["", ...block("Finalizadas sem data da baixa", doneUndated)] : []),
+    ...block("✅", `Feitas em ${formatMonth(current)}`, doneCurrent),
+    ...(doneUndated.length > 0 ? ["", ...block("📎", "Finalizadas sem data da baixa", doneUndated)] : []),
   ].join("\n");
 }
 
