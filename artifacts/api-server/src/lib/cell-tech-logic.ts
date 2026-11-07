@@ -697,34 +697,83 @@ function moneyFrom(record: Record<string, unknown> | null, keys: string[]): numb
   return null;
 }
 
+function totalsFromCards(value: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(value)) return null;
+  const bucket: Record<string, unknown> = {};
+  for (const item of value) {
+    const card = asRecord(item);
+    if (!card) continue;
+    const name = String(card.nome ?? card.name ?? card.titulo ?? card.label ?? "").trim().toLowerCase();
+    const amount = card.valor ?? card.total ?? card.value;
+    if (!name || amount == null) continue;
+    if (/lucro/.test(name) && !/medio|percent|porcent|margem/.test(name)) bucket.lucro = amount;
+    else if (/custo/.test(name) && !/medio|unit/.test(name)) bucket.custo_total = amount;
+    else if (/venda|fatur|valor total|^total$/.test(name)) bucket.valor_total = amount;
+  }
+  return Object.keys(bucket).length > 0 ? bucket : null;
+}
+
 function totalsBucket(body: unknown): Record<string, unknown> | null {
   const root = asRecord(body);
   if (!root) return null;
   const data = asRecord(root.data);
-  for (const source of [root, data]) {
+  const meta = asRecord(root.meta);
+  for (const source of [root, data, meta]) {
     if (!source) continue;
-    for (const key of ["totais", "totals", "resumo", "cards"]) {
+    for (const key of ["totais", "totals", "resumo", "cards", "totalizadores", "somatorios"]) {
       const bucket = asRecord(source[key]);
       if (bucket) return bucket;
+      const cards = totalsFromCards(source[key]);
+      if (cards) return cards;
     }
   }
   return null;
 }
 
 const SALES_KEYS = ["valor_total", "total_vendas", "faturamento", "total", "valor"];
-const PROFIT_KEYS = ["lucro_liquido", "lucro_total", "total_lucro", "lucro"];
+const PROFIT_KEYS = ["lucro_liquido", "lucro_total", "total_lucro", "lucro", "lucro_bruto", "valor_lucro"];
+const COST_KEYS = ["custo_total", "total_custo", "valor_custo_total", "valor_custo", "custo"];
+
+function moneyMatching(record: Record<string, unknown> | null, include: RegExp, exclude: RegExp): number | null {
+  if (!record) return null;
+  for (const [key, value] of Object.entries(record)) {
+    if (!include.test(key) || exclude.test(key)) continue;
+    const amount = parseGestaoMoney(value);
+    if (amount != null) return amount;
+  }
+  return null;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function profitOf(bucket: Record<string, unknown> | null, sales: number | null): number | null {
+  const named = moneyFrom(bucket, PROFIT_KEYS) ?? moneyMatching(bucket, /lucro/i, /medio|percent|porcent|margem/i);
+  if (named != null) return named;
+  const cost = moneyFrom(bucket, COST_KEYS) ?? moneyMatching(bucket, /custo/i, /medio|unit|percent|porcent/i);
+  if (cost != null && sales != null) return roundMoney(sales - cost);
+  return null;
+}
 
 /** Totais do período. A lista de linhas não entra, para um item não virar o dia. */
 export function cashDayTotals(vendas: unknown, produtos: unknown, os: unknown): CellTechCashTotals {
   const salesBucket = totalsBucket(vendas);
   const productBucket = totalsBucket(produtos);
   const osBucket = totalsBucket(os);
+  const sales = moneyFrom(salesBucket, SALES_KEYS);
+  const osSales = moneyFrom(osBucket, SALES_KEYS);
   return {
-    sales: moneyFrom(salesBucket, SALES_KEYS),
-    salesProfit: moneyFrom(productBucket, PROFIT_KEYS) ?? moneyFrom(salesBucket, PROFIT_KEYS),
-    osSales: moneyFrom(osBucket, SALES_KEYS),
-    osProfit: moneyFrom(osBucket, PROFIT_KEYS),
+    sales,
+    salesProfit: profitOf(productBucket, sales) ?? profitOf(salesBucket, sales),
+    osSales,
+    osProfit: profitOf(osBucket, osSales),
   };
+}
+
+export function cashTotalsKeyList(body: unknown): string {
+  const bucket = totalsBucket(body);
+  return Object.keys(bucket ?? {}).slice(0, 24).join(", ");
 }
 
 function cashStatusText(row: Record<string, unknown>): string {
@@ -786,7 +835,7 @@ export function closedCashBoxes(rows: Record<string, unknown>[], dayKey: string)
     seen.add(id);
     boxes.push({
       id,
-      name: pickText(row, ["nome", "descricao", "funcionario", "nome_funcionario", "usuario"]) || `Caixa ${id}`,
+      name: pickText(row, ["nome", "descricao", "funcionario", "nome_funcionario", "funcionario_nome", "nome_usuario", "usuario_nome", "usuario", "nome_caixa"]) || `Caixa ${id}`,
     });
   }
   return boxes;

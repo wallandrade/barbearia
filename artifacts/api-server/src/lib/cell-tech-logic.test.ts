@@ -327,6 +327,22 @@ test("caixa fechado manda os quatro números do dia", () => {
   assert.equal(totals.salesProfit, 640.25);
   assert.equal(totals.osSales, 800);
   assert.equal(totals.osProfit, 210);
+  const fromCost = cashDayTotals(
+    { totais: { valor_total: "15079.89", custo_total: "10000.00" } },
+    null,
+    { totais: { valor_total: "580.00", custo: "200.00" } },
+  );
+  assert.equal(fromCost.sales, 15079.89);
+  assert.equal(fromCost.salesProfit, 5079.89);
+  assert.equal(fromCost.osSales, 580);
+  assert.equal(fromCost.osProfit, 380);
+  const fromCards = cashDayTotals(
+    { totais: [{ nome: "Valor total", valor: "100.00" }, { nome: "Lucro", valor: "25.50" }] },
+    null,
+    null,
+  );
+  assert.equal(fromCards.sales, 100);
+  assert.equal(fromCards.salesProfit, 25.5);
   const message = buildCashCloseMessage("2026-11-07", "Turno da tarde", totals);
   assert.match(message, /Caixa fechado/);
   assert.match(message, /Vendas do dia: R\$\s*2\.000,00/);

@@ -8,6 +8,7 @@ import {
   buildMonthlyReport,
   buildNextDayReminder,
   cashDayTotals,
+  cashTotalsKeyList,
   cellTechCounts,
   cellTechWebhookBody,
   filterCellTechOrders,
@@ -165,14 +166,25 @@ async function finishedOrderWithMoney(settings: CellTechSettings, order: CellTec
 async function sendCashCloses(settings: CellTechSettings, dayKey: string): Promise<number> {
   const boxes = await loadClosedCashBoxes(settings, dayKey);
   if (boxes.length === 0) return 0;
-  const sentIds = await readCellTechAlertIds("cash", dayKey);
+  const periodKey = `${dayKey}:lucro`;
+  const sentIds = await readCellTechAlertIds("cash", periodKey);
   const pending = boxes.filter((box) => !sentIds.has(box.id));
   if (pending.length === 0) return 0;
   const reports = await loadCashDayReports(settings, dayKey);
   const totals = cashDayTotals(reports.vendas, reports.produtos, reports.os);
+  if (totals.salesProfit == null || totals.osProfit == null) {
+    console.warn(
+      "[Cell Tech] lucro do caixa sem campo. vendas:",
+      cashTotalsKeyList(reports.vendas),
+      "produtos:",
+      cashTotalsKeyList(reports.produtos),
+      "os:",
+      cashTotalsKeyList(reports.os),
+    );
+  }
   let sent = 0;
   for (const box of pending) {
-    const posted = await sendClaimed(settings, "cash", box.id, dayKey, buildCashCloseMessage(dayKey, box.name, totals));
+    const posted = await sendClaimed(settings, "cash", box.id, periodKey, buildCashCloseMessage(dayKey, box.name, totals));
     if (posted) sent += 1;
   }
   return sent;

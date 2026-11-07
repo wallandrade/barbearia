@@ -47,6 +47,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Lucro do caixa usa o custo quando não há campo de lucro | Venda do dia menos o custo total. O mesmo vale para a OS | O valor vendido e a cópia 48h iguais |
 | 2026-11-07 | Caixa fechado usa a data Fechado em | Lista vazia no filtro do dia cai no mês e fica só com o fechado hoje | OS, botão Atualizar e cópia 48h iguais |
 | 2026-11-07 | Aviso de OS concretizada leva custo e lucro | Custo das peças e lucro daquela OS entram na mensagem do grupo | Cancelada, caixa, botão Atualizar e cópia 48h iguais |
 | 2026-11-07 | Cell Tech só avisa OS concretizada hoje | Conclusão antiga não entra no grupo, mesmo alterada hoje. Sem data, não manda | O botão Atualizar, o caixa e a cópia 48h iguais |
