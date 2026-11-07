@@ -1,10 +1,12 @@
 import {
+  buildCashCloseMessage,
   buildCreatedMessage,
   buildDailyReport,
   buildDeadlineMissedMessage,
   buildFinishedMessage,
   buildMonthlyReport,
   buildNextDayReminder,
+  cashDayTotals,
   cellTechCounts,
   cellTechWebhookBody,
   filterCellTechOrders,
@@ -16,10 +18,11 @@ import {
   type CellTechListQuery,
   type CellTechOrder,
 } from "./cell-tech-logic";
-import { clearGestaoCache, GestaoClickError, loadGestaoOrders, ordersFromRows } from "./cell-tech-client";
+import { clearGestaoCache, GestaoClickError, loadCashDayReports, loadClosedCashBoxes, loadGestaoOrders, ordersFromRows } from "./cell-tech-client";
 import {
   claimCellTechAlert,
   publicCellTechSettings,
+  readCellTechAlertIds,
   readCellTechSettings,
   readSentCellTechAlerts,
   releaseCellTechAlert,
@@ -141,10 +144,26 @@ function alertMessage(kind: CellTechAlertKind, order: CellTechOrder): string {
   return buildNextDayReminder(order);
 }
 
-export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean }> {
+async function sendCashCloses(settings: CellTechSettings, dayKey: string): Promise<number> {
+  const boxes = await loadClosedCashBoxes(settings, dayKey);
+  if (boxes.length === 0) return 0;
+  const sentIds = await readCellTechAlertIds("cash", dayKey);
+  const pending = boxes.filter((box) => !sentIds.has(box.id));
+  if (pending.length === 0) return 0;
+  const reports = await loadCashDayReports(settings, dayKey);
+  const totals = cashDayTotals(reports.vendas, reports.produtos, reports.os);
+  let sent = 0;
+  for (const box of pending) {
+    const posted = await sendClaimed(settings, "cash", box.id, dayKey, buildCashCloseMessage(dayKey, box.name, totals));
+    if (posted) sent += 1;
+  }
+  return sent;
+}
+
+export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number }> {
   const settings = await readCellTechSettings();
   if (!settings.alertsEnabled || !settings.webhookUrl || !settings.accessToken || !settings.secretAccessToken) {
-    return { noticesSent: 0, dailySent: false, monthlySent: false };
+    return { noticesSent: 0, dailySent: false, monthlySent: false, cashSent: 0 };
   }
   const clock = saoPauloClock(now);
   const loaded = await snapshotOrders(settings, false, clock);
@@ -186,7 +205,13 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
       }
     }
   }
-  return { noticesSent, dailySent, monthlySent };
+  let cashSent = 0;
+  try {
+    cashSent = await sendCashCloses(settings, clock.dayKey);
+  } catch (error) {
+    console.error("[Cell Tech] caixa:", error instanceof Error ? error.message : error);
+  }
+  return { noticesSent, dailySent, monthlySent, cashSent };
 }
 
 export { GestaoClickError };

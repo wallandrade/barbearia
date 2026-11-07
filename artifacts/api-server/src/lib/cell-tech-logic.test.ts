@@ -8,10 +8,14 @@ import {
   filterCellTechOrders,
   monthlyReportDue,
   normalizeCellTechWebhookUrl,
+  buildCashCloseMessage,
   buildCreatedMessage,
   buildDeadlineMissedMessage,
   buildFinishedMessage,
   buildNextDayReminder,
+  cashDayTotals,
+  closedCashBoxes,
+  parseGestaoMoney,
   openAlerts,
   parseCellTechOrder,
   situationIsWorking,
@@ -264,6 +268,35 @@ test("concretizada entra no mês em que foi atualizada", () => {
   const report = buildMonthlyReport(order ? [order] : [], clock);
   assert.match(report, /Feitas em outubro de 2026\* · 1/);
   assert.match(report, /Ana/);
+});
+
+test("caixa fechado manda os quatro números do dia", () => {
+  const rows = [
+    { id: "1", nome: "Balcão", situacao: "Aberto", data_abertura: "2026-11-07" },
+    { id: "2", nome: "Loja", situacao: "Fechado", data_fechamento: "2026-11-06" },
+    { id: "3", nome: "Turno da tarde", situacao: "Fechado", data_fechamento: "2026-11-07" },
+  ];
+  assert.deepEqual(closedCashBoxes(rows, "2026-11-07").map((box) => box.id), ["3"]);
+  assert.equal(parseGestaoMoney("1.500,50"), 1500.5);
+  const totals = cashDayTotals(
+    { totais: { valor_total: "2000.00" }, data: [{ valor_total: "9.00", lucro: "1.00" }] },
+    { data: { totais: { lucro: "640.25" }, registros: [] } },
+    { totais: { valor_total: "800.00", lucro_liquido: "210.00" } },
+  );
+  assert.equal(totals.sales, 2000);
+  assert.equal(totals.salesProfit, 640.25);
+  assert.equal(totals.osSales, 800);
+  assert.equal(totals.osProfit, 210);
+  const message = buildCashCloseMessage("2026-11-07", "Turno da tarde", totals);
+  assert.match(message, /Caixa fechado/);
+  assert.match(message, /Vendas do dia: R\$\s*2\.000,00/);
+  assert.match(message, /Lucro líquido do dia: R\$\s*640,25/);
+  assert.match(message, /Vendas de OS do dia: R\$\s*800,00/);
+  assert.match(message, /Lucro líquido de OS do dia: R\$\s*210,00/);
+  const missing = buildCashCloseMessage("2026-11-07", "Turno da tarde", {
+    sales: null, salesProfit: null, osSales: null, osProfit: null,
+  });
+  assert.match(missing, /não veio no relatório/);
 });
 
 test("webhook só https", () => {

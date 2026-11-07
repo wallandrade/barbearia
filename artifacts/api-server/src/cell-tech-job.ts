@@ -10,9 +10,9 @@ async function runOnce(): Promise<void> {
   running = true;
   try {
     const result = await runCellTechTick(new Date());
-    if (result.noticesSent > 0 || result.dailySent || result.monthlySent) {
+    if (result.noticesSent > 0 || result.dailySent || result.monthlySent || result.cashSent > 0) {
       console.log(
-        `[Cell Tech] avisos ${result.noticesSent}, diário ${result.dailySent ? "enviado" : "não"}, mensal ${result.monthlySent ? "enviado" : "não"}`,
+        `[Cell Tech] avisos ${result.noticesSent}, diário ${result.dailySent ? "enviado" : "não"}, mensal ${result.monthlySent ? "enviado" : "não"}, caixa ${result.cashSent}`,
       );
     }
   } catch (error) {

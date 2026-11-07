@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
   addDays,
+  closedCashBoxes,
   parseCellTechOrder,
   saoPauloClock,
   unwrapRows,
+  type CellTechCashBox,
   type CellTechClock,
   type CellTechFlags,
   type CellTechOrder,
@@ -174,4 +176,54 @@ export function ordersFromRows(rows: Record<string, unknown>[], flags: CellTechF
 
 export function clearGestaoCache(): void {
   cache.clear();
+}
+
+const SALES_REPORTS = ["vendas"];
+const PRODUCT_REPORTS = ["produtos_vendidos"];
+const OS_REPORTS = ["ordens_servicos", "ordens_de_servico"];
+
+async function firstReport(
+  creds: CellTechCredentials,
+  slugs: string[],
+  dayKey: string,
+  fetchImpl: typeof fetch,
+): Promise<unknown | null> {
+  for (const slug of slugs) {
+    try {
+      return await gestaoGet(creds, `relatorios/${slug}`, {
+        data_inicio: dayKey,
+        data_fim: dayKey,
+        limite: "1",
+      }, fetchImpl);
+    } catch (error) {
+      if (error instanceof GestaoClickError && error.status === 404) continue;
+      throw error;
+    }
+  }
+  return null;
+}
+
+export async function loadClosedCashBoxes(
+  creds: CellTechCredentials,
+  dayKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CellTechCashBox[]> {
+  try {
+    const body = await gestaoGet(creds, "caixas", { data_inicio: dayKey, data_fim: dayKey, limite: "100" }, fetchImpl);
+    return closedCashBoxes(unwrapRows(body), dayKey);
+  } catch (error) {
+    if (error instanceof GestaoClickError && error.status === 404) return [];
+    throw error;
+  }
+}
+
+export async function loadCashDayReports(
+  creds: CellTechCredentials,
+  dayKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ vendas: unknown; produtos: unknown; os: unknown }> {
+  const vendas = await firstReport(creds, SALES_REPORTS, dayKey, fetchImpl);
+  const produtos = await firstReport(creds, PRODUCT_REPORTS, dayKey, fetchImpl);
+  const os = await firstReport(creds, OS_REPORTS, dayKey, fetchImpl);
+  return { vendas, produtos, os };
 }

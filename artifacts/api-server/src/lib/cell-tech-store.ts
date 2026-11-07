@@ -153,6 +153,27 @@ export async function readSentCellTechAlerts(): Promise<Map<string, { created: b
   }
 }
 
+export async function readCellTechAlertIds(kind: string, periodKey: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const { pool } = await database();
+  try {
+    const [rows] = await pool.query(
+      "SELECT os_id AS osId FROM cell_tech_alerts WHERE kind = ? AND period_key = ?",
+      [kind, periodKey],
+    );
+    if (!Array.isArray(rows)) return ids;
+    for (const row of rows) {
+      const osId = String((row as { osId?: unknown }).osId ?? "").trim();
+      if (osId) ids.add(osId);
+    }
+    return ids;
+  } catch (error) {
+    const code = String((error as { code?: string })?.code || "");
+    if (code === "ER_NO_SUCH_TABLE") return ids;
+    throw error;
+  }
+}
+
 export async function claimCellTechAlert(kind: string, osId: string, periodKey: string): Promise<string | null> {
   const { pool } = await database();
   const id = randomUUID();

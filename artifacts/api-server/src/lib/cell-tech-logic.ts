@@ -574,6 +574,127 @@ export function cellTechWebhookBody(kind: string, message: string) {
   return { source: "cell-tech", kind, message, text: message };
 }
 
+export type CellTechCashBox = {
+  id: string;
+  name: string;
+};
+
+export type CellTechCashTotals = {
+  sales: number | null;
+  salesProfit: number | null;
+  osSales: number | null;
+  osProfit: number | null;
+};
+
+/** Número do Gestão Click: ponto decimal, ou milhar com vírgula. */
+export function parseGestaoMoney(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = String(value ?? "").replace(/r\$/gi, "").trim();
+  if (!text) return null;
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function moneyFrom(record: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!record) return null;
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const amount = parseGestaoMoney(record[key]);
+    if (amount != null) return amount;
+  }
+  return null;
+}
+
+function totalsBucket(body: unknown): Record<string, unknown> | null {
+  const root = asRecord(body);
+  if (!root) return null;
+  const data = asRecord(root.data);
+  for (const source of [root, data]) {
+    if (!source) continue;
+    for (const key of ["totais", "totals", "resumo", "cards"]) {
+      const bucket = asRecord(source[key]);
+      if (bucket) return bucket;
+    }
+  }
+  return null;
+}
+
+const SALES_KEYS = ["valor_total", "total_vendas", "faturamento", "total", "valor"];
+const PROFIT_KEYS = ["lucro_liquido", "lucro_total", "total_lucro", "lucro"];
+
+/** Totais do período. A lista de linhas não entra, para um item não virar o dia. */
+export function cashDayTotals(vendas: unknown, produtos: unknown, os: unknown): CellTechCashTotals {
+  const salesBucket = totalsBucket(vendas);
+  const productBucket = totalsBucket(produtos);
+  const osBucket = totalsBucket(os);
+  return {
+    sales: moneyFrom(salesBucket, SALES_KEYS),
+    salesProfit: moneyFrom(productBucket, PROFIT_KEYS) ?? moneyFrom(salesBucket, PROFIT_KEYS),
+    osSales: moneyFrom(osBucket, SALES_KEYS),
+    osProfit: moneyFrom(osBucket, PROFIT_KEYS),
+  };
+}
+
+function cashStatusText(row: Record<string, unknown>): string {
+  return [
+    pickText(row, ["nome_situacao", "situacao_nome", "status", "situacao"]),
+    textValue(row.situacao),
+  ].filter(Boolean).join(" ");
+}
+
+function cashIsClosed(row: Record<string, unknown>): boolean {
+  const status = cashStatusText(row);
+  if (/abert/i.test(status) && !/fech|encerr/i.test(status)) return false;
+  if (/fech|encerr/i.test(status)) return true;
+  if (parseGestaoMoment(row.data_fechamento ?? row.fechado_em ?? row.data_fechado)) return true;
+  const flag = row.fechado ?? row.caixa_fechado;
+  return flag === 1 || flag === true || flag === "1" || flag === "sim";
+}
+
+/** Caixa fechado neste dia. Fechado de outro dia fica de fora. */
+export function closedCashBoxes(rows: Record<string, unknown>[], dayKey: string): CellTechCashBox[] {
+  const boxes: CellTechCashBox[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!cashIsClosed(row)) continue;
+    const closeDay = parseGestaoMoment(row.data_fechamento ?? row.fechado_em ?? row.data_fechado)?.dayKey ?? null;
+    if (closeDay && closeDay !== dayKey) continue;
+    if (!closeDay) {
+      const other = parseGestaoMoment(row.data ?? row.data_abertura ?? row.cadastrado_em)?.dayKey ?? null;
+      if (other && other !== dayKey) continue;
+    }
+    const id = pickId(row, ["id", "caixa_id"]);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    boxes.push({
+      id,
+      name: pickText(row, ["nome", "descricao", "funcionario", "nome_funcionario", "usuario"]) || `Caixa ${id}`,
+    });
+  }
+  return boxes;
+}
+
+export function formatBrl(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function moneyLine(label: string, value: number | null): string {
+  return `${label}: ${value == null ? "não veio no relatório" : formatBrl(value)}`;
+}
+
+export function buildCashCloseMessage(dayKey: string, caixaName: string, totals: CellTechCashTotals): string {
+  return [
+    "💰 *Caixa fechado*",
+    `📅 ${formatDay(dayKey)} · ${prettyText(caixaName)}`,
+    "",
+    moneyLine("Vendas do dia", totals.sales),
+    moneyLine("Lucro líquido do dia", totals.salesProfit),
+    moneyLine("Vendas de OS do dia", totals.osSales),
+    moneyLine("Lucro líquido de OS do dia", totals.osProfit),
+  ].join("\n");
+}
+
 export function splitIdList(raw: string | null | undefined): string[] {
   return String(raw || "")
     .split(",")

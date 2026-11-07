@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Cell Tech avisa o grupo no fechamento do caixa | Cada caixa fechado no dia manda uma vez: vendas, lucro, vendas de OS e lucro de OS. O número sai do relatório do Gestão Click. Sem o total, a linha diz que não veio | Aviso de OS, o relatório das 8h30 e a Z-API iguais |
 | 2026-11-07 | Cell Tech avisa o grupo quando a OS é concretizada | A baixa de hoje manda uma vez "OS concretizada" (ou "OS cancelada"). Cadastro, prazo e lembrete param. Sem data da baixa, o histórico não sai | Relatório das 8h30, teste do grupo e a Z-API iguais |
 | 2026-11-07 | Filmagem sai do segundo WhatsApp no pagamento | O texto do pedido pago leva um parágrafo curto: filmar a abertura sem corte, senão dano ou seguro não é aceito. A foto da filmagem só sai quando a EnvioEcom marca saiu para entrega | O aviso de seguro (10%, 20% ou sem seguro), o rastreio e a cópia 48h iguais |
 | 2026-11-06 | Relatório da Cell Tech no grupo fica em blocos com emoji | Cada OS em duas linhas: cliente, serviço, técnico e prazo. No máximo 8 por bloco | O horário das 8h30 e os avisos individuais iguais |
@@ -327,6 +328,7 @@ Módulo isolado da loja. Não lê `orders`, PIX nem frete.
 - Tokens e webhook em `site_settings` (`cell_tech_*`). Fora de `PUBLIC_KEYS`. O GET da aba devolve só o final do token.
 - Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https, cada OS manda a própria mensagem: no dia do cadastro, uma vez quando o prazo estoura, e nos dias seguintes o lembrete para ficar pronto hoje. No máximo 20 por ciclo. Baixa (concretizada, finalizada ou cancelada) para esses avisos. Se a data da baixa (`data_conclusao` ou `modificado_em`) for hoje, o grupo recebe uma vez "OS concretizada"; nome com cancelamento sai como "OS cancelada". Baixa de outro dia, ou sem data, não manda esse aviso. Relatório diário às 8h30 e mensal no dia 1 às 8h30, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
 - O POST para o n8n manda `{ source, kind, message, text }`. A Z-API e o grupo ficam no n8n. O fluxo lê `message`.
+- Fechamento do caixa: `GET /api/caixas` no dia. Caixa fechado hoje manda uma vez (`kind` `cash`). Os quatro números vêm de `GET /api/relatorios/vendas`, `produtos_vendidos` e `ordens_servicos` (ou `ordens_de_servico`), nos totais do período. Lucro do dia é o do relatório de produtos vendidos (venda menos o custo gravado no item); se esse relatório não trouxer lucro, usa o de vendas. Lucro de OS só entra se o relatório de OS trouxer. Linha sem total diz que não veio. Caixa de outro dia não dispara. Falha dessa consulta não segura o aviso da OS.
 - Sem as situações marcadas, finalizada = nome Finalizada/Concluída/Entregue/Cancelada/Concretizado. A data de saída é o prazo, não a conclusão. Trabalhando = nome Em execução/Em andamento. Com a lista marcada, vale a lista.
 
 ## Storage
