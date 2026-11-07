@@ -2,6 +2,7 @@ import {
   buildCreatedMessage,
   buildDailyReport,
   buildDeadlineMissedMessage,
+  buildFinishedMessage,
   buildMonthlyReport,
   buildNextDayReminder,
   cellTechCounts,
@@ -136,6 +137,7 @@ export async function sendCellTechReport(kind: "daily" | "monthly") {
 function alertMessage(kind: CellTechAlertKind, order: CellTechOrder): string {
   if (kind === "created") return buildCreatedMessage(order);
   if (kind === "deadline") return buildDeadlineMissedMessage(order);
+  if (kind === "finished") return buildFinishedMessage(order);
   return buildNextDayReminder(order);
 }
 
@@ -150,7 +152,7 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
   let noticesSent = 0;
   for (const order of loaded.orders) {
     if (noticesSent >= ALERT_CAP) break;
-    const flags = sent.get(order.id) ?? { created: false, deadline: false };
+    const flags = sent.get(order.id) ?? { created: false, deadline: false, finished: false };
     for (const kind of openAlerts(order, clock, flags)) {
       if (noticesSent >= ALERT_CAP) break;
       try {

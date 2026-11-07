@@ -128,20 +128,21 @@ export async function saveCellTechSettings(input: CellTechSettingsInput): Promis
   return readCellTechSettings();
 }
 
-export async function readSentCellTechAlerts(): Promise<Map<string, { created: boolean; deadline: boolean }>> {
-  const flags = new Map<string, { created: boolean; deadline: boolean }>();
+export async function readSentCellTechAlerts(): Promise<Map<string, { created: boolean; deadline: boolean; finished: boolean }>> {
+  const flags = new Map<string, { created: boolean; deadline: boolean; finished: boolean }>();
   const { pool } = await database();
   try {
     const [rows] = await pool.query(
-      "SELECT os_id AS osId, kind FROM cell_tech_alerts WHERE kind IN ('created', 'deadline')",
+      "SELECT os_id AS osId, kind FROM cell_tech_alerts WHERE kind IN ('created', 'deadline', 'finished')",
     );
     if (!Array.isArray(rows)) return flags;
     for (const row of rows) {
       const record = row as { osId?: unknown; kind?: unknown };
       const osId = String(record.osId ?? "");
-      const current = flags.get(osId) ?? { created: false, deadline: false };
+      const current = flags.get(osId) ?? { created: false, deadline: false, finished: false };
       if (record.kind === "created") current.created = true;
       if (record.kind === "deadline") current.deadline = true;
+      if (record.kind === "finished") current.finished = true;
       flags.set(osId, current);
     }
     return flags;

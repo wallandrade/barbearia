@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-11-06
+> **Última atualização:** 2026-11-07
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -47,6 +47,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Cell Tech avisa o grupo na concretização | A baixa de hoje manda uma vez no grupo. Cancelada sai com outro título | Cópia 48h, PIX, checkout e o relatório das 8h30 iguais |
 | 2026-11-06 | Lista de pedidos não regrava o pacote | Abrir a Visão Geral e a aba Pedidos só lê. A correção do item do pacote fica no salvar de Editar Pedido | Etiqueta, rastreio, baixa e cópia 48h iguais |
 | 2026-11-06 | Editar pedido atualiza o produto do pacote | A faixa do envio dividido deixa de mostrar o item antigo. Pacote sem baixa recebe o produto novo ao salvar | Pacote que já deu baixa mantém o item que saiu do estoque. Etiqueta, rastreio e cópia 48h iguais |
 | 2026-11-06 | Editar pedido troca Motoboy para pedido normal | Checkbox grava frete `Frete`, solta o horário e tira o pedido da aba e do card Motoboy. Pago sem etiqueta entra na fila | Valor do frete, estoque, cópia 48h de quem já tem etiqueta e o checkout iguais |
@@ -535,7 +536,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 - Aba do admin principal, separada da loja. OS, técnico, prazo e serviço vêm do Gestão Click. Pedido, PIX, estoque e frete não entram.
 - Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo.
-- Grupo da loja: aviso no cadastro, no prazo estourado e lembrete nos dias seguintes. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
+- Grupo da loja: aviso no cadastro, no prazo estourado, lembrete nos dias seguintes e, uma vez, quando a baixa é de hoje (concretizada ou cancelada). Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
 
 ## Multi-tenant
 

@@ -473,15 +473,18 @@ function block(emoji: string, title: string, orders: CellTechOrder[]): string[] 
   return lines;
 }
 
-export type CellTechAlertKind = "created" | "deadline" | "reminder";
+export type CellTechAlertKind = "created" | "deadline" | "reminder" | "finished";
 
-/** Quais avisos desta OS saem agora. O de atraso sai uma vez. O lembrete só nos dias seguintes. */
+/** Quais avisos desta OS saem agora. O de atraso sai uma vez. O lembrete só nos dias seguintes. A baixa de hoje avisa o grupo uma vez. */
 export function openAlerts(
   order: CellTechOrder,
   clock: CellTechClock,
-  sent: { created: boolean; deadline: boolean },
+  sent: { created: boolean; deadline: boolean; finished?: boolean },
 ): CellTechAlertKind[] {
-  if (order.finished) return [];
+  if (order.finished) {
+    if (!sent.finished && order.finishedDay === clock.dayKey) return ["finished"];
+    return [];
+  }
   const alerts: CellTechAlertKind[] = [];
   if (!sent.created && order.entryDay === clock.dayKey) alerts.push("created");
   if (!order.overdue || !order.deadlineDay) return alerts;
@@ -515,6 +518,11 @@ export function buildNextDayReminder(order: CellTechOrder): string {
     "",
     "📌 O serviço de ontem não saiu. Se organizem para ficar pronto hoje.",
   ].join("\n");
+}
+
+export function buildFinishedMessage(order: CellTechOrder): string {
+  const cancelled = /cancel/i.test(order.situationName);
+  return [cancelled ? "🚫 *OS cancelada*" : "✅ *OS concretizada*", "", card(order)].join("\n");
 }
 
 export function buildOverdueMessage(order: CellTechOrder): string {

@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Cell Tech avisa o grupo quando a OS é concretizada | A baixa de hoje manda uma vez "OS concretizada" (ou "OS cancelada"). Cadastro, prazo e lembrete param. Sem data da baixa, o histórico não sai | Relatório das 8h30, teste do grupo e a Z-API iguais |
 | 2026-11-07 | Filmagem sai do segundo WhatsApp no pagamento | O texto do pedido pago leva um parágrafo curto: filmar a abertura sem corte, senão dano ou seguro não é aceito. A foto da filmagem só sai quando a EnvioEcom marca saiu para entrega | O aviso de seguro (10%, 20% ou sem seguro), o rastreio e a cópia 48h iguais |
 | 2026-11-06 | Relatório da Cell Tech no grupo fica em blocos com emoji | Cada OS em duas linhas: cliente, serviço, técnico e prazo. No máximo 8 por bloco | O horário das 8h30 e os avisos individuais iguais |
 | 2026-11-06 | Relatório da Cell Tech conta a baixa pela situação | OS concretizada entra no mês de `modificado_em`. Sem essa data, aparece em "Finalizadas sem data da baixa" | O prazo continua na data de saída |
@@ -324,7 +325,7 @@ Módulo isolado da loja. Não lê `orders`, PIX nem frete.
 - Cor do card: verde no prazo, amarelo vence hoje, vermelho atrasado, cinza sem prazo. Data sem hora vira atraso só no dia seguinte. Com hora, atrasa quando passa do minuto.
 - API `https://api.gestaoclick.com/api`, headers `access-token` e `secret-access-token`. Lista `GET /ordens_servicos` (últimos 120 dias) e situações em `GET /situacoes_ordens_servicos`. Teto respeitado com pausa de 400 ms. Cache de 60 s.
 - Tokens e webhook em `site_settings` (`cell_tech_*`). Fora de `PUBLIC_KEYS`. O GET da aba devolve só o final do token.
-- Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https, cada OS manda a própria mensagem: no dia do cadastro, uma vez quando o prazo estoura, e nos dias seguintes o lembrete para ficar pronto hoje. No máximo 20 por ciclo. Baixa (concretizada, finalizada ou cancelada) para os avisos daquela OS. Relatório diário às 8h30 e mensal no dia 1 às 8h30, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
+- Job a cada 2 min (`cell-tech-job.ts`). Com avisos ligados e webhook https, cada OS manda a própria mensagem: no dia do cadastro, uma vez quando o prazo estoura, e nos dias seguintes o lembrete para ficar pronto hoje. No máximo 20 por ciclo. Baixa (concretizada, finalizada ou cancelada) para esses avisos. Se a data da baixa (`data_conclusao` ou `modificado_em`) for hoje, o grupo recebe uma vez "OS concretizada"; nome com cancelamento sai como "OS cancelada". Baixa de outro dia, ou sem data, não manda esse aviso. Relatório diário às 8h30 e mensal no dia 1 às 8h30, horário de Brasília. `cell_tech_alerts` impede repetir. Falha no n8n apaga a marca e tenta de novo.
 - O POST para o n8n manda `{ source, kind, message, text }`. A Z-API e o grupo ficam no n8n. O fluxo lê `message`.
 - Sem as situações marcadas, finalizada = nome Finalizada/Concluída/Entregue/Cancelada/Concretizado. A data de saída é o prazo, não a conclusão. Trabalhando = nome Em execução/Em andamento. Com a lista marcada, vale a lista.
 

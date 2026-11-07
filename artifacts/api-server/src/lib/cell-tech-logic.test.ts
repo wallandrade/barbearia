@@ -10,6 +10,7 @@ import {
   normalizeCellTechWebhookUrl,
   buildCreatedMessage,
   buildDeadlineMissedMessage,
+  buildFinishedMessage,
   buildNextDayReminder,
   openAlerts,
   parseCellTechOrder,
@@ -212,6 +213,41 @@ test("avisos da OS no grupo", () => {
   }, flags, morning);
   assert.ok(done);
   assert.deepEqual(openAlerts(done, morning, { created: false, deadline: false }), []);
+
+  const closedToday = parseCellTechOrder({
+    id: "23",
+    codigo: "13716",
+    nome_cliente: "Hudson Jose dos Santos",
+    nome_tecnico: "Cassio",
+    nome_situacao: "CONCRETIZADO O.S",
+    data: "2026-11-03",
+    previsao_entrega: "2026-11-04",
+    modificado_em: "2026-11-04",
+    servicos: [{ detalhes: "Troca de tela" }],
+  }, flags, morning);
+  assert.ok(closedToday);
+  assert.equal(closedToday.finishedDay, "2026-11-04");
+  assert.deepEqual(openAlerts(closedToday, morning, { created: false, deadline: false }), ["finished"]);
+  assert.match(buildFinishedMessage(closedToday), /OS concretizada/);
+  assert.match(buildFinishedMessage(closedToday), /Hudson Jose dos Santos/);
+  assert.deepEqual(openAlerts(closedToday, morning, { created: false, deadline: false, finished: true }), []);
+
+  const cancelled = parseCellTechOrder({
+    id: "24",
+    nome_situacao: "Cancelada",
+    modificado_em: "2026-11-04",
+  }, flags, morning);
+  assert.ok(cancelled);
+  assert.deepEqual(openAlerts(cancelled, morning, { created: false, deadline: false }), ["finished"]);
+  assert.match(buildFinishedMessage(cancelled), /OS cancelada/);
+
+  const closedYesterday = parseCellTechOrder({
+    id: "25",
+    nome_situacao: "CONCRETIZADO O.S",
+    modificado_em: "2026-11-03",
+  }, flags, morning);
+  assert.ok(closedYesterday);
+  assert.deepEqual(openAlerts(closedYesterday, morning, { created: false, deadline: false }), []);
 });
 
 test("concretizada entra no mês em que foi atualizada", () => {
