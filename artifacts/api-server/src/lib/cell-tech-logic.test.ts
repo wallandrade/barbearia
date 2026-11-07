@@ -252,6 +252,19 @@ test("avisos da OS no grupo", () => {
   }, flags, morning);
   assert.ok(closedYesterday);
   assert.deepEqual(openAlerts(closedYesterday, morning, { created: false, deadline: false }), []);
+
+  const oldClosed = parseCellTechOrder({
+    id: "26",
+    codigo: "900",
+    nome_cliente: "Ana",
+    nome_situacao: "CONCRETIZADO O.S",
+    data: "2026-10-01",
+    data_conclusao: "2026-10-02",
+    modificado_em: "2026-11-04",
+  }, flags, morning);
+  assert.ok(oldClosed);
+  assert.equal(oldClosed.finishedDay, "2026-10-02");
+  assert.deepEqual(openAlerts(oldClosed, morning, { created: false, deadline: false }), []);
 });
 
 test("concretizada entra no mês em que foi atualizada", () => {
@@ -277,6 +290,10 @@ test("caixa fechado manda os quatro números do dia", () => {
     { id: "3", nome: "Turno da tarde", situacao: "Fechado", data_fechamento: "2026-11-07" },
   ];
   assert.deepEqual(closedCashBoxes(rows, "2026-11-07").map((box) => box.id), ["3"]);
+  const openedBefore = closedCashBoxes([
+    { id: "4", nome: "Manhã", situacao: "Fechado", data_abertura: "2026-11-06", modificado_em: "2026-11-07", aberto: 0 },
+  ], "2026-11-07");
+  assert.deepEqual(openedBefore.map((box) => box.id), ["4"]);
   assert.equal(parseGestaoMoney("1.500,50"), 1500.5);
   const totals = cashDayTotals(
     { totais: { valor_total: "2000.00" }, data: [{ valor_total: "9.00", lucro: "1.00" }] },

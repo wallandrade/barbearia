@@ -203,6 +203,24 @@ async function firstReport(
   return null;
 }
 
+function unwrapCashRows(body: unknown): Record<string, unknown>[] {
+  const direct = unwrapRows(body);
+  if (direct.length > 0) return direct;
+  const root = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
+  if (!root) return [];
+  const data = root.data && typeof root.data === "object" && !Array.isArray(root.data)
+    ? root.data as Record<string, unknown>
+    : null;
+  for (const source of [data, root]) {
+    if (!source) continue;
+    for (const key of ["caixas", "caixa"]) {
+      const rows = unwrapRows(source[key]);
+      if (rows.length > 0) return rows;
+    }
+  }
+  return [];
+}
+
 export async function loadClosedCashBoxes(
   creds: CellTechCredentials,
   dayKey: string,
@@ -210,10 +228,29 @@ export async function loadClosedCashBoxes(
 ): Promise<CellTechCashBox[]> {
   try {
     const body = await gestaoGet(creds, "caixas", { data_inicio: dayKey, data_fim: dayKey, limite: "100" }, fetchImpl);
-    return closedCashBoxes(unwrapRows(body), dayKey);
+    const rows = unwrapCashRows(body);
+    const boxes = closedCashBoxes(rows, dayKey);
+    if (rows.length > 0 && boxes.length === 0) {
+      console.warn("[Cell Tech] caixa do dia sem fechamento reconhecido:", Object.keys(rows[0]).slice(0, 24).join(", "));
+    }
+    return boxes;
   } catch (error) {
     if (error instanceof GestaoClickError && error.status === 404) return [];
     throw error;
+  }
+}
+
+async function reportOrEmpty(
+  creds: CellTechCredentials,
+  slugs: string[],
+  dayKey: string,
+  fetchImpl: typeof fetch,
+): Promise<unknown | null> {
+  try {
+    return await firstReport(creds, slugs, dayKey, fetchImpl);
+  } catch (error) {
+    console.error("[Cell Tech] relatório do caixa:", error instanceof Error ? error.message : error);
+    return null;
   }
 }
 
@@ -222,8 +259,8 @@ export async function loadCashDayReports(
   dayKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ vendas: unknown; produtos: unknown; os: unknown }> {
-  const vendas = await firstReport(creds, SALES_REPORTS, dayKey, fetchImpl);
-  const produtos = await firstReport(creds, PRODUCT_REPORTS, dayKey, fetchImpl);
-  const os = await firstReport(creds, OS_REPORTS, dayKey, fetchImpl);
+  const vendas = await reportOrEmpty(creds, SALES_REPORTS, dayKey, fetchImpl);
+  const produtos = await reportOrEmpty(creds, PRODUCT_REPORTS, dayKey, fetchImpl);
+  const os = await reportOrEmpty(creds, OS_REPORTS, dayKey, fetchImpl);
   return { vendas, produtos, os };
 }

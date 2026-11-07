@@ -333,7 +333,7 @@ export function parseCellTechOrder(
   const situationName = situation.name;
   const finishedAt = parseGestaoMoment(row.data_conclusao ?? row.data_finalizacao, row.hora_conclusao);
   const updatedAt = parseGestaoMoment(
-    row.modificado_em ?? row.data_modificacao ?? row.data_alteracao ?? row.atualizado_em,
+    row.modificado_em ?? row.data_modificacao ?? row.data_alteracao ?? row.atualizado_em ?? row.data_atualizacao ?? row.updated_at,
     row.hora_modificacao,
   );
   const doneConfigured = flags.doneSituationIds.length > 0;
@@ -643,13 +643,32 @@ function cashStatusText(row: Record<string, unknown>): string {
   ].filter(Boolean).join(" ");
 }
 
+function cashCloseMoment(row: Record<string, unknown>): CellTechMoment | null {
+  return parseGestaoMoment(
+    row.data_fechamento ?? row.fechado_em ?? row.data_fechado ?? row.data_encerramento ?? row.fechamento ?? row.data_hora_fechamento,
+  );
+}
+
+function flagIsYes(value: unknown): boolean {
+  if (value === 1 || value === true) return true;
+  const text = String(value ?? "").trim().toLowerCase();
+  return text === "1" || text === "sim" || text === "s" || text === "true" || text === "fechado";
+}
+
+function flagIsNo(value: unknown): boolean {
+  if (value === 0 || value === false) return true;
+  const text = String(value ?? "").trim().toLowerCase();
+  return text === "0" || text === "nao" || text === "não" || text === "false";
+}
+
 function cashIsClosed(row: Record<string, unknown>): boolean {
   const status = cashStatusText(row);
-  if (/abert/i.test(status) && !/fech|encerr/i.test(status)) return false;
   if (/fech|encerr/i.test(status)) return true;
-  if (parseGestaoMoment(row.data_fechamento ?? row.fechado_em ?? row.data_fechado)) return true;
-  const flag = row.fechado ?? row.caixa_fechado;
-  return flag === 1 || flag === true || flag === "1" || flag === "sim";
+  if (/abert/i.test(status)) return false;
+  if (cashCloseMoment(row)) return true;
+  if (flagIsYes(row.fechado ?? row.caixa_fechado ?? row.encerrado)) return true;
+  if (flagIsNo(row.aberto ?? row.caixa_aberto)) return true;
+  return false;
 }
 
 /** Caixa fechado neste dia. Fechado de outro dia fica de fora. */
@@ -658,11 +677,13 @@ export function closedCashBoxes(rows: Record<string, unknown>[], dayKey: string)
   const seen = new Set<string>();
   for (const row of rows) {
     if (!cashIsClosed(row)) continue;
-    const closeDay = parseGestaoMoment(row.data_fechamento ?? row.fechado_em ?? row.data_fechado)?.dayKey ?? null;
+    const closeDay = cashCloseMoment(row)?.dayKey ?? null;
     if (closeDay && closeDay !== dayKey) continue;
     if (!closeDay) {
-      const other = parseGestaoMoment(row.data ?? row.data_abertura ?? row.cadastrado_em)?.dayKey ?? null;
-      if (other && other !== dayKey) continue;
+      const touched = parseGestaoMoment(row.modificado_em ?? row.data_modificacao ?? row.atualizado_em ?? row.data_atualizacao)?.dayKey ?? null;
+      const opened = parseGestaoMoment(row.data ?? row.data_abertura ?? row.cadastrado_em)?.dayKey ?? null;
+      if (touched && touched !== dayKey && (!opened || opened !== dayKey)) continue;
+      if (!touched && opened && opened !== dayKey) continue;
     }
     const id = pickId(row, ["id", "caixa_id"]);
     if (!id || seen.has(id)) continue;
