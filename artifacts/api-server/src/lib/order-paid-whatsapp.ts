@@ -142,6 +142,9 @@ export function buildOrderPaidWhatsappMessage(order: PaidWhatsappOrder, deadline
     "",
     notice,
     "",
+    "🎥 **Filmagem obrigatória**",
+    "Filme a abertura da caixa do início ao fim, sem pausa e sem corte, com a caixa ainda lacrada. Sem esse vídeo completo, dano, falta ou pedido de seguro não é aceito. Você está ciente disso.",
+    "",
     "Obrigado pela confiança! 💙📦",
   ].join("\n"));
 }
@@ -210,7 +213,7 @@ async function postWebhook(url: string, body: { phone: string; message: string }
   }
 }
 
-/** Manda o WhatsApp do pedido pago uma vez. Falha não segura checkout, PIX nem o admin. */
+/** Manda o WhatsApp do pedido pago uma vez. A filmagem vai no próprio texto. Falha não segura checkout, PIX nem o admin. */
 export async function sendOrderPaidWhatsapp(orderId: string): Promise<{ sent: boolean; error?: string }> {
   const id = String(orderId || "").trim();
   if (!id) return { sent: false, error: "missing_id" };
@@ -249,7 +252,4 @@ export function queueOrderPaidWhatsapp(orderId: string | null | undefined): void
   const id = String(orderId || "").trim();
   if (!id) return;
   void sendOrderPaidWhatsapp(id);
-  void import("./order-filmagem-whatsapp").then(({ queueOrderFilmagemWhatsapp }) => {
-    queueOrderFilmagemWhatsapp(id);
-  });
 }

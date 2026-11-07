@@ -19,10 +19,11 @@ test("filmagem do pagamento manda telefone e a legenda oficial", () => {
   assert.ok((payload?.caption.length || 0) <= 1024);
 });
 
-test("lembrete da saída para entrega avisa que o cliente já foi avisado", () => {
+test("lembrete da saída para entrega pede a filmagem na chegada da caixa", () => {
   const payload = orderFilmagemWhatsappPayload(order, FILMAGEM_DELIVERY_CAPTION);
   assert.match(payload?.caption || "", /SAIU PARA ENTREGA/);
-  assert.match(payload?.caption || "", /já recebeu este aviso/);
+  assert.match(payload?.caption || "", /Quando a caixa chegar/);
+  assert.equal(payload?.caption.includes("já recebeu este aviso"), false);
   assert.equal(payload?.caption.includes("COMUNICADO OFICIAL"), false);
   assert.ok((payload?.caption.length || 0) <= 1024);
 });

@@ -721,6 +721,9 @@ export function orderToPostPaymentText(order: any, deadlineHours: number = 48): 
     "",
     postPaymentInsuranceNotice(order),
     "",
+    "🎥 **Filmagem obrigatória**",
+    "Filme a abertura da caixa do início ao fim, sem pausa e sem corte, com a caixa ainda lacrada. Sem esse vídeo completo, dano, falta ou pedido de seguro não é aceito. Você está ciente disso.",
+    "",
     "Obrigado pela confiança! 💙📦",
   ].join("\n");
 }
@@ -21082,7 +21085,7 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          No pagamento e quando a EnvioEcom marca saiu para entrega, a loja manda o telefone e a legenda para o webhook Filmagem. A imagem fica no n8n. No HTTP Request, o campo caption precisa ser expressão: {`{{ $json.body.caption }}`}. Com o campo vazio, vale https://wallandrade.app.n8n.cloud/webhook/filmagem. O texto de parabéns continua no webhook de cima.
+          Quando a EnvioEcom marca saiu para entrega, a loja manda o telefone e a legenda para o webhook Filmagem. A imagem fica no n8n. No pagamento, o aviso da filmagem entra no texto do pedido pago, sem esta foto. No HTTP Request, o campo caption precisa ser expressão: {`{{ $json.body.caption }}`}. Com o campo vazio, vale https://wallandrade.app.n8n.cloud/webhook/filmagem. O texto de parabéns continua no webhook de cima.
         </p>
         <div>
           <label className="block text-xs font-medium mb-1">URL do rastreio</label>

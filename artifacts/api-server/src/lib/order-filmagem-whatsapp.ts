@@ -7,7 +7,7 @@ export const N8N_FILMAGEM_WEBHOOK_SETTING = "n8n_filmagem_webhook_url";
 export const DEFAULT_N8N_FILMAGEM_WEBHOOK_URL = "https://wallandrade.app.n8n.cloud/webhook/filmagem";
 const TIMEOUT_MS = 8000;
 
-/** Legenda do pagamento. O n8n usa `{{ $json.body.caption }}`. */
+/** Legenda longa com foto. O pagamento não manda mais isto. O aviso curto fica no texto do pedido pago. */
 export const FILMAGEM_PAID_CAPTION = [
   "🚨🚨 *COMUNICADO OFICIAL – LEITURA OBRIGATÓRIA!* 🚨🚨",
   "",
@@ -31,9 +31,9 @@ export const FILMAGEM_PAID_CAPTION = [
 export const FILMAGEM_DELIVERY_CAPTION = [
   "🚨 *LEMBRETE: SEU PEDIDO SAIU PARA ENTREGA!* 🚨",
   "",
-  "Você já recebeu este aviso quando o pagamento foi confirmado. Estamos avisando de novo porque a encomenda está a caminho.",
+  "Quando a caixa chegar, filme a abertura do início ao fim, sem pausa e sem corte, com a caixa ainda lacrada.",
   "",
-  "⚠️ *A filmagem completa da abertura continua obrigatória*, *com seguro ou sem seguro*.",
+  "⚠️ *A filmagem completa da abertura é obrigatória*, *com seguro ou sem seguro*.",
   "",
   "📦 *Sem pausa e sem corte:*",
   "1️⃣ Caixa ainda lacrada, com os lacres intactos",
@@ -47,7 +47,7 @@ export const FILMAGEM_DELIVERY_CAPTION = [
   "*YURY IMPORTS 🇵🇾🇧🇷*",
 ].join("\n");
 
-/** A imagem fica no n8n. A legenda muda entre o pagamento e a saída para entrega. */
+/** Monta phone e caption. Sem caption, usa a legenda longa. A saída para entrega passa o lembrete. */
 export function orderFilmagemWhatsappPayload(
   order: PaidWhatsappOrder,
   caption = FILMAGEM_PAID_CAPTION,
@@ -157,7 +157,7 @@ async function sendFilmagem(orderId: string, kind: FilmagemKind): Promise<{ sent
   }
 }
 
-/** Manda o WhatsApp da filmagem uma vez no pagamento. Falha não segura o aviso de pedido pago. */
+/** Legenda longa com foto. O pagamento não chama mais isto: o aviso curto fica no texto do pedido pago. */
 export async function sendOrderFilmagemWhatsapp(orderId: string): Promise<{ sent: boolean; error?: string }> {
   return sendFilmagem(orderId, "paid");
 }

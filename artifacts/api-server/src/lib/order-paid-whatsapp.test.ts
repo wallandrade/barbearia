@@ -48,6 +48,8 @@ test("mensagem usa o número visível, a variante e um só aviso de seguro", () 
   assert.equal(message.includes("Produto com seguro 10%"), false);
   assert.equal(message.includes("Seguro 20%"), false);
   assert.match(message, /\*Compra sem seguro\*/);
+  assert.match(message, /\*Filmagem obrigatória\*/);
+  assert.match(message, /Sem esse vídeo completo, dano, falta ou pedido de seguro não é aceito/);
   assert.equal(message.includes(POST_PAYMENT_INSURANCE_NONE_NOTICE), false);
 });
 
