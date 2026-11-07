@@ -232,12 +232,56 @@ function unwrapCashRows(body: unknown): Record<string, unknown>[] {
     : null;
   for (const source of [data, root]) {
     if (!source) continue;
-    for (const key of ["caixas", "caixa"]) {
+    for (const key of ["caixas", "caixa", "registros", "lista", "rows"]) {
       const rows = unwrapRows(source[key]);
+      if (rows.length > 0) return rows;
+    }
+    for (const value of Object.values(source)) {
+      const rows = unwrapRows(value);
       if (rows.length > 0) return rows;
     }
   }
   return [];
+}
+
+function cashBodyKeys(body: unknown): string {
+  const root = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
+  if (!root) return "";
+  const data = root.data && typeof root.data === "object" && !Array.isArray(root.data) ? root.data as Record<string, unknown> : null;
+  const keys = Object.keys(data ?? root).slice(0, 24);
+  return keys.join(", ");
+}
+
+async function listCashRows(
+  creds: CellTechCredentials,
+  query: Record<string, string>,
+  fetchImpl: typeof fetch,
+): Promise<{ rows: Record<string, unknown>[]; keys: string }> {
+  const rows: Record<string, unknown>[] = [];
+  let keys = "";
+  for (let page = 1; page <= 3; page += 1) {
+    const body = await gestaoGet(creds, "caixas", { ...query, pagina: String(page), limite: "100" }, fetchImpl);
+    if (!keys) keys = cashBodyKeys(body);
+    const chunk = unwrapCashRows(body);
+    rows.push(...chunk);
+    if (chunk.length < 100) break;
+  }
+  return { rows, keys };
+}
+
+async function listCashRowsOrEmpty(
+  creds: CellTechCredentials,
+  query: Record<string, string>,
+  fetchImpl: typeof fetch,
+): Promise<{ rows: Record<string, unknown>[]; keys: string }> {
+  try {
+    return await listCashRows(creds, query, fetchImpl);
+  } catch (error) {
+    if (error instanceof GestaoClickError && (error.status === 404 || error.status === 400)) {
+      return { rows: [], keys: "" };
+    }
+    throw error;
+  }
 }
 
 export async function loadClosedCashBoxes(
@@ -245,18 +289,18 @@ export async function loadClosedCashBoxes(
   dayKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CellTechCashBox[]> {
-  try {
-    const body = await gestaoGet(creds, "caixas", { data_inicio: dayKey, data_fim: dayKey, limite: "100" }, fetchImpl);
-    const rows = unwrapCashRows(body);
-    const boxes = closedCashBoxes(rows, dayKey);
-    if (rows.length > 0 && boxes.length === 0) {
-      console.warn("[Cell Tech] caixa do dia sem fechamento reconhecido:", Object.keys(rows[0]).slice(0, 24).join(", "));
-    }
-    return boxes;
-  } catch (error) {
-    if (error instanceof GestaoClickError && error.status === 404) return [];
-    throw error;
+  let listed = await listCashRowsOrEmpty(creds, { data_inicio: dayKey, data_fim: dayKey }, fetchImpl);
+  if (listed.rows.length === 0) {
+    const month = await listCashRowsOrEmpty(creds, {}, fetchImpl);
+    if (month.rows.length > 0) listed = month;
   }
+  const boxes = closedCashBoxes(listed.rows, dayKey);
+  if (listed.rows.length === 0) {
+    console.warn("[Cell Tech] lista de caixas veio vazia.", listed.keys);
+  } else if (boxes.length === 0) {
+    console.warn("[Cell Tech] caixa do dia sem fechamento reconhecido:", Object.keys(listed.rows[0] ?? {}).slice(0, 24).join(", "));
+  }
+  return boxes;
 }
 
 async function reportOrEmpty(

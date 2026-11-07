@@ -729,15 +729,20 @@ export function cashDayTotals(vendas: unknown, produtos: unknown, os: unknown): 
 
 function cashStatusText(row: Record<string, unknown>): string {
   return [
-    pickText(row, ["nome_situacao", "situacao_nome", "status", "situacao"]),
+    pickText(row, ["nome_situacao", "situacao_nome", "situacao_caixa", "status_descricao", "nome_status", "status", "situacao"]),
     textValue(row.situacao),
+    textValue(row.situacao_caixa),
   ].filter(Boolean).join(" ");
 }
 
 function cashCloseMoment(row: Record<string, unknown>): CellTechMoment | null {
   return parseGestaoMoment(
-    row.data_fechamento ?? row.fechado_em ?? row.data_fechado ?? row.data_encerramento ?? row.fechamento ?? row.data_hora_fechamento,
+    row.fechado_em ?? row.data_fechamento ?? row.data_fechado ?? row.data_fechamento_caixa ?? row.data_encerramento ?? row.fechamento ?? row.data_hora_fechamento,
   );
+}
+
+function cashOpenMoment(row: Record<string, unknown>): CellTechMoment | null {
+  return parseGestaoMoment(row.aberto_em ?? row.data_abertura ?? row.data_aberto ?? row.data ?? row.cadastrado_em);
 }
 
 function flagIsYes(value: unknown): boolean {
@@ -772,7 +777,7 @@ export function closedCashBoxes(rows: Record<string, unknown>[], dayKey: string)
     if (closeDay && closeDay !== dayKey) continue;
     if (!closeDay) {
       const touched = parseGestaoMoment(row.modificado_em ?? row.data_modificacao ?? row.atualizado_em ?? row.data_atualizacao)?.dayKey ?? null;
-      const opened = parseGestaoMoment(row.data ?? row.data_abertura ?? row.cadastrado_em)?.dayKey ?? null;
+      const opened = cashOpenMoment(row)?.dayKey ?? null;
       if (touched && touched !== dayKey && (!opened || opened !== dayKey)) continue;
       if (!touched && opened && opened !== dayKey) continue;
     }

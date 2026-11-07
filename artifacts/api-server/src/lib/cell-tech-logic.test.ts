@@ -312,6 +312,11 @@ test("caixa fechado manda os quatro números do dia", () => {
     { id: "4", nome: "Manhã", situacao: "Fechado", data_abertura: "2026-11-06", modificado_em: "2026-11-07", aberto: 0 },
   ], "2026-11-07");
   assert.deepEqual(openedBefore.map((box) => box.id), ["4"]);
+  const screen = closedCashBoxes([
+    { id: "9", funcionario: "CAIXA", situacao: "Fechado", aberto_em: "07/11/2026 08:15:06", fechado_em: "07/11/2026 15:12:04", saldo: "429.99" },
+    { id: "8", funcionario: "CAIXA", situacao: "Fechado", aberto_em: "05/11/2026 08:43:32", fechado_em: "05/11/2026 18:01:10", saldo: "0" },
+  ], "2026-11-07");
+  assert.deepEqual(screen.map((box) => box.id), ["9"]);
   assert.equal(parseGestaoMoney("1.500,50"), 1500.5);
   const totals = cashDayTotals(
     { totais: { valor_total: "2000.00" }, data: [{ valor_total: "9.00", lucro: "1.00" }] },
