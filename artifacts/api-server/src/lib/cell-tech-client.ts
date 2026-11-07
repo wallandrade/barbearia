@@ -162,6 +162,25 @@ export async function loadGestaoOrders(
   return { rows, situations };
 }
 
+export async function loadGestaoOrderDetail(
+  creds: CellTechCredentials,
+  orderId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const body = await gestaoGet(creds, `ordens_servicos/${orderId}`, {}, fetchImpl);
+    const rows = unwrapRows(body);
+    if (rows[0]) return rows[0];
+    const root = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
+    const data = root?.data;
+    if (data && typeof data === "object" && !Array.isArray(data)) return data as Record<string, unknown>;
+    return root?.id ? root : null;
+  } catch (error) {
+    if (error instanceof GestaoClickError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 export function ordersFromRows(rows: Record<string, unknown>[], flags: CellTechFlags, clock: CellTechClock = saoPauloClock()): CellTechOrder[] {
   const orders: CellTechOrder[] = [];
   const seen = new Set<string>();

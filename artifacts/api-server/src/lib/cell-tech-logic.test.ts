@@ -13,6 +13,7 @@ import {
   buildDeadlineMissedMessage,
   buildFinishedMessage,
   buildNextDayReminder,
+  cellTechOrderMoney,
   cashDayTotals,
   closedCashBoxes,
   parseGestaoMoney,
@@ -234,6 +235,23 @@ test("avisos da OS no grupo", () => {
   assert.deepEqual(openAlerts(closedToday, morning, { created: false, deadline: false }), ["finished"]);
   assert.match(buildFinishedMessage(closedToday), /OS concretizada/);
   assert.match(buildFinishedMessage(closedToday), /Hudson Jose dos Santos/);
+  assert.match(buildFinishedMessage(closedToday), /Custo das peças: não veio/);
+  const priced = cellTechOrderMoney({
+    produtos: [{ quantidade: 2, valor_custo: "10.00", valor_total: "80.00", nome_produto: "Tela" }],
+    servicos: [{ valor_total: "50.00", nome_servico: "Mão de obra" }],
+  });
+  assert.equal(priced.partsCost, 20);
+  assert.equal(priced.profit, 110);
+  const header = cellTechOrderMoney({
+    valor_total: "200.00",
+    produtos: [{ quantidade: 1, valor_custo: "40.00", valor_venda: "100.00" }],
+  });
+  assert.equal(header.partsCost, 40);
+  assert.equal(header.profit, 160);
+  const serviceOnly = cellTechOrderMoney({ valor_total: "90.00", servicos: [{ nome_servico: "Formatação" }] });
+  assert.equal(serviceOnly.partsCost, 0);
+  assert.equal(serviceOnly.profit, 90);
+  assert.match(buildFinishedMessage({ ...closedToday, partsCost: 20, profit: 110 }), /Lucro da OS: R\$\s*110,00/);
   assert.deepEqual(openAlerts(closedToday, morning, { created: false, deadline: false, finished: true }), []);
 
   const cancelled = parseCellTechOrder({

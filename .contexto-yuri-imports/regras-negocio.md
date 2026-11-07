@@ -47,6 +47,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Aviso de OS concretizada leva custo e lucro | Custo das peças e lucro daquela OS entram na mensagem do grupo | Cancelada, caixa, botão Atualizar e cópia 48h iguais |
 | 2026-11-07 | Cell Tech só avisa OS concretizada hoje | Conclusão antiga não entra no grupo, mesmo alterada hoje. Sem data, não manda | O botão Atualizar, o caixa e a cópia 48h iguais |
 | 2026-11-07 | Cell Tech avisa o grupo no fechamento do caixa | Vendas e lucro do dia, e o mesmo só de OS, saem uma vez por caixa fechado hoje | Cópia 48h, PIX, checkout e o aviso de cada OS iguais |
 | 2026-11-07 | Cell Tech avisa o grupo na concretização | A baixa de hoje manda uma vez no grupo. Cancelada sai com outro título | Cópia 48h, PIX, checkout e o relatório das 8h30 iguais |
@@ -538,7 +539,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 - Aba do admin principal, separada da loja. OS, técnico, prazo e serviço vêm do Gestão Click. Pedido, PIX, estoque e frete não entram.
 - Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo.
-- Grupo da loja: aviso no cadastro, no prazo estourado, lembrete nos dias seguintes e, uma vez, quando a baixa é de hoje (concretizada ou cancelada). Conclusão de outro dia não entra, mesmo alterada hoje. Sem data, não entra. No fechamento do caixa do dia, uma mensagem com vendas, lucro, vendas de OS e lucro de OS, mesmo se um relatório falhar. O botão Atualizar só recarrega a lista. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
+- Grupo da loja: aviso no cadastro, no prazo estourado, lembrete nos dias seguintes e, uma vez, quando a baixa é de hoje (concretizada ou cancelada). Conclusão de outro dia não entra, mesmo alterada hoje. Sem data, não entra. A concretizada leva o custo das peças e o lucro da OS. A cancelada não leva esses valores. No fechamento do caixa do dia, uma mensagem com vendas, lucro, vendas de OS e lucro de OS, mesmo se um relatório falhar. O botão Atualizar só recarrega a lista. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
 
 ## Multi-tenant
 

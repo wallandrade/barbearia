@@ -1,9 +1,10 @@
 import {
   buildCashCloseMessage,
+  buildFinishedMessage,
+  cellTechOrderMoney,
   buildCreatedMessage,
   buildDailyReport,
   buildDeadlineMissedMessage,
-  buildFinishedMessage,
   buildMonthlyReport,
   buildNextDayReminder,
   cashDayTotals,
@@ -18,7 +19,7 @@ import {
   type CellTechListQuery,
   type CellTechOrder,
 } from "./cell-tech-logic";
-import { clearGestaoCache, GestaoClickError, loadCashDayReports, loadClosedCashBoxes, loadGestaoOrders, ordersFromRows } from "./cell-tech-client";
+import { clearGestaoCache, GestaoClickError, loadCashDayReports, loadClosedCashBoxes, loadGestaoOrderDetail, loadGestaoOrders, ordersFromRows } from "./cell-tech-client";
 import {
   claimCellTechAlert,
   publicCellTechSettings,
@@ -144,6 +145,23 @@ function alertMessage(kind: CellTechAlertKind, order: CellTechOrder): string {
   return buildNextDayReminder(order);
 }
 
+async function finishedOrderWithMoney(settings: CellTechSettings, order: CellTechOrder): Promise<CellTechOrder> {
+  if (/cancel/i.test(order.situationName) || (order.partsCost != null && order.profit != null)) return order;
+  try {
+    const detail = await loadGestaoOrderDetail(settings, order.id);
+    if (!detail) return order;
+    const money = cellTechOrderMoney(detail);
+    return {
+      ...order,
+      partsCost: money.partsCost ?? order.partsCost,
+      profit: money.profit ?? order.profit,
+    };
+  } catch (error) {
+    console.error("[Cell Tech] custo da OS:", error instanceof Error ? error.message : error);
+    return order;
+  }
+}
+
 async function sendCashCloses(settings: CellTechSettings, dayKey: string): Promise<number> {
   const boxes = await loadClosedCashBoxes(settings, dayKey);
   if (boxes.length === 0) return 0;
@@ -175,12 +193,13 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
     for (const kind of openAlerts(order, clock, flags)) {
       if (noticesSent >= ALERT_CAP) break;
       try {
+        const messageOrder = kind === "finished" ? await finishedOrderWithMoney(settings, order) : order;
         const posted = await sendClaimed(
           settings,
           kind,
           order.id,
           kind === "reminder" ? clock.dayKey : "once",
-          alertMessage(kind, order),
+          alertMessage(kind, messageOrder),
         );
         if (posted) noticesSent += 1;
       } catch (error) {

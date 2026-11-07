@@ -32,6 +32,10 @@ export type CellTechOrder = {
   finishedDay: string | null;
   deadlineLabel: string;
   finished: boolean;
+  /** Custo das peças. Null = o Gestão Click não mandou o custo. */
+  partsCost: number | null;
+  /** Valor cobrado menos o custo das peças. */
+  profit: number | null;
   working: boolean;
   tone: CellTechTone;
   overdue: boolean;
@@ -320,6 +324,86 @@ function deadlineLabel(moment: CellTechMoment | null): string {
   return `${day} ${hours}:${mins}`;
 }
 
+const PRODUCT_LISTS = ["produtos", "produtos_os", "pecas", "itens_produtos"];
+const SERVICE_LISTS = ["servicos", "servicos_os", "itens_servicos", "services"];
+const MIXED_LISTS = ["itens", "items"];
+
+function listRecords(row: Record<string, unknown>, keys: string[]): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [];
+  for (const key of keys) {
+    const raw = row[key];
+    const items = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    for (const item of items) {
+      const record = asRecord(item);
+      if (record) records.push(record);
+    }
+  }
+  return records;
+}
+
+function isServiceLine(item: Record<string, unknown>): boolean {
+  const serviceId = pickId(item, ["servico_id"]);
+  const productId = pickId(item, ["produto_id", "variacao_id"]);
+  return Boolean(serviceId) && !productId;
+}
+
+function lineCost(item: Record<string, unknown>): number | null {
+  const total = parseGestaoMoney(item.valor_custo_total ?? item.custo_total);
+  if (total != null) return total;
+  const unit = parseGestaoMoney(item.valor_custo ?? item.custo ?? item.valor_custo_unitario);
+  if (unit == null) return null;
+  const qty = parseGestaoMoney(item.quantidade ?? item.qtd) ?? 1;
+  return unit * qty;
+}
+
+function lineSale(item: Record<string, unknown>): number | null {
+  const total = parseGestaoMoney(item.valor_total ?? item.total ?? item.valor_liquido);
+  if (total != null) return total;
+  const unit = parseGestaoMoney(item.valor_venda ?? item.valor);
+  if (unit == null) return null;
+  const qty = parseGestaoMoney(item.quantidade ?? item.qtd) ?? 1;
+  const discount = parseGestaoMoney(item.desconto_valor ?? item.desconto) ?? 0;
+  return qty * unit - discount;
+}
+
+/** Custo das peças e lucro da OS. Serviço sem peça fica com custo zero. */
+export function cellTechOrderMoney(row: Record<string, unknown>): { partsCost: number | null; profit: number | null } {
+  const dedicatedProducts = listRecords(row, PRODUCT_LISTS).filter((item) => !isServiceLine(item));
+  const mixed = listRecords(row, MIXED_LISTS);
+  const products = dedicatedProducts.length > 0 ? dedicatedProducts : mixed.filter((item) => !isServiceLine(item));
+  const listedServices = listRecords(row, SERVICE_LISTS);
+  const services = listedServices.length > 0 ? listedServices : mixed.filter((item) => isServiceLine(item));
+  let sawCost = false;
+  let cost = 0;
+  let lineSaleTotal = 0;
+  let sawSale = false;
+  for (const item of products) {
+    const itemCost = lineCost(item);
+    if (itemCost != null) {
+      sawCost = true;
+      cost += itemCost;
+    }
+    const sale = lineSale(item);
+    if (sale != null) {
+      sawSale = true;
+      lineSaleTotal += sale;
+    }
+  }
+  for (const item of services) {
+    const sale = lineSale(item);
+    if (sale != null) {
+      sawSale = true;
+      lineSaleTotal += sale;
+    }
+  }
+  const header = parseGestaoMoney(row.valor_liquido ?? row.valor_total ?? row.total);
+  const revenue = header ?? (sawSale ? lineSaleTotal : null);
+  const serviceHasPrice = services.some((item) => lineSale(item) != null);
+  const partsCost = products.length > 0 ? (sawCost ? cost : null) : (revenue != null || serviceHasPrice ? 0 : null);
+  const profit = partsCost != null && revenue != null ? revenue - partsCost : null;
+  return { partsCost, profit };
+}
+
 export function parseCellTechOrder(
   row: Record<string, unknown>,
   flags: CellTechFlags,
@@ -383,6 +467,7 @@ export function parseCellTechOrder(
   }
 
   const services = serviceNames(row);
+  const money = cellTechOrderMoney(row);
   return {
     id,
     code: pickText(row, ["codigo", "numero"]) || id,
@@ -399,6 +484,8 @@ export function parseCellTechOrder(
     finishedDay: finished ? (finishedAt?.dayKey ?? updatedAt?.dayKey ?? null) : null,
     deadlineLabel: deadlineLabel(deadline),
     finished,
+    partsCost: money.partsCost,
+    profit: money.profit,
     working,
     tone,
     overdue,
@@ -522,7 +609,11 @@ export function buildNextDayReminder(order: CellTechOrder): string {
 
 export function buildFinishedMessage(order: CellTechOrder): string {
   const cancelled = /cancel/i.test(order.situationName);
-  return [cancelled ? "🚫 *OS cancelada*" : "✅ *OS concretizada*", "", card(order)].join("\n");
+  const lines = [cancelled ? "🚫 *OS cancelada*" : "✅ *OS concretizada*", "", card(order)];
+  if (!cancelled) {
+    lines.push("", moneyLine("Custo das peças", order.partsCost, "não veio"), moneyLine("Lucro da OS", order.profit, "não veio"));
+  }
+  return lines.join("\n");
 }
 
 export function buildOverdueMessage(order: CellTechOrder): string {
@@ -700,8 +791,8 @@ export function formatBrl(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function moneyLine(label: string, value: number | null): string {
-  return `${label}: ${value == null ? "não veio no relatório" : formatBrl(value)}`;
+function moneyLine(label: string, value: number | null, missing = "não veio no relatório"): string {
+  return `${label}: ${value == null ? missing : formatBrl(value)}`;
 }
 
 export function buildCashCloseMessage(dayKey: string, caixaName: string, totals: CellTechCashTotals): string {
