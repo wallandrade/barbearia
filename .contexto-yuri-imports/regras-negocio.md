@@ -47,6 +47,8 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Sábado compara a semana com a anterior | Depois do caixa: venda, custo, lucro e se fechou positivo ou negativo | Domingo e a cópia 48h iguais |
+| 2026-11-07 | Último dia do mês manda o fechamento financeiro | Venda bruta, custo e lucro líquido do mês, depois do caixa daquele dia, uma vez | O relatório de OS do dia 1 e a cópia 48h iguais |
 | 2026-11-07 | Lucro do caixa usa o custo quando não há campo de lucro | Venda do dia menos o custo total. O mesmo vale para a OS | O valor vendido e a cópia 48h iguais |
 | 2026-11-07 | Caixa fechado usa a data Fechado em | Lista vazia no filtro do dia cai no mês e fica só com o fechado hoje | OS, botão Atualizar e cópia 48h iguais |
 | 2026-11-07 | Aviso de OS concretizada leva custo e lucro | Custo das peças e lucro daquela OS entram na mensagem do grupo | Cancelada, caixa, botão Atualizar e cópia 48h iguais |
@@ -541,7 +543,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 - Aba do admin principal, separada da loja. OS, técnico, prazo e serviço vêm do Gestão Click. Pedido, PIX, estoque e frete não entram.
 - Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo.
-- Grupo da loja: aviso no cadastro, no prazo estourado, lembrete nos dias seguintes e, uma vez, quando a baixa é de hoje (concretizada ou cancelada). Conclusão de outro dia não entra, mesmo alterada hoje. Sem data, não entra. A concretizada leva o custo das peças e o lucro da OS. A cancelada não leva esses valores. No fechamento do caixa do dia, lido por Fechado em, uma mensagem com vendas, lucro, vendas de OS e lucro de OS, mesmo se um relatório falhar. Caixa de outro dia não entra. O botão Atualizar só recarrega a lista. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
+- Grupo da loja: aviso no cadastro, no prazo estourado, lembrete nos dias seguintes e, uma vez, quando a baixa é de hoje (concretizada ou cancelada). Conclusão de outro dia não entra, mesmo alterada hoje. Sem data, não entra. A concretizada leva o custo das peças e o lucro da OS. A cancelada não leva esses valores. No fechamento do caixa do dia, lido por Fechado em, uma mensagem com vendas, lucro, vendas de OS e lucro de OS, mesmo se um relatório falhar. Caixa de outro dia não entra. No sábado, depois desse caixa, sai uma vez a semana de segunda a sábado, com venda bruta, custo, lucro e quanto fechou positivo ou negativo em relação à semana anterior. No último dia do mês, depois desse caixa, sai uma vez a venda bruta, o custo e o lucro líquido do mês inteiro. O botão Atualizar só recarrega a lista. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba.
 
 ## Multi-tenant
 

@@ -182,6 +182,34 @@ export function monthlyReportDue(clock: CellTechClock, alreadySent: boolean): bo
   return !alreadySent && clock.day === 1 && reportWindowOpen(clock);
 }
 
+export function isLastDayOfMonth(dayKey: string): boolean {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day === last;
+}
+
+export function monthBounds(dayKey: string): { from: string; to: string } {
+  const key = monthKey(dayKey);
+  const [year, month] = key.split("-").map(Number);
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return { from: `${key}-01`, to: `${key}-${String(last).padStart(2, "0")}` };
+}
+
+export function isSaturday(dayKey: string): boolean {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 6;
+}
+
+/** Segunda a sábado da semana que termina nesse sábado. */
+export function weekBounds(dayKey: string): { from: string; to: string } {
+  return { from: addDays(dayKey, -5), to: dayKey };
+}
+
+export function previousWeekBounds(dayKey: string): { from: string; to: string } {
+  const end = addDays(dayKey, -7);
+  return { from: addDays(end, -5), to: end };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -774,6 +802,63 @@ export function cashDayTotals(vendas: unknown, produtos: unknown, os: unknown): 
 export function cashTotalsKeyList(body: unknown): string {
   const bucket = totalsBucket(body);
   return Object.keys(bucket ?? {}).slice(0, 24).join(", ");
+}
+
+export type CellTechMonthClose = {
+  sales: number | null;
+  cost: number | null;
+  profit: number | null;
+};
+
+function costOf(bucket: Record<string, unknown> | null): number | null {
+  return moneyFrom(bucket, COST_KEYS) ?? moneyMatching(bucket, /custo/i, /medio|unit|percent|porcent/i);
+}
+
+/** Venda bruta, custo e lucro do mês. O lucro segue a mesma conta do dia. */
+export function monthCloseMoney(vendas: unknown, produtos: unknown): CellTechMonthClose {
+  const salesBucket = totalsBucket(vendas);
+  const productBucket = totalsBucket(produtos);
+  const sales = moneyFrom(salesBucket, SALES_KEYS) ?? moneyFrom(productBucket, SALES_KEYS);
+  const cost = costOf(productBucket) ?? costOf(salesBucket);
+  const profit = profitOf(productBucket, sales) ?? profitOf(salesBucket, sales);
+  return {
+    sales,
+    cost: cost ?? (sales != null && profit != null ? roundMoney(sales - profit) : null),
+    profit: profit ?? (sales != null && cost != null ? roundMoney(sales - cost) : null),
+  };
+}
+
+export function buildMonthCloseMessage(dayKey: string, money: CellTechMonthClose): string {
+  return [
+    "📊 *Mês fechado*",
+    `📅 ${formatMonth(monthKey(dayKey))}`,
+    "",
+    moneyLine("Venda bruta", money.sales),
+    moneyLine("Custo", money.cost),
+    moneyLine("Lucro líquido", money.profit),
+  ].join("\n");
+}
+
+export function weekDeltaLine(current: number | null, previous: number | null): string {
+  if (current == null || previous == null) return "Comparação com a semana anterior: não veio no relatório.";
+  const delta = roundMoney(current - previous);
+  if (delta > 0) return `Fechamos ${formatBrl(delta)} positivo em relação à semana anterior.`;
+  if (delta < 0) return `Fechamos ${formatBrl(Math.abs(delta))} negativo em relação à semana anterior.`;
+  return "Fechamos igual à semana anterior.";
+}
+
+export function buildWeekCloseMessage(dayKey: string, current: CellTechMonthClose, previous: CellTechMonthClose): string {
+  const bounds = weekBounds(dayKey);
+  return [
+    "📊 *Semana fechada*",
+    `📅 ${formatDay(bounds.from)} a ${formatDay(bounds.to)}`,
+    "",
+    moneyLine("Venda bruta", current.sales),
+    moneyLine("Custo", current.cost),
+    moneyLine("Lucro líquido", current.profit),
+    "",
+    weekDeltaLine(current.profit, previous.profit),
+  ].join("\n");
 }
 
 function cashStatusText(row: Record<string, unknown>): string {

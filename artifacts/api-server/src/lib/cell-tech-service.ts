@@ -1,5 +1,6 @@
 import {
   buildCashCloseMessage,
+  buildMonthCloseMessage,
   buildFinishedMessage,
   cellTechOrderMoney,
   buildCreatedMessage,
@@ -9,6 +10,13 @@ import {
   buildNextDayReminder,
   cashDayTotals,
   cashTotalsKeyList,
+  isLastDayOfMonth,
+  isSaturday,
+  monthBounds,
+  monthCloseMoney,
+  previousWeekBounds,
+  buildWeekCloseMessage,
+  weekBounds,
   cellTechCounts,
   cellTechWebhookBody,
   filterCellTechOrders,
@@ -20,7 +28,7 @@ import {
   type CellTechListQuery,
   type CellTechOrder,
 } from "./cell-tech-logic";
-import { clearGestaoCache, GestaoClickError, loadCashDayReports, loadClosedCashBoxes, loadGestaoOrderDetail, loadGestaoOrders, ordersFromRows } from "./cell-tech-client";
+import { clearGestaoCache, GestaoClickError, loadCashDayReports, loadCashMonthReports, loadClosedCashBoxes, loadGestaoOrderDetail, loadGestaoOrders, ordersFromRows } from "./cell-tech-client";
 import {
   claimCellTechAlert,
   publicCellTechSettings,
@@ -169,25 +177,57 @@ async function sendCashCloses(settings: CellTechSettings, dayKey: string): Promi
   const periodKey = `${dayKey}:lucro`;
   const sentIds = await readCellTechAlertIds("cash", periodKey);
   const pending = boxes.filter((box) => !sentIds.has(box.id));
-  if (pending.length === 0) return 0;
-  const reports = await loadCashDayReports(settings, dayKey);
-  const totals = cashDayTotals(reports.vendas, reports.produtos, reports.os);
-  if (totals.salesProfit == null || totals.osProfit == null) {
-    console.warn(
-      "[Cell Tech] lucro do caixa sem campo. vendas:",
-      cashTotalsKeyList(reports.vendas),
-      "produtos:",
-      cashTotalsKeyList(reports.produtos),
-      "os:",
-      cashTotalsKeyList(reports.os),
-    );
-  }
   let sent = 0;
-  for (const box of pending) {
-    const posted = await sendClaimed(settings, "cash", box.id, periodKey, buildCashCloseMessage(dayKey, box.name, totals));
-    if (posted) sent += 1;
+  if (pending.length > 0) {
+    const reports = await loadCashDayReports(settings, dayKey);
+    const totals = cashDayTotals(reports.vendas, reports.produtos, reports.os);
+    if (totals.salesProfit == null || totals.osProfit == null) {
+      console.warn(
+        "[Cell Tech] lucro do caixa sem campo. vendas:",
+        cashTotalsKeyList(reports.vendas),
+        "produtos:",
+        cashTotalsKeyList(reports.produtos),
+        "os:",
+        cashTotalsKeyList(reports.os),
+      );
+    }
+    for (const box of pending) {
+      const posted = await sendClaimed(settings, "cash", box.id, periodKey, buildCashCloseMessage(dayKey, box.name, totals));
+      if (posted) sent += 1;
+    }
+  }
+  if (isSaturday(dayKey)) {
+    const weekPosted = await sendWeekClose(settings, dayKey);
+    if (weekPosted) sent += 1;
+  }
+  if (isLastDayOfMonth(dayKey)) {
+    const monthPosted = await sendMonthClose(settings, dayKey);
+    if (monthPosted) sent += 1;
   }
   return sent;
+}
+
+async function sendWeekClose(settings: CellTechSettings, dayKey: string): Promise<boolean> {
+  const periodKey = `${dayKey}:sem`;
+  const sent = await readCellTechAlertIds("week", periodKey);
+  if (sent.has("sem")) return false;
+  const currentBounds = weekBounds(dayKey);
+  const previousBounds = previousWeekBounds(dayKey);
+  const currentReports = await loadCashMonthReports(settings, currentBounds.from, currentBounds.to);
+  const previousReports = await loadCashMonthReports(settings, previousBounds.from, previousBounds.to);
+  const current = monthCloseMoney(currentReports.vendas, currentReports.produtos);
+  const previous = monthCloseMoney(previousReports.vendas, previousReports.produtos);
+  return sendClaimed(settings, "week", "sem", periodKey, buildWeekCloseMessage(dayKey, current, previous));
+}
+
+async function sendMonthClose(settings: CellTechSettings, dayKey: string): Promise<boolean> {
+  const periodKey = `${monthKey(dayKey)}:mes`;
+  const sent = await readCellTechAlertIds("month", periodKey);
+  if (sent.has("mes")) return false;
+  const bounds = monthBounds(dayKey);
+  const reports = await loadCashMonthReports(settings, bounds.from, bounds.to);
+  const money = monthCloseMoney(reports.vendas, reports.produtos);
+  return sendClaimed(settings, "month", "mes", periodKey, buildMonthCloseMessage(dayKey, money));
 }
 
 export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number }> {

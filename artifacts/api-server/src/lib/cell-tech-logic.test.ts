@@ -9,6 +9,12 @@ import {
   monthlyReportDue,
   normalizeCellTechWebhookUrl,
   buildCashCloseMessage,
+  buildMonthCloseMessage,
+  buildWeekCloseMessage,
+  isLastDayOfMonth,
+  isSaturday,
+  monthCloseMoney,
+  weekBounds,
   buildCreatedMessage,
   buildDeadlineMissedMessage,
   buildFinishedMessage,
@@ -353,6 +359,39 @@ test("caixa fechado manda os quatro números do dia", () => {
     sales: null, salesProfit: null, osSales: null, osProfit: null,
   });
   assert.match(missing, /não veio no relatório/);
+  assert.equal(isLastDayOfMonth("2026-11-30"), true);
+  assert.equal(isLastDayOfMonth("2026-11-07"), false);
+  assert.equal(isLastDayOfMonth("2024-02-29"), true);
+  const month = monthCloseMoney(
+    { totais: { valor_total: "30000.00", custo_total: "12000.00" } },
+    null,
+  );
+  assert.equal(month.sales, 30000);
+  assert.equal(month.cost, 12000);
+  assert.equal(month.profit, 18000);
+  const monthMessage = buildMonthCloseMessage("2026-11-30", month);
+  assert.match(monthMessage, /Mês fechado/);
+  assert.match(monthMessage, /novembro de 2026/);
+  assert.match(monthMessage, /Venda bruta: R\$\s*30\.000,00/);
+  assert.match(monthMessage, /Custo: R\$\s*12\.000,00/);
+  assert.match(monthMessage, /Lucro líquido: R\$\s*18\.000,00/);
+  assert.equal(isSaturday("2026-11-07"), true);
+  assert.equal(isSaturday("2026-11-06"), false);
+  assert.deepEqual(weekBounds("2026-11-07"), { from: "2026-11-02", to: "2026-11-07" });
+  const weekMessage = buildWeekCloseMessage(
+    "2026-11-07",
+    { sales: 10000, cost: 4000, profit: 6000 },
+    { sales: 8000, cost: 3000, profit: 7500 },
+  );
+  assert.match(weekMessage, /Semana fechada/);
+  assert.match(weekMessage, /02\/11\/2026 a 07\/11\/2026/);
+  assert.match(weekMessage, /Fechamos R\$\s*1\.500,00 negativo em relação à semana anterior/);
+  const better = buildWeekCloseMessage(
+    "2026-11-07",
+    { sales: 10000, cost: 4000, profit: 8000 },
+    { sales: 8000, cost: 3000, profit: 6000 },
+  );
+  assert.match(better, /Fechamos R\$\s*2\.000,00 positivo em relação à semana anterior/);
 });
 
 test("webhook só https", () => {

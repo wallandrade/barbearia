@@ -204,14 +204,15 @@ const OS_REPORTS = ["ordens_servicos", "ordens_de_servico"];
 async function firstReport(
   creds: CellTechCredentials,
   slugs: string[],
-  dayKey: string,
+  from: string,
+  to: string,
   fetchImpl: typeof fetch,
 ): Promise<unknown | null> {
   for (const slug of slugs) {
     try {
       return await gestaoGet(creds, `relatorios/${slug}`, {
-        data_inicio: dayKey,
-        data_fim: dayKey,
+        data_inicio: from,
+        data_fim: to,
         limite: "1",
       }, fetchImpl);
     } catch (error) {
@@ -306,11 +307,12 @@ export async function loadClosedCashBoxes(
 async function reportOrEmpty(
   creds: CellTechCredentials,
   slugs: string[],
-  dayKey: string,
+  from: string,
+  to: string,
   fetchImpl: typeof fetch,
 ): Promise<unknown | null> {
   try {
-    return await firstReport(creds, slugs, dayKey, fetchImpl);
+    return await firstReport(creds, slugs, from, to, fetchImpl);
   } catch (error) {
     console.error("[Cell Tech] relatório do caixa:", error instanceof Error ? error.message : error);
     return null;
@@ -322,8 +324,19 @@ export async function loadCashDayReports(
   dayKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ vendas: unknown; produtos: unknown; os: unknown }> {
-  const vendas = await reportOrEmpty(creds, SALES_REPORTS, dayKey, fetchImpl);
-  const produtos = await reportOrEmpty(creds, PRODUCT_REPORTS, dayKey, fetchImpl);
-  const os = await reportOrEmpty(creds, OS_REPORTS, dayKey, fetchImpl);
+  const vendas = await reportOrEmpty(creds, SALES_REPORTS, dayKey, dayKey, fetchImpl);
+  const produtos = await reportOrEmpty(creds, PRODUCT_REPORTS, dayKey, dayKey, fetchImpl);
+  const os = await reportOrEmpty(creds, OS_REPORTS, dayKey, dayKey, fetchImpl);
   return { vendas, produtos, os };
+}
+
+export async function loadCashMonthReports(
+  creds: CellTechCredentials,
+  from: string,
+  to: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ vendas: unknown; produtos: unknown }> {
+  const vendas = await reportOrEmpty(creds, SALES_REPORTS, from, to, fetchImpl);
+  const produtos = await reportOrEmpty(creds, PRODUCT_REPORTS, from, to, fetchImpl);
+  return { vendas, produtos };
 }
