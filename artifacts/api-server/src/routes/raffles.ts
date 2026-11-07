@@ -12,6 +12,7 @@ import {
 } from "../gateway";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveRaffleLookupQuery } from "../lib/raffle-lookup";
+import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,16 @@ const router: IRouter = Router();
 function parseNumbers(raw: string | null | undefined): number[] {
   if (!raw) return [];
   try { return JSON.parse(raw) as number[]; } catch { return []; }
+}
+
+function buildStorePixCallbackUrl(req: {
+  headers: Record<string, string | string[] | undefined>;
+}): string {
+  const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+  const callbackBase = buildCallbackUrl(req, "/webhook/pix");
+  if (!webhookSecret) return callbackBase;
+  const joiner = callbackBase.includes("?") ? "&" : "?";
+  return `${callbackBase}${joiner}whsec=${encodeURIComponent(webhookSecret)}`;
 }
 
 function normalizePhone(raw: string | null | undefined): string {
@@ -294,7 +305,7 @@ router.post("/raffles/:id/reserve", async (req, res) => {
   // Generate PIX
   const gatewayProvider = await getChannelPixGateway("raffle");
   const identifier = genIdentifier();
-  const callbackUrl = buildCallbackUrl(req as never, "/webhook/raffle-pix");
+  const callbackUrl = buildStorePixCallbackUrl(req as never);
 
   let gatewayData;
   try {
@@ -445,6 +456,34 @@ router.get("/raffles/reservations/lookup", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// PUBLIC: GET /api/raffles/reservations/:reservationId/status
+// Só o status. A tela do PIX consulta isto. Não devolve telefone, CPF nem código.
+// ---------------------------------------------------------------------------
+router.get("/raffles/reservations/:reservationId/status", async (req, res) => {
+  const { reservationId } = req.params as { reservationId: string };
+  if (!reservationId || reservationId === "lookup") {
+    res.status(404).json({ error: "NOT_FOUND", message: "Reserva não encontrada." });
+    return;
+  }
+
+  const [reservation] = await db
+    .select({
+      id: raffleReservationsTable.id,
+      status: raffleReservationsTable.status,
+    })
+    .from(raffleReservationsTable)
+    .where(eq(raffleReservationsTable.id, reservationId))
+    .limit(1);
+
+  if (!reservation) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Reserva não encontrada." });
+    return;
+  }
+
+  res.json({ reservationId: reservation.id, status: reservation.status });
+});
+
+// ---------------------------------------------------------------------------
 // PUBLIC: POST /api/raffles/reservations/:reservationId/refresh-pix — renew expired PIX
 // ---------------------------------------------------------------------------
 router.post("/raffles/reservations/:reservationId/refresh-pix", async (req, res) => {
@@ -500,7 +539,7 @@ router.post("/raffles/reservations/:reservationId/refresh-pix", async (req, res)
 
   const identifier = genIdentifier();
   const gatewayProvider = await getChannelPixGateway("raffle");
-  const callbackUrl = buildCallbackUrl(req as never, "/webhook/raffle-pix");
+  const callbackUrl = buildStorePixCallbackUrl(req as never);
   const totalAmount = Number(reservation.totalAmount);
 
   let gatewayData;
@@ -1079,86 +1118,26 @@ router.post("/webhook/raffle-pix", async (req, res) => {
     return;
   }
 
-  const [reservation] = transactionId
-    ? await db
-      .select()
-      .from(raffleReservationsTable)
-      .where(eq(raffleReservationsTable.transactionId, transactionId))
-      .limit(1)
-    : await db
-      .select()
-      .from(raffleReservationsTable)
-      .where(eq(raffleReservationsTable.id, reservationId))
-      .limit(1);
+  const confirmed = status ? isPaymentConfirmed(status) : false;
+  const result = await confirmRaffleReservationPayment({
+    transactionId,
+    reservationId,
+    confirmed,
+  });
 
-  if (!reservation) {
+  if (!result.matched) {
     console.log("[RaffleWebhook] Reservation not found", JSON.stringify({ transactionId, reservationId, status }));
     res.status(404).json({ error: "RESERVATION_NOT_FOUND" });
     return;
   }
 
-  const confirmed = status ? isPaymentConfirmed(status) : false;
-  if (confirmed && reservation.status !== "paid") {
-    const now = new Date();
-    const reservationNumbers = parseNumbers(reservation.numbers);
-    const reservationExpired = reservation.status === "expired" || (reservation.status === "reserved" && reservation.expiresAt < now);
-
-    // Safety check: never mark as paid if those numbers are already assigned to another active/paid reservation.
-    const competingRows = reservationNumbers.length > 0
-      ? await db
-        .select({
-          id: raffleReservationsTable.id,
-          numbers: raffleReservationsTable.numbers,
-          status: raffleReservationsTable.status,
-          expiresAt: raffleReservationsTable.expiresAt,
-        })
-        .from(raffleReservationsTable)
-        .where(and(
-          eq(raffleReservationsTable.raffleId, reservation.raffleId),
-          inArray(raffleReservationsTable.status, ["reserved", "paid"]),
-        ))
-      : [];
-
-    const conflict = competingRows.find((row) => {
-      if (row.id === reservation.id) return false;
-      const rowExpired = row.status === "reserved" && row.expiresAt < now;
-      if (rowExpired) return false;
-      const rowNumbers = parseNumbers(row.numbers);
-      return rowNumbers.some((n) => reservationNumbers.includes(n));
-    });
-
-    if (reservationExpired || conflict) {
-      await db
-        .update(raffleReservationsTable)
-        .set({ status: "expired", updatedAt: new Date() })
-        .where(eq(raffleReservationsTable.id, reservation.id));
-
-      console.log("[RaffleWebhook] Ignored late/conflicting payment", JSON.stringify({
-        reservationId: reservation.id,
-        transactionId,
-        status,
-        reason: conflict ? "NUMBER_ALREADY_ASSIGNED" : "RESERVATION_EXPIRED",
-        conflictReservationId: conflict?.id,
-      }));
-
-      res.json({
-        ok: true,
-        confirmed: false,
-        ignored: true,
-        reason: conflict ? "NUMBER_ALREADY_ASSIGNED" : "RESERVATION_EXPIRED",
-        reservationId: reservation.id,
-      });
-      return;
-    }
-
-    await db
-      .update(raffleReservationsTable)
-      .set({ status: "paid", updatedAt: new Date() })
-      .where(eq(raffleReservationsTable.id, reservation.id));
-    console.log("[RaffleWebhook] Reservation paid", JSON.stringify({ id: reservation.id, transactionId, status }));
-  }
-
-  res.json({ ok: true, confirmed, reservationId: reservation.id });
+  res.json({
+    ok: true,
+    confirmed: result.confirmed,
+    ignored: result.ignored ?? false,
+    reason: result.reason,
+    reservationId: result.reservationId,
+  });
 });
 
 export default router;

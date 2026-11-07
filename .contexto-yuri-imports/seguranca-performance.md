@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-11-04
+> **Última atualização:** 2026-11-07
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Status do PIX da rifa não passa na consulta por telefone | `GET /api/raffles/reservations/:id/status` devolve só `reserved`, `paid` ou `expired`. Sem checkout token e fora do limite de 25 leituras | A consulta por telefone/CPF continua com token e com o limite |
 | 2026-11-04 | Tokens do Gestão Click só na aba Cell Tech | `GET /api/admin/cell-tech/settings` devolve o token mascarado. A chave não entra em `PUBLIC_KEYS` nem no GET público de settings. Só admin principal | Checkout token e os webhooks da loja iguais |
 | 2026-11-01 | Gasto da segunda conta exige `META_ADS_SHARE_TOKEN` | `GET /api/integrations/meta-ads/spend` aceita Bearer ou `X-Api-Key`, mínimo 16. A resposta não leva o token da Meta nem o id inteiro | A conta da loja e o checkout token iguais |
 | 2026-11-01 | Token da conta de anúncio fica só na variável `META_ADS_ACCESS_TOKEN` | `GET /api/admin/meta-ads` devolve a conta mascarada. O log tira `access_token=` | Checkout token e o pixel do afiliado iguais |
@@ -52,7 +53,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 ## Gateway / reconciliação
 
 - Não depender de polling APPCNPay (403 “polling bloqueado”).
-- Status PIX/cobrança: BD local + webhook.
+- Status PIX/cobrança: BD local + webhook. O PIX da rifa segue igual: `GET /api/raffles/reservations/:id/status` só lê a reserva. A consulta por telefone (`/lookup`) continua com checkout token e limite de 25 leituras / 10 min.
 - Job de reconciliação: expira pendentes antigos, sem consultar gateway.
 
 ## Performance (observado)

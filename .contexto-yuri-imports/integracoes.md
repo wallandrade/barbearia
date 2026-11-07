@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | PIX da rifa entra no webhook da loja | `/api/webhook/pix` marca `raffle_reservations` pelo `transactionId`. A tela lê o status no banco | Pedido, cobrança avulsa e assinatura iguais. Sem polling na CNPay |
 | 2026-11-07 | Fechamento do mês compara com o mês anterior | A frase diz se o lucro fechou positivo ou negativo | A venda bruta, o custo e a semana iguais |
 | 2026-11-07 | Sábado manda a semana contra a anterior | Depois do caixa, uma vez: venda, custo, lucro e quanto fechou positivo ou negativo | Domingo não dispara. O mês no último dia continua |
 | 2026-11-07 | Último dia do mês manda venda bruta, custo e lucro | Sai depois do caixa fechado naquele dia, uma vez. O relatório de OS do dia 1 às 8h30 continua | Os outros dias do mês não disparam esse fechamento |
@@ -247,7 +248,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 - **APPCNPay** (padrão): `POST https://painel.appcnpay.com/api/v1/gateway/pix/receive`; headers `x-public-key` (`GATEWAY_IDENTIFIER`), `x-secret-key` (`GATEWAY_SECRET`) — `artifacts/api-server/src/gateway.ts`.
 - **DentPeg**: `https://api.dentpeg.com/api/v1`; seleção via settings de canal (`checkout_*_pix_gateway` / normalizer `appcnpay` | `dentpeg`).
 - Produtos tipicamente **não** vão na payload PIX (client + amount) no fluxo APPCNPay documentado no código.
-- Confirmação: **webhooks** (`routes/webhooks.ts`) — `/api/webhook/pix`, `/api/webhook`, URLs por pedido/cobrança/rifa.
+- Confirmação: **webhooks** (`routes/webhooks.ts`) — `/api/webhook/pix`, `/api/webhook`, URLs por pedido/cobrança. A rifa nova usa esse mesmo `/api/webhook/pix` (`confirmRaffleReservationPayment`). O endereço antigo `/api/webhook/raffle-pix` permanece para cobrança já emitida.
 - Polling de transação no gateway: tratado como bloqueado; status lido do BD.
 
 ## SuperFrete (emissão no Admin)

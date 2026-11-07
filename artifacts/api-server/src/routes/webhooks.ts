@@ -25,6 +25,7 @@ import { queueReportanaOrderSync } from "../lib/reportana";
 import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { recordOrderActivity } from "../lib/order-activity";
 import { markSubscriptionFromWebhook } from "../lib/customer-subscription";
+import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
 import { requirePrimaryAdmin } from "./admin-auth";
 
@@ -256,7 +257,21 @@ async function handleCallback(body: GatewayCallback) {
     console.log(`[WEBHOOK] Subscription ${transactionId} marked paid`);
   }
 
-  return { matched: orderUpdated || chargeUpdated || subscriptionUpdated, orderUpdated, chargeUpdated, subscriptionUpdated };
+  const raffleResult = transactionId
+    ? await confirmRaffleReservationPayment({ transactionId, confirmed })
+    : { matched: false, confirmed: false };
+  const raffleUpdated = Boolean(confirmed && raffleResult.matched);
+  if (raffleUpdated) {
+    console.log(`[WEBHOOK] Raffle reservation ${raffleResult.reservationId} ${raffleResult.ignored ? "ignored" : "paid"}`);
+  }
+
+  return {
+    matched: orderUpdated || chargeUpdated || subscriptionUpdated || raffleUpdated,
+    orderUpdated,
+    chargeUpdated,
+    subscriptionUpdated,
+    raffleUpdated,
+  };
 }
 
 // Generic webhook — gateway can call with just the transactionId/status

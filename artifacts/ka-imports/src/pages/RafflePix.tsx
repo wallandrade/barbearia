@@ -55,28 +55,28 @@ export default function RafflePix() {
     return () => clearInterval(id);
   }, [pix]);
 
-  // Poll payment status
+  // Lê o status no banco. O webhook da CNPay é quem marca pago.
   const checkStatus = useCallback(async () => {
     if (!reservationId) return;
     try {
-      const res = await fetch(`${BASE}/api/raffles/reservations/lookup?phone=${encodeURIComponent(pix?.clientPhone ?? "0")}`);
+      const res = await fetch(`${BASE}/api/raffles/reservations/${encodeURIComponent(reservationId)}/status`);
       if (!res.ok) return;
-      const rows = (await res.json()) as Array<{ id: string; status: string }>;
-      const row = rows.find((r) => r.id === reservationId);
-      if (row) {
-        setStatus(row.status as ReservationStatus);
+      const row = (await res.json()) as { status?: string };
+      if (row.status === "paid" || row.status === "expired" || row.status === "reserved") {
+        setStatus(row.status);
         if (row.status === "paid") {
           sessionStorage.removeItem(`raffle_pix_${reservationId}`);
         }
       }
     } catch { /* ignore */ }
-  }, [reservationId, pix?.clientPhone]);
+  }, [reservationId]);
 
   useEffect(() => {
+    if (!reservationId || status === "paid" || status === "expired") return;
     checkStatus();
-    const id = setInterval(checkStatus, 8_000);
+    const id = setInterval(checkStatus, 3_000);
     return () => clearInterval(id);
-  }, [checkStatus]);
+  }, [checkStatus, reservationId, status]);
 
   function copyCode() {
     if (!pix?.pixCode) return;
@@ -93,17 +93,6 @@ export default function RafflePix() {
     return `${m}:${s}`;
   }
 
-  if (!pix) {
-    return (
-      <AppLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-muted-foreground">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p>Carregando dados do PIX…</p>
-        </div>
-      </AppLayout>
-    );
-  }
-
   if (status === "paid") {
     return (
       <AppLayout>
@@ -111,14 +100,44 @@ export default function RafflePix() {
           <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto" />
           <h2 className="text-2xl font-bold text-foreground">Pagamento confirmado!</h2>
           <p className="text-muted-foreground">
-            Seus números estão garantidos na rifa <strong>{pix.raffleTitle}</strong>!
+            Seus números estão garantidos{pix?.raffleTitle ? <> na rifa <strong>{pix.raffleTitle}</strong></> : null}!
           </p>
-          <p className="text-sm text-muted-foreground">
-            Números: <strong>{pix.numbers.join(", ")}</strong>
-          </p>
+          {pix?.numbers?.length ? (
+            <p className="text-sm text-muted-foreground">
+              Números: <strong>{pix.numbers.join(", ")}</strong>
+            </p>
+          ) : null}
           <Button onClick={() => setLocation("/rifas")} className="w-full">
             Ver mais rifas
           </Button>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (status === "expired") {
+    return (
+      <AppLayout>
+        <div className="max-w-sm mx-auto px-4 py-16 text-center space-y-4">
+          <AlertCircle className="w-16 h-16 text-amber-500 mx-auto" />
+          <h2 className="text-2xl font-bold text-foreground">Reserva encerrada</h2>
+          <p className="text-muted-foreground">
+            Estes números não foram confirmados. Se o PIX foi debitado, fale com a loja.
+          </p>
+          <Button onClick={() => setLocation("/rifas")} className="w-full">
+            Voltar às rifas
+          </Button>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!pix) {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p>Carregando dados do PIX…</p>
         </div>
       </AppLayout>
     );
