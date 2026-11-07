@@ -21,6 +21,7 @@ import {
   cellTechWebhookBody,
   filterCellTechOrders,
   monthKey,
+  previousMonthKey,
   openAlerts,
   reportWindowOpen,
   saoPauloClock,
@@ -225,9 +226,13 @@ async function sendMonthClose(settings: CellTechSettings, dayKey: string): Promi
   const sent = await readCellTechAlertIds("month", periodKey);
   if (sent.has("mes")) return false;
   const bounds = monthBounds(dayKey);
+  const previousKey = previousMonthKey(dayKey);
+  const previousBounds = monthBounds(`${previousKey}-01`);
   const reports = await loadCashMonthReports(settings, bounds.from, bounds.to);
+  const previousReports = await loadCashMonthReports(settings, previousBounds.from, previousBounds.to);
   const money = monthCloseMoney(reports.vendas, reports.produtos);
-  return sendClaimed(settings, "month", "mes", periodKey, buildMonthCloseMessage(dayKey, money));
+  const previous = monthCloseMoney(previousReports.vendas, previousReports.produtos);
+  return sendClaimed(settings, "month", "mes", periodKey, buildMonthCloseMessage(dayKey, money, previous));
 }
 
 export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number }> {

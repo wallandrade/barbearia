@@ -828,7 +828,15 @@ export function monthCloseMoney(vendas: unknown, produtos: unknown): CellTechMon
   };
 }
 
-export function buildMonthCloseMessage(dayKey: string, money: CellTechMonthClose): string {
+export function periodDeltaLine(current: number | null, previous: number | null, comparedWith: string): string {
+  if (current == null || previous == null) return `Comparação com ${comparedWith}: não veio no relatório.`;
+  const delta = roundMoney(current - previous);
+  if (delta > 0) return `Fechamos ${formatBrl(delta)} positivo em relação ${comparedWith}.`;
+  if (delta < 0) return `Fechamos ${formatBrl(Math.abs(delta))} negativo em relação ${comparedWith}.`;
+  return `Fechamos igual ${comparedWith}.`;
+}
+
+export function buildMonthCloseMessage(dayKey: string, money: CellTechMonthClose, previous: CellTechMonthClose): string {
   return [
     "📊 *Mês fechado*",
     `📅 ${formatMonth(monthKey(dayKey))}`,
@@ -836,15 +844,13 @@ export function buildMonthCloseMessage(dayKey: string, money: CellTechMonthClose
     moneyLine("Venda bruta", money.sales),
     moneyLine("Custo", money.cost),
     moneyLine("Lucro líquido", money.profit),
+    "",
+    periodDeltaLine(money.profit, previous.profit, "ao mês anterior"),
   ].join("\n");
 }
 
 export function weekDeltaLine(current: number | null, previous: number | null): string {
-  if (current == null || previous == null) return "Comparação com a semana anterior: não veio no relatório.";
-  const delta = roundMoney(current - previous);
-  if (delta > 0) return `Fechamos ${formatBrl(delta)} positivo em relação à semana anterior.`;
-  if (delta < 0) return `Fechamos ${formatBrl(Math.abs(delta))} negativo em relação à semana anterior.`;
-  return "Fechamos igual à semana anterior.";
+  return periodDeltaLine(current, previous, "à semana anterior");
 }
 
 export function buildWeekCloseMessage(dayKey: string, current: CellTechMonthClose, previous: CellTechMonthClose): string {

@@ -369,12 +369,13 @@ test("caixa fechado manda os quatro números do dia", () => {
   assert.equal(month.sales, 30000);
   assert.equal(month.cost, 12000);
   assert.equal(month.profit, 18000);
-  const monthMessage = buildMonthCloseMessage("2026-11-30", month);
+  const monthMessage = buildMonthCloseMessage("2026-11-30", month, { sales: 20000, cost: 10000, profit: 10000 });
   assert.match(monthMessage, /Mês fechado/);
   assert.match(monthMessage, /novembro de 2026/);
   assert.match(monthMessage, /Venda bruta: R\$\s*30\.000,00/);
   assert.match(monthMessage, /Custo: R\$\s*12\.000,00/);
   assert.match(monthMessage, /Lucro líquido: R\$\s*18\.000,00/);
+  assert.match(monthMessage, /Fechamos R\$\s*8\.000,00 positivo em relação ao mês anterior/);
   assert.equal(isSaturday("2026-11-07"), true);
   assert.equal(isSaturday("2026-11-06"), false);
   assert.deepEqual(weekBounds("2026-11-07"), { from: "2026-11-02", to: "2026-11-07" });
