@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import { db, ordersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
+import { affectedRowsOf, assessPixMoney, paymentEffectsAllowed, type PixMoneyInput } from "../lib/pix-settlement";
 import { broadcastNotification } from "./notifications";
 import {
   createPixChargeWithProvider,
@@ -53,8 +54,27 @@ router.post("/pix/generate", async (req, res) => {
       return;
     }
 
-    if (!amount || Number(amount) <= 0) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "Valor inválido. Deve ser maior que zero." });
+    if (!orderId) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Pedido obrigatório para gerar o PIX." });
+      return;
+    }
+
+    const [orderRow] = await db
+      .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, orderId))
+      .limit(1);
+    if (!orderRow) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+    if (orderRow.status === "paid" || orderRow.status === "completed") {
+      res.status(409).json({ error: "ALREADY_PAID", message: "Este pedido já está pago." });
+      return;
+    }
+    const chargeAmount = Number(orderRow.total);
+    if (!Number.isFinite(chargeAmount) || chargeAmount <= 0) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "O pedido não tem valor em aberto." });
       return;
     }
 
@@ -67,13 +87,13 @@ router.post("/pix/generate", async (req, res) => {
     const callbackUrl = webhookSecret
       ? `${callbackBase}${callbackBase.includes("?") ? "&" : "?"}whsec=${encodeURIComponent(webhookSecret)}`
       : callbackBase;
-    console.log(`[PIX] Creating charge for order ${orderId || identifier} via ${gatewayProvider} — callback: ${callbackUrl}`);
+    console.log(`[PIX] Creating charge for order ${orderId} via ${gatewayProvider}`);
 
     let gatewayData;
     try {
       gatewayData = await createPixChargeWithProvider({
         identifier,
-        amount: Number(amount),
+        amount: chargeAmount,
         provider: gatewayProvider,
         client: {
           name:     client.name,
@@ -226,8 +246,8 @@ router.post("/pix/callback/:token", async (req, res) => {
       return;
     }
 
-    const body = req.body as { transactionId?: string; status?: string };
-    console.log("[PIX] Legacy callback received:", JSON.stringify(body));
+    const body = req.body as { transactionId?: string; status?: string; amount?: unknown; chargeAmount?: unknown; originalAmount?: unknown; currency?: unknown; originalCurrency?: unknown };
+    console.log("[PIX] Legacy callback", { transactionId: body.transactionId || null, status: body.status || null });
 
     if (body.transactionId && isPaymentConfirmed(body.status || "")) {
       const existing = await db
@@ -242,32 +262,47 @@ router.post("/pix/callback/:token", async (req, res) => {
         .where(eq(ordersTable.transactionId, body.transactionId))
         .limit(1);
 
-      await db
+      const money: PixMoneyInput = {
+        amount: body.amount,
+        chargeAmount: body.chargeAmount,
+        originalAmount: body.originalAmount,
+        currency: body.currency,
+        originalCurrency: body.originalCurrency,
+      };
+      if (existing[0]) {
+        const moneyDecision = assessPixMoney(money, Number(existing[0].total));
+        if (moneyDecision.outcome === "mismatch") {
+          res.json({ ok: false, reason: moneyDecision.reason });
+          return;
+        }
+      }
+
+      const updated = await db
         .update(ordersTable)
         .set({ status: "paid", updatedAt: new Date() })
-        .where(eq(ordersTable.transactionId, body.transactionId));
+        .where(and(
+          eq(ordersTable.transactionId, body.transactionId),
+          notInArray(ordersTable.status, ["paid", "completed"]),
+        ));
 
-      if (existing[0] && existing[0].status !== "paid" && existing[0].status !== "completed") {
+      if (existing[0] && existing[0].status !== "paid" && existing[0].status !== "completed" && paymentEffectsAllowed(affectedRowsOf(updated))) {
         await ensureOrderCommission(existing[0].id);
         await consumePromoStockForPaidOrder(existing[0].id);
         if (isStandardShipping(existing[0].shippingType)) void allocateShippingSlot(existing[0].id);
-      }
-
-      broadcastNotification({
-        type: "order_paid",
-        data: { transactionId: body.transactionId, status: "paid" },
-      });
-      void sendOutboundWebhook("order_paid", {
-        id: existing[0]?.id,
-        transactionId: body.transactionId,
-        status: "paid",
-        clientName: existing[0]?.clientName,
-        total: existing[0]?.total,
-        source: "legacy_pix_callback",
-      });
-      queueOrderPaidWhatsapp(existing[0]?.id);
-      queueReportanaOrderSync(existing[0]?.id);
-      if (existing[0]?.id) {
+        broadcastNotification({
+          type: "order_paid",
+          data: { transactionId: body.transactionId, status: "paid" },
+        });
+        void sendOutboundWebhook("order_paid", {
+          id: existing[0].id,
+          transactionId: body.transactionId,
+          status: "paid",
+          clientName: existing[0].clientName,
+          total: existing[0].total,
+          source: "legacy_pix_callback",
+        });
+        queueOrderPaidWhatsapp(existing[0].id);
+        queueReportanaOrderSync(existing[0].id);
         void recordOrderActivity({
           orderId: existing[0].id,
           type: "status",

@@ -14,9 +14,18 @@ import { Router, type IRouter } from "express";
 import type { Request } from "express";
 import crypto from "crypto";
 import { db, ordersTable, customChargesTable } from "@workspace/db";
-import { eq, or } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import { broadcastNotification } from "./notifications";
 import { fetchTransactionStatus, isPaymentConfirmed } from "../gateway";
+import {
+  affectedRowsOf,
+  assessPixMoney,
+  isPaymentCancelled,
+  paymentEffectsAllowed,
+  statusFromGatewayEvent,
+  transactionIdsMatch,
+  type PixMoneyInput,
+} from "../lib/pix-settlement";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
 import { consumePromoStockForPaidOrder } from "../lib/promo-stock";
@@ -26,6 +35,7 @@ import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { recordOrderActivity } from "../lib/order-activity";
 import { markSubscriptionFromWebhook } from "../lib/customer-subscription";
 import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
+import { SUBSCRIPTION_MONTHLY_AMOUNT } from "../lib/customer-subscription-policy";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
 import { requirePrimaryAdmin } from "./admin-auth";
 
@@ -54,6 +64,7 @@ interface GatewayCallback {
   amount?: number;
   paidAt?: string;
   metadata?: Record<string, string>;
+  money?: PixMoneyInput;
 }
 
 function safeTokenEquals(expected: string, provided: string): boolean {
@@ -85,15 +96,16 @@ function hasValidDirectToken(token: string | undefined): boolean {
 async function handleCallback(body: GatewayCallback) {
   const { transactionId, identifier, status, metadata } = body;
 
-  console.log("[WEBHOOK] Received:", JSON.stringify({ transactionId, identifier, status, metadata }));
+  console.log("[WEBHOOK] Received", { transactionId: transactionId || null, status: status || null });
 
   if (!status) {
     console.log("[WEBHOOK] No status, ignoring.");
-    return { matched: false };
+    return { matched: false, reason: "no_status" };
   }
 
   const confirmed = isPaymentConfirmed(status);
-  const cancelled = ["CANCELED", "REJECTED", "FAILED", "EXPIRED", "REFUNDED", "ERROR"].includes((status || "").toUpperCase());
+  const cancelled = isPaymentCancelled(status);
+  const money = body.money;
 
   // -----------------------------------------------------------------------
   // 1. Try to update orders table
@@ -109,46 +121,53 @@ async function handleCallback(body: GatewayCallback) {
 
     if (existing.length > 0) {
       const row = existing[0]!;
-      // Don't downgrade already-paid orders
-      if (row.status !== "paid" && row.status !== "completed") {
+      const expected = Number(row.total);
+      const moneyDecision = confirmed && money ? assessPixMoney(money, expected) : { outcome: "absent" as const };
+      const blockedByMoney = moneyDecision.outcome === "mismatch";
+      if (blockedByMoney) {
+        console.warn("[WEBHOOK] Order valor recusado", { id: row.id, transactionId, reason: moneyDecision.reason });
+      } else if (row.status !== "paid" && row.status !== "completed") {
         const newStatus = confirmed ? "paid" : cancelled ? "cancelled" : row.status;
         if (newStatus !== row.status) {
           const setPaidAmount = confirmed && !row.paidAmount && row.total ? { paidAmount: row.total } : {};
-          await db
+          const updated = await db
             .update(ordersTable)
             .set({ status: newStatus, ...setPaidAmount, updatedAt: new Date() })
-            .where(eq(ordersTable.id, row.id));
+            .where(and(
+              eq(ordersTable.id, row.id),
+              notInArray(ordersTable.status, ["paid", "completed"]),
+            ));
+          if (paymentEffectsAllowed(affectedRowsOf(updated))) {
+            if (confirmed && row.couponCode) {
+              await incrementCouponUse(row.couponCode);
+            }
 
-          if (confirmed && row.couponCode) {
-            await incrementCouponUse(row.couponCode);
-          }
+            if (confirmed && newStatus === "paid") {
+              await ensureOrderCommission(row.id);
+              await consumePromoStockForPaidOrder(row.id);
+            }
 
-          if (confirmed && newStatus === "paid") {
-            await ensureOrderCommission(row.id);
-            await consumePromoStockForPaidOrder(row.id);
-          }
-
-          broadcastNotification({
-            type: confirmed ? "order_paid" : "order_status_updated",
-            data: { id: row.id, transactionId, status: newStatus },
-          });
-          if (confirmed && newStatus === "paid") {
-            void sendOutboundWebhook("order_paid", {
-              id: row.id,
-              transactionId,
-              status: newStatus,
-              clientName: row.clientName,
-              total: row.total,
+            broadcastNotification({
+              type: confirmed ? "order_paid" : "order_status_updated",
+              data: { id: row.id, transactionId, status: newStatus },
             });
-            queueOrderPaidWhatsapp(row.id);
-            recordPixPaid(row.id);
+            if (confirmed && newStatus === "paid") {
+              void sendOutboundWebhook("order_paid", {
+                id: row.id,
+                transactionId,
+                status: newStatus,
+                clientName: row.clientName,
+                total: row.total,
+              });
+              queueOrderPaidWhatsapp(row.id);
+              recordPixPaid(row.id);
+            }
+            queueReportanaOrderSync(row.id);
+            console.log(`[WEBHOOK] Order ${row.id} updated to ${newStatus}`);
           }
-          queueReportanaOrderSync(row.id);
-
-          console.log(`[WEBHOOK] Order ${row.id} updated to ${newStatus}`);
         }
       }
-      orderUpdated = true;
+      orderUpdated = !blockedByMoney;
     }
   }
 
@@ -158,11 +177,11 @@ async function handleCallback(body: GatewayCallback) {
   let chargeUpdated = false;
 
   if (transactionId || metadata?.chargeId) {
-    let rows: Array<{ id: string; status: string; orderId: string | null; amount: string | null }> = [];
+    let rows: Array<{ id: string; status: string; orderId: string | null; amount: string | null; transactionId: string | null }> = [];
 
     if (metadata?.chargeId) {
       rows = await db
-        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount })
+        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount, transactionId: customChargesTable.transactionId })
         .from(customChargesTable)
         .where(eq(customChargesTable.id, metadata.chargeId))
         .limit(1);
@@ -170,7 +189,7 @@ async function handleCallback(body: GatewayCallback) {
 
     if (rows.length === 0 && transactionId) {
       rows = await db
-        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount })
+        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount, transactionId: customChargesTable.transactionId })
         .from(customChargesTable)
         .where(eq(customChargesTable.transactionId, transactionId))
         .limit(1);
@@ -178,14 +197,21 @@ async function handleCallback(body: GatewayCallback) {
 
     if (rows.length > 0) {
       const row = rows[0]!;
-      if (row.status !== "paid") {
+      const linked = transactionIdsMatch(row.transactionId, transactionId);
+      const moneyDecision = confirmed && money ? assessPixMoney(money, Number(row.amount)) : { outcome: "absent" as const };
+      const blocked = !linked || moneyDecision.outcome === "mismatch";
+      if (!linked) console.warn("[WEBHOOK] Charge transação diferente", { id: row.id });
+      if (moneyDecision.outcome === "mismatch") console.warn("[WEBHOOK] Charge valor recusado", { id: row.id, reason: moneyDecision.reason });
+      if (!blocked && row.status !== "paid") {
         const newStatus = confirmed ? "paid" : cancelled ? "cancelled" : row.status;
         if (newStatus !== row.status) {
-          await db
+          const updated = await db
             .update(customChargesTable)
             .set({ status: newStatus, updatedAt: new Date() })
-            .where(eq(customChargesTable.id, row.id));
-
+            .where(and(eq(customChargesTable.id, row.id), notInArray(customChargesTable.status, ["paid"])));
+          if (!paymentEffectsAllowed(affectedRowsOf(updated))) {
+            chargeUpdated = true;
+          } else {
           broadcastNotification({
             type: confirmed ? "charge_paid" : "charge_status_updated",
             data: { id: row.id, transactionId, status: newStatus },
@@ -193,7 +219,6 @@ async function handleCallback(body: GatewayCallback) {
 
           console.log(`[WEBHOOK] Charge ${row.id} updated to ${newStatus}`);
 
-          // If this charge is linked to an order (difference charge), propagate payment to the parent order
           if (confirmed && row.orderId) {
             const parentOrder = await db
               .select({ id: ordersTable.id, status: ordersTable.status, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
@@ -208,9 +233,12 @@ async function handleCallback(body: GatewayCallback) {
               const totalPaid = alreadyPaid + diffPaid;
 
               // If cumulative payments cover the order total, mark as paid
-              const newOrderStatus = totalPaid >= orderTotal - 0.01
+              let newOrderStatus = totalPaid >= orderTotal - 0.01
                 ? (parentOrder[0].status === "completed" ? "completed" : "paid")
                 : "awaiting_payment";
+              if ((parentOrder[0].status === "paid" || parentOrder[0].status === "completed") && newOrderStatus === "awaiting_payment") {
+                newOrderStatus = parentOrder[0].status;
+              }
               await db
                 .update(ordersTable)
                 .set({ status: newOrderStatus, paidAmount: String(totalPaid), updatedAt: new Date() })
@@ -242,23 +270,30 @@ async function handleCallback(body: GatewayCallback) {
               console.log(`[WEBHOOK] Order ${row.orderId} auto-updated to ${newOrderStatus} after diff charge paid (paid=${totalPaid}, total=${orderTotal})`);
             }
           }
+          }
         }
       }
-      chargeUpdated = true;
+      if (!blocked) chargeUpdated = true;
     }
   }
 
+  const subscriptionMoney = confirmed && money
+    ? assessPixMoney(money, SUBSCRIPTION_MONTHLY_AMOUNT)
+    : { outcome: "absent" as const };
+  if (subscriptionMoney.outcome === "mismatch") {
+    console.warn("[WEBHOOK] Assinatura valor recusado", { transactionId, reason: subscriptionMoney.reason });
+  }
   const subscriptionUpdated = await markSubscriptionFromWebhook({
     transactionId,
-    confirmed,
+    confirmed: confirmed && subscriptionMoney.outcome !== "mismatch",
     cancelled,
   });
-  if (subscriptionUpdated && confirmed) {
+  if (subscriptionUpdated && confirmed && subscriptionMoney.outcome !== "mismatch") {
     console.log(`[WEBHOOK] Subscription ${transactionId} marked paid`);
   }
 
   const raffleResult = transactionId
-    ? await confirmRaffleReservationPayment({ transactionId, confirmed })
+    ? await confirmRaffleReservationPayment({ transactionId, confirmed, money })
     : { matched: false, confirmed: false };
   const raffleUpdated = Boolean(confirmed && raffleResult.matched);
   if (raffleUpdated) {
@@ -280,36 +315,29 @@ router.post("/webhook/pix", async (req, res) => {
   try {
     const trustedWebhook = hasValidWebhookSecret(req);
     const raw = req.body as Record<string, unknown>;
-    console.log("[WEBHOOK/pix] Raw body:", JSON.stringify(raw));
+    console.log("[WEBHOOK/pix] aviso", { event: typeof raw.event === "string" ? raw.event : null });
 
-    // Normalize APPCNPay envelope: fields may be nested inside `transaction`
     const tx = (raw.transaction as Record<string, unknown>) ?? raw;
     const dentpegData = (raw.data as Record<string, unknown>) ?? {};
+    const money: PixMoneyInput = {
+      amount: tx.amount ?? raw.amount,
+      chargeAmount: tx.chargeAmount ?? raw.chargeAmount,
+      originalAmount: tx.originalAmount ?? raw.originalAmount,
+      amountInCents: dentpegData.amountInCents ?? tx.amountInCents,
+      currency: tx.currency ?? raw.currency,
+      originalCurrency: tx.originalCurrency ?? raw.originalCurrency,
+      event: raw.event,
+    };
     const normalized: GatewayCallback = {
       transactionId: String(tx.id || dentpegData.depositId || raw.transactionId || raw.transaction_id || "").trim() || undefined,
       identifier:    String(tx.identifier || raw.identifier || "").trim() || undefined,
-      status:        String(tx.status || dentpegData.status || raw.status || raw.event || "").trim() || undefined,
-      amount:        Number(tx.amount ?? tx.chargeAmount ?? tx.originalAmount ?? raw.amount) || undefined,
-      paidAt:        String(tx.payedAt || tx.paidAt || raw.paidAt || "").trim() || undefined,
+      status:        String(tx.status || dentpegData.status || raw.status || "").trim() || undefined,
+      money,
     };
 
-    // Map APPCNPay event name to a status if status is still missing
     if (!normalized.status && raw.event) {
-      const ev = String(raw.event).toUpperCase();
-      if (ev.includes("PAID") || ev.includes("COMPLETED") || ev.includes("APPROVED")) {
-        normalized.status = "COMPLETED";
-      } else if (ev.includes("CANCEL") || ev.includes("REJECT") || ev.includes("FAILED")) {
-        normalized.status = "CANCELED";
-      }
-    }
-
-    // DentPeg explicit events
-    if (raw.event && typeof raw.event === "string") {
-      const ev = String(raw.event).toLowerCase();
-      if (ev === "deposit.confirmed") normalized.status = "DEPIX_SENT";
-      if (ev === "deposit.expired") normalized.status = "EXPIRED";
-      if (ev === "deposit.error") normalized.status = "ERROR";
-      if (ev === "deposit.refunded") normalized.status = "REFUNDED";
+      const fromEvent = statusFromGatewayEvent(raw.event);
+      if (fromEvent) normalized.status = fromEvent;
     }
 
     if (!trustedWebhook) {
@@ -340,7 +368,7 @@ router.post("/webhook/pix", async (req, res) => {
       });
     }
 
-    console.log("[WEBHOOK/pix] Normalized:", JSON.stringify(normalized));
+    console.log("[WEBHOOK/pix] Normalized", { transactionId: normalized.transactionId || null, status: normalized.status || null });
 
     const result = await handleCallback(normalized);
     res.json({ ok: true, ...result });
@@ -439,53 +467,82 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Normalise statuses
-    const up = rawStatus.toUpperCase();
-    const confirmedStatuses = ["PAID", "OK", "APPROVED", "CONFIRMED", "COMPLETED", "SUCCESS", "DEPIX_SENT", "DEPOSIT.CONFIRMED", "CONCLUIDO", "CONCLUÍDA", "PAGO", "PAGA"];
-    const canceledStatuses  = ["CANCELED", "CANCELLED", "REJECTED", "FAILED", "REFUNDED", "CHARGEBACK", "EXPIRED", "ERROR", "DEPOSIT.EXPIRED", "DEPOSIT.ERROR", "DEPOSIT.REFUNDED", "CANCELADO", "CANCELADA"];
-
-    const isConfirmed = confirmedStatuses.some((s) => up.includes(s));
-    const isCanceled  = canceledStatuses.some((s) => up.includes(s));
-
-    // Build normalized callback
-    const normalized: GatewayCallback = {
-      transactionId: rawTxId || undefined,
-      status:        isConfirmed ? "OK" : isCanceled ? "CANCELED" : rawStatus,
+    const eventName = typeof body.event === "string" ? body.event : "";
+    const fromEvent = statusFromGatewayEvent(eventName);
+    if (!rawStatus && fromEvent) rawStatus = fromEvent;
+    const isConfirmed = isPaymentConfirmed(rawStatus);
+    const isCanceled = isPaymentCancelled(rawStatus);
+    const money: PixMoneyInput = {
+      amount: payload.amount ?? body.amount,
+      chargeAmount: payload.chargeAmount,
+      originalAmount: payload.originalAmount,
+      amountInCents: (body.data as Record<string, unknown> | undefined)?.amountInCents,
+      currency: payload.currency ?? body.currency,
+      originalCurrency: payload.originalCurrency,
+      event: eventName,
     };
 
-    // If orderId is directly specified, update that order
-    if (rawOrderId) {
+    const normalized: GatewayCallback = {
+      transactionId: rawTxId || undefined,
+      status: isConfirmed ? rawStatus : isCanceled ? "CANCELED" : rawStatus,
+      money,
+    };
+
+    if (rawOrderId && trustedWebhook) {
       const rows = await db
-        .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
+        .select({
+          id: ordersTable.id,
+          status: ordersTable.status,
+          couponCode: ordersTable.couponCode,
+          total: ordersTable.total,
+          paidAmount: ordersTable.paidAmount,
+          clientName: ordersTable.clientName,
+          transactionId: ordersTable.transactionId,
+        })
         .from(ordersTable)
         .where(eq(ordersTable.id, rawOrderId))
         .limit(1);
 
-      if (rows.length > 0 && rows[0]!.status !== "paid" && rows[0]!.status !== "completed") {
-        const newStatus = isConfirmed ? "paid" : isCanceled ? "cancelled" : rows[0]!.status;
-        const setFields: Record<string, unknown> = { status: newStatus, updatedAt: new Date() };
-        if (isConfirmed && !rows[0]!.paidAmount && rows[0]!.total) setFields.paidAmount = rows[0]!.total;
-        await db.update(ordersTable).set(setFields).where(eq(ordersTable.id, rawOrderId));
-        if (isConfirmed && rows[0]!.couponCode) await incrementCouponUse(rows[0]!.couponCode);
-        if (isConfirmed && newStatus === "paid") {
-          await ensureOrderCommission(rawOrderId);
-          await consumePromoStockForPaidOrder(rawOrderId);
+      const row = rows[0];
+      const moneyDecision = row && isConfirmed ? assessPixMoney(money, Number(row.total)) : { outcome: "absent" as const };
+      const linked = row ? transactionIdsMatch(row.transactionId, rawTxId) : false;
+      if (row && row.status !== "paid" && row.status !== "completed" && linked && moneyDecision.outcome !== "mismatch") {
+        const newStatus = isConfirmed ? "paid" : isCanceled ? "cancelled" : row.status;
+        if (newStatus !== row.status) {
+          const setFields: Record<string, unknown> = { status: newStatus, updatedAt: new Date() };
+          if (isConfirmed && !row.paidAmount && row.total) setFields.paidAmount = row.total;
+          const updated = await db.update(ordersTable).set(setFields).where(and(
+            eq(ordersTable.id, rawOrderId),
+            notInArray(ordersTable.status, ["paid", "completed"]),
+          ));
+          if (paymentEffectsAllowed(affectedRowsOf(updated))) {
+            if (isConfirmed && row.couponCode) await incrementCouponUse(row.couponCode);
+            if (isConfirmed && newStatus === "paid") {
+              await ensureOrderCommission(rawOrderId);
+              await consumePromoStockForPaidOrder(rawOrderId);
+            }
+            broadcastNotification({ type: isConfirmed ? "order_paid" : "order_status_updated", data: { id: rawOrderId, status: newStatus } });
+            if (isConfirmed && newStatus === "paid") {
+              void sendOutboundWebhook("order_paid", {
+                id: rawOrderId,
+                status: newStatus,
+                clientName: row.clientName,
+                total: row.total,
+                source: "universal_webhook",
+              });
+              queueOrderPaidWhatsapp(rawOrderId);
+              recordPixPaid(rawOrderId);
+            }
+            queueReportanaOrderSync(rawOrderId);
+            console.log(`[WEBHOOK/universal] Order ${rawOrderId} → ${newStatus}`);
+          }
         }
-        broadcastNotification({ type: isConfirmed ? "order_paid" : "order_status_updated", data: { id: rawOrderId, status: newStatus } });
-        if (isConfirmed && newStatus === "paid") {
-          void sendOutboundWebhook("order_paid", {
-            id: rawOrderId,
-            status: newStatus,
-            clientName: rows[0]!.clientName,
-            total: rows[0]!.total,
-            source: "universal_webhook",
-          });
-          queueOrderPaidWhatsapp(rawOrderId);
-          recordPixPaid(rawOrderId);
-        }
-        queueReportanaOrderSync(rawOrderId);
-        console.log(`[WEBHOOK/universal] Order ${rawOrderId} → ${newStatus}`);
         res.json({ ok: true, matched: true, updated: "order", id: rawOrderId, status: newStatus });
+        return;
+      }
+      if (row && (moneyDecision.outcome === "mismatch" || !linked)) {
+        console.warn("[WEBHOOK/universal] Pedido recusado", { orderId: rawOrderId, linked, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction" });
+        res.json({ ok: false, matched: false, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction_mismatch" });
         return;
       }
     }
@@ -512,40 +569,61 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
       res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK" });
       return;
     }
-    const body = req.body as GatewayCallback;
+    const raw = req.body as Record<string, unknown>;
+    const incomingTx = String(raw.transactionId || raw.transaction_id || "").trim();
+    const money: PixMoneyInput = {
+      amount: raw.amount,
+      chargeAmount: raw.chargeAmount,
+      originalAmount: raw.originalAmount,
+      currency: raw.currency,
+      originalCurrency: raw.originalCurrency,
+      event: raw.event,
+    };
 
-    // Also patch by orderId directly in case transactionId isn't in the body
-    if (orderId && isPaymentConfirmed(body.status || "")) {
+    if (orderId && isPaymentConfirmed(String(raw.status || ""))) {
       const rows = await db
-        .select({ id: ordersTable.id, status: ordersTable.status, couponCode: ordersTable.couponCode, total: ordersTable.total, paidAmount: ordersTable.paidAmount, clientName: ordersTable.clientName })
+        .select({
+          id: ordersTable.id,
+          status: ordersTable.status,
+          couponCode: ordersTable.couponCode,
+          total: ordersTable.total,
+          paidAmount: ordersTable.paidAmount,
+          clientName: ordersTable.clientName,
+          transactionId: ordersTable.transactionId,
+        })
         .from(ordersTable)
         .where(eq(ordersTable.id, orderId))
         .limit(1);
-
-      if (rows.length > 0 && rows[0]!.status !== "paid" && rows[0]!.status !== "completed") {
-        const paidNow = !rows[0]!.paidAmount && rows[0]!.total ? rows[0]!.total : undefined;
-        await db
+      const row = rows[0];
+      if (row && row.status !== "paid" && row.status !== "completed") {
+        const moneyDecision = assessPixMoney(money, Number(row.total));
+        if (!transactionIdsMatch(row.transactionId, incomingTx) || moneyDecision.outcome === "mismatch") {
+          console.warn("[WEBHOOK/order] recusado", { orderId, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction" });
+          res.json({ ok: false, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction_mismatch" });
+          return;
+        }
+        const paidNow = !row.paidAmount && row.total ? { paidAmount: row.total } : {};
+        const updated = await db
           .update(ordersTable)
-          .set({ status: "paid", transactionId: body.transactionId || rows[0]!.id, ...(paidNow ? { paidAmount: paidNow } : {}), updatedAt: new Date() })
-          .where(eq(ordersTable.id, orderId));
-
-        if (rows[0]!.couponCode) await incrementCouponUse(rows[0]!.couponCode);
-
-        await ensureOrderCommission(orderId);
-        await consumePromoStockForPaidOrder(orderId);
-
-        broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
-        void sendOutboundWebhook("order_paid", {
-          id: orderId,
-          status: "paid",
-          clientName: rows[0]!.clientName,
-          total: rows[0]!.total,
-          source: "direct_order_webhook",
-        });
-        queueOrderPaidWhatsapp(orderId);
-        recordPixPaid(orderId);
-        queueReportanaOrderSync(orderId);
-        console.log(`[WEBHOOK] Order ${orderId} paid via direct URL`);
+          .set({ status: "paid", ...(incomingTx ? { transactionId: incomingTx } : {}), ...paidNow, updatedAt: new Date() })
+          .where(and(eq(ordersTable.id, orderId), notInArray(ordersTable.status, ["paid", "completed"])));
+        if (paymentEffectsAllowed(affectedRowsOf(updated))) {
+          if (row.couponCode) await incrementCouponUse(row.couponCode);
+          await ensureOrderCommission(orderId);
+          await consumePromoStockForPaidOrder(orderId);
+          broadcastNotification({ type: "order_paid", data: { id: orderId, status: "paid" } });
+          void sendOutboundWebhook("order_paid", {
+            id: orderId,
+            status: "paid",
+            clientName: row.clientName,
+            total: row.total,
+            source: "direct_order_webhook",
+          });
+          queueOrderPaidWhatsapp(orderId);
+          recordPixPaid(orderId);
+          queueReportanaOrderSync(orderId);
+          console.log(`[WEBHOOK] Order ${orderId} paid via direct URL`);
+        }
       }
     }
 
@@ -570,20 +648,46 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
       res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK" });
       return;
     }
-    const body = req.body as GatewayCallback;
+    const raw = req.body as Record<string, unknown>;
+    const incomingTx = String(raw.transactionId || raw.transaction_id || "").trim();
+    const money: PixMoneyInput = {
+      amount: raw.amount,
+      chargeAmount: raw.chargeAmount,
+      originalAmount: raw.originalAmount,
+      currency: raw.currency,
+      originalCurrency: raw.originalCurrency,
+      event: raw.event,
+    };
 
-    if (chargeId && isPaymentConfirmed(body.status || "")) {
+    if (chargeId && isPaymentConfirmed(String(raw.status || ""))) {
       const rows = await db
-        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount })
+        .select({
+          id: customChargesTable.id,
+          status: customChargesTable.status,
+          orderId: customChargesTable.orderId,
+          amount: customChargesTable.amount,
+          transactionId: customChargesTable.transactionId,
+        })
         .from(customChargesTable)
         .where(eq(customChargesTable.id, chargeId))
         .limit(1);
+      const row = rows[0];
+      const moneyDecision = row ? assessPixMoney(money, Number(row.amount)) : { outcome: "absent" as const };
+      if (row && (!transactionIdsMatch(row.transactionId, incomingTx) || moneyDecision.outcome === "mismatch")) {
+        console.warn("[WEBHOOK/charge] recusado", { chargeId, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction" });
+        res.json({ ok: false, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction_mismatch" });
+        return;
+      }
 
-      if (rows.length > 0 && rows[0]!.status !== "paid") {
-        await db
+      if (row && row.status !== "paid") {
+        const updated = await db
           .update(customChargesTable)
-          .set({ status: "paid", transactionId: body.transactionId || rows[0]!.id, updatedAt: new Date() })
-          .where(eq(customChargesTable.id, chargeId));
+          .set({ status: "paid", ...(incomingTx ? { transactionId: incomingTx } : {}), updatedAt: new Date() })
+          .where(and(eq(customChargesTable.id, chargeId), notInArray(customChargesTable.status, ["paid"])));
+        if (!paymentEffectsAllowed(affectedRowsOf(updated))) {
+          res.json({ ok: true, duplicate: true });
+          return;
+        }
 
         broadcastNotification({ type: "charge_paid", data: { id: chargeId, status: "paid" } });
         console.log(`[WEBHOOK] Charge ${chargeId} paid via direct URL`);
@@ -601,9 +705,12 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
             const alreadyPaid  = Number(parentOrder[0].paidAmount ?? 0);
             const diffPaid     = Number(rows[0]!.amount ?? 0);
             const totalPaid    = alreadyPaid + diffPaid;
-            const newOrderStatus = totalPaid >= orderTotal - 0.01
+            let newOrderStatus = totalPaid >= orderTotal - 0.01
               ? (parentOrder[0].status === "completed" ? "completed" : "paid")
               : "awaiting_payment";
+            if ((parentOrder[0].status === "paid" || parentOrder[0].status === "completed") && newOrderStatus === "awaiting_payment") {
+              newOrderStatus = parentOrder[0].status;
+            }
 
             await db
               .update(ordersTable)

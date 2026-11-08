@@ -1,6 +1,7 @@
 import { db, raffleReservationsTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { findActiveRaffleNumberConflict, parseRaffleNumbers } from "./raffle-payment-logic";
+import { assessPixMoney, paymentEffectsAllowed, affectedRowsOf, type PixMoneyInput } from "./pix-settlement";
 
 export type RafflePaymentResult = {
   matched: boolean;
@@ -14,6 +15,7 @@ export async function confirmRaffleReservationPayment(input: {
   transactionId?: string;
   reservationId?: string;
   confirmed: boolean;
+  money?: PixMoneyInput;
 }): Promise<RafflePaymentResult> {
   const transactionId = String(input.transactionId || "").trim();
   const reservationId = String(input.reservationId || "").trim();
@@ -40,6 +42,20 @@ export async function confirmRaffleReservationPayment(input: {
 
   if (!reservation) {
     return { matched: false, confirmed: false };
+  }
+
+  if (input.confirmed && input.money) {
+    const moneyDecision = assessPixMoney(input.money, Number(reservation.totalAmount));
+    if (moneyDecision.outcome === "mismatch") {
+      console.warn("[RaffleWebhook] valor recusado", { reservationId: reservation.id, reason: moneyDecision.reason });
+      return {
+        matched: true,
+        confirmed: false,
+        ignored: true,
+        reason: moneyDecision.reason === "currency" ? "CURRENCY_MISMATCH" : "AMOUNT_MISMATCH",
+        reservationId: reservation.id,
+      };
+    }
   }
 
   if (!input.confirmed || reservation.status === "paid") {
@@ -105,10 +121,22 @@ export async function confirmRaffleReservationPayment(input: {
     };
   }
 
-  await db
+  const updated = await db
     .update(raffleReservationsTable)
     .set({ status: "paid", updatedAt: new Date() })
-    .where(eq(raffleReservationsTable.id, reservation.id));
+    .where(and(
+      eq(raffleReservationsTable.id, reservation.id),
+      ne(raffleReservationsTable.status, "paid"),
+    ));
+  if (!paymentEffectsAllowed(affectedRowsOf(updated))) {
+    return {
+      matched: true,
+      confirmed: true,
+      ignored: true,
+      reason: "ALREADY_PAID",
+      reservationId: reservation.id,
+    };
+  }
 
   console.log("[RaffleWebhook] Reservation paid", JSON.stringify({
     id: reservation.id,

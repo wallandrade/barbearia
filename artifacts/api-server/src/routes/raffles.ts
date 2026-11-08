@@ -6,10 +6,13 @@ import { requireAdminAuth } from "./admin-auth";
 import {
   createPixChargeWithProvider,
   buildCallbackUrl,
+  fetchDentpegDepositStatus,
+  fetchTransactionStatus,
   genIdentifier,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
+import { isPaymentConfirmed as pixStatusIsPaid, statusFromGatewayEvent, type PixMoneyInput } from "../lib/pix-settlement";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveRaffleLookupQuery } from "../lib/raffle-lookup";
 import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
@@ -1093,35 +1096,67 @@ router.post("/webhook/raffle-pix", async (req, res) => {
   const tx = ((raw.transaction as Record<string, unknown>) ?? raw) as Record<string, unknown>;
   const txMeta = ((tx.metadata as Record<string, unknown>) ?? {}) as Record<string, unknown>;
   const rawMeta = ((raw.metadata as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  const dentpegData = ((raw.data as Record<string, unknown>) ?? {}) as Record<string, unknown>;
 
   const transactionId = String(
-    tx.id || tx.transactionId || (tx as { transaction_id?: unknown }).transaction_id || raw.transactionId || raw.transaction_id || raw.id || "",
+    tx.id || dentpegData.depositId || tx.transactionId || (tx as { transaction_id?: unknown }).transaction_id || raw.transactionId || raw.transaction_id || "",
   ).trim();
 
-  let status = String(tx.status || raw.status || raw.payment_status || raw.event || "").trim();
+  let status = String(tx.status || dentpegData.status || raw.status || raw.payment_status || "").trim();
   if (!status && raw.event) {
-    const ev = String(raw.event).toUpperCase();
-    if (ev.includes("PAID") || ev.includes("APPROVED") || ev.includes("COMPLETED")) status = "COMPLETED";
-    else if (ev.includes("CANCEL") || ev.includes("REJECT") || ev.includes("FAILED")) status = "CANCELED";
+    const fromEvent = statusFromGatewayEvent(raw.event);
+    if (fromEvent) status = fromEvent;
   }
 
   const reservationId = String(txMeta.reservationId || rawMeta.reservationId || "").trim();
+  const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
+  const providedSecret = String(req.get("x-webhook-secret") || req.get("x-signature") || req.query.whsec || "").trim();
+  let trusted = false;
+  if (webhookSecret && providedSecret && webhookSecret.length === providedSecret.length) {
+    trusted = crypto.timingSafeEqual(Buffer.from(webhookSecret), Buffer.from(providedSecret));
+  }
 
   if (!transactionId && !reservationId) {
-    console.log("[RaffleWebhook] Missing transactionId/reservationId", JSON.stringify(raw));
+    console.log("[RaffleWebhook] sem transação nem reserva");
     res.status(400).json({ error: "MISSING_REFERENCE" });
     return;
   }
 
+  if (!trusted) {
+    if (!transactionId) {
+      res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "missing_transaction_id" });
+      return;
+    }
+    const verified = transactionId.startsWith("dep_")
+      ? await fetchDentpegDepositStatus(transactionId)
+      : await fetchTransactionStatus(transactionId);
+    if (!verified?.status || !pixStatusIsPaid(verified.status === "depix_sent" ? "DEPIX_SENT" : verified.status)) {
+      console.warn("[RaffleWebhook] aviso sem segredo não confirmado", { transactionId });
+      res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "gateway_verification_failed" });
+      return;
+    }
+    status = verified.status === "depix_sent" ? "DEPIX_SENT" : verified.status;
+  }
+
+  const money: PixMoneyInput = {
+    amount: tx.amount ?? raw.amount,
+    chargeAmount: tx.chargeAmount,
+    originalAmount: tx.originalAmount,
+    amountInCents: dentpegData.amountInCents,
+    currency: tx.currency ?? raw.currency,
+    originalCurrency: tx.originalCurrency,
+    event: raw.event,
+  };
   const confirmed = status ? isPaymentConfirmed(status) : false;
   const result = await confirmRaffleReservationPayment({
     transactionId,
     reservationId,
     confirmed,
+    money,
   });
 
   if (!result.matched) {
-    console.log("[RaffleWebhook] Reservation not found", JSON.stringify({ transactionId, reservationId, status }));
+    console.log("[RaffleWebhook] reserva não encontrada", { transactionId: transactionId || null });
     res.status(404).json({ error: "RESERVATION_NOT_FOUND" });
     return;
   }
