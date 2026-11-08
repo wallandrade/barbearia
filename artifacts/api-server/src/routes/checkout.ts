@@ -16,6 +16,7 @@ import { sendOutboundWebhook } from "../lib/outbound-webhook";
 import { queueReportanaDraftComplete, queueReportanaOrderSync } from "../lib/reportana";
 import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { recordOrderActivity } from "../lib/order-activity";
+import { pixSecretBoundColumn, rememberIssuedPixTransaction } from "../lib/pix-issue";
 import { lookupIpGeo } from "../lib/ip-geo";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold } from "../lib/free-shipping";
 import { isCartEligibleForMotoboy, parseMotoboyEligibleProductIds } from "../lib/motoboy-eligible-products";
@@ -545,6 +546,7 @@ router.post("/checkout/pix", async (req, res) => {
       total:               String(amount),
       status:              "pending",
       paymentMethod:       "pix",
+      pixSecretBound:      pixSecretBoundColumn(),
       sellerCode:          resolvedSellerCode,
       sellerCommissionRateSnapshot: String(sellerCommissionRateSnapshot),
       couponCode:          normalizedCouponCode,
@@ -739,7 +741,7 @@ router.post("/checkout/pix", async (req, res) => {
 
     const expiresAt = new Date(Date.now() + PIX_DURATION_MS).toISOString();
 
-    // Link PIX transaction to the order
+    await rememberIssuedPixTransaction(gatewayData.transactionId);
     await db.update(ordersTable)
       .set({
         transactionId: gatewayData.transactionId,

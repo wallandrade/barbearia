@@ -1,4 +1,5 @@
 export * from "./orders";
+export * from "./pix-secret-transactions";
 export * from "./checkout-drafts";
 export * from "./order-shipments";
 export * from "./order-activity";

@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db, customChargesTable, ordersTable } from "@workspace/db";
 import { desc, and, gte, lte, eq, notInArray } from "drizzle-orm";
-import { affectedRowsOf, paymentEffectsAllowed } from "../lib/pix-settlement";
+import { affectedRowsOf, paymentEffectsAllowed, legacyBodyMayConfirm } from "../lib/pix-settlement";
+import { pixSecretBoundColumn, rememberIssuedPixTransaction, transactionWasIssuedWithSecret } from "../lib/pix-issue";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -153,6 +154,7 @@ router.post("/custom-charges", async (req, res) => {
       return;
     }
 
+    await rememberIssuedPixTransaction(gatewayData.transactionId);
     console.log(`[CustomCharge:${requestId}] Gateway OK — txId=${gatewayData.transactionId} (${Date.now() - t0}ms)`);
 
     await db.insert(customChargesTable).values({
@@ -173,6 +175,7 @@ router.post("/custom-charges", async (req, res) => {
       amount:              String(amount),
       status:              "awaiting_payment",
       transactionId:       gatewayData.transactionId,
+      pixSecretBound:      pixSecretBoundColumn(),
     });
 
     broadcastNotification({
@@ -245,10 +248,19 @@ router.post("/custom-charges/callback/:token/:chargeId", async (req, res) => {
 
     if (isPaymentConfirmed(body.status || "")) {
       const existing = await db
-        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount })
+        .select({ id: customChargesTable.id, status: customChargesTable.status, orderId: customChargesTable.orderId, amount: customChargesTable.amount, pixSecretBound: customChargesTable.pixSecretBound, transactionId: customChargesTable.transactionId })
         .from(customChargesTable)
         .where(eq(customChargesTable.id, chargeId))
         .limit(1);
+
+      const incomingBound = await transactionWasIssuedWithSecret(body.transactionId || existing[0]?.transactionId);
+      if (existing[0] && !legacyBodyMayConfirm({
+        entitySecretBound: existing[0].pixSecretBound,
+        incomingTransactionBound: incomingBound,
+      })) {
+        res.json({ ok: true, ignored: true, reason: "secret_bound" });
+        return;
+      }
 
       if (existing[0] && existing[0].status !== "paid") {
         const updated = await db

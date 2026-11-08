@@ -14,6 +14,8 @@ import { statusFromGatewayEvent } from "../lib/pix-settlement";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveRaffleLookupQuery } from "../lib/raffle-lookup";
 import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
+import { pixSecretBoundColumn, rememberIssuedPixTransaction, transactionWasIssuedWithSecret } from "../lib/pix-issue";
+import { legacyBodyMayConfirm } from "../lib/pix-settlement";
 
 const router: IRouter = Router();
 
@@ -300,6 +302,7 @@ router.post("/raffles/:id/reserve", async (req, res) => {
     clientDocument: client.cpf.replace(/\D/g, ""),
     totalAmount: String(totalAmount),
     status: "reserved",
+    pixSecretBound: pixSecretBoundColumn(),
     expiresAt,
   });
 
@@ -339,6 +342,7 @@ router.post("/raffles/:id/reserve", async (req, res) => {
     return;
   }
 
+  await rememberIssuedPixTransaction(gatewayData.transactionId);
   await db
     .update(raffleReservationsTable)
     .set({
@@ -570,6 +574,7 @@ router.post("/raffles/reservations/:reservationId/refresh-pix", async (req, res)
 
   const pixExpiresAt = new Date(Date.now() + PIX_DURATION_MS);
 
+  await rememberIssuedPixTransaction(gatewayData.transactionId);
   await db
     .update(raffleReservationsTable)
     .set({
@@ -1115,12 +1120,15 @@ router.post("/webhook/raffle-pix", async (req, res) => {
   }
 
   // Cobrança emitida antes de 2f532bd registrou esta URL sem whsec.
-  // Não consultar o gateway aqui: essa consulta é bloqueada e o PIX antigo deixaria de confirmar.
+  // PIX antigo continua por aqui. Cobrança nova, marcada pelo servidor, não.
   const confirmed = status ? isPaymentConfirmed(status) : false;
+  const incomingTransactionBound = await transactionWasIssuedWithSecret(transactionId);
   const result = await confirmRaffleReservationPayment({
     transactionId,
     reservationId,
     confirmed,
+    legacyBody: true,
+    incomingTransactionBound,
   });
 
   if (!result.matched) {

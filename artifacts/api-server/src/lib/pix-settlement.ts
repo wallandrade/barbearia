@@ -172,6 +172,25 @@ export function transactionIdsMatch(stored: unknown, incoming: unknown): boolean
   return left === right;
 }
 
+/** Coluna gravada pelo servidor. Null nas cobranças antigas. O callback não define isso. */
+export function isServerSecretBound(value: unknown): boolean {
+  return value === 1 || value === true || value === "1";
+}
+
+/**
+ * Rota que confirma só pelo corpo, sem segredo e sem consulta ao gateway.
+ * Cobrança nova (marca do servidor ou transação registrada por nós) não entra.
+ * Cobrança antiga, sem marca e sem registro, continua.
+ */
+export function legacyBodyMayConfirm(input: {
+  entitySecretBound: unknown;
+  incomingTransactionBound: boolean;
+}): boolean {
+  if (isServerSecretBound(input.entitySecretBound)) return false;
+  if (input.incomingTransactionBound) return false;
+  return true;
+}
+
 export function paymentEffectsAllowed(affectedRows: number): boolean {
   return affectedRows === 1;
 }

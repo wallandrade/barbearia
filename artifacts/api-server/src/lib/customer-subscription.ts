@@ -158,6 +158,7 @@ export async function insertPendingSubscription(input: {
   pixCode: string;
   pixBase64: string;
   expiresAt: Date;
+  pixSecretBound?: number | null;
 }): Promise<string> {
   const id = crypto.randomBytes(8).toString("hex");
   await db.insert(customerSubscriptionsTable).values({
@@ -166,6 +167,7 @@ export async function insertPendingSubscription(input: {
     amount: SUBSCRIPTION_MONTHLY_AMOUNT.toFixed(2),
     status: "pending",
     transactionId: input.transactionId,
+    pixSecretBound: input.pixSecretBound ?? null,
     pixCode: input.pixCode,
     pixBase64: input.pixBase64 || null,
     expiresAt: input.expiresAt,

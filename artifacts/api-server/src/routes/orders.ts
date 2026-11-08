@@ -13,6 +13,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
+import { pixSecretBoundColumn, rememberIssuedPixTransaction } from "../lib/pix-issue";
 import { acceptSelectedVariants, buildVariantLabel, parseVariantGroups, resolveLineImage, resolveOrderEditLineVariants, snapshotSelectedVariants, variantImageUrl } from "../lib/variant-groups";
 import {
   ensureOrderCommission,
@@ -2720,6 +2721,7 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
       callbackUrl,
     });
 
+    await rememberIssuedPixTransaction(gatewayData.transactionId);
     await db.insert(customChargesTable).values({
       id: chargeId,
       orderId: id,
@@ -2739,6 +2741,7 @@ router.post("/admin/orders/:id/difference-charge", requireAdminAuth, async (req,
       amount: String(amount),
       status: "awaiting_payment",
       transactionId: gatewayData.transactionId,
+      pixSecretBound: pixSecretBoundColumn(),
     });
 
     const expiresAt = new Date(Date.now() + PIX_DURATION_MS).toISOString();

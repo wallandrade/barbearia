@@ -1540,6 +1540,29 @@ async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   `);
 }
 
+async function ensurePixSecretBinding(databaseName: string): Promise<void> {
+  if (!(await tableExists("pix_secret_transactions", databaseName))) {
+    await pool.query(`
+      CREATE TABLE pix_secret_transactions (
+        transaction_id VARCHAR(255) NOT NULL PRIMARY KEY,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  const columns: Array<{ table: string; sql: string }> = [
+    { table: "orders", sql: "ALTER TABLE orders ADD COLUMN pix_secret_bound INT NULL" },
+    { table: "custom_charges", sql: "ALTER TABLE custom_charges ADD COLUMN pix_secret_bound INT NULL" },
+    { table: "raffle_reservations", sql: "ALTER TABLE raffle_reservations ADD COLUMN pix_secret_bound INT NULL" },
+    { table: "customer_subscriptions", sql: "ALTER TABLE customer_subscriptions ADD COLUMN pix_secret_bound INT NULL" },
+  ];
+  for (const column of columns) {
+    if (!(await tableExists(column.table, databaseName))) continue;
+    if (!(await columnExists(column.table, "pix_secret_bound", databaseName))) {
+      await pool.query(column.sql);
+    }
+  }
+}
+
 export async function ensureRuntimeSchema(): Promise<void> {
   try {
     const databaseName = getDatabaseName();
@@ -1580,6 +1603,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureAdminImagesTable(databaseName);
     await ensureFlashOfferTables(databaseName);
     await ensureCellTechAlertsTable(databaseName);
+    await ensurePixSecretBinding(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

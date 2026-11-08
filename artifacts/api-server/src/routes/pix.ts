@@ -20,6 +20,7 @@ import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { recordOrderActivity } from "../lib/order-activity";
 import { getChannelPixGateway } from "../lib/checkout-channel-settings";
 import { allocateShippingSlot, isStandardShipping } from "../lib/shipping-queue-allocator";
+import { rememberIssuedPixTransaction } from "../lib/pix-issue";
 
 const router: IRouter = Router();
 
@@ -116,7 +117,7 @@ router.post("/pix/generate", async (req, res) => {
 
     const expiresAt = new Date(Date.now() + PIX_DURATION_MS).toISOString();
 
-    // Update the order record with the transaction ID
+    await rememberIssuedPixTransaction(gatewayData.transactionId);
     if (orderId) {
       try {
         await db
