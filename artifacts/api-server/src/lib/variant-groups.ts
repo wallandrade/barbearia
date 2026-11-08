@@ -183,7 +183,7 @@ function readSentVariantRefs(raw: unknown): Array<SelectedVariantRef & { image?:
       if (!groupName || !option) return null;
       return { groupName, option, image: value?.image };
     })
-    .filter((item): item is SelectedVariantRef & { image?: unknown } => Boolean(item));
+    .filter((item): item is { groupName: string; option: string; image: unknown } => item !== null);
 }
 
 /** Edição do pedido: mesma regra do checkout. Sem o máximo, recusa. Sem catálogo, mantém o que já estava gravado. */

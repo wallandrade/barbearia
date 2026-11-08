@@ -5,11 +5,11 @@ import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-function authHeaders() {
+function authHeaders(): Record<string, string> {
   const token = sessionStorage.getItem("adminToken") || localStorage.getItem("adminToken") || "";
-  return token
-    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-    : { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 export type SuperfreteAccountPublic = {

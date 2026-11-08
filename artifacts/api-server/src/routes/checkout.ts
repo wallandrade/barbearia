@@ -99,8 +99,6 @@ function parseBulkDiscountTiers(raw: unknown): BulkDiscountTierInput[] {
 
 function isProductUnavailable(product: {
   isActive: boolean;
-  isSoldOut: boolean;
-  stock: number | null;
 }): boolean {
   if (product.isActive === false) return true;
   return false;

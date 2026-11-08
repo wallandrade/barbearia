@@ -82,9 +82,15 @@ router.get("/admin/financial-dre", requireAdminAuth, async (req, res) => {
       expenseConditions.push(sql`DATE(DATE_SUB(COALESCE(${marketingExpensesTable.expenseStartDate}, ${marketingExpensesTable.expenseDate}), INTERVAL 3 HOUR)) <= ${dateTo}`);
     }
     if (!adminScope.hasGlobalAccess) {
-      expenseConditions.push(or(eq(marketingExpensesTable.sellerCode, adminScope.sellerCode!), isNull(marketingExpensesTable.sellerCode)));
+      const scopedSeller = adminScope.sellerCode;
+      expenseConditions.push(scopedSeller
+        ? or(eq(marketingExpensesTable.sellerCode, scopedSeller), isNull(marketingExpensesTable.sellerCode))
+        : isNull(marketingExpensesTable.sellerCode));
     } else if (sellerCode) {
-      expenseConditions.push(or(eq(marketingExpensesTable.sellerCode, normalizeSellerCode(sellerCode)), isNull(marketingExpensesTable.sellerCode)));
+      const normalizedSeller = normalizeSellerCode(sellerCode);
+      expenseConditions.push(normalizedSeller
+        ? or(eq(marketingExpensesTable.sellerCode, normalizedSeller), isNull(marketingExpensesTable.sellerCode))
+        : isNull(marketingExpensesTable.sellerCode));
     }
 
     const [orders, charges, expenseRows, fees] = await Promise.all([

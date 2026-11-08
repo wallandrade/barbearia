@@ -1,12 +1,11 @@
 import 'dotenv/config';
 import { db, ordersTable, sellersTable } from "../../lib/db/src/index";
-import { eq } from "drizzle-orm";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 async function patchOrdersCommissionRate() {
   // Busca todos os pedidos pagos ou completed
   const orders = await db.select().from(ordersTable).where(
-    (row) => ["paid", "completed"].includes(row.status)
+    inArray(ordersTable.status, ["paid", "completed"]),
   );
   let patched = 0;
   for (const order of orders) {

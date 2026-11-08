@@ -388,8 +388,12 @@ router.post("/webhook", async (req, res) => {
       String(payload.status || payload.state || payload.situation || payload.paymentStatus ||
              payload.payment_status || (body.data as Record<string, unknown> | undefined)?.status || body.event || "");
 
+    const metadata = payload.metadata;
+    const metadataOrderId = metadata && typeof metadata === "object" && "orderId" in metadata
+      ? (metadata as { orderId?: unknown }).orderId
+      : "";
     const rawOrderId: string =
-      String(body.orderId || payload.orderId || payload.order_id || payload.metadata?.orderId || "");
+      String(body.orderId || payload.orderId || payload.order_id || metadataOrderId || "");
 
     if (!trustedWebhook) {
       if (rawOrderId) {

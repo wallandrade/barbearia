@@ -5,11 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number | string | null | undefined): string {
+  const amount = Number(value ?? 0);
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(value);
+  }).format(Number.isFinite(amount) ? amount : 0);
 }
 
 export const DEFAULT_WHATSAPP = "5535999768759";
@@ -197,7 +198,8 @@ export function formatDateBR(date: string | Date): string {
 }
 
 /** Formats a date string as dd/mm/yyyy in Brazil/São Paulo timezone */
-export function formatDateOnlyBR(date: string | Date): string {
+export function formatDateOnlyBR(date: string | Date | null | undefined): string {
+  if (!date) return "";
   return new Date(date).toLocaleDateString("pt-BR", { timeZone: TZ });
 }
 

@@ -400,8 +400,8 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
 
     const onlyConfirmed100 = Boolean(req.body?.onlyConfirmed100);
     const matchesRaw = Array.isArray(req.body?.matches) ? req.body.matches : [];
-    const notFoundOrderIds = Array.isArray(req.body?.notFoundOrderIds)
-      ? req.body.notFoundOrderIds.map((id: unknown) => String(id || "").trim()).filter(Boolean)
+    const notFoundOrderIds: string[] = Array.isArray(req.body?.notFoundOrderIds)
+      ? req.body.notFoundOrderIds.map((id: unknown) => String(id || "").trim()).filter((id: string) => id.length > 0)
       : [];
 
     const matches = onlyConfirmed100
@@ -500,7 +500,7 @@ router.post("/admin/bank-statement/apply", requireAdminAuth, async (req, res) =>
     }
 
     if (notFoundOrderIds.length) {
-      const uniqueIds = [...new Set(notFoundOrderIds)];
+      const uniqueIds = [...new Set(notFoundOrderIds.map((id) => String(id)))];
       const rows = await db.select().from(ordersTable).where(inArray(ordersTable.id, uniqueIds));
       for (const order of rows) {
         if (!adminScope.hasGlobalAccess && order.sellerCode !== adminScope.sellerCode) {

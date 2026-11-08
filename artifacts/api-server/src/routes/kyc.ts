@@ -420,8 +420,8 @@ router.patch("/admin/kyc/:orderId", requireAdminAuth, async (req, res) => {
     const scope = getKycAdminScope(req, res);
     if (!scope) return;
 
-    const { orderId } = req.params;
-    if (!(await canAccessOrderId(orderId, scope))) {
+    const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0] : req.params.orderId;
+    if (!orderId || !(await canAccessOrderId(orderId, scope))) {
       res.status(404).json({ error: "KYC_NOT_FOUND" });
       return;
     }

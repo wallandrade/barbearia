@@ -74,10 +74,10 @@ test("resolveMotoboyDistanceKm usa rota e não Haversine quando OSRM responde", 
   const prev = process.env.MOTOBOY_ROUTE_PROVIDER;
   process.env.MOTOBOY_ROUTE_PROVIDER = "osrm";
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => ({
-    ok: true,
-    json: async () => ({ code: "Ok", routes: [{ distance: 65200 }] }),
-  })) as typeof fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ code: "Ok", routes: [{ distance: 65200 }] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
   try {
     const km = await resolveMotoboyDistanceKm(
       { lat: -23.5503898, lng: -46.633081 },
@@ -97,10 +97,10 @@ test("resolveMotoboyDistanceKm cai no Haversine se a rota falhar", async () => {
   const prev = process.env.MOTOBOY_ROUTE_PROVIDER;
   process.env.MOTOBOY_ROUTE_PROVIDER = "osrm";
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => ({
-    ok: false,
-    json: async () => ({}),
-  })) as typeof fetch;
+  globalThis.fetch = async () => new Response("{}", {
+    status: 502,
+    headers: { "content-type": "application/json" },
+  });
   try {
     const km = await resolveMotoboyDistanceKm(
       { lat: -23.5503898, lng: -46.633081 },

@@ -1,6 +1,6 @@
 # Padrões de código — Yuri Import
 
-> **Última atualização:** 2026-10-16
+> **Última atualização:** 2026-11-08
 
 Convenções **observadas no repo** + anti-padrões + **manutenção da memória viva**.
 
@@ -8,6 +8,7 @@ Convenções **observadas no repo** + anti-padrões + **manutenção da memória
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-08 | `pnpm run typecheck` emite as declarações com `tsc --build --force` e não versiona `*.tsbuildinfo` | Checkout limpo, sem `dist`, passa no typecheck e no build da raiz | Compra de produto esgotado igual. A API só recusa produto inativo |
 | 2026-10-16 | Aba Imagem no admin principal | Painel separado `AdminImagesPanel`. Lista, copiar URL e tirar da lista | Biblioteca de peptídeos e o upload de produto iguais |
 | 2026-10-03 | Página do produto em duas colunas a partir de `md` (768px) | Foto inteira (`object-contain`) à esquerda; compra à direita; descrição embaixo | Preço, variantes e carrinho iguais. Celular continua uma coluna |
 | 2026-09-26 | Lupa na miniatura do painel (enviar e mais vendidos) | Prévia 128 px é `fixed` ao lado, medida no `mouseenter`; a lista de 320 px não corta. Lupa não recebe clique | Zoom grande e o hover da aba Pedidos iguais |

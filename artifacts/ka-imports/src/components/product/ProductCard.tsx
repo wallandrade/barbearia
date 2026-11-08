@@ -220,7 +220,6 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank, 
 
           <div className="flex flex-col gap-2">
             <Button
-              asChild
               className="w-full rounded-xl text-sm"
             >
               <Link href={href}>
