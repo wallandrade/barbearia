@@ -16,6 +16,23 @@ import { Button } from "@/components/ui/button";
 import { useLiveTracking } from "@/hooks/useLiveTracking";
 import { cartLineId } from "@/lib/product-variants";
 import { isProductUnavailable, useCart, type ServerUnitPrice } from "@/store/use-cart";
+
+type CheckoutCatalogProduct = {
+  id: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  promoPrice?: number | null;
+  promoEndsAt?: string | null;
+  image?: string | null;
+  unit?: string;
+  category?: string;
+  isActive?: boolean;
+  isSoldOut?: boolean;
+  stock?: number | null;
+  bulkDiscountEnabled?: boolean;
+  bulkDiscountTiers?: unknown;
+};
 import { getStoredReferralCode } from "@/lib/affiliate";
 import { getCheckoutSecurityHeaders } from "@/lib/checkout-security";
 import { getCustomerAuthHeaders, getCustomerToken } from "@/lib/customer-auth";
@@ -318,7 +335,7 @@ export default function Checkout() {
   const [motoboyEligibleProductIds, setMotoboyEligibleProductIds] = useState<string[]>([]);
   const cartMotoboyEligibleRef = useRef(true);
   const [productCategoryById, setProductCategoryById] = useState<Map<string, string>>(new Map());
-  const [productCatalogById, setProductCatalogById] = useState<Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>>(new Map());
+  const [productCatalogById, setProductCatalogById] = useState<Map<string, CheckoutCatalogProduct>>(new Map());
 
   useEffect(() => {
     if (items.length === 0) {
@@ -331,12 +348,12 @@ export default function Checkout() {
     fetch(`${BASE}/api/products`)
       .then((res) => {
         if (!res.ok) throw new Error("PRODUCTS_FETCH_FAILED");
-        return res.json() as Promise<{ products?: Array<{ id: string; category?: string }> }>;
+        return res.json() as Promise<{ products?: CheckoutCatalogProduct[] }>;
       })
       .then((data) => {
         if (cancelled) return;
         const nextMap = new Map<string, string>();
-        const nextCatalog = new Map<string, { id: string; name: string; price: number; promoPrice?: number | null; promoEndsAt?: string | null; image?: string | null; unit?: string; category?: string; description?: string; isActive?: boolean; isSoldOut?: boolean; stock?: number }>();
+        const nextCatalog = new Map<string, CheckoutCatalogProduct>();
         for (const product of data.products ?? []) {
           nextMap.set(product.id, String(product.category ?? ""));
           nextCatalog.set(product.id, product);
@@ -2759,7 +2776,7 @@ export default function Checkout() {
                   const bumpItem = items.find(
                     (i) => !!(i as { isBump?: boolean }).isBump &&
                       (i as { bumpForProductId?: string }).bumpForProductId === item.id
-                  ) as ({ quantity: number; price: number; id: string } | undefined);
+                  );
                   const mainTotal = item.price * item.quantity;
                   const bumpTotal = bumpItem ? bumpItem.price * bumpItem.quantity : 0;
                   return (

@@ -159,8 +159,10 @@ function main() {
   console.log("\n[AUDIT] All endpoints properly classified. ✓");
 }
 
-main().catch((error) => {
+try {
+  main();
+} catch (error) {
   console.error("[AUDIT] Unexpected error:", error);
   process.exit(1);
-});
+}
 

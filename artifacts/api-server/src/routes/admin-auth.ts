@@ -169,7 +169,7 @@ export async function verifyCurrentAdminPassword(req: Request, password: string)
   const sessionUsername = String(session?.username || "").trim().toLowerCase();
   if (!sessionUsername) return false;
 
-  let user = (
+  let user: typeof adminUsersTable.$inferSelect | undefined = (
     await db
       .select()
       .from(adminUsersTable)
@@ -331,7 +331,7 @@ router.post("/admin/login", async (req, res) => {
       .limit(1);
 
     // Also try case-insensitive via all users (small table)
-    let user = users[0];
+    let user: typeof adminUsersTable.$inferSelect | undefined = users[0];
     if (!user) {
       const allUsers = await db.select().from(adminUsersTable);
       user = allUsers.find(

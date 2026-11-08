@@ -61,7 +61,7 @@ function orderEditCreditParts(order: object | null | undefined): { wallet: numbe
 }
 
 /** Já pago menos o que já foi para a carteira ou ficou na loja. Sem pago, usa o total do pedido. */
-function editPrepaidReference(order: { paidAmount?: number | null; total: number }): number {
+function editPrepaidReference(order: { paidAmount?: number | null; total?: number | null }): number {
   const paid = Number(order.paidAmount || 0);
   if (!(paid > 0)) return Number(order.total || 0);
   const { wallet, withheld } = orderEditCreditParts(order);
@@ -88,15 +88,23 @@ function getToken() {
 }
 
 // Retorna headers de autenticação para requisições admin
-function authHeaders() {
+function authHeaders(): Record<string, string> {
   const token = getToken();
-  return token
-    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-    : { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 // BASE URL para requisições (igual outros arquivos)
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+type AdminPanelNotice = {
+  id: string;
+  message: string;
+  time: Date;
+  read: boolean;
+  type: string;
+};
 
 const ORDER_WHATSAPP_GROUP_OPTIONS = Array.from({ length: 10 }, (_, index) => `grupo_${index + 1}`);
 
@@ -239,7 +247,7 @@ function spDateStr(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
-function isoToSPDate(iso: string) {
+function isoToSPDate(iso: string | null | undefined) {
   // Converte string ISO para YYYY-MM-DD (para <input type="date">)
   return iso ? iso.slice(0, 10) : "";
 }
@@ -826,7 +834,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, Motorbike, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, Motorbike, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package, ShieldAlert, IdCard, FileText, ExternalLink } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -860,6 +868,7 @@ import {
   type SendCardOrder,
 } from "@/lib/send-card-list";
 import { generateChargePdf, generateOrderPdf } from "@/lib/generateOrderPdf";
+import type { AdminOrder, AdminProduct, AdminUser, Coupon, CustomCharge, KycDocument, KycListItem } from "@/lib/admin-page-types";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import LossBlacklistBoard from "@/components/admin/LossBlacklistBoard";
@@ -909,7 +918,7 @@ import { ShippingForecastField } from "@/components/ShippingForecastField";
 
 
 
-function statusBadge(status: string) {
+function statusBadge(status: string | null | undefined) {
   const map: Record<string, { label: string; color: string; Icon: typeof CheckCircle }> = {
     paid:             { label: "Pago",      color: "bg-green-100 text-green-800 border-green-200",   Icon: CheckCircle },
     completed:        { label: "Concluído", color: "bg-emerald-100 text-emerald-800 border-emerald-200", Icon: CheckCircle },
@@ -917,7 +926,8 @@ function statusBadge(status: string) {
     pending:          { label: "Pendente",  color: "bg-gray-100 text-gray-700 border-gray-200",      Icon: Clock },
     cancelled:        { label: "Cancelado", color: "bg-red-100 text-red-800 border-red-200",         Icon: XCircle },
   };
-  const cfg = map[status] || { label: status, color: "bg-gray-100 text-gray-700 border-gray-200", Icon: Clock };
+  const key = String(status || "");
+  const cfg = map[key] || { label: key || "—", color: "bg-gray-100 text-gray-700 border-gray-200", Icon: Clock };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cfg.color}`}>
       <cfg.Icon className="w-3 h-3" />{cfg.label}
@@ -935,12 +945,12 @@ function isCancelledOrderStatus(value: unknown): boolean {
   return status === "cancelled" || status === "cancelado" || status === "canceled";
 }
 
-function orderCustomerStoreCreditBalance(order: { customerStoreCreditBalance?: number } | null | undefined): number {
+function orderCustomerStoreCreditBalance(order: { customerStoreCreditBalance?: number | null } | null | undefined): number {
   const n = Number(order?.customerStoreCreditBalance || 0);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function remainingOrderPayableForWallet(order: { status?: string; total?: number; paidAmount?: number | null } | null | undefined): number {
+function remainingOrderPayableForWallet(order: { status?: string | null; total?: number | null; paidAmount?: number | null } | null | undefined): number {
   const status = normalizeOrderStatus(order?.status);
   if (status === "paid" || status === "completed" || isCancelledOrderStatus(status)) return 0;
   const total = Number(order?.total || 0);
@@ -1120,6 +1130,7 @@ function ProductSelect({ products, value, onChange, placeholder, dropdownPlaceme
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
+    return undefined;
   }, [isOpen]);
 
   const dropdownPosClass = dropdownPlacement === "top"
@@ -1684,6 +1695,8 @@ export default function Admin() {
     totalMarketingExpenses: number;
     totalInsurancePaid?: number;
     insurancePaidCount?: number;
+    totalCost?: number;
+    totalCommission?: number;
     netRevenue: number;
     realNetRevenue: number;
     marketingExpenses?: Array<{
@@ -1831,7 +1844,7 @@ export default function Admin() {
     openBatchesCount: 0,
     paidBatchesCount: 0,
   });
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AdminPanelNotice[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
@@ -2226,10 +2239,11 @@ export default function Admin() {
     if (Notification.permission !== "granted") return;
     try {
       if (swRef.current) {
-        await swRef.current.showNotification(title, {
+        const notificationOptions: NotificationOptions & { vibrate?: number[]; renotify?: boolean } = {
           body, icon: "/favicon.svg", badge: "/favicon.svg",
           vibrate: [200, 100, 200], tag: "ka-imports-admin", renotify: true,
-        });
+        };
+        await swRef.current.showNotification(title, notificationOptions);
       } else {
         new Notification(title, { body, icon: "/favicon.svg" });
       }
@@ -3382,7 +3396,7 @@ export default function Admin() {
         }
 
         if (message) {
-          const notif: Notification = { id: Date.now().toString(), message, time: new Date(), read: false, type: event.type };
+          const notif: AdminPanelNotice = { id: Date.now().toString(), message, time: new Date(), read: false, type: event.type };
           setNotifications((prev) => [notif, ...prev.slice(0, 49)]);
           toast.info(message);
         }
@@ -3881,7 +3895,8 @@ export default function Admin() {
     }
   };
 
-  const openKycModal = async (orderId: string) => {
+  const openKycModal = async (orderId: string | null | undefined) => {
+    if (!orderId) return;
     setKycModal(orderId);
     setKycData(null);
     setKycLoading(true);
@@ -3948,7 +3963,7 @@ export default function Admin() {
     const sigHtml = kyc.declarationSignature && kyc.declarationSignature.startsWith("data:image")
       ? `<img src="${escapeHtml(kyc.declarationSignature)}" alt="Assinatura" style="max-height:80px;display:block;margin:0 auto 8px auto;">`
       : `<span style="font-family:'Times New Roman',serif;font-style:italic;font-size:18px">${escapeHtml(kyc.declarationSignature ?? order.clientName)}</span>`;
-    const dateSp = new Date(order.createdAt).toLocaleDateString("pt-BR");
+    const dateSp = new Date(order.createdAt || "").toLocaleDateString("pt-BR");
     const totalStr = Number(order.total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     const last4 = kyc.cardNumber && kyc.cardNumber.length >= 4 ? kyc.cardNumber.slice(-4) : "****";
     const prodStr = kyc.declarationProduct || "---";
@@ -4024,7 +4039,8 @@ export default function Admin() {
     setTimeout(() => w.print(), 500);
   };
 
-  const updateKycStatus = async (orderId: string, action: "approve" | "reject") => {
+  const updateKycStatus = async (orderId: string | null | undefined, action: "approve" | "reject") => {
+    if (!orderId) return;
     setKycStatusUpdating(orderId);
     try {
       const res = await fetch(`${BASE}/api/admin/kyc/${orderId}/status`, {
@@ -4079,7 +4095,7 @@ export default function Admin() {
           })
         : 0;
       const discountAmount = editDiscount || 0;
-      const total = Math.max(0, subtotal + shippingCost + insuranceAmount - discountAmount);
+      const total = Math.max(0, subtotal + Number(shippingCost || 0) + insuranceAmount - discountAmount);
       const nextOrderSnapshot = {
         ...editOrderModal,
         products: editItems,
@@ -4143,7 +4159,7 @@ export default function Admin() {
           ...editOrderModal,
           ...data.order,
           paidAmount,
-          total: editOrderModal.total,
+          total: editOrderModal.total ?? 0,
         });
         const diff = total - effectivePaid;
         if (diff > 0.01) {
@@ -4152,7 +4168,7 @@ export default function Admin() {
         }
       } else {
         // No paidAmount recorded — determine if the order was ever paid
-        const diff = total - originalTotal;
+        const diff = total - Number(originalTotal || 0);
         // "Never paid" = still in initial pending state with no proof of payment at all.
         // awaiting_payment means a previous diff PIX was generated but not yet confirmed —
         // the original payment already happened, so we still only charge the difference.
@@ -4335,7 +4351,7 @@ export default function Admin() {
   const siteOrigin = window.location.origin;
 
   const saveSeller = async (name: string, whatsapp: string, hasCommission: boolean, commissionRate: number, manualCode: string) => {
-    if (!name.trim()) return;
+    if (!name.trim()) return false;
     try {
       const res = await fetch(`${BASE}/api/admin/sellers`, {
         method: "POST",
@@ -4348,7 +4364,7 @@ export default function Admin() {
         else if (data.error === "INVALID_CODE") toast.error("Código inválido. Use letras e números.");
         else if (data.error === "INVALID_SLUG") toast.error("Informe um nome válido para o link.");
         else toast.error("Erro ao salvar vendedor.");
-        return;
+        return false;
       }
       const seller = data.seller;
       setSellers((prev) => {
@@ -4361,7 +4377,9 @@ export default function Admin() {
       setSellerHasCommissionInput(true);
       setSellerCommissionRateInput("5");
       toast.success(`Vendedor salvo: ${siteOrigin}/${seller.slug}`);
+      return true;
     } catch { toast.error("Erro ao salvar vendedor."); }
+    return false;
   };
 
   const removeSeller = async (slug: string) => {
@@ -4374,7 +4392,7 @@ export default function Admin() {
 
   const updateSellerCommission = async (slug: string, whatsapp: string, hasCommission: boolean, commissionRate: number) => {
     const clean = String(slug || "").trim().toLowerCase();
-    if (!clean) return;
+    if (!clean) return false;
     setSellerCommissionUpdatingSlug(clean);
     try {
       const normalizedRate = hasCommission ? Math.max(0, Number(commissionRate || 0)) : 0;
@@ -5564,7 +5582,6 @@ export default function Admin() {
                   return;
                 }
                 fetchOrders(true);
-                if (tab === "inventory") fetchInventoryOverview();
                 if (status === "reenvio_enviado") {
                   const debited = Array.isArray(data?.debitedProducts) ? data.debitedProducts : [];
                   if (data?.alreadySent) {
@@ -6866,7 +6883,7 @@ export default function Admin() {
                       submitted: { label: "Aguardando revisão", color: "bg-amber-100 text-amber-800 border-amber-200",  Icon: Clock },
                       pending:  { label: "Pendente",           color: "bg-gray-100 text-gray-600 border-gray-200",      Icon: Clock },
                     };
-                    const s = statusMap[k.status] ?? statusMap.pending;
+                    const s = (k.status ? statusMap[k.status] : undefined) ?? statusMap.pending;
                     const isUpdating = kycStatusUpdating === k.orderId;
                     return (
                       <div key={k.id} className="bg-white border border-border rounded-2xl p-4 space-y-3">
@@ -8663,7 +8680,7 @@ export default function Admin() {
                           fallbackSubtotal: subtotal,
                         })
                       : 0;
-                    const total = Math.max(0, subtotal + editOrderModal.shippingCost + insuranceAmount - (editDiscount || 0));
+                    const total = Math.max(0, subtotal + Number(editOrderModal.shippingCost || 0) + insuranceAmount - (editDiscount || 0));
                     const hasPaidAmount = (editOrderModal.paidAmount ?? 0) > 0;
                     const { wallet: alreadyInWallet, withheld: alreadyWithheld } = orderEditCreditParts(editOrderModal);
                     const refValue = editPrepaidReference(editOrderModal);
@@ -8855,7 +8872,7 @@ export default function Admin() {
                           submitted: { label: "KYC Enviado — Aguardando revisão", color: "text-blue-700", bgColor: "bg-blue-50 border-blue-200", Icon: Clock },
                           pending:  { label: "KYC Pendente",           color: "text-amber-700",  bgColor: "bg-amber-50 border-amber-200",   Icon: ShieldAlert },
                         };
-                        const ms = modalStatusMap[kycData.status] ?? modalStatusMap.pending;
+                        const ms = (kycData.status ? modalStatusMap[kycData.status] : undefined) ?? modalStatusMap.pending;
                         return (
                           <div className={`flex items-center gap-3 p-3 rounded-xl border ${ms.bgColor}`}>
                             <ms.Icon className={`w-5 h-5 shrink-0 ${ms.color}`} />
@@ -10026,7 +10043,6 @@ function InventoryPanel({
       return;
     }
 
-    setEntryProductQuery(selected.name);
     setEntryForm((prev) => ({
       ...prev,
       movementType: "entry",
@@ -11172,7 +11188,7 @@ function OrdersPanel({
     }
   };
 
-  const reshipmentStatusLabel = (status?: string) => {
+  const reshipmentStatusLabel = (status?: string | null) => {
     if (status === "reenvio_aguardando_estoque") return "Reenvio · Aguardando estoque";
     if (status === "reenvio_pronto_para_envio") return "Reenvio · Pronto para envio";
     if (status === "reenvio_resolvido_sem_entrada") return "Reenvio · Resolvido sem entrada";
@@ -11442,7 +11458,7 @@ function OrdersPanel({
       envioecomBarcode?: string | null;
       envioecomShipmentId?: string | null;
     };
-    const packages = (order as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages || [];
+    const packages = order.envioecomPackages || [];
     return packages.find((pkg) => pkg.id === packageId) || null;
   };
 
@@ -12448,7 +12464,41 @@ function OrdersPanel({
         quantity: Number(p.quantity) || 0,
         price: Number(p.price) || 0,
       }));
-      generateOrderPdf({ ...order, products: normalizedProducts });
+      generateOrderPdf({
+        id: order.id,
+        clientName: order.clientName,
+        clientEmail: order.clientEmail,
+        clientPhone: order.clientPhone,
+        clientDocument: order.clientDocument,
+        addressCep: order.addressCep,
+        addressStreet: order.addressStreet,
+        addressNumber: order.addressNumber,
+        addressComplement: order.addressComplement,
+        addressNeighborhood: order.addressNeighborhood,
+        addressCity: order.addressCity,
+        addressState: order.addressState,
+        products: normalizedProducts.map((product) => ({
+          name: product.name || "Produto",
+          quantity: product.quantity,
+          price: product.price,
+        })),
+        shippingType: order.shippingType || "",
+        includeInsurance: order.includeInsurance === true,
+        subtotal: Number(order.subtotal || 0),
+        shippingCost: Number(order.shippingCost || 0),
+        insuranceAmount: Number(order.insuranceAmount || 0),
+        total: Number(order.total || 0),
+        status: order.status || "",
+        paymentMethod: order.paymentMethod,
+        cardInstallments: order.cardInstallments,
+        cardInstallmentsActual: order.cardInstallmentsActual,
+        cardInstallmentValue: order.cardInstallmentValue,
+        cardTotalActual: order.cardTotalActual,
+        transactionId: order.transactionId,
+        sellerCode: order.sellerCode,
+        observation: order.observation,
+        createdAt: order.createdAt || "",
+      });
     } catch {
       toast.error("Não foi possível baixar o pedido.");
     }
@@ -13017,7 +13067,9 @@ function OrdersPanel({
           // try next source
         }
       }
-      const barcodeBandOnly = decodeSources.filter((source) => source instanceof HTMLCanvasElement && source.width < source.height * 2);
+      const barcodeBandOnly = decodeSources.filter((source): source is HTMLCanvasElement => (
+        source instanceof HTMLCanvasElement && source.width < source.height * 2
+      ));
       for (const source of barcodeBandOnly) {
         try {
           const result = reader.decodeFromCanvas(source);
@@ -13026,7 +13078,9 @@ function OrdersPanel({
           // ignore
         }
       }
-      reader.reset();
+      if ("reset" in reader && typeof reader.reset === "function") {
+        reader.reset();
+      }
       const bestZxing = pickBestTrackingCode(zxingValues);
       return bestZxing;
     } catch {
@@ -13427,9 +13481,7 @@ function OrdersPanel({
           const hasReshipmentRecord = Boolean(order?.reshipment?.id);
           const reshipmentIsSent = String(order?.reshipment?.status || "") === "reenvio_enviado";
           const envioecomStatus = String((order as any).envioecomStatus || "").trim();
-          const envioecomPackages = (Array.isArray((order as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages)
-            ? (order as { envioecomPackages: SplitShipmentPackage[] }).envioecomPackages
-            : []).filter((pkg): pkg is SplitShipmentPackage => !!pkg && typeof pkg === "object");
+          const envioecomPackages = (order.envioecomPackages || []).filter((pkg): pkg is SplitShipmentPackage => !!pkg && typeof pkg === "object");
           const isSplitShipment = envioecomPackages.length >= 2;
           const hasLinkedEnvioEcom = Boolean((order as { envioecomBarcode?: string | null; envioecomShipmentId?: string | null }).envioecomBarcode
             || (order as { envioecomBarcode?: string | null; envioecomShipmentId?: string | null }).envioecomShipmentId);
@@ -14473,7 +14525,7 @@ function OrdersPanel({
                       order={{
                         id: order.id,
                         parentOrderId: order.parentOrderId,
-                        includeInsurance: order.includeInsurance,
+                        includeInsurance: order.includeInsurance === true,
                         insurancePlan: order.insurancePlan,
                         insuranceAmount: Number(order.insuranceAmount || 0),
                         insuranceKeepAmount: Number(order.insuranceKeepAmount || 0),
@@ -14839,9 +14891,7 @@ function OrdersPanel({
             orderRef={String(getOrderReference(splitShipmentModal))}
             clientName={String(splitShipmentModal.clientName || "")}
             products={getOrderProducts(splitShipmentModal.products)}
-            packages={Array.isArray((splitShipmentModal as { envioecomPackages?: SplitShipmentPackage[] }).envioecomPackages)
-              ? (splitShipmentModal as { envioecomPackages: SplitShipmentPackage[] }).envioecomPackages
-              : []}
+            packages={splitShipmentModal.envioecomPackages || []}
             saving={splitShipmentSaving}
             onClose={() => setSplitShipmentModal(null)}
             onSave={(packages) => { void saveSplitShipments(splitShipmentModal, packages); }}
@@ -15538,7 +15588,27 @@ function ChargesPanel({ charges, openWhatsApp, chargeStatusUpdating, onUpdateCha
 
   const downloadCharge = (charge: CustomCharge) => {
     try {
-      generateChargePdf(charge);
+      generateChargePdf({
+        id: charge.id,
+        clientName: charge.clientName,
+        clientEmail: charge.clientEmail,
+        clientPhone: charge.clientPhone,
+        clientDocument: charge.clientDocument,
+        addressCep: charge.addressCep,
+        addressStreet: charge.addressStreet,
+        addressNumber: charge.addressNumber,
+        addressComplement: charge.addressComplement,
+        addressNeighborhood: charge.addressNeighborhood,
+        addressCity: charge.addressCity,
+        addressState: charge.addressState,
+        description: charge.description,
+        sellerCode: charge.sellerCode,
+        amount: Number(charge.amount || 0),
+        status: charge.status || "",
+        transactionId: charge.transactionId,
+        observation: charge.observation,
+        createdAt: charge.createdAt || "",
+      });
     } catch {
       toast.error("Não foi possível baixar o pedido.");
     }
@@ -16305,8 +16375,22 @@ function CustomersPanel({
   syncingBrevo: boolean;
   exportModalOpen: boolean;
   setExportModalOpen: (v: boolean) => void;
-  exportColumns: Record<string, boolean>;
-  setExportColumns: (v: Record<string, boolean>) => void;
+  exportColumns: {
+    name: boolean;
+    email: boolean;
+    phone: boolean;
+    orderCount: boolean;
+    affiliateCode: boolean;
+    createdAt: boolean;
+  };
+  setExportColumns: React.Dispatch<React.SetStateAction<{
+    name: boolean;
+    email: boolean;
+    phone: boolean;
+    orderCount: boolean;
+    affiliateCode: boolean;
+    createdAt: boolean;
+  }>>;
 }) {
   const [passwordModalCustomer, setPasswordModalCustomer] = useState<CustomerUserRecord | null>(null);
   const [customPasswordDraft, setCustomPasswordDraft] = useState("");
@@ -17722,10 +17806,10 @@ function CouponsPanel({
                   <p className="text-sm text-muted-foreground mt-0.5">
                     Desconto: <strong>
                       {c.discountType === "percent"
-                        ? `${c.discountValue}%`
-                        : `R$ ${c.discountValue.toFixed(2).replace(".", ",")}`}
+                        ? `${Number(c.discountValue ?? 0)}%`
+                        : `R$ ${Number(c.discountValue ?? 0).toFixed(2).replace(".", ",")}`}
                     </strong>
-                    {c.minOrderValue && ` · Mínimo: R$ ${c.minOrderValue.toFixed(2).replace(".", ",")}`}
+                    {c.minOrderValue ? ` · Mínimo: R$ ${Number(c.minOrderValue).toFixed(2).replace(".", ",")}` : ""}
                     {c.maxUses && ` · Limite: ${c.usedCount}/${c.maxUses} usos`}
                     {!c.maxUses && ` · ${c.usedCount} uso${c.usedCount !== 1 ? "s" : ""}`}
                   </p>
@@ -17782,6 +17866,12 @@ const inp2 = "w-full h-11 px-4 rounded-xl border-2 border-border bg-white focus:
  * Displays as "1.150,00" when unfocused, allows free editing when focused.
  * Calls onChange with the parsed numeric value (or undefined if empty).
  */
+function priceInputValue(value: number | string | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
 function PriceInput({
   value, onChange, placeholder, className,
 }: {
@@ -17872,9 +17962,10 @@ function ProductsPanel({
         if (maxQty !== null && (!Number.isFinite(maxQty) || maxQty < minQty)) return null;
         if (!Number.isFinite(unitPrice) || unitPrice <= 0) return null;
 
-        return { minQty, maxQty, unitPrice, label };
+        const parsed: BulkDiscountTier = { minQty, maxQty, unitPrice, label };
+        return parsed;
       })
-      .filter((tier): tier is BulkDiscountTier => Boolean(tier));
+      .filter((tier): tier is BulkDiscountTier => tier !== null);
 
     return tiers.sort((a, b) => a.minQty - b.minQty);
   };
@@ -17912,7 +18003,7 @@ function ProductsPanel({
   productFormRef.current = productForm;
   const currentCostPrice = Math.max(0, Number((productForm as any).costPrice || 0));
 
-  const getProfitInfo = (salePrice: number | null | undefined, quantity = 1) => {
+  const getProfitInfo = (salePrice: number | string | null | undefined, quantity = 1) => {
     const resolvedSale = Math.max(0, Number(salePrice || 0));
     const profitUnit = resolvedSale - currentCostPrice;
     const profitTotal = profitUnit * Math.max(1, quantity);
@@ -18741,7 +18832,7 @@ function ProductsPanel({
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold select-none">R$</span>
                       <PriceInput
-                        value={productForm.price}
+                        value={priceInputValue(productForm.price)}
                         onChange={(n) => setProductForm({ ...productForm, price: n })}
                         placeholder="1.150,00"
                         className={`${inp2} pl-9`}
@@ -18772,7 +18863,7 @@ function ProductsPanel({
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold select-none">R$</span>
                       <PriceInput
-                        value={productForm.costPrice}
+                        value={priceInputValue(productForm.costPrice)}
                         onChange={(n) => setProductForm({ ...productForm, costPrice: n ?? 0 })}
                         placeholder="700,00"
                         className={`${inp2} pl-9`}
@@ -18789,7 +18880,7 @@ function ProductsPanel({
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold select-none">R$</span>
                       <PriceInput
-                        value={productForm.promoPrice}
+                        value={priceInputValue(productForm.promoPrice)}
                         onChange={(n) => setProductForm({ ...productForm, promoPrice: n ?? null })}
                         placeholder="999,00"
                         className={`${inp2} pl-9`}

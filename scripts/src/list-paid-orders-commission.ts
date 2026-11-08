@@ -24,8 +24,6 @@ async function listPaidOrdersWithCommission(dateFrom: string, dateTo: string) {
     let rate = 0;
     if (order.sellerCommissionRateSnapshot !== undefined && order.sellerCommissionRateSnapshot !== null) {
       rate = Number(order.sellerCommissionRateSnapshot) || 0;
-    } else if (order.sellerCommissionRate !== undefined && order.sellerCommissionRate !== null) {
-      rate = Number(order.sellerCommissionRate) || 0;
     }
     const commission = total * (rate / 100);
     output.push([
@@ -33,8 +31,8 @@ async function listPaidOrdersWithCommission(dateFrom: string, dateTo: string) {
       total,
       order.status,
       order.sellerCode,
-      order.sellerCommissionRateSnapshot,
-      order.sellerCommissionRate,
+      order.sellerCommissionRateSnapshot ?? "",
+      "",
       commission.toFixed(2),
     ].join(','));
   }

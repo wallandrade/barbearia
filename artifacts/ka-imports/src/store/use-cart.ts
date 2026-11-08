@@ -82,9 +82,10 @@ function parseBulkDiscountTiers(raw: unknown): BulkDiscountTier[] {
       if (maxQty !== null && (!Number.isFinite(maxQty) || maxQty < minQty)) return null;
       if (!Number.isFinite(unitPrice) || unitPrice <= 0) return null;
 
-      return { minQty, maxQty, unitPrice, label };
+      const parsed: BulkDiscountTier = { minQty, maxQty, unitPrice, label };
+      return parsed;
     })
-    .filter((tier): tier is BulkDiscountTier => Boolean(tier));
+    .filter((tier): tier is BulkDiscountTier => tier !== null);
 
   return normalized.sort((a, b) => a.minQty - b.minQty);
 }

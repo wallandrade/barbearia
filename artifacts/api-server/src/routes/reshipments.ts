@@ -42,6 +42,21 @@ import { parseInventoryPool } from "../lib/order-inventory-debit";
 
 const router: IRouter = Router();
 
+function readDebitedProducts(value: unknown): Array<{ productId: string; productName: string; quantity: number }> {
+  if (!value || typeof value !== "object" || !("debitedProducts" in value)) return [];
+  const list = (value as { debitedProducts?: unknown }).debitedProducts;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as { productId?: unknown; productName?: unknown; quantity?: unknown };
+    const productId = String(row.productId || "");
+    const productName = String(row.productName || "");
+    const quantity = Number(row.quantity);
+    if (!productId || !Number.isFinite(quantity)) return [];
+    return [{ productId, productName, quantity }];
+  });
+}
+
 function parseReshipmentProducts(raw: unknown): Array<{ id: string; name: string; quantity: number }> {
   const parsed = Array.isArray(raw)
     ? raw
@@ -667,8 +682,8 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
           });
           return;
         }
-        if (status === "reenvio_enviado" && "debitedProducts" in reservation) {
-          debitSummary = reservation.debitedProducts || [];
+        if (status === "reenvio_enviado") {
+          debitSummary = readDebitedProducts(reservation);
           console.info("[ReshipmentSendDebit] support", { id, requestedStatus: status, debitedProducts: debitSummary });
         }
         }
@@ -749,8 +764,8 @@ router.patch("/admin/reshipments/:id/status", requireAdminAuth, async (req, res)
           });
           return;
         }
-        if (status === "reenvio_enviado" && "debitedProducts" in reservation) {
-          debitSummary = reservation.debitedProducts || [];
+        if (status === "reenvio_enviado") {
+          debitSummary = readDebitedProducts(reservation);
           console.info("[ReshipmentSendDebit] manual", { id, requestedStatus: status, debitedProducts: debitSummary });
         }
         }

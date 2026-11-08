@@ -17,6 +17,8 @@ interface OrderInfo {
   address: string;
   paymentMethod: string;
   sellerWhatsapp: string | null;
+  createdAt: string | number | Date;
+  total: number | string;
 }
 
 interface KycStatus {

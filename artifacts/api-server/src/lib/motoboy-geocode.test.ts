@@ -77,7 +77,7 @@ test("CEP 010 pode ficar no pino ao lado da Sé", () => {
 test("geocodeMotoboyCep troca o pino genérico pela AwesomeAPI", async () => {
   resetMotoboyGeocodeCacheForTests();
   const original = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
     const url = String(input);
     if (url.includes("brasilapi.com.br")) {
       return {

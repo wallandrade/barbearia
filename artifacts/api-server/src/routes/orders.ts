@@ -810,8 +810,6 @@ function parseBulkDiscountTiers(raw: unknown): BulkDiscountTierInput[] {
 
 function isProductUnavailable(product: {
   isActive: boolean;
-  isSoldOut: boolean;
-  stock: number | null;
 }): boolean {
   if (product.isActive === false) return true;
   return false;
@@ -2581,9 +2579,9 @@ router.patch("/admin/orders/:id/edit", requireAdminAuth, async (req, res) => {
     if (nextAddressNeighborhood !== undefined) updates.addressNeighborhood = nextAddressNeighborhood;
     if (nextAddressCity !== undefined) updates.addressCity = nextAddressCity;
     if (nextAddressState !== undefined) updates.addressState = nextAddressState;
-    if (nextClientPhone !== undefined) updates.clientPhone = nextClientPhone;
-    if (nextClientEmail !== undefined) updates.clientEmail = nextClientEmail;
-    if (nextClientDocument !== undefined) updates.clientDocument = nextClientDocument;
+    if (typeof nextClientPhone === "string") updates.clientPhone = nextClientPhone;
+    if (typeof nextClientEmail === "string") updates.clientEmail = nextClientEmail;
+    if (typeof nextClientDocument === "string") updates.clientDocument = nextClientDocument;
     if (recordedPaidAmount != null && recordedPaidAmount > 0 && paidAmount == null) {
       updates.paidAmount = String(recordedPaidAmount);
     }
@@ -3190,12 +3188,17 @@ async function enrichSelectedVariantImages<T extends { products?: Array<{ id?: s
   return orders.map((order) => ({
     ...order,
     products: (order.products || []).map((product) => {
-      const selected = Array.isArray(product.selectedVariants)
-        ? product.selectedVariants as Array<{ groupName?: string; option?: string; image?: unknown }>
-        : [];
-      if (selected.length === 0) return product;
+      const selected = Array.isArray(product.selectedVariants) ? product.selectedVariants : [];
+      const selectedRefs = selected.flatMap((item) => {
+        const value = item as { groupName?: unknown; option?: unknown; image?: unknown };
+        const groupName = String(value.groupName || "").trim();
+        const option = String(value.option || "").trim();
+        if (!groupName || !option) return [];
+        return [{ groupName, option, image: value.image }];
+      });
+      if (selectedRefs.length === 0) return product;
       const groups = groupsById.get(String(product.id || "").trim()) ?? [];
-      return { ...product, selectedVariants: snapshotSelectedVariants(groups, selected) };
+      return { ...product, selectedVariants: snapshotSelectedVariants(groups, selectedRefs) };
     }),
   })) as T[];
 }

@@ -1,3 +1,4 @@
+import type { Request } from "express";
 import { db, orderActivityTable, ordersTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import {
@@ -10,7 +11,7 @@ import {
 export type { OrderActivityEvent, OrderActivityMeta, OrderActivityProductChange } from "./order-activity-format";
 export type OrderActivityActorType = "admin" | "system" | "customer" | "webhook";
 
-function adminNameFromReq(req: { adminSession?: { username?: unknown } }): string {
+function adminNameFromReq(req: Request): string {
   return String(req.adminSession?.username || "").trim() || "admin";
 }
 
@@ -49,7 +50,7 @@ export async function recordOrderActivity(params: {
 }
 
 export function recordAdminActivity(
-  req: { adminSession?: { username?: unknown } },
+  req: Request,
   orderId: string,
   type: string,
   label: string,

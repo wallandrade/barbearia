@@ -30,13 +30,13 @@ function positionRank(sortOrder: unknown): number {
   return n > 0 ? n : Number.MAX_SAFE_INTEGER;
 }
 
-export function bestManualDisplayRank<T extends { sortOrder?: number | null; isSoldOut?: boolean | null }>(
-  products: T[],
-): number {
+export function bestManualDisplayRank(products: readonly object[]): number {
   let best = Number.MAX_SAFE_INTEGER;
   for (const product of products) {
-    if (product.isSoldOut === true) continue;
-    const rank = positionRank(product.sortOrder);
+    const soldOut = "isSoldOut" in product && product.isSoldOut === true;
+    if (soldOut) continue;
+    const sortOrder = "sortOrder" in product ? product.sortOrder : 0;
+    const rank = positionRank(sortOrder);
     if (rank < best) best = rank;
   }
   return best;

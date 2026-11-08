@@ -133,14 +133,16 @@ export async function claimPendingFlashIfAny(productId: string, quantity: number
   return { reservation: claimed.reservation };
 }
 
-export function flashProductStub(offer: FlashOffer): Product {
+export function flashProductStub(offer: FlashOffer): Product & { isActive: boolean; isSoldOut: boolean } {
   return {
     id: offer.productId,
     name: offer.name,
+    description: "",
     price: offer.chargedPrice,
-    image: offer.image,
+    image: offer.image || "",
+    category: "",
     promoPrice: null,
     isActive: true,
     isSoldOut: false,
-  } as Product;
+  };
 }

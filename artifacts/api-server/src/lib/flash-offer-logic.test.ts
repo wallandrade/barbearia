@@ -91,7 +91,9 @@ test("repetir a oferta usa createdAt quando as horas são maiores que zero", () 
     now: new Date(createdAt.getTime() + 24 * 60 * 60 * 1000),
     today: "2026-10-19",
   };
-  assert.equal(parseRepeatAfterHours(undefined).ok && parseRepeatAfterHours(undefined).value === 0, true);
+  const repeatUnset = parseRepeatAfterHours(undefined);
+  assert.equal(repeatUnset.ok, true);
+  if (repeatUnset.ok) assert.equal(repeatUnset.value, 0);
   assert.equal(parseRepeatAfterHours(24).ok, true);
   assert.equal(parseRepeatAfterHours(2160).ok, true);
   assert.equal(parseRepeatAfterHours(2161).ok, false);

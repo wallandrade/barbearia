@@ -90,9 +90,18 @@ router.post("/admin/order-bumps", requirePrimaryAdmin, async (req, res) => {
       sortOrder?: number;
     };
 
-    if (!productId?.trim()) return res.status(400).json({ error: "productId obrigatório." });
-    if (!title?.trim())     return res.status(400).json({ error: "Título obrigatório." });
-    if (!discountType)      return res.status(400).json({ error: "Tipo de desconto obrigatório." });
+    if (!productId?.trim()) {
+      res.status(400).json({ error: "productId obrigatório." });
+      return;
+    }
+    if (!title?.trim()) {
+      res.status(400).json({ error: "Título obrigatório." });
+      return;
+    }
+    if (!discountType) {
+      res.status(400).json({ error: "Tipo de desconto obrigatório." });
+      return;
+    }
 
     const id = crypto.randomBytes(10).toString("hex");
     await db.insert(orderBumpsTable).values({
@@ -115,6 +124,10 @@ router.post("/admin/order-bumps", requirePrimaryAdmin, async (req, res) => {
       updatedAt:    new Date(),
     });
     const [row] = await db.select().from(orderBumpsTable).where(eq(orderBumpsTable.id, id));
+    if (!row) {
+      res.status(500).json({ error: "INTERNAL_ERROR" });
+      return;
+    }
 
     res.status(201).json({ bump: mapBump(row) });
   } catch (err) {
@@ -170,7 +183,10 @@ router.patch("/admin/order-bumps/:id", requirePrimaryAdmin, async (req, res) => 
       .where(eq(orderBumpsTable.id, id));
     const [row] = await db.select().from(orderBumpsTable).where(eq(orderBumpsTable.id, id));
 
-    if (!row) return res.status(404).json({ error: "Order bump não encontrado." });
+    if (!row) {
+      res.status(404).json({ error: "Order bump não encontrado." });
+      return;
+    }
     res.json({ bump: mapBump(row) });
   } catch (err) {
     console.error("Update order-bump error:", err);

@@ -441,7 +441,10 @@ export function peptideAdminLines(
     const savedIds = selection.mode === "lines" ? selection.bySlug[brief.slug] || [] : [];
     const extras = savedIds
       .map((id) => byId.get(id))
-      .filter((product): product is CampaignProduct => Boolean(product) && !matched.some((item) => item.id === product.id));
+      .filter((product): product is CampaignProduct => {
+        if (!product) return false;
+        return !matched.some((item) => item.id === product.id);
+      });
     const choices = [...matched, ...extras];
     if (choices.length === 0) return [];
     const selectedIds = selection.mode === "lines"
