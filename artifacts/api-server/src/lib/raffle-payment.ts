@@ -1,7 +1,7 @@
 import { db, raffleReservationsTable } from "@workspace/db";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { findActiveRaffleNumberConflict, parseRaffleNumbers } from "./raffle-payment-logic";
-import { paymentEffectsAllowed, affectedRowsOf } from "./pix-settlement";
+import { paymentEffectsAllowed, affectedRowsOf, legacyBodyMayConfirm } from "./pix-settlement";
 
 export type RafflePaymentResult = {
   matched: boolean;
@@ -15,6 +15,9 @@ export async function confirmRaffleReservationPayment(input: {
   transactionId?: string;
   reservationId?: string;
   confirmed: boolean;
+  /** Rota antiga, sem segredo e sem consulta ao gateway. */
+  legacyBody?: boolean;
+  incomingTransactionBound?: boolean;
 }): Promise<RafflePaymentResult> {
   const transactionId = String(input.transactionId || "").trim();
   const reservationId = String(input.reservationId || "").trim();
@@ -41,6 +44,20 @@ export async function confirmRaffleReservationPayment(input: {
 
   if (!reservation) {
     return { matched: false, confirmed: false };
+  }
+
+  if (input.legacyBody && !legacyBodyMayConfirm({
+    entitySecretBound: reservation.pixSecretBound,
+    incomingTransactionBound: input.incomingTransactionBound === true,
+  })) {
+    console.warn("[RaffleWebhook] cobrança nova não entra na rota antiga", { reservationId: reservation.id });
+    return {
+      matched: true,
+      confirmed: false,
+      ignored: true,
+      reason: "SECRET_BOUND",
+      reservationId: reservation.id,
+    };
   }
 
   if (!input.confirmed || reservation.status === "paid") {

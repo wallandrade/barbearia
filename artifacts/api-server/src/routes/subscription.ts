@@ -9,6 +9,7 @@ import {
   PIX_DURATION_MS,
 } from "../gateway";
 import { SUBSCRIPTION_MONTHLY_AMOUNT } from "../lib/customer-subscription-policy";
+import { pixSecretBoundColumn, rememberIssuedPixTransaction } from "../lib/pix-issue";
 import {
   insertPendingSubscription,
   readSubscriptionView,
@@ -97,12 +98,14 @@ router.post("/me/subscription/pix", requireCustomerAuth, async (req, res) => {
     });
 
     const expiresAt = new Date(Date.now() + PIX_DURATION_MS);
+    await rememberIssuedPixTransaction(gatewayData.transactionId);
     await insertPendingSubscription({
       userId: session.userId,
       transactionId: gatewayData.transactionId,
       pixCode: gatewayData.pix?.code || "",
       pixBase64: gatewayData.pix?.base64 || gatewayData.pix?.image || "",
       expiresAt,
+      pixSecretBound: pixSecretBoundColumn(),
     });
 
     const view = await readSubscriptionView(session.userId);

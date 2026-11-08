@@ -1,4 +1,4 @@
-import { mysqlTable, varchar, text, mediumtext, decimal, timestamp } from "drizzle-orm/mysql-core";
+import { mysqlTable, varchar, text, mediumtext, decimal, int, timestamp } from "drizzle-orm/mysql-core";
 
 export const customerSubscriptionsTable = mysqlTable("customer_subscriptions", {
   id: varchar("id", { length: 255 }).primaryKey(),
@@ -6,6 +6,7 @@ export const customerSubscriptionsTable = mysqlTable("customer_subscriptions", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   status: varchar("status", { length: 32 }).notNull().default("pending"),
   transactionId: varchar("transaction_id", { length: 255 }),
+  pixSecretBound: int("pix_secret_bound"),
   pixCode: text("pix_code"),
   pixBase64: mediumtext("pix_base64"),
   expiresAt: timestamp("expires_at"),

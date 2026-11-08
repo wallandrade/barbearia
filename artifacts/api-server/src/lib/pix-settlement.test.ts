@@ -5,6 +5,7 @@ import {
   claimOpenPayment,
   isPaymentCancelled,
   isPaymentConfirmed,
+  legacyBodyMayConfirm,
   paymentEffectsAllowed,
   statusFromGatewayEvent,
   transactionIdsMatch,
@@ -66,6 +67,16 @@ test("valor em reais bate com o gravado; moeda estranha e centavo da DentPeg", (
     assessPixMoney({ event: "deposit.confirmed", amount: 49.9 }, expected),
     { outcome: "mismatch", reason: "amount" },
   );
+});
+
+test("cobrança nova não confirma na rota só de corpo; a antiga confirma", () => {
+  assert.equal(legacyBodyMayConfirm({ entitySecretBound: null, incomingTransactionBound: false }), true);
+  assert.equal(legacyBodyMayConfirm({ entitySecretBound: undefined, incomingTransactionBound: false }), true);
+  assert.equal(legacyBodyMayConfirm({ entitySecretBound: 1, incomingTransactionBound: false }), false);
+  assert.equal(legacyBodyMayConfirm({ entitySecretBound: null, incomingTransactionBound: true }), false);
+  assert.equal(legacyBodyMayConfirm({ entitySecretBound: 1, incomingTransactionBound: true }), false);
+  assert.equal(isPaymentConfirmed("COMPLETED"), true);
+  assert.equal(isPaymentConfirmed("UNPAID"), false);
 });
 
 test("transação diferente não vincula; duplicata não reaplica efeito", () => {

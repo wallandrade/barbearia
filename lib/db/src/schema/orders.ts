@@ -52,6 +52,8 @@ export const ordersTable = mysqlTable("orders", {
   proofUrl: mediumtext("proof_url"),
   proofUrls: mediumtext("proof_urls"),
   transactionId: varchar("transaction_id", { length: 255 }),
+  /** 1 = esta linha nasceu com whsec na URL. Null = cobrança antiga. */
+  pixSecretBound: int("pix_secret_bound"),
   sellerCode: varchar("seller_code", { length: 255 }),
   whatsappGroup: varchar("whatsapp_group", { length: 64 }),
   sellerCommissionRateSnapshot: decimal("seller_commission_rate_snapshot", { precision: 5, scale: 2 }),
