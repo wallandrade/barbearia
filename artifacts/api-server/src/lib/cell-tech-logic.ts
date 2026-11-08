@@ -170,8 +170,26 @@ export function normalizeCellTechWebhookUrl(raw: string | null | undefined): str
 
 const REPORT_AT = 8 * 60 + 30;
 
+/** 19:00 em America/Sao_Paulo. O minuto 19:00 já está fora: o envio automático não começa. */
+export const CELL_TECH_GROUP_SEND_UNTIL_MINUTES = 19 * 60;
+
 export function reportWindowOpen(clock: CellTechClock): boolean {
   return clock.minutes >= REPORT_AT && clock.minutes < REPORT_AT + 15;
+}
+
+/** Envio automático ao grupo. Aberto de 00:00 inclusive até 19:00 exclusive, no relógio de Brasília. */
+export function cellTechAutomaticGroupSendOpen(clock: CellTechClock): boolean {
+  return clock.minutes < CELL_TECH_GROUP_SEND_UNTIL_MINUTES;
+}
+
+/** Quantas mensagens automáticas podem começar. Para na primeira que cairia às 19:00 ou depois, inclusive retry. */
+export function cellTechAutomaticGroupSendCount(clocks: readonly CellTechClock[]): number {
+  let count = 0;
+  for (const clock of clocks) {
+    if (!cellTechAutomaticGroupSendOpen(clock)) break;
+    count += 1;
+  }
+  return count;
 }
 
 export function dailyReportDue(clock: CellTechClock, alreadySent: boolean): boolean {
