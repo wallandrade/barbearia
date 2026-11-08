@@ -6,13 +6,11 @@ import { requireAdminAuth } from "./admin-auth";
 import {
   createPixChargeWithProvider,
   buildCallbackUrl,
-  fetchDentpegDepositStatus,
-  fetchTransactionStatus,
   genIdentifier,
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
-import { isPaymentConfirmed as pixStatusIsPaid, statusFromGatewayEvent, type PixMoneyInput } from "../lib/pix-settlement";
+import { statusFromGatewayEvent } from "../lib/pix-settlement";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveRaffleLookupQuery } from "../lib/raffle-lookup";
 import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
@@ -1109,12 +1107,6 @@ router.post("/webhook/raffle-pix", async (req, res) => {
   }
 
   const reservationId = String(txMeta.reservationId || rawMeta.reservationId || "").trim();
-  const webhookSecret = String(process.env.WEBHOOK_SHARED_SECRET || "").trim();
-  const providedSecret = String(req.get("x-webhook-secret") || req.get("x-signature") || req.query.whsec || "").trim();
-  let trusted = false;
-  if (webhookSecret && providedSecret && webhookSecret.length === providedSecret.length) {
-    trusted = crypto.timingSafeEqual(Buffer.from(webhookSecret), Buffer.from(providedSecret));
-  }
 
   if (!transactionId && !reservationId) {
     console.log("[RaffleWebhook] sem transação nem reserva");
@@ -1122,37 +1114,13 @@ router.post("/webhook/raffle-pix", async (req, res) => {
     return;
   }
 
-  if (!trusted) {
-    if (!transactionId) {
-      res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "missing_transaction_id" });
-      return;
-    }
-    const verified = transactionId.startsWith("dep_")
-      ? await fetchDentpegDepositStatus(transactionId)
-      : await fetchTransactionStatus(transactionId);
-    if (!verified?.status || !pixStatusIsPaid(verified.status === "depix_sent" ? "DEPIX_SENT" : verified.status)) {
-      console.warn("[RaffleWebhook] aviso sem segredo não confirmado", { transactionId });
-      res.status(403).json({ ok: false, error: "UNTRUSTED_WEBHOOK", reason: "gateway_verification_failed" });
-      return;
-    }
-    status = verified.status === "depix_sent" ? "DEPIX_SENT" : verified.status;
-  }
-
-  const money: PixMoneyInput = {
-    amount: tx.amount ?? raw.amount,
-    chargeAmount: tx.chargeAmount,
-    originalAmount: tx.originalAmount,
-    amountInCents: dentpegData.amountInCents,
-    currency: tx.currency ?? raw.currency,
-    originalCurrency: tx.originalCurrency,
-    event: raw.event,
-  };
+  // Cobrança emitida antes de 2f532bd registrou esta URL sem whsec.
+  // Não consultar o gateway aqui: essa consulta é bloqueada e o PIX antigo deixaria de confirmar.
   const confirmed = status ? isPaymentConfirmed(status) : false;
   const result = await confirmRaffleReservationPayment({
     transactionId,
     reservationId,
     confirmed,
-    money,
   });
 
   if (!result.matched) {

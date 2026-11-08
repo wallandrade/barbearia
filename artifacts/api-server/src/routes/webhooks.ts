@@ -19,12 +19,9 @@ import { broadcastNotification } from "./notifications";
 import { fetchTransactionStatus, isPaymentConfirmed } from "../gateway";
 import {
   affectedRowsOf,
-  assessPixMoney,
   isPaymentCancelled,
   paymentEffectsAllowed,
   statusFromGatewayEvent,
-  transactionIdsMatch,
-  type PixMoneyInput,
 } from "../lib/pix-settlement";
 import { incrementCouponUse } from "./coupons";
 import { ensureOrderCommission } from "../lib/affiliates";
@@ -35,7 +32,6 @@ import { queueOrderPaidWhatsapp } from "../lib/order-paid-whatsapp";
 import { recordOrderActivity } from "../lib/order-activity";
 import { markSubscriptionFromWebhook } from "../lib/customer-subscription";
 import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
-import { SUBSCRIPTION_MONTHLY_AMOUNT } from "../lib/customer-subscription-policy";
 import { isOutboundRealEvent } from "../lib/outbound-webhook-url";
 import { requirePrimaryAdmin } from "./admin-auth";
 
@@ -64,7 +60,6 @@ interface GatewayCallback {
   amount?: number;
   paidAt?: string;
   metadata?: Record<string, string>;
-  money?: PixMoneyInput;
 }
 
 function safeTokenEquals(expected: string, provided: string): boolean {
@@ -105,7 +100,6 @@ async function handleCallback(body: GatewayCallback) {
 
   const confirmed = isPaymentConfirmed(status);
   const cancelled = isPaymentCancelled(status);
-  const money = body.money;
 
   // -----------------------------------------------------------------------
   // 1. Try to update orders table
@@ -121,12 +115,7 @@ async function handleCallback(body: GatewayCallback) {
 
     if (existing.length > 0) {
       const row = existing[0]!;
-      const expected = Number(row.total);
-      const moneyDecision = confirmed && money ? assessPixMoney(money, expected) : { outcome: "absent" as const };
-      const blockedByMoney = moneyDecision.outcome === "mismatch";
-      if (blockedByMoney) {
-        console.warn("[WEBHOOK] Order valor recusado", { id: row.id, transactionId, reason: moneyDecision.reason });
-      } else if (row.status !== "paid" && row.status !== "completed") {
+      if (row.status !== "paid" && row.status !== "completed") {
         const newStatus = confirmed ? "paid" : cancelled ? "cancelled" : row.status;
         if (newStatus !== row.status) {
           const setPaidAmount = confirmed && !row.paidAmount && row.total ? { paidAmount: row.total } : {};
@@ -167,7 +156,7 @@ async function handleCallback(body: GatewayCallback) {
           }
         }
       }
-      orderUpdated = !blockedByMoney;
+      orderUpdated = true;
     }
   }
 
@@ -197,12 +186,7 @@ async function handleCallback(body: GatewayCallback) {
 
     if (rows.length > 0) {
       const row = rows[0]!;
-      const linked = transactionIdsMatch(row.transactionId, transactionId);
-      const moneyDecision = confirmed && money ? assessPixMoney(money, Number(row.amount)) : { outcome: "absent" as const };
-      const blocked = !linked || moneyDecision.outcome === "mismatch";
-      if (!linked) console.warn("[WEBHOOK] Charge transação diferente", { id: row.id });
-      if (moneyDecision.outcome === "mismatch") console.warn("[WEBHOOK] Charge valor recusado", { id: row.id, reason: moneyDecision.reason });
-      if (!blocked && row.status !== "paid") {
+      if (row.status !== "paid") {
         const newStatus = confirmed ? "paid" : cancelled ? "cancelled" : row.status;
         if (newStatus !== row.status) {
           const updated = await db
@@ -273,27 +257,21 @@ async function handleCallback(body: GatewayCallback) {
           }
         }
       }
-      if (!blocked) chargeUpdated = true;
+      chargeUpdated = true;
     }
   }
 
-  const subscriptionMoney = confirmed && money
-    ? assessPixMoney(money, SUBSCRIPTION_MONTHLY_AMOUNT)
-    : { outcome: "absent" as const };
-  if (subscriptionMoney.outcome === "mismatch") {
-    console.warn("[WEBHOOK] Assinatura valor recusado", { transactionId, reason: subscriptionMoney.reason });
-  }
   const subscriptionUpdated = await markSubscriptionFromWebhook({
     transactionId,
-    confirmed: confirmed && subscriptionMoney.outcome !== "mismatch",
+    confirmed,
     cancelled,
   });
-  if (subscriptionUpdated && confirmed && subscriptionMoney.outcome !== "mismatch") {
+  if (subscriptionUpdated && confirmed) {
     console.log(`[WEBHOOK] Subscription ${transactionId} marked paid`);
   }
 
   const raffleResult = transactionId
-    ? await confirmRaffleReservationPayment({ transactionId, confirmed, money })
+    ? await confirmRaffleReservationPayment({ transactionId, confirmed })
     : { matched: false, confirmed: false };
   const raffleUpdated = Boolean(confirmed && raffleResult.matched);
   if (raffleUpdated) {
@@ -319,20 +297,10 @@ router.post("/webhook/pix", async (req, res) => {
 
     const tx = (raw.transaction as Record<string, unknown>) ?? raw;
     const dentpegData = (raw.data as Record<string, unknown>) ?? {};
-    const money: PixMoneyInput = {
-      amount: tx.amount ?? raw.amount,
-      chargeAmount: tx.chargeAmount ?? raw.chargeAmount,
-      originalAmount: tx.originalAmount ?? raw.originalAmount,
-      amountInCents: dentpegData.amountInCents ?? tx.amountInCents,
-      currency: tx.currency ?? raw.currency,
-      originalCurrency: tx.originalCurrency ?? raw.originalCurrency,
-      event: raw.event,
-    };
     const normalized: GatewayCallback = {
       transactionId: String(tx.id || dentpegData.depositId || raw.transactionId || raw.transaction_id || "").trim() || undefined,
       identifier:    String(tx.identifier || raw.identifier || "").trim() || undefined,
       status:        String(tx.status || dentpegData.status || raw.status || "").trim() || undefined,
-      money,
     };
 
     if (!normalized.status && raw.event) {
@@ -472,20 +440,10 @@ router.post("/webhook", async (req, res) => {
     if (!rawStatus && fromEvent) rawStatus = fromEvent;
     const isConfirmed = isPaymentConfirmed(rawStatus);
     const isCanceled = isPaymentCancelled(rawStatus);
-    const money: PixMoneyInput = {
-      amount: payload.amount ?? body.amount,
-      chargeAmount: payload.chargeAmount,
-      originalAmount: payload.originalAmount,
-      amountInCents: (body.data as Record<string, unknown> | undefined)?.amountInCents,
-      currency: payload.currency ?? body.currency,
-      originalCurrency: payload.originalCurrency,
-      event: eventName,
-    };
 
     const normalized: GatewayCallback = {
       transactionId: rawTxId || undefined,
       status: isConfirmed ? rawStatus : isCanceled ? "CANCELED" : rawStatus,
-      money,
     };
 
     if (rawOrderId && trustedWebhook) {
@@ -504,9 +462,7 @@ router.post("/webhook", async (req, res) => {
         .limit(1);
 
       const row = rows[0];
-      const moneyDecision = row && isConfirmed ? assessPixMoney(money, Number(row.total)) : { outcome: "absent" as const };
-      const linked = row ? transactionIdsMatch(row.transactionId, rawTxId) : false;
-      if (row && row.status !== "paid" && row.status !== "completed" && linked && moneyDecision.outcome !== "mismatch") {
+      if (row && row.status !== "paid" && row.status !== "completed") {
         const newStatus = isConfirmed ? "paid" : isCanceled ? "cancelled" : row.status;
         if (newStatus !== row.status) {
           const setFields: Record<string, unknown> = { status: newStatus, updatedAt: new Date() };
@@ -540,11 +496,6 @@ router.post("/webhook", async (req, res) => {
         res.json({ ok: true, matched: true, updated: "order", id: rawOrderId, status: newStatus });
         return;
       }
-      if (row && (moneyDecision.outcome === "mismatch" || !linked)) {
-        console.warn("[WEBHOOK/universal] Pedido recusado", { orderId: rawOrderId, linked, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction" });
-        res.json({ ok: false, matched: false, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction_mismatch" });
-        return;
-      }
     }
 
     const result = await handleCallback(normalized);
@@ -571,14 +522,6 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
     }
     const raw = req.body as Record<string, unknown>;
     const incomingTx = String(raw.transactionId || raw.transaction_id || "").trim();
-    const money: PixMoneyInput = {
-      amount: raw.amount,
-      chargeAmount: raw.chargeAmount,
-      originalAmount: raw.originalAmount,
-      currency: raw.currency,
-      originalCurrency: raw.originalCurrency,
-      event: raw.event,
-    };
 
     if (orderId && isPaymentConfirmed(String(raw.status || ""))) {
       const rows = await db
@@ -596,12 +539,6 @@ router.post("/webhook/pix/order/:token/:orderId", async (req, res) => {
         .limit(1);
       const row = rows[0];
       if (row && row.status !== "paid" && row.status !== "completed") {
-        const moneyDecision = assessPixMoney(money, Number(row.total));
-        if (!transactionIdsMatch(row.transactionId, incomingTx) || moneyDecision.outcome === "mismatch") {
-          console.warn("[WEBHOOK/order] recusado", { orderId, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction" });
-          res.json({ ok: false, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction_mismatch" });
-          return;
-        }
         const paidNow = !row.paidAmount && row.total ? { paidAmount: row.total } : {};
         const updated = await db
           .update(ordersTable)
@@ -650,14 +587,6 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
     }
     const raw = req.body as Record<string, unknown>;
     const incomingTx = String(raw.transactionId || raw.transaction_id || "").trim();
-    const money: PixMoneyInput = {
-      amount: raw.amount,
-      chargeAmount: raw.chargeAmount,
-      originalAmount: raw.originalAmount,
-      currency: raw.currency,
-      originalCurrency: raw.originalCurrency,
-      event: raw.event,
-    };
 
     if (chargeId && isPaymentConfirmed(String(raw.status || ""))) {
       const rows = await db
@@ -672,12 +601,6 @@ router.post("/webhook/pix/charge/:token/:chargeId", async (req, res) => {
         .where(eq(customChargesTable.id, chargeId))
         .limit(1);
       const row = rows[0];
-      const moneyDecision = row ? assessPixMoney(money, Number(row.amount)) : { outcome: "absent" as const };
-      if (row && (!transactionIdsMatch(row.transactionId, incomingTx) || moneyDecision.outcome === "mismatch")) {
-        console.warn("[WEBHOOK/charge] recusado", { chargeId, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction" });
-        res.json({ ok: false, reason: moneyDecision.outcome === "mismatch" ? moneyDecision.reason : "transaction_mismatch" });
-        return;
-      }
 
       if (row && row.status !== "paid") {
         const updated = await db

@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import { db, ordersTable } from "@workspace/db";
 import { and, eq, notInArray } from "drizzle-orm";
-import { affectedRowsOf, assessPixMoney, paymentEffectsAllowed, type PixMoneyInput } from "../lib/pix-settlement";
+import { affectedRowsOf, paymentEffectsAllowed } from "../lib/pix-settlement";
 import { broadcastNotification } from "./notifications";
 import {
   createPixChargeWithProvider,
@@ -261,21 +261,6 @@ router.post("/pix/callback/:token", async (req, res) => {
         .from(ordersTable)
         .where(eq(ordersTable.transactionId, body.transactionId))
         .limit(1);
-
-      const money: PixMoneyInput = {
-        amount: body.amount,
-        chargeAmount: body.chargeAmount,
-        originalAmount: body.originalAmount,
-        currency: body.currency,
-        originalCurrency: body.originalCurrency,
-      };
-      if (existing[0]) {
-        const moneyDecision = assessPixMoney(money, Number(existing[0].total));
-        if (moneyDecision.outcome === "mismatch") {
-          res.json({ ok: false, reason: moneyDecision.reason });
-          return;
-        }
-      }
 
       const updated = await db
         .update(ordersTable)

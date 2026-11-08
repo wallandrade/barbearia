@@ -1,14 +1,13 @@
 /**
  * Liquidação PIX do Yuri.
  *
- * Status: igualdade exata com a lista que o código já tratava como pago ou
- * cancelado. UNPAID, NOT_OK e PENDING não entram.
+ * O código antigo aceitava qualquer texto que contivesse um status pago.
+ * UNPAID e NOT_OK pagavam por isso. Esses negativos saem. O resto do formato
+ * antigo continua pago, inclusive TRANSACTION_PAID e DEPOSIT.CONFIRMED.
  *
- * Valor: a cobrança da loja é em reais. A DentPeg documenta amountInCents.
- * Sem campo de valor, o aviso antigo continua (o callback pode vir só com
- * transação e status). Com valor, precisa bater com o que foi gravado.
- * payedAt não decide. Não há prova webhookToken: a doc pública da APPCNPay
- * não carregou, e o tipo da criação neste código não declara esse campo.
+ * Valor e prova por token não travam a liquidação. Não há payload real da
+ * APPCNPay neste repositório, e a cobrança antiga da rifa foi emitida em
+ * /webhook/raffle-pix sem whsec. payedAt não decide.
  */
 
 const PAID_STATUSES = new Set([
@@ -58,8 +57,19 @@ export function normalizePixToken(raw: unknown): string {
   return String(raw ?? "").trim().toUpperCase();
 }
 
+function isRejectedPaymentToken(token: string): boolean {
+  if (token === "PENDING" || token.startsWith("PENDING_") || token.startsWith("PENDING.")) return true;
+  if (token.includes("UNPAID")) return true;
+  if (token.startsWith("NOT")) return true;
+  if (token.startsWith("UNSUCCESS") || token.startsWith("UNCONFIRM") || token.startsWith("UNAPPROV")) return true;
+  return false;
+}
+
 export function isPaymentConfirmed(status: unknown): boolean {
-  return PAID_STATUSES.has(normalizePixToken(status));
+  const token = normalizePixToken(status);
+  if (!token || isRejectedPaymentToken(token)) return false;
+  if (PAID_STATUSES.has(token)) return true;
+  return [...PAID_STATUSES].some((paid) => token.includes(paid));
 }
 
 export function isPaymentCancelled(status: unknown): boolean {
@@ -74,8 +84,10 @@ export function statusFromGatewayEvent(event: unknown): string | null {
   if (token === "DEPOSIT.EXPIRED") return "EXPIRED";
   if (token === "DEPOSIT.ERROR") return "ERROR";
   if (token === "DEPOSIT.REFUNDED") return "REFUNDED";
-  if (PAID_EVENTS.has(token) || isPaymentConfirmed(token)) return isPaymentConfirmed(token) ? token : "COMPLETED";
-  if (CANCELLED_EVENTS.has(token) || isPaymentCancelled(token)) return isPaymentCancelled(token) ? token : "CANCELED";
+  if (PAID_EVENTS.has(token)) return "COMPLETED";
+  if (isPaymentConfirmed(token)) return token;
+  if (CANCELLED_EVENTS.has(token)) return "CANCELED";
+  if (isPaymentCancelled(token)) return token;
   return null;
 }
 

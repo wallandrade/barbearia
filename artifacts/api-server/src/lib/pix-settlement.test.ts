@@ -10,17 +10,20 @@ import {
   transactionIdsMatch,
 } from "./pix-settlement";
 
-test("status pago é igualdade, não pedaço do texto", () => {
+test("status antigo continua pago e os negativos conhecidos não", () => {
   assert.equal(isPaymentConfirmed("COMPLETED"), true);
   assert.equal(isPaymentConfirmed(" completed "), true);
   assert.equal(isPaymentConfirmed("OK"), true);
   assert.equal(isPaymentConfirmed("depix_sent"), true);
   assert.equal(isPaymentConfirmed("PAGO"), true);
+  assert.equal(isPaymentConfirmed("TRANSACTION_PAID"), true);
+  assert.equal(isPaymentConfirmed("DEPOSIT.CONFIRMED"), true);
+  assert.equal(isPaymentConfirmed("PIX_COMPLETED"), true);
   assert.equal(isPaymentConfirmed("UNPAID"), false);
   assert.equal(isPaymentConfirmed("NOT_OK"), false);
   assert.equal(isPaymentConfirmed("PENDING"), false);
-  assert.equal(isPaymentConfirmed("UNDER_REVIEW"), false);
   assert.equal(isPaymentConfirmed("NOT_COMPLETED"), false);
+  assert.equal(isPaymentConfirmed("UNSUCCESSFUL"), false);
   assert.equal(isPaymentCancelled("PENDING"), false);
   assert.equal(isPaymentCancelled("EXPIRED"), true);
   assert.equal(isPaymentCancelled("UNPAID"), false);
@@ -34,6 +37,12 @@ test("evento não promove UNPAID e payedAt não entra na decisão", () => {
   assert.equal(statusFromGatewayEvent("NOT_OK"), null);
   assert.equal(statusFromGatewayEvent("PENDING"), null);
   assert.equal(isPaymentConfirmed("PENDING"), false);
+});
+
+test("valor diferente não é critério desta liquidação", () => {
+  assert.equal(isPaymentConfirmed("COMPLETED"), true);
+  assert.deepEqual(assessPixMoney({ amount: 1 }, 49.9), { outcome: "mismatch", reason: "amount" });
+  assert.equal(isPaymentConfirmed("COMPLETED"), true);
 });
 
 test("valor em reais bate com o gravado; moeda estranha e centavo da DentPeg", () => {

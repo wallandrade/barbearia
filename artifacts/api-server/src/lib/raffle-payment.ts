@@ -1,7 +1,7 @@
 import { db, raffleReservationsTable } from "@workspace/db";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { findActiveRaffleNumberConflict, parseRaffleNumbers } from "./raffle-payment-logic";
-import { assessPixMoney, paymentEffectsAllowed, affectedRowsOf, type PixMoneyInput } from "./pix-settlement";
+import { paymentEffectsAllowed, affectedRowsOf } from "./pix-settlement";
 
 export type RafflePaymentResult = {
   matched: boolean;
@@ -15,7 +15,6 @@ export async function confirmRaffleReservationPayment(input: {
   transactionId?: string;
   reservationId?: string;
   confirmed: boolean;
-  money?: PixMoneyInput;
 }): Promise<RafflePaymentResult> {
   const transactionId = String(input.transactionId || "").trim();
   const reservationId = String(input.reservationId || "").trim();
@@ -42,20 +41,6 @@ export async function confirmRaffleReservationPayment(input: {
 
   if (!reservation) {
     return { matched: false, confirmed: false };
-  }
-
-  if (input.confirmed && input.money) {
-    const moneyDecision = assessPixMoney(input.money, Number(reservation.totalAmount));
-    if (moneyDecision.outcome === "mismatch") {
-      console.warn("[RaffleWebhook] valor recusado", { reservationId: reservation.id, reason: moneyDecision.reason });
-      return {
-        matched: true,
-        confirmed: false,
-        ignored: true,
-        reason: moneyDecision.reason === "currency" ? "CURRENCY_MISMATCH" : "AMOUNT_MISMATCH",
-        reservationId: reservation.id,
-      };
-    }
   }
 
   if (!input.confirmed || reservation.status === "paid") {
