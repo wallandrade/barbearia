@@ -47,6 +47,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-07 | Admin exclui pagamento da rifa | **Excluir pagamento** na linha paga marca a reserva `expired`. Os números voltam para a grade | O PIX na CNPay não é estornado. Reserva ainda aberta continua com Cancelar |
 | 2026-11-07 | PIX da rifa aparece pago na tela do cliente | A cobrança usa o webhook da loja. A tela lê o status da reserva no banco | Consulta por telefone, ranking e o PIX da loja iguais |
 | 2026-11-07 | Sábado compara a semana com a anterior | Depois do caixa: venda, custo, lucro e se fechou positivo ou negativo | Domingo e a cópia 48h iguais |
 | 2026-11-07 | Último dia do mês manda o fechamento financeiro | Venda bruta, custo e lucro líquido do mês, depois do caixa daquele dia, uma vez | O relatório de OS do dia 1 e a cópia 48h iguais |
@@ -497,6 +498,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 ## Rifas
 
 - `raffles`, reservas, resultados, promoções — `routes/raffles.ts` (PIX de reserva, ranking, etc.).
+- **Excluir pagamento (admin):** na lista de reservas, a linha **Pago** tem **Excluir pagamento**. A reserva passa a `expired`. A grade só ocupa número `reserved` dentro do prazo ou `paid`, então esses números ficam livres. Um webhook atrasado do mesmo PIX não volta a pagar essa reserva. O valor sai do total pago. O PIX na CNPay não é estornado.
 - **PIX da rifa:** a cobrança nova usa o mesmo callback da loja (`/api/webhook/pix`). Esse webhook marca a reserva `paid` pelo `transactionId`. A tela `/rifas/pix/:id` lê `GET /api/raffles/reservations/:id/status` (só `status`, a cada 3 s) e mostra **Pagamento confirmado**. Não consulta a CNPay. Cobrança já gerada no endereço antigo `/webhook/raffle-pix` continua valendo. Reserva vencida ou número já ocupado não vira paga: fica `expired`.
 - **Consulte seus números** (`GET /api/raffles/reservations/lookup`): telefone com 8 a 10 dígitos busca só o celular. Com 11 dígitos (CPF ou celular, com ou sem máscara) busca os dois: o telefone no fim do número e o CPF só com dígitos, inclusive documento gravado com ponto ou traço. `phone=` explícito não vira CPF. `cpf=` explícito não vira telefone.
 - Admin, card da rifa: **Clonar** (`POST /api/admin/raffles`) cria outra do zero. Copia título, descrição, foto, quantidade de números, preço por número e tempo de reserva. A nova nasce **Ativa**. Reservas, ranking, promoções, resultado e total pago ficam na original.

@@ -3060,12 +3060,12 @@ export default function Admin() {
   }, [handleUnauthorized]);
 
   const cancelRaffleReservation = useCallback(async (raffleId: string, reservation: AdminRaffleReservation) => {
-    if (reservation.status === "paid") {
-      toast.error("Não é possível cancelar uma reserva já paga.");
-      return;
-    }
-
-    const confirmed = window.confirm(`Cancelar a reserva de ${reservation.clientName}?`);
+    const paid = reservation.status === "paid";
+    const confirmed = window.confirm(
+      paid
+        ? `Excluir o pagamento de ${reservation.clientName}? Os números ${reservation.numbers.join(", ")} voltam a ficar disponíveis.`
+        : `Cancelar a reserva de ${reservation.clientName}?`,
+    );
     if (!confirmed) return;
 
     setRaffleCancelingReservationId(reservation.id);
@@ -3088,7 +3088,7 @@ export default function Admin() {
           ? { ...rv, status: "expired", isExpired: true, expiresAt: new Date().toISOString() }
           : rv,
       ));
-      toast.success("Reserva cancelada com sucesso.");
+      toast.success(paid ? "Pagamento excluído. Os números voltaram a ficar disponíveis." : "Reserva cancelada com sucesso.");
     } catch {
       toast.error("Erro ao cancelar reserva.");
     } finally {
@@ -7707,7 +7707,19 @@ export default function Admin() {
                             <td className="py-2 text-muted-foreground text-xs">{new Date(rv.createdAt).toLocaleDateString("pt-BR")}</td>
                             <td className="py-2 text-right">
                               {rv.status === "paid" ? (
-                                <span className="text-xs text-muted-foreground">-</span>
+                                <div className="flex justify-end">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 px-2.5 text-xs border-red-200 text-red-700 hover:bg-red-50"
+                                    onClick={() => raffleViewId && cancelRaffleReservation(raffleViewId, rv)}
+                                    disabled={raffleCancelingReservationId === rv.id}
+                                  >
+                                    {raffleCancelingReservationId === rv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                                    <span className="ml-1">Excluir pagamento</span>
+                                  </Button>
+                                </div>
                               ) : (
                                 <div className="flex justify-end gap-2">
                                   <Button

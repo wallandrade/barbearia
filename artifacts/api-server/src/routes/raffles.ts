@@ -799,11 +799,6 @@ router.patch("/admin/raffles/:id/reservations/:reservationId/cancel", requireAdm
     return;
   }
 
-  if (reservation.status === "paid") {
-    res.status(400).json({ error: "INVALID_STATUS", message: "Não é possível cancelar uma reserva já paga." });
-    return;
-  }
-
   if (reservation.status === "expired") {
     res.json({ ok: true, status: "expired" });
     return;
