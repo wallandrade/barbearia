@@ -2,11 +2,13 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import crypto from "crypto";
 import { db, adminUsersTable, adminSessionsTable } from "@workspace/db";
 import { lt, eq } from "drizzle-orm";
+import { adminPasswordMatches, createAdminPasswordHash, generateAdminSalt } from "../lib/admin-password";
+import { adminQueryTokenAllowed, selectAdminSessionToken } from "../lib/admin-session-token";
 
 const router: IRouter = Router();
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const ADMIN_AUTH_VERBOSE_LOGS = String(process.env.ADMIN_AUTH_VERBOSE_LOGS || "false").toLowerCase() === "true";
-const ADMIN_ALLOW_QUERY_TOKEN = String(process.env.ADMIN_ALLOW_QUERY_TOKEN || "true").toLowerCase() === "true";
+const ADMIN_ALLOW_QUERY_TOKEN = adminQueryTokenAllowed(process.env.ADMIN_ALLOW_QUERY_TOKEN);
 const ADMIN_SESSION_COOKIE_NAME = String(process.env.ADMIN_SESSION_COOKIE_NAME || "admin_session").trim();
 const ADMIN_SESSION_COOKIE_SAMESITE = (() => {
   const raw = String(process.env.ADMIN_SESSION_COOKIE_SAMESITE || (process.env.NODE_ENV === "production" ? "none" : "lax")).trim().toLowerCase();
@@ -51,23 +53,43 @@ function sanitizeHeadersForLog(headers: Request["headers"]): Record<string, unkn
   );
 }
 
+function headerValue(value: string | string[] | undefined): string {
+  return String(Array.isArray(value) ? value[0] || "" : value || "");
+}
+
 function getTokenFromRequest(req: Request): string {
-  const auth = req.headers.authorization || "";
-  const bearerToken = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (bearerToken) return bearerToken;
-
-  const cookieToken = String((req as any).cookies?.[ADMIN_SESSION_COOKIE_NAME] || "").trim();
-  if (cookieToken) return cookieToken;
-
-  const tokenFromQuery = String((req.query as Record<string, string>)?.token || "").trim();
-  if (tokenFromQuery && ADMIN_ALLOW_QUERY_TOKEN) {
-    if (ADMIN_AUTH_VERBOSE_LOGS) {
-      console.warn("[AdminAuth] Token via query string (legacy mode) usado em", req.path);
-    }
-    return tokenFromQuery;
+  const authorizationHeader = headerValue(req.headers.authorization);
+  const cookieToken = String((req as { cookies?: Record<string, string> }).cookies?.[ADMIN_SESSION_COOKIE_NAME] || "");
+  const queryToken = String((req.query as Record<string, string | undefined>)?.token || "");
+  const token = selectAdminSessionToken({
+    authorizationHeader,
+    cookieToken,
+    queryToken,
+    allowQueryToken: ADMIN_ALLOW_QUERY_TOKEN,
+  });
+  const bearer = authorizationHeader.startsWith("Bearer ") ? authorizationHeader.slice(7).trim() : "";
+  if (ADMIN_AUTH_VERBOSE_LOGS && ADMIN_ALLOW_QUERY_TOKEN && token && !bearer && !cookieToken.trim() && queryToken.trim()) {
+    console.warn("[AdminAuth] Token via query string (legacy mode) usado em", req.path);
   }
+  return token;
+}
 
-  return "";
+export async function adminSessionTokenIsActive(token: string): Promise<boolean> {
+  const value = String(token || "").trim();
+  if (!value) return false;
+  try {
+    const rows = await db
+      .select({ expiresAt: adminSessionsTable.expiresAt })
+      .from(adminSessionsTable)
+      .where(eq(adminSessionsTable.token, value))
+      .limit(1);
+    const expiresAt = rows[0]?.expiresAt;
+    if (!expiresAt) return false;
+    return new Date(expiresAt).getTime() > Date.now();
+  } catch (err) {
+    console.error("[AdminAuth] Falha ao validar sessão. A proteção de checkout permanece.", err);
+    return false;
+  }
 }
 
 function normalizeSellerCode(value: unknown): string | null {
@@ -161,8 +183,7 @@ export async function verifyCurrentAdminPassword(req: Request, password: string)
   }
 
   if (!user) return false;
-  const hash = hashPassword(plain, user.salt);
-  return hash === user.passwordHash;
+  return adminPasswordMatches(plain, user.salt, user.passwordHash);
 }
 
 // Utilitário para limpar sessões expiradas do banco
@@ -171,17 +192,6 @@ async function purgeExpiredSessions() {
   await db.delete(adminSessionsTable).where(
     lt(adminSessionsTable.expiresAt, now)
   );
-}
-
-// --------------------------------------------------------------------------
-// Password hashing (using built-in crypto — no external deps)
-// --------------------------------------------------------------------------
-function hashPassword(password: string, salt: string): string {
-  return crypto.createHash("sha256").update(password + salt).digest("hex");
-}
-
-function generateSalt(): string {
-  return crypto.randomBytes(16).toString("hex");
 }
 
 // --------------------------------------------------------------------------
@@ -204,11 +214,11 @@ async function seedFromEnvIfEmpty() {
     const existingUser = await db.select({ id: adminUsersTable.id }).from(adminUsersTable).where(eq(adminUsersTable.username, u.username.trim())).limit(1);
     if (existingUser.length > 0) continue;
 
-    const salt = generateSalt();
+    const salt = generateAdminSalt();
     await db.insert(adminUsersTable).values({
       id:           crypto.randomBytes(8).toString("hex"),
       username:     u.username.trim(),
-      passwordHash: hashPassword(u.password, salt),
+      passwordHash: createAdminPasswordHash(u.password, salt),
       salt,
       isPrimary:    u.isPrimary,
     });
@@ -334,8 +344,7 @@ router.post("/admin/login", async (req, res) => {
       return;
     }
 
-    const hash = hashPassword(password, user.salt);
-    if (hash !== user.passwordHash) {
+    if (!adminPasswordMatches(password, user.salt, user.passwordHash)) {
       res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Usuário ou senha incorretos." });
       return;
     }
@@ -437,14 +446,14 @@ router.post("/admin/users", requirePrimaryAdmin, async (req, res) => {
   }
 
   try {
-    const salt = generateSalt();
+    const salt = generateAdminSalt();
     const id   = crypto.randomBytes(8).toString("hex");
     const grantPrimary = fullAccess === true;
 
     await db.insert(adminUsersTable).values({
       id,
       username:     username.trim().toLowerCase(),
-      passwordHash: hashPassword(password, salt),
+      passwordHash: createAdminPasswordHash(password, salt),
       salt,
       isPrimary:    grantPrimary,
     });
@@ -551,10 +560,10 @@ router.patch("/admin/users/:id/password", requireAdminAuth, async (req, res) => 
       return;
     }
 
-    const salt = generateSalt();
+    const salt = generateAdminSalt();
     await db
       .update(adminUsersTable)
-      .set({ passwordHash: hashPassword(password, salt), salt })
+      .set({ passwordHash: createAdminPasswordHash(password, salt), salt })
       .where(eq(adminUsersTable.id, userId));
 
     res.json({ ok: true });

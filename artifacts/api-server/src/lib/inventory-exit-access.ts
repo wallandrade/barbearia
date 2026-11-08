@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, siteSettingsTable } from "@workspace/db";
 import {
   INVENTORY_EXIT_UNLOCK_MS,
+  inventoryExitBootstrapPassword,
   parseStoredPassword,
   remainingUnlockMs,
 } from "./inventory-exit-access-logic";
@@ -17,10 +18,6 @@ export {
 
 export const INVENTORY_EXIT_PASSWORD_KEY = "inventory_exit_password";
 export const INVENTORY_EXIT_UNLOCKED_UNTIL_KEY = "inventory_exit_unlocked_until";
-
-function bootstrapPlainPassword(): string {
-  return String(process.env.INVENTORY_EXIT_PASSWORD || "Ana230600").trim();
-}
 
 function hashPassword(plain: string, salt: string): string {
   return crypto.pbkdf2Sync(plain, salt, 120_000, 32, "sha256").toString("hex");
@@ -72,7 +69,9 @@ export async function setInventoryExitPassword(plain: string): Promise<void> {
 export async function ensureInventoryExitPasswordSeeded(): Promise<void> {
   const stored = parseStoredPassword(await readSetting(INVENTORY_EXIT_PASSWORD_KEY));
   if (stored) return;
-  await setInventoryExitPassword(bootstrapPlainPassword());
+  const bootstrap = inventoryExitBootstrapPassword(process.env.INVENTORY_EXIT_PASSWORD);
+  if (!bootstrap) return;
+  await setInventoryExitPassword(bootstrap);
 }
 
 export async function verifyInventoryExitPassword(plain: string): Promise<boolean> {
