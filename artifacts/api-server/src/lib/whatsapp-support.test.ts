@@ -7,6 +7,7 @@ import {
   classifySupportText,
   decideSupportTurn,
   ATTENDANT_LINE_PHONES,
+  isAttendantManualText,
   isStoreLinePhone,
   isSupportFloodText,
   readSupportInbound,
@@ -169,6 +170,82 @@ test("problema abre o segundo menu", () => {
   assert.equal(picked.kind, "text");
   assert.equal(picked.session.step, "await_problem");
   assert.equal(picked.session.problem, "atrasado");
+});
+
+test("texto digitado na conversa cala o menu; aviso automático não", () => {
+  assert.equal(isAttendantManualText("Oi, já estou vendo seu pedido"), true);
+  assert.equal(isAttendantManualText("Toque em Ver opções acima e escolha sua opção."), false);
+  assert.equal(isAttendantManualText(""), false);
+  assert.equal(isAttendantManualText(defaultSupportMenu().greeting), false);
+  assert.equal(isAttendantManualText("Pode comprar em https://www.yury-imports.com/yuri"), false);
+  assert.equal(isAttendantManualText("Me envia o número do pedido ou o CPF da compra, só os números.\n\nO número do pedido está no WhatsApp ou no e-mail da compra."), false);
+  assert.equal(isAttendantManualText("🎉 Parabéns, Ana! Sua compra foi confirmada com sucesso!"), false);
+  assert.equal(isAttendantManualText("📦 Ana, seu código de rastreio chegou!"), false);
+  assert.equal(isAttendantManualText("🚚 Ana, seu pedido foi postado!"), false);
+  assert.equal(isAttendantManualText("✅ Ana, seu pedido foi entregue!"), false);
+  assert.equal(isAttendantManualText("🛵 Ana, seu pedido saiu para entrega!"), false);
+  assert.equal(isAttendantManualText("Tirzepatida está R$ 100,00. Pode ver em https://www.yury-imports.com/yuri."), false);
+  const order = buildSupportOrderMessage({
+    orderNumber: 1782,
+    clientName: "Ivan",
+    status: "paid",
+    total: "10",
+    products: [{ name: "BIOGENISES", quantity: 1 }],
+  });
+  assert.equal(isAttendantManualText(order), false);
+  assert.equal(isAttendantManualText("já vou te responder", {
+    greeting: "Bom dia da loja",
+    listTitle: "Menu",
+    buttonLabel: "Abrir",
+    items: [{ id: "pix", title: "Pagar", description: "Site", action: "text", message: "Pague no site." }],
+  }), true);
+  assert.equal(isAttendantManualText("Pague no site.", {
+    greeting: "Bom dia da loja",
+    listTitle: "Menu",
+    buttonLabel: "Abrir",
+    items: [{ id: "pix", title: "Pagar", description: "Site", action: "text", message: "Pague no site." }],
+  }), false);
+
+  const typed = readSupportInbound({
+    phone: "35992420559",
+    text: { message: "já vou te responder" },
+    fromMe: true,
+    type: "ReceivedCallback",
+  });
+  assert.equal(typed.skip, true);
+  assert.equal(typed.fromMe, true);
+  assert.equal(typed.manualCandidate, true);
+  assert.equal(typed.text, "já vou te responder");
+  const photo = readSupportInbound({
+    phone: "35992420559",
+    fromMe: true,
+    type: "ReceivedCallback",
+    image: { caption: "segue o print" },
+  });
+  assert.equal(photo.text, "segue o print");
+  assert.equal(photo.manualCandidate, true);
+  const customerPhoto = readSupportInbound({
+    phone: "35992420559",
+    type: "ReceivedCallback",
+    image: { caption: "segue o print" },
+  });
+  assert.equal(customerPhoto.text, "");
+  assert.equal(customerPhoto.manualCandidate, false);
+  const group = readSupportInbound({
+    phone: "120363",
+    text: { message: "aviso do grupo" },
+    fromMe: true,
+    isGroup: true,
+    type: "ReceivedCallback",
+  });
+  assert.equal(group.manualCandidate, false);
+  const receipt = readSupportInbound({
+    phone: "35992420559",
+    text: { message: "já vou te responder" },
+    fromMe: true,
+    type: "DeliveryCallback",
+  });
+  assert.equal(receipt.manualCandidate, false);
 });
 
 test("ignora mensagem da própria loja e de grupo", () => {

@@ -45,6 +45,9 @@ export type SupportInbound = {
   text: string;
   choiceId: string;
   instanceId: string;
+  fromMe: boolean;
+  /** Mensagem saída da loja numa conversa de cliente. Grupo e recibo de entrega ficam de fora. */
+  manualCandidate: boolean;
   skip: boolean;
 };
 
@@ -131,6 +134,18 @@ function readPhone(value: unknown): string {
   return "";
 }
 
+function readMediaCaption(body: Record<string, unknown>): string {
+  const top = body.caption;
+  if (typeof top === "string" && top.trim()) return top.trim();
+  for (const key of ["image", "video", "document"]) {
+    const block = body[key];
+    if (!block || typeof block !== "object") continue;
+    const caption = (block as { caption?: unknown }).caption;
+    if (typeof caption === "string" && caption.trim()) return caption.trim();
+  }
+  return "";
+}
+
 function readFromMe(value: unknown): boolean {
   return value === true || value === 1 || value === "true";
 }
@@ -166,11 +181,20 @@ export function readSupportInbound(body: unknown): SupportInbound {
   const phone = readPhone(row.phone);
   const type = String(row.type || "").trim();
   const instanceId = String(row.instanceId || row.instance_id || "").trim();
-  const skip = readFromMe(row.fromMe)
-    || row.isGroup === true
-    || row.isNewsletter === true
-    || (type.length > 0 && !/received/i.test(type));
-  return { phone, text: readText(row), choiceId: readChoiceId(row), instanceId, skip };
+  const fromMe = readFromMe(row.fromMe);
+  const group = row.isGroup === true || row.isNewsletter === true;
+  const foreignType = type.length > 0 && !/received/i.test(type);
+  const skip = fromMe || group || foreignType;
+  const text = readText(row) || (fromMe ? readMediaCaption(row) : "");
+  return {
+    phone,
+    text,
+    choiceId: readChoiceId(row),
+    instanceId,
+    fromMe,
+    manualCandidate: fromMe && !group && !foreignType,
+    skip,
+  };
 }
 
 /** Resumo seguro para o log. Não inclui token, texto nem o telefone inteiro. */
@@ -187,6 +211,7 @@ export function supportInboundLog(body: unknown, tokenOk: boolean): Record<strin
     fromMe: readFromMe(row.fromMe),
     isGroup: row.isGroup === true,
     isNewsletter: row.isNewsletter === true,
+    manual: inbound.manualCandidate,
     skip: inbound.skip || !inbound.phone,
     textLen: inbound.text.length,
     choice: inbound.choiceId ? "yes" : "",
@@ -403,6 +428,81 @@ export function decideSupportTurn(input: {
 export function supportListText(turn: Extract<SupportTurn, { kind: "list" }>): string {
   const lines = turn.options.map((option, index) => `${index + 1} - ${option.title}`);
   return `${turn.message}\n\n${lines.join("\n")}`;
+}
+
+function comparableSupportText(value: string): string {
+  return value
+    .replace(/https:\/\/www\.yury-imports\.com\/(?:yuri|poly)\b/g, "https://www.yury-imports.com")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function supportBotTexts(menu: SupportMenuConfig): Set<string> {
+  const raw = [
+    menu.greeting,
+    ASK_CPF_MESSAGE,
+    buildSupportNotFoundMessage(),
+    buildSupportUnknownMessage(),
+    FLOOD_TEXT,
+    `Toque em ${menu.buttonLabel || "Ver opções"} acima e escolha sua opção.`,
+    supportListText({
+      kind: "list",
+      title: menu.listTitle,
+      buttonLabel: menu.buttonLabel,
+      message: menu.greeting,
+      options: menu.items.map(toOption),
+      session: menuSession(),
+    }),
+  ];
+  for (const item of supportMenuItems(menu)) {
+    if (item.message) raw.push(item.message);
+    if (item.followup) raw.push(item.followup);
+    if (item.action !== "list") continue;
+    const label = item.buttonLabel || "Ver opções";
+    raw.push(`Toque em ${label} acima e escolha sua opção.`);
+    raw.push(supportListText({
+      kind: "list",
+      title: item.listTitle || item.title,
+      buttonLabel: label,
+      message: item.message,
+      options: (item.items || []).map(toOption),
+      session: { step: "problem_menu", problem: item.id },
+    }));
+  }
+  return new Set(raw.map(comparableSupportText).filter(Boolean));
+}
+
+/** Aviso da loja que volta no webhook. Não é a pessoa digitando. */
+function isAutomaticStoreNotice(text: string): boolean {
+  const folded = comparableSupportText(text);
+  if (!folded) return false;
+  if (folded.includes("toque em ") && folded.includes("acima e escolha sua opcao")) return true;
+  if (folded.includes("compra foi confirmada")) return true;
+  if (folded.includes("codigo de rastreio chegou")) return true;
+  if (folded.includes("pedido foi postado")) return true;
+  if (folded.includes("pedido foi entregue")) return true;
+  if (folded.includes("pedido saiu para entrega")) return true;
+  if (folded.includes("comunicado oficial")) return true;
+  if (folded.includes("filmagem completa da abertura")) return true;
+  if (folded.includes("pode ver em https://www.yury-imports.com")) return true;
+  if (folded.includes("qual produto voce quer saber o valor")) return true;
+  if (folded.includes("tem mais de um parecido")) return true;
+  if (/pedido #\d+/.test(folded) && (folded.includes("pagamento:") || folded.includes("situacao:") || folded.includes("produtos:"))) return true;
+  if (/^achei \d+ pedido/.test(folded)) return true;
+  return false;
+}
+
+/** Texto escrito na conversa, fora do menu e dos avisos automáticos. */
+export function isAttendantManualText(text: string, menu?: SupportMenuConfig | null): boolean {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  if (isAutomaticStoreNotice(value)) return false;
+  const config = menu ? (supportMenuSaveError(menu).menu ?? defaultSupportMenu()) : defaultSupportMenu();
+  return !supportBotTexts(config).has(comparableSupportText(value));
 }
 
 export function classifySupportText(raw: string | null | undefined): SupportIntent {
@@ -839,9 +939,25 @@ async function sendList(phone: string, turn: Extract<SupportTurn, { kind: "list"
   return sendText(phone, supportListText(turn), line);
 }
 
-/** Responde uma mensagem recebida. Não manda de novo o que a própria loja enviou. */
-export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean; skipped?: boolean; error?: string; line?: "poly" | "main" }> {
+/** Responde uma mensagem recebida. Texto digitado na loja cala o menu. Aviso automático não. */
+export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean; skipped?: boolean; silenced?: boolean; error?: string; line?: "poly" | "main" }> {
   const inbound = readSupportInbound(body);
+  if (inbound.manualCandidate) {
+    const text = inbound.text.trim();
+    if (
+      inbound.phone
+      && text
+      && !isAutomaticStoreNotice(text)
+      && !isStoreLinePhone(inbound.phone, await storeLinePhones())
+    ) {
+      const menu = parseSupportMenu(await settingValue(WHATSAPP_SUPPORT_MENU_SETTING));
+      if (isAttendantManualText(text, menu)) {
+        await saveSession(inbound.phone, humanSession());
+        return { ok: true, skipped: true, silenced: true };
+      }
+    }
+    return { ok: true, skipped: true };
+  }
   if (inbound.skip || !inbound.phone || isSupportFloodText(inbound.text)) return { ok: true, skipped: true };
   if (isStoreLinePhone(inbound.phone, await storeLinePhones())) return { ok: true, skipped: true };
   const { resolveWhatsappLine } = await import("./whatsapp-line");
