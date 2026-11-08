@@ -23,7 +23,7 @@ async function runOnce(): Promise<void> {
 }
 
 export function startCellTechJob(): void {
-  console.log("[Cell Tech] consulta de OS a cada 2 min. Relatórios às 8h30, horário de Brasília.");
+  console.log("[Cell Tech] consulta de OS a cada 2 min. Envio automático ao grupo só antes das 19h. Relatórios às 8h30, horário de Brasília.");
   setTimeout(() => {
     void runOnce();
   }, START_DELAY_MS);

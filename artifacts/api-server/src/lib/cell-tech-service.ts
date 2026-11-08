@@ -22,6 +22,7 @@ import {
   filterCellTechOrders,
   monthKey,
   previousMonthKey,
+  cellTechAutomaticGroupSendOpen,
   openAlerts,
   reportWindowOpen,
   saoPauloClock,
@@ -70,6 +71,34 @@ async function sendClaimed(settings: CellTechSettings, kind: string, osId: strin
   try {
     await postCellTech(settings.webhookUrl, kind, message);
     return true;
+  } catch (error) {
+    await releaseCellTechAlert(claim);
+    throw error;
+  }
+}
+
+type AutomaticSend = "sent" | "idle" | "closed";
+
+/** Marca e envia só se o relógio de Brasília ainda está antes das 19:00. Fora da janela não grava a marca. */
+async function sendAutomaticClaimed(
+  settings: CellTechSettings,
+  kind: string,
+  osId: string,
+  periodKey: string,
+  message: string,
+  readNow: () => Date,
+): Promise<AutomaticSend> {
+  if (!cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) return "closed";
+  if (!settings.webhookUrl) throw new Error("Salve a URL https do webhook do n8n.");
+  const claim = await claimCellTechAlert(kind, osId, periodKey);
+  if (!claim) return "idle";
+  try {
+    if (!cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) {
+      await releaseCellTechAlert(claim);
+      return "closed";
+    }
+    await postCellTech(settings.webhookUrl, kind, message);
+    return "sent";
   } catch (error) {
     await releaseCellTechAlert(claim);
     throw error;
@@ -172,13 +201,15 @@ async function finishedOrderWithMoney(settings: CellTechSettings, order: CellTec
   }
 }
 
-async function sendCashCloses(settings: CellTechSettings, dayKey: string): Promise<number> {
+async function sendCashCloses(settings: CellTechSettings, dayKey: string, readNow: () => Date): Promise<number> {
+  if (!cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) return 0;
   const boxes = await loadClosedCashBoxes(settings, dayKey);
   if (boxes.length === 0) return 0;
   const periodKey = `${dayKey}:lucro`;
   const sentIds = await readCellTechAlertIds("cash", periodKey);
   const pending = boxes.filter((box) => !sentIds.has(box.id));
   let sent = 0;
+  let closed = false;
   if (pending.length > 0) {
     const reports = await loadCashDayReports(settings, dayKey);
     const totals = cashDayTotals(reports.vendas, reports.produtos, reports.os);
@@ -193,38 +224,45 @@ async function sendCashCloses(settings: CellTechSettings, dayKey: string): Promi
       );
     }
     for (const box of pending) {
-      const posted = await sendClaimed(settings, "cash", box.id, periodKey, buildCashCloseMessage(dayKey, box.name, totals));
-      if (posted) sent += 1;
+      const outcome = await sendAutomaticClaimed(settings, "cash", box.id, periodKey, buildCashCloseMessage(dayKey, box.name, totals), readNow);
+      if (outcome === "closed") {
+        closed = true;
+        break;
+      }
+      if (outcome === "sent") sent += 1;
     }
   }
-  if (isSaturday(dayKey)) {
-    const weekPosted = await sendWeekClose(settings, dayKey);
-    if (weekPosted) sent += 1;
+  if (!closed && isSaturday(dayKey) && cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) {
+    const weekPosted = await sendWeekClose(settings, dayKey, readNow);
+    if (weekPosted === "sent") sent += 1;
+    if (weekPosted === "closed") closed = true;
   }
-  if (isLastDayOfMonth(dayKey)) {
-    const monthPosted = await sendMonthClose(settings, dayKey);
-    if (monthPosted) sent += 1;
+  if (!closed && isLastDayOfMonth(dayKey) && cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) {
+    const monthPosted = await sendMonthClose(settings, dayKey, readNow);
+    if (monthPosted === "sent") sent += 1;
   }
   return sent;
 }
 
-async function sendWeekClose(settings: CellTechSettings, dayKey: string): Promise<boolean> {
+async function sendWeekClose(settings: CellTechSettings, dayKey: string, readNow: () => Date): Promise<AutomaticSend> {
+  if (!cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) return "closed";
   const periodKey = `${dayKey}:sem`;
   const sent = await readCellTechAlertIds("week", periodKey);
-  if (sent.has("sem")) return false;
+  if (sent.has("sem")) return "idle";
   const currentBounds = weekBounds(dayKey);
   const previousBounds = previousWeekBounds(dayKey);
   const currentReports = await loadCashMonthReports(settings, currentBounds.from, currentBounds.to);
   const previousReports = await loadCashMonthReports(settings, previousBounds.from, previousBounds.to);
   const current = monthCloseMoney(currentReports.vendas, currentReports.produtos);
   const previous = monthCloseMoney(previousReports.vendas, previousReports.produtos);
-  return sendClaimed(settings, "week", "sem", periodKey, buildWeekCloseMessage(dayKey, current, previous));
+  return sendAutomaticClaimed(settings, "week", "sem", periodKey, buildWeekCloseMessage(dayKey, current, previous), readNow);
 }
 
-async function sendMonthClose(settings: CellTechSettings, dayKey: string): Promise<boolean> {
+async function sendMonthClose(settings: CellTechSettings, dayKey: string, readNow: () => Date): Promise<AutomaticSend> {
+  if (!cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) return "closed";
   const periodKey = `${monthKey(dayKey)}:mes`;
   const sent = await readCellTechAlertIds("month", periodKey);
-  if (sent.has("mes")) return false;
+  if (sent.has("mes")) return "idle";
   const bounds = monthBounds(dayKey);
   const previousKey = previousMonthKey(dayKey);
   const previousBounds = monthBounds(`${previousKey}-01`);
@@ -232,10 +270,13 @@ async function sendMonthClose(settings: CellTechSettings, dayKey: string): Promi
   const previousReports = await loadCashMonthReports(settings, previousBounds.from, previousBounds.to);
   const money = monthCloseMoney(reports.vendas, reports.produtos);
   const previous = monthCloseMoney(previousReports.vendas, previousReports.produtos);
-  return sendClaimed(settings, "month", "mes", periodKey, buildMonthCloseMessage(dayKey, money, previous));
+  return sendAutomaticClaimed(settings, "month", "mes", periodKey, buildMonthCloseMessage(dayKey, money, previous), readNow);
 }
 
-export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number }> {
+export async function runCellTechTick(
+  now = new Date(),
+  readNow: () => Date = () => new Date(),
+): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number }> {
   const settings = await readCellTechSettings();
   if (!settings.alertsEnabled || !settings.webhookUrl || !settings.accessToken || !settings.secretAccessToken) {
     return { noticesSent: 0, dailySent: false, monthlySent: false, cashSent: 0 };
@@ -244,21 +285,28 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
   const loaded = await snapshotOrders(settings, false, clock);
   const sent = await readSentCellTechAlerts();
   let noticesSent = 0;
+  let noticesClosed = false;
   for (const order of loaded.orders) {
-    if (noticesSent >= ALERT_CAP) break;
+    if (noticesSent >= ALERT_CAP || noticesClosed) break;
+    if (!cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) break;
     const flags = sent.get(order.id) ?? { created: false, deadline: false, finished: false };
     for (const kind of openAlerts(order, clock, flags)) {
       if (noticesSent >= ALERT_CAP) break;
       try {
         const messageOrder = kind === "finished" ? await finishedOrderWithMoney(settings, order) : order;
-        const posted = await sendClaimed(
+        const outcome = await sendAutomaticClaimed(
           settings,
           kind,
           order.id,
           kind === "reminder" ? clock.dayKey : "once",
           alertMessage(kind, messageOrder),
+          readNow,
         );
-        if (posted) noticesSent += 1;
+        if (outcome === "closed") {
+          noticesClosed = true;
+          break;
+        }
+        if (outcome === "sent") noticesSent += 1;
       } catch (error) {
         console.error("[Cell Tech] aviso:", error instanceof Error ? error.message : error);
         break;
@@ -267,15 +315,15 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
   }
   let dailySent = false;
   let monthlySent = false;
-  if (reportWindowOpen(clock)) {
+  if (reportWindowOpen(clock) && cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) {
     try {
-      dailySent = await sendClaimed(settings, "daily", "", `${clock.dayKey}:visual`, buildDailyReport(loaded.orders, clock));
+      dailySent = (await sendAutomaticClaimed(settings, "daily", "", `${clock.dayKey}:visual`, buildDailyReport(loaded.orders, clock), readNow)) === "sent";
     } catch (error) {
       console.error("[Cell Tech] relatório diário:", error instanceof Error ? error.message : error);
     }
-    if (clock.day === 1) {
+    if (clock.day === 1 && cellTechAutomaticGroupSendOpen(saoPauloClock(readNow()))) {
       try {
-        monthlySent = await sendClaimed(settings, "monthly", "", `${monthKey(clock.dayKey)}:visual`, buildMonthlyReport(loaded.orders, clock));
+        monthlySent = (await sendAutomaticClaimed(settings, "monthly", "", `${monthKey(clock.dayKey)}:visual`, buildMonthlyReport(loaded.orders, clock), readNow)) === "sent";
       } catch (error) {
         console.error("[Cell Tech] relatório mensal:", error instanceof Error ? error.message : error);
       }
@@ -283,7 +331,7 @@ export async function runCellTechTick(now = new Date()): Promise<{ noticesSent: 
   }
   let cashSent = 0;
   try {
-    cashSent = await sendCashCloses(settings, clock.dayKey);
+    cashSent = await sendCashCloses(settings, clock.dayKey, readNow);
   } catch (error) {
     console.error("[Cell Tech] caixa:", error instanceof Error ? error.message : error);
   }

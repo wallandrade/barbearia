@@ -250,7 +250,7 @@ export default function AdminCellTechPanel() {
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={alertsEnabled} onChange={(e) => setAlertsEnabled(e.target.checked)} />
-              Avisar o grupo: na hora do cadastro, quando o prazo estoura e, nos dias seguintes, o lembrete para ficar pronto hoje. Relatório às 8h30 e no dia 1 o mensal
+              Avisar o grupo: na hora do cadastro, quando o prazo estoura e, nos dias seguintes, o lembrete para ficar pronto hoje. Relatório às 8h30 e no dia 1 o mensal. O automático para às 19h, horário de Brasília
             </label>
             <p className="text-xs text-muted-foreground">No n8n, o HTTP Request lê o campo message e a Z-API manda no grupo. O token da Z-API fica no n8n.</p>
             <div className="flex flex-wrap gap-2">
