@@ -1,6 +1,7 @@
 import { db, raffleReservationsTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { findActiveRaffleNumberConflict, parseRaffleNumbers } from "./raffle-payment-logic";
+import { paymentEffectsAllowed, affectedRowsOf } from "./pix-settlement";
 
 export type RafflePaymentResult = {
   matched: boolean;
@@ -105,10 +106,22 @@ export async function confirmRaffleReservationPayment(input: {
     };
   }
 
-  await db
+  const updated = await db
     .update(raffleReservationsTable)
     .set({ status: "paid", updatedAt: new Date() })
-    .where(eq(raffleReservationsTable.id, reservation.id));
+    .where(and(
+      eq(raffleReservationsTable.id, reservation.id),
+      ne(raffleReservationsTable.status, "paid"),
+    ));
+  if (!paymentEffectsAllowed(affectedRowsOf(updated))) {
+    return {
+      matched: true,
+      confirmed: true,
+      ignored: true,
+      reason: "ALREADY_PAID",
+      reservationId: reservation.id,
+    };
+  }
 
   console.log("[RaffleWebhook] Reservation paid", JSON.stringify({
     id: reservation.id,

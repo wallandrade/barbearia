@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, customChargesTable, ordersTable } from "@workspace/db";
-import { desc, and, gte, lte, eq } from "drizzle-orm";
+import { desc, and, gte, lte, eq, notInArray } from "drizzle-orm";
+import { affectedRowsOf, paymentEffectsAllowed } from "../lib/pix-settlement";
 import crypto from "crypto";
 import { getAdminScope, requireAdminAuth } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
@@ -89,7 +90,7 @@ router.post("/custom-charges", async (req, res) => {
   const t0 = Date.now();
   console.log(`[CustomCharge:${requestId}] ===== Incoming POST /api/custom-charges =====`);
   console.log(`[CustomCharge:${requestId}] Time: ${new Date().toISOString()}`);
-  console.log(`[CustomCharge:${requestId}] Body:`, JSON.stringify(req.body));
+  console.log(`[CustomCharge:${requestId}] pedido de cobrança`);
 
   try {
     const { client, address, amount, description, sellerCode } = req.body as {
@@ -115,7 +116,7 @@ router.post("/custom-charges", async (req, res) => {
       return;
     }
 
-    console.log(`[CustomCharge:${requestId}] Validation OK — client=${client.name} amount=${amount} seller=${sellerCode || "none"}`);
+    console.log(`[CustomCharge:${requestId}] Validation OK — amount=${amount} seller=${sellerCode || "none"}`);
 
     const id = crypto.randomBytes(8).toString("hex");
     const gatewayProvider = await getChannelPixGateway("store");
@@ -128,7 +129,7 @@ router.post("/custom-charges", async (req, res) => {
       ? `${callbackBase}${callbackBase.includes("?") ? "&" : "?"}whsec=${encodeURIComponent(webhookSecret)}`
       : callbackBase;
 
-    console.log(`[CustomCharge:${requestId}] Calling gateway — id=${id} identifier=${identifier} amount=${Number(amount)} callbackUrl=${callbackUrl}`);
+    console.log(`[CustomCharge:${requestId}] Calling gateway — id=${id} amount=${Number(amount)}`);
 
     let gatewayData;
     try {
@@ -240,7 +241,7 @@ router.post("/custom-charges/callback/:token/:chargeId", async (req, res) => {
   try {
     const { chargeId } = req.params;
     const body = req.body as { transactionId?: string; status?: string };
-    console.log("[CustomCharge] Legacy callback:", JSON.stringify(body));
+    console.log("[CustomCharge] Legacy callback", { chargeId, status: body.status || null });
 
     if (isPaymentConfirmed(body.status || "")) {
       const existing = await db
@@ -250,10 +251,14 @@ router.post("/custom-charges/callback/:token/:chargeId", async (req, res) => {
         .limit(1);
 
       if (existing[0] && existing[0].status !== "paid") {
-        await db
+        const updated = await db
           .update(customChargesTable)
           .set({ status: "paid", updatedAt: new Date() })
-          .where(eq(customChargesTable.id, chargeId));
+          .where(and(eq(customChargesTable.id, chargeId), notInArray(customChargesTable.status, ["paid"])));
+        if (!paymentEffectsAllowed(affectedRowsOf(updated))) {
+          res.json({ ok: true, duplicate: true });
+          return;
+        }
 
         broadcastNotification({ type: "charge_paid", data: { id: chargeId } });
 

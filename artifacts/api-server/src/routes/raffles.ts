@@ -10,6 +10,7 @@ import {
   PIX_DURATION_MS,
   isPaymentConfirmed,
 } from "../gateway";
+import { statusFromGatewayEvent } from "../lib/pix-settlement";
 import { getChannelPixGateway, isChannelPaymentMethodEnabled } from "../lib/checkout-channel-settings";
 import { resolveRaffleLookupQuery } from "../lib/raffle-lookup";
 import { confirmRaffleReservationPayment } from "../lib/raffle-payment";
@@ -1093,26 +1094,28 @@ router.post("/webhook/raffle-pix", async (req, res) => {
   const tx = ((raw.transaction as Record<string, unknown>) ?? raw) as Record<string, unknown>;
   const txMeta = ((tx.metadata as Record<string, unknown>) ?? {}) as Record<string, unknown>;
   const rawMeta = ((raw.metadata as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  const dentpegData = ((raw.data as Record<string, unknown>) ?? {}) as Record<string, unknown>;
 
   const transactionId = String(
-    tx.id || tx.transactionId || (tx as { transaction_id?: unknown }).transaction_id || raw.transactionId || raw.transaction_id || raw.id || "",
+    tx.id || dentpegData.depositId || tx.transactionId || (tx as { transaction_id?: unknown }).transaction_id || raw.transactionId || raw.transaction_id || "",
   ).trim();
 
-  let status = String(tx.status || raw.status || raw.payment_status || raw.event || "").trim();
+  let status = String(tx.status || dentpegData.status || raw.status || raw.payment_status || "").trim();
   if (!status && raw.event) {
-    const ev = String(raw.event).toUpperCase();
-    if (ev.includes("PAID") || ev.includes("APPROVED") || ev.includes("COMPLETED")) status = "COMPLETED";
-    else if (ev.includes("CANCEL") || ev.includes("REJECT") || ev.includes("FAILED")) status = "CANCELED";
+    const fromEvent = statusFromGatewayEvent(raw.event);
+    if (fromEvent) status = fromEvent;
   }
 
   const reservationId = String(txMeta.reservationId || rawMeta.reservationId || "").trim();
 
   if (!transactionId && !reservationId) {
-    console.log("[RaffleWebhook] Missing transactionId/reservationId", JSON.stringify(raw));
+    console.log("[RaffleWebhook] sem transação nem reserva");
     res.status(400).json({ error: "MISSING_REFERENCE" });
     return;
   }
 
+  // Cobrança emitida antes de 2f532bd registrou esta URL sem whsec.
+  // Não consultar o gateway aqui: essa consulta é bloqueada e o PIX antigo deixaria de confirmar.
   const confirmed = status ? isPaymentConfirmed(status) : false;
   const result = await confirmRaffleReservationPayment({
     transactionId,
@@ -1121,7 +1124,7 @@ router.post("/webhook/raffle-pix", async (req, res) => {
   });
 
   if (!result.matched) {
-    console.log("[RaffleWebhook] Reservation not found", JSON.stringify({ transactionId, reservationId, status }));
+    console.log("[RaffleWebhook] reserva não encontrada", { transactionId: transactionId || null });
     res.status(404).json({ error: "RESERVATION_NOT_FOUND" });
     return;
   }
