@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-11-07
+> **Última atualização:** 2026-11-08
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-08 | Checkout, senha admin e baixa de estoque | Header `Authorization` inválido não pula token nem limite. Checkout token só assina com `CHECKOUT_TOKEN_SECRET` de pelo menos 32 caracteres; sem isso a emissão e o write protegido respondem 503. `?token=` de admin fica desligado salvo `ADMIN_ALLOW_QUERY_TOKEN=true`. Senha nova de admin usa PBKDF2; SHA-256 antigo ainda entra. Baixa não grava senha embutida. Scripts de admin exigem `ADMIN_USERNAME` e `ADMIN_PASSWORD` | `POST /api/orders` com origem oficial continua sem token. Sessões já abertas continuam. WhatsApp `?token=` é outro controle. Hash antigo no banco não é reescrito sozinho |
 | 2026-11-07 | Status do PIX da rifa não passa na consulta por telefone | `GET /api/raffles/reservations/:id/status` devolve só `reserved`, `paid` ou `expired`. Sem checkout token e fora do limite de 25 leituras | A consulta por telefone/CPF continua com token e com o limite |
 | 2026-11-04 | Tokens do Gestão Click só na aba Cell Tech | `GET /api/admin/cell-tech/settings` devolve o token mascarado. A chave não entra em `PUBLIC_KEYS` nem no GET público de settings. Só admin principal | Checkout token e os webhooks da loja iguais |
 | 2026-11-01 | Gasto da segunda conta exige `META_ADS_SHARE_TOKEN` | `GET /api/integrations/meta-ads/spend` aceita Bearer ou `X-Api-Key`, mínimo 16. A resposta não leva o token da Meta nem o id inteiro | A conta da loja e o checkout token iguais |
@@ -38,8 +39,11 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 - Rate limit **em memória** para POSTs públicos sensíveis (pedidos, checkout PIX, cobranças, suporte, KYC, rifa, etc.).
 - Chat de compostos: limiter **próprio** em `routes/peptide-chat.ts` (20 / 10 min / IP); fora da lista de writes que exigem checkout token. Sem chave OpenAI o POST ainda responde (ficha local).
 - Atendimento WhatsApp: `POST /api/whatsapp/support/inbound` fica fora do checkout token. Exige o token do atendimento (mínimo 8 caracteres) na query ou no header `x-whatsapp-support-token`. 20 mensagens a cada 10 minutos por telefone.
-- `GET /api/security/checkout-token` → HMAC; writes exigem `x-checkout-token` (com exceções: Authorization presente; `/api/orders` com origem oficial por compatibilidade).
-- Env: segredo de checkout / `SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET`.
+- `GET /api/security/checkout-token` → HMAC. O segredo vem só de `CHECKOUT_TOKEN_SECRET`, com pelo menos 32 caracteres. Sem isso, a emissão e o write que exige token respondem 503. Não há segredo embutido.
+- Writes exigem `x-checkout-token`, com duas exceções: Bearer de sessão de cliente ou de admin conferida no banco; `POST /api/orders` com origem oficial vazia ou permitida. Header `Authorization` inválido não entra na exceção e segue para o token e para o limite.
+- `ADMIN_ALLOW_QUERY_TOKEN` nasce desligado. Cookie e Bearer continuam. `true` religa `?token=` só na sessão admin.
+- Senha de admin nova: PBKDF2-SHA256, 120 mil iterações, comparação em tempo constante. Hash SHA-256 já gravado ainda autentica. Troca de senha e seed gravam PBKDF2. O login não reescreve o hash antigo.
+- Baixa Motoboy/Minas: se não houver hash em `site_settings`, só `INVENTORY_EXIT_PASSWORD` semeia. Variável vazia não grava senha. Hash já gravado permanece até alguém definir outra senha.
 
 ## Health
 

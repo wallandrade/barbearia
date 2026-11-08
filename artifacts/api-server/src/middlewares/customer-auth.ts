@@ -30,6 +30,13 @@ function readBearerToken(req: Request): string {
   return auth.slice(7).trim();
 }
 
+export function customerSessionTokenIsActive(token: string): boolean {
+  purgeExpired();
+  const value = String(token || "").trim();
+  if (!value) return false;
+  return sessions.has(value);
+}
+
 export function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 120_000, 32, "sha256").toString("hex");
 }

@@ -4,6 +4,10 @@ import cookieParser from "cookie-parser";
 import router from "./routes";
 import { exec } from "child_process";
 import crypto from "crypto";
+import { adminSessionTokenIsActive } from "./routes/admin-auth";
+import { customerSessionTokenIsActive } from "./middlewares/customer-auth";
+import { acceptedCheckoutTokenSecret, hmacSignaturesMatch } from "./lib/checkout-token-secret";
+import { sensitivePostCredentialBypass } from "./lib/checkout-write-guard";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://ka-imports.com",
@@ -15,8 +19,6 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 
 const SECURITY_ORIGIN_ENFORCE = String(process.env.SECURITY_ORIGIN_ENFORCE || "false").toLowerCase() === "true";
-const SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET =
-  String(process.env.SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET || "false").toLowerCase() === "true";
 
 function normalizeOrigin(origin: string): string {
   try {
@@ -81,7 +83,10 @@ const sensitivePublicReadPathPatterns = [
 ];
 
 const CHECKOUT_TOKEN_TTL_MS = Number(process.env.CHECKOUT_TOKEN_TTL_MS || 5 * 60 * 1000);
-const CHECKOUT_TOKEN_SECRET = process.env.CHECKOUT_TOKEN_SECRET || "";
+
+function currentCheckoutTokenSecret(): string | null {
+  return acceptedCheckoutTokenSecret(process.env.CHECKOUT_TOKEN_SECRET);
+}
 
 type CheckoutTokenPayload = {
   ts: number;
@@ -107,14 +112,15 @@ function hashUserAgent(ua: string): string {
   return crypto.createHash("sha256").update(ua || "unknown").digest("hex");
 }
 
-function signCheckoutPayload(payloadB64: string): string {
-  const effectiveSecret = CHECKOUT_TOKEN_SECRET || "unsafe-dev-secret-change-me";
+function signCheckoutPayload(payloadB64: string): string | null {
+  const secret = currentCheckoutTokenSecret();
+  if (!secret) return null;
   return toBase64Url(
-    crypto.createHmac("sha256", effectiveSecret).update(payloadB64).digest(),
+    crypto.createHmac("sha256", secret).update(payloadB64).digest(),
   );
 }
 
-function createCheckoutToken(userAgent: string): string {
+function createCheckoutToken(userAgent: string): string | null {
   const payload: CheckoutTokenPayload = {
     ts: Date.now(),
     nonce: crypto.randomBytes(8).toString("hex"),
@@ -122,15 +128,17 @@ function createCheckoutToken(userAgent: string): string {
   };
   const payloadB64 = toBase64Url(JSON.stringify(payload));
   const signature = signCheckoutPayload(payloadB64);
+  if (!signature) return null;
   return `${payloadB64}.${signature}`;
 }
 
 function verifyCheckoutToken(token: string, userAgent: string): boolean {
+  if (!currentCheckoutTokenSecret()) return false;
   const [payloadB64, signature] = token.split(".");
   if (!payloadB64 || !signature) return false;
 
   const expectedSignature = signCheckoutPayload(payloadB64);
-  if (signature !== expectedSignature) return false;
+  if (!expectedSignature || !hmacSignaturesMatch(signature, expectedSignature)) return false;
 
   let payload: CheckoutTokenPayload;
   try {
@@ -251,7 +259,7 @@ function resolvePublicReadRule(path: string): RateLimitRule | undefined {
 }
 
 function verifyCheckoutTokenOrReject(req: express.Request, res: express.Response): boolean {
-  if (SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET && !CHECKOUT_TOKEN_SECRET) {
+  if (!currentCheckoutTokenSecret()) {
     res.status(503).json({
       error: "SECURITY_MISCONFIGURED",
       message: "Configuração de segurança incompleta.",
@@ -296,11 +304,8 @@ app.disable("x-powered-by");
 if (!process.env.CORS_ALLOWED_ORIGINS) {
   console.info("[SECURITY] CORS_ALLOWED_ORIGINS não definido. Usando fallback interno.");
 }
-if (!CHECKOUT_TOKEN_SECRET) {
-  console.warn("[SECURITY] CHECKOUT_TOKEN_SECRET não definido. Defina no ambiente para proteção máxima.");
-}
-if (SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET && !CHECKOUT_TOKEN_SECRET) {
-  console.error("[SECURITY] SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET=true, mas CHECKOUT_TOKEN_SECRET não está definido.");
+if (!currentCheckoutTokenSecret()) {
+  console.error("[SECURITY] CHECKOUT_TOKEN_SECRET ausente ou com menos de 32 caracteres. Writes que exigem checkout token respondem 503 até existir um segredo aleatório.");
 }
 
 // Selective logging middleware - only log sensitive paths and errors
@@ -394,7 +399,7 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.get("/api/security/checkout-token", (req, res) => {
-  if (SECURITY_REQUIRE_CHECKOUT_TOKEN_SECRET && !CHECKOUT_TOKEN_SECRET) {
+  if (!currentCheckoutTokenSecret()) {
     res.status(503).json({ error: "SECURITY_MISCONFIGURED", message: "Configuração de segurança incompleta." });
     return;
   }
@@ -406,6 +411,10 @@ app.get("/api/security/checkout-token", (req, res) => {
   }
 
   const token = createCheckoutToken(req.get("user-agent") || "");
+  if (!token) {
+    res.status(503).json({ error: "SECURITY_MISCONFIGURED", message: "Configuração de segurança incompleta." });
+    return;
+  }
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
@@ -455,14 +464,20 @@ app.use((req, res, next) => {
 });
 
 // Emergency anti-abuse limiter for public write endpoints.
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
+  try {
   if (!isSensitivePublicWritePath(req.path) || req.method !== "POST") {
     next();
     return;
   }
 
-  // Authenticated admin/customer writes do not require checkout token.
-  if (req.get("authorization")) {
+  // Só sessão conferida dispensa o token e o limite. Header inválido segue na proteção.
+  const authenticated = await sensitivePostCredentialBypass({
+    authorizationHeader: req.get("authorization"),
+    customerTokenValid: customerSessionTokenIsActive,
+    adminTokenValid: adminSessionTokenIsActive,
+  });
+  if (authenticated) {
     next();
     return;
   }
@@ -523,6 +538,9 @@ app.use((req, res, next) => {
 
   current.count += 1;
   next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Protection for sensitive public read endpoints that expose customer-linked records.

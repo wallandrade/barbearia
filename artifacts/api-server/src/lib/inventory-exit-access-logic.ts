@@ -31,3 +31,8 @@ export function readPasswordFromBody(body: unknown): string {
 export function inventoryExitPasswordApplies(pool: string | null | undefined): boolean {
   return pool === "motoboy" || pool === "minas";
 }
+
+export function inventoryExitBootstrapPassword(raw: string | undefined | null): string | null {
+  const value = String(raw ?? "").trim();
+  return value.length > 0 ? value : null;
+}

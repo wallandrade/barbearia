@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-10-28
+> **Última atualização:** 2026-11-08
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-08 | Senha admin, query e scripts | Login aceita SHA-256 antigo e PBKDF2 novo. Criar, trocar e semear senha grava PBKDF2. `?token=` de admin só com `ADMIN_ALLOW_QUERY_TOKEN=true`. Scripts exigem usuário e senha no ambiente | Sessão de 12 h, cookie e Bearer iguais. Cliente continua PBKDF2. O login não migra o hash antigo |
 | 2026-10-28 | Baixa do espelho Motoboy/Minas sem senha | `POST /api/integrations/inventory/exit` aceita só o token. `GET .../exit-status` devolve `passwordRequired: false` | Dar baixa agora no Admin, hash da senha e token do snapshot iguais |
 | 2026-10-19 | Aba Promoções e `/api/admin/flash-campaigns` só com `requirePrimaryAdmin` | Admin de vendedor não vê e não grava a oferta relâmpago | Cupons, produtos e a sessão iguais |
 | 2026-10-15 | Lista negra compartilhada: pull por `LOSS_SYNC_TOKEN` (Bearer / `X-Api-Key`); webhook com `LOSS_SYNC_WEBHOOK_SECRET`; leitura da outra loja com `LOSS_PEER_TOKEN` | Sem token o snapshot responde 503. A cotação não usa sessão admin | Snapshot de estoque e cobertura Motoboy iguais |
@@ -30,8 +31,8 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Rotas: `artifacts/api-server/src/routes/admin-auth.ts`.
 - Login `/api/admin/login`; verify `/api/admin/verify`.
 - Sessão persistida em `admin_sessions`; token no JSON + cookie httpOnly `admin_session`.
-- Seed se `admin_users` vazio: `ADMIN_USERNAME`/`ADMIN_PASSWORD` (primário) e `ADMIN_USERNAME_2`/`ADMIN_PASSWORD_2` (secundário).
-- Hash de senha admin: SHA-256 + salt (no fluxo admin).
+- Seed se `admin_users` vazio: `ADMIN_USERNAME`/`ADMIN_PASSWORD` (primário) e `ADMIN_USERNAME_2`/`ADMIN_PASSWORD_2` (secundário). O seed grava PBKDF2.
+- Hash de senha admin: PBKDF2 nas senhas novas. SHA-256 + salt ainda valida o que já está no banco. Comparação em tempo constante. `?token=` só com `ADMIN_ALLOW_QUERY_TOKEN=true`.
 - Middlewares: `requireAdminAuth`, `requirePrimaryAdmin` (mesmo arquivo de rotas/auth).
 
 ### Escopo

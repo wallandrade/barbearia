@@ -6,6 +6,7 @@ import {
   readPasswordFromBody,
   remainingUnlockMs,
   inventoryExitPasswordApplies,
+  inventoryExitBootstrapPassword,
   INVENTORY_EXIT_UNLOCK_MS,
   INVENTORY_EXIT_UNLOCK_MINUTES,
 } from "./inventory-exit-access-logic";
@@ -36,6 +37,13 @@ test("readPasswordFromBody aceita password ou senha", () => {
   assert.equal(readPasswordFromBody({ password: " abc " }), "abc");
   assert.equal(readPasswordFromBody({ senha: "xyz" }), "xyz");
   assert.equal(readPasswordFromBody({}), "");
+});
+
+test("baixa de estoque não inventa senha quando a variável está vazia", () => {
+  assert.equal(inventoryExitBootstrapPassword(undefined), null);
+  assert.equal(inventoryExitBootstrapPassword(""), null);
+  assert.equal(inventoryExitBootstrapPassword("   "), null);
+  assert.equal(inventoryExitBootstrapPassword("  definida-no-ambiente  "), "definida-no-ambiente");
 });
 
 test("inventoryExitPasswordApplies só Motoboy/Minas", () => {
