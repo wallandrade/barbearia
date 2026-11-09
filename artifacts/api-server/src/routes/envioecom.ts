@@ -42,7 +42,7 @@ import {
   unlinkPackageEnvioEcomBinding,
   updateOrderShipment,
 } from "../lib/order-shipments";
-import { expandOrderProductsForShipment, isSplitShipmentList, parseShipmentItems } from "../lib/order-shipments-logic";
+import { isSplitShipmentList } from "../lib/order-shipments-logic";
 import { packageLabelLookup, pickEnvioEcomLabelRefs, shipmentRefBelongsToSibling } from "../lib/envioecom-label-refs";
 import {
   controlTowerSince,
@@ -98,7 +98,6 @@ import {
 import {
   ENVIOECOM_LABEL_POOL_MAX,
   ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT,
-  formatShipmentLabelItemName,
   ENVIOECOM_SHIPMENT_ITEM_NAME_KEY,
   ENVIOECOM_SHIPMENT_ITEM_QTY_DEFAULT,
   ENVIOECOM_SHIPMENT_ITEM_QTY_KEY,
@@ -230,7 +229,7 @@ function formatDimString(value: unknown): string {
   return String(Math.min(100, Math.max(2, Math.round(n))));
 }
 
-/** Create EnvioEcom: sempre 1 linha. Nome = item gravado + produtos reais. Qty e valor saem do painel. */
+/** Create EnvioEcom: sempre 1 linha. Com lista, a linha é a próxima opção. Pedido/catálogo não entram. */
 function buildShipmentLabelItem(profile: {
   name: string;
   quantity: number;
@@ -1103,15 +1102,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     }
 
     const labelProfile = await consumeShipmentLabelProfile();
-    const packageLines = targetPackage ? parseShipmentItems(targetPackage.items) : [];
-    const realLines = packageLines.length > 0
-      ? packageLines
-      : expandOrderProductsForShipment(order.products);
-    const labelName = formatShipmentLabelItemName(
-      labelProfile.name,
-      realLines.map((item) => ({ name: item.productName, quantity: item.quantity })),
-    );
-    const labelItems = buildShipmentLabelItem({ ...labelProfile, name: labelName });
+    const labelItems = buildShipmentLabelItem(labelProfile);
 
     const shipment: EnvioEcomCreateShipmentInput = {
       orderId: externalOrderNumber,
@@ -1175,7 +1166,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
         phone_len: phone.length,
         document_len: documentDigits.length,
         items: payload.items?.length || 0,
-        itemName: labelName,
+        itemName: labelProfile.name,
         itemValue: labelProfile.declaredValue,
       });
       const { result } = await withEnvioEcomAccount(accountId, async () =>

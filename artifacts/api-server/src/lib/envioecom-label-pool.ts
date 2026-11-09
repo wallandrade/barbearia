@@ -16,8 +16,6 @@ export const ENVIOECOM_SHIPMENT_ITEM_POOL_ORDER_KEY = "envioecom_shipment_item_p
 export const ENVIOECOM_SHIPMENT_ITEM_POOL_CURSOR_KEY = "envioecom_shipment_item_pool_cursor";
 export const ENVIOECOM_LABEL_POOL_MAX = 30;
 export const ENVIOECOM_LABEL_NAME_MAX = 120;
-/** Nome enviado no create: item gravado + produtos reais. O gravado sozinho continua em 120. */
-export const ENVIOECOM_SENT_LABEL_NAME_MAX = 200;
 
 export type LabelPoolOption = {
   name: string;
@@ -113,50 +111,6 @@ export function parseShipmentItemQuantity(raw: unknown): number | null {
 
 function readOptionName(raw: unknown): string {
   return String(raw ?? "").trim().slice(0, ENVIOECOM_LABEL_NAME_MAX);
-}
-
-function collapseLabelText(raw: unknown): string {
-  return String(raw ?? "").trim().replace(/\s+/g, " ");
-}
-
-/**
- * Item da etiqueta EnvioEcom: o nome gravado continua, e na frente entra
- * " - " mais a quantidade e o nome real (`1x TG 2x Agua`).
- * Sem produto real, fica só o nome gravado. Qty e valor da linha não entram aqui.
- */
-export function formatShipmentLabelItemName(
-  recordedName: string,
-  products: Array<{ name?: string | null; quantity?: number | null }>,
-): string {
-  const base = collapseLabelText(recordedName).slice(0, ENVIOECOM_LABEL_NAME_MAX)
-    || ENVIOECOM_SHIPMENT_ITEM_NAME_DEFAULT;
-  const parts: string[] = [];
-  for (const product of products) {
-    const name = collapseLabelText(product.name);
-    const qty = Math.round(Number(product.quantity));
-    if (!name || !Number.isFinite(qty) || qty < 1) continue;
-    parts.push(`${qty}x ${name}`);
-  }
-  if (!parts.length) return base;
-
-  let text = base;
-  let started = false;
-  for (const part of parts) {
-    const glue = started ? " " : " - ";
-    const candidate = `${text}${glue}${part}`;
-    if (candidate.length <= ENVIOECOM_SENT_LABEL_NAME_MAX) {
-      text = candidate;
-      started = true;
-      continue;
-    }
-    const room = ENVIOECOM_SENT_LABEL_NAME_MAX - text.length - glue.length;
-    if (room >= 4) {
-      const clipped = part.slice(0, room).trimEnd();
-      if (clipped) text = `${text}${glue}${clipped}`;
-    }
-    break;
-  }
-  return text;
 }
 
 /** JSON salvo. Linha inválida sai da lista; não inventa opção. */
