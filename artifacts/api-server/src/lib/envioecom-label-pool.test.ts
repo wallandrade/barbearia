@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   advanceLabelPool,
+  formatShipmentLabelItemName,
   parseLabelPool,
   parsePoolOrder,
   pickDeclaredValueInRange,
@@ -10,6 +11,7 @@ import {
   validateDeclaredValueRange,
   validateLabelPoolInput,
   ENVIOECOM_LABEL_POOL_MAX,
+  ENVIOECOM_SENT_LABEL_NAME_MAX,
 } from "./envioecom-label-pool";
 
 const OPTIONS = [
@@ -88,6 +90,35 @@ test("faixa de valor: vazia desliga, invertida recusa, e o sorteio fica entre os
     const value = pickDeclaredValueInRange(100, 500);
     assert.ok(value >= 100 && value <= 500);
   }
+});
+
+test("nome da etiqueta EnvioEcom junta o item gravado com a quantidade e o nome real", () => {
+  assert.equal(
+    formatShipmentLabelItemName("Peça sensor painel Land Rover", [
+      { name: "TG", quantity: 1 },
+      { name: "Agua", quantity: 2 },
+    ]),
+    "Peça sensor painel Land Rover - 1x TG 2x Agua",
+  );
+  assert.equal(formatShipmentLabelItemName("  Mercadoria  ", []), "Mercadoria");
+  assert.equal(formatShipmentLabelItemName("", [{ name: "TG", quantity: 1 }]), "Mercadoria - 1x TG");
+  assert.equal(
+    formatShipmentLabelItemName("Sensor", [
+      { name: "  ", quantity: 2 },
+      { name: "TG", quantity: 0 },
+      { name: "  Agua  gel  ", quantity: 2 },
+    ]),
+    "Sensor - 2x Agua gel",
+  );
+
+  const longName = "X".repeat(180);
+  const sent = formatShipmentLabelItemName("Peça sensor painel Land Rover", [
+    { name: longName, quantity: 1 },
+    { name: "Outro", quantity: 3 },
+  ]);
+  assert.ok(sent.startsWith("Peça sensor painel Land Rover - 1x "));
+  assert.ok(sent.length <= ENVIOECOM_SENT_LABEL_NAME_MAX);
+  assert.equal(sent.includes("3x Outro"), false);
 });
 
 test("ordem inválida embaralha de novo em vez de repetir a primeira", () => {
