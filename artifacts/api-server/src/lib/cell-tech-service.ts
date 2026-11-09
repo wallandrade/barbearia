@@ -161,13 +161,21 @@ export async function testCellTechConnection() {
   return { orders: loaded.orders.length, situations: loaded.situations.length };
 }
 
+function assertGroupSendOpen(now = new Date()): void {
+  if (!cellTechAutomaticGroupSendOpen(saoPauloClock(now))) {
+    throw new Error("O grupo da Cell Tech só recebe mensagem das 8h às 19h, horário de Brasília.");
+  }
+}
+
 export async function sendCellTechTestWebhook() {
+  assertGroupSendOpen();
   const settings = await readCellTechSettings();
   if (!settings.webhookUrl) throw new Error("Salve a URL https do webhook do n8n.");
   await postCellTech(settings.webhookUrl, "test", "*Cell Tech* conectado. Este aviso é só um teste do grupo da loja.");
 }
 
 export async function sendCellTechReport(kind: "daily" | "monthly") {
+  assertGroupSendOpen();
   const settings = await readCellTechSettings();
   const clock = saoPauloClock();
   const loaded = await snapshotOrders(settings, true, clock);

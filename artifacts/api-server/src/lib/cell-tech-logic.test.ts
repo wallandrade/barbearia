@@ -21,6 +21,8 @@ import {
   buildNextDayReminder,
   cellTechAutomaticGroupSendCount,
   cellTechAutomaticGroupSendOpen,
+  cellTechGroupSendFromMinutes,
+  CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT,
   CELL_TECH_GROUP_SEND_UNTIL_MINUTES,
   cellTechOrderMoney,
   cashDayTotals,
@@ -398,42 +400,52 @@ test("caixa fechado manda os quatro números do dia", () => {
   assert.match(better, /Fechamos R\$\s*2\.000,00 positivo em relação à semana anterior/);
 });
 
-test("envio automático ao grupo para às 19:00 em Brasília", () => {
+test("envio automático ao grupo fica entre 08:00 e 19:00 em Brasília", () => {
+  const from = CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT;
   const at = (iso: string) => saoPauloClock(new Date(iso));
+  const open = (iso: string) => cellTechAutomaticGroupSendOpen(at(iso), from);
   const evening = at("2026-11-08T21:59:00.000Z");
   const cutoff = at("2026-11-08T22:00:00.000Z");
   const after = at("2026-11-08T22:01:00.000Z");
-  const late = at("2026-11-09T02:30:00.000Z");
-  const nextMorning = at("2026-11-09T03:00:00.000Z");
+  const late = at("2026-11-09T02:59:00.000Z");
+  const midnight = at("2026-11-09T03:00:00.000Z");
+  const beforeOpen = at("2026-11-09T10:59:00.000Z");
+  const opening = at("2026-11-09T11:00:00.000Z");
 
-  assert.equal(evening.dayKey, "2026-11-08");
   assert.equal(evening.minutes, 18 * 60 + 59);
   assert.equal(cutoff.minutes, CELL_TECH_GROUP_SEND_UNTIL_MINUTES);
   assert.equal(late.dayKey, "2026-11-08");
-  assert.equal(late.minutes, 23 * 60 + 30);
-  assert.equal(nextMorning.dayKey, "2026-11-09");
-  assert.equal(nextMorning.minutes, 0);
+  assert.equal(late.minutes, 23 * 60 + 59);
+  assert.equal(midnight.dayKey, "2026-11-09");
+  assert.equal(midnight.minutes, 0);
+  assert.equal(beforeOpen.minutes, 7 * 60 + 59);
+  assert.equal(opening.minutes, from);
+  assert.equal(new Date("2026-11-09T03:00:00.000Z").getUTCHours(), 3);
+  assert.equal(new Date("2026-11-09T11:00:00.000Z").getUTCHours(), 11);
 
-  assert.equal(cellTechAutomaticGroupSendOpen(evening), true);
-  assert.equal(cellTechAutomaticGroupSendOpen(cutoff), false);
-  assert.equal(cellTechAutomaticGroupSendOpen(after), false);
-  assert.equal(cellTechAutomaticGroupSendOpen(late), false);
-  assert.equal(cellTechAutomaticGroupSendOpen(nextMorning), true);
-
-  const cutoffInstant = new Date("2026-11-08T22:00:00.000Z");
-  assert.equal(cutoffInstant.getUTCHours(), 22);
-  assert.equal(cellTechAutomaticGroupSendOpen(saoPauloClock(cutoffInstant)), false);
+  assert.equal(open("2026-11-08T21:59:00.000Z"), true);
+  assert.equal(open("2026-11-08T22:00:00.000Z"), false);
+  assert.equal(open("2026-11-08T22:01:00.000Z"), false);
+  assert.equal(open("2026-11-09T02:59:00.000Z"), false);
+  assert.equal(open("2026-11-09T03:00:00.000Z"), false);
+  assert.equal(open("2026-11-09T10:59:00.000Z"), false);
+  assert.equal(open("2026-11-09T11:00:00.000Z"), true);
 
   const reportAt = at("2026-11-04T11:30:00.000Z");
   assert.equal(reportAt.minutes, 8 * 60 + 30);
-  assert.equal(cellTechAutomaticGroupSendOpen(reportAt), true);
+  assert.equal(cellTechAutomaticGroupSendOpen(reportAt, from), true);
   assert.equal(dailyReportDue(reportAt, false), true);
   assert.equal(dailyReportDue(evening, false), false);
 
-  assert.equal(cellTechAutomaticGroupSendCount([evening, cutoff, nextMorning]), 1);
-  assert.equal(cellTechAutomaticGroupSendCount([evening, evening, after]), 2);
-  assert.equal(cellTechAutomaticGroupSendCount([cutoff, nextMorning]), 0);
-  assert.equal(cellTechAutomaticGroupSendCount([late, nextMorning]), 0);
+  assert.equal(cellTechAutomaticGroupSendCount([evening, cutoff, midnight]), 1);
+  assert.equal(cellTechAutomaticGroupSendCount([opening, evening, cutoff]), 2);
+  assert.equal(cellTechAutomaticGroupSendCount([beforeOpen, opening]), 0);
+  assert.equal(cellTechAutomaticGroupSendCount([cutoff, midnight]), 0);
+  assert.equal(cellTechGroupSendFromMinutes(""), from);
+  assert.equal(cellTechGroupSendFromMinutes("07:30"), 7 * 60 + 30);
+  assert.equal(cellTechGroupSendFromMinutes("25:00"), from);
+  assert.equal(cellTechGroupSendFromMinutes("00:00"), from);
+  assert.equal(cellTechGroupSendFromMinutes("19:00"), from);
 });
 
 test("webhook só https", () => {
