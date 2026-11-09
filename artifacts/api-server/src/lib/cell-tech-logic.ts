@@ -170,6 +170,9 @@ export function normalizeCellTechWebhookUrl(raw: string | null | undefined): str
 
 const REPORT_AT = 8 * 60 + 30;
 
+/** Abertura padrão do grupo. Não havia hora de início para o lembrete; 08:00 fecha a madrugada. */
+export const CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT = 8 * 60;
+
 /** 19:00 em America/Sao_Paulo. O minuto 19:00 já está fora: o envio automático não começa. */
 export const CELL_TECH_GROUP_SEND_UNTIL_MINUTES = 19 * 60;
 
@@ -177,9 +180,26 @@ export function reportWindowOpen(clock: CellTechClock): boolean {
   return clock.minutes >= REPORT_AT && clock.minutes < REPORT_AT + 15;
 }
 
-/** Envio automático ao grupo. Aberto de 00:00 inclusive até 19:00 exclusive, no relógio de Brasília. */
-export function cellTechAutomaticGroupSendOpen(clock: CellTechClock): boolean {
-  return clock.minutes < CELL_TECH_GROUP_SEND_UNTIL_MINUTES;
+/** `HH:MM` em Brasília. Vazio ou inválido volta para 08:00. Não pode passar das 19:00. */
+export function cellTechGroupSendFromMinutes(raw = process.env.CELL_TECH_GROUP_SEND_FROM): number {
+  const text = String(raw ?? "").trim();
+  if (!text) return CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (!match) return CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT;
+  const minutes = hour * 60 + minute;
+  if (minutes <= 0 || minutes >= CELL_TECH_GROUP_SEND_UNTIL_MINUTES) return CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT;
+  return minutes;
+}
+
+/** Aberto das 08:00 inclusive até as 19:00 exclusive, em America/Sao_Paulo. */
+export function cellTechAutomaticGroupSendOpen(
+  clock: CellTechClock,
+  fromMinutes = cellTechGroupSendFromMinutes(),
+): boolean {
+  return clock.minutes >= fromMinutes && clock.minutes < CELL_TECH_GROUP_SEND_UNTIL_MINUTES;
 }
 
 /** Quantas mensagens automáticas podem começar. Para na primeira que cairia às 19:00 ou depois, inclusive retry. */
