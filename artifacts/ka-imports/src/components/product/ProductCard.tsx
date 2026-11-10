@@ -123,12 +123,15 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank, 
                 <p className="text-xs text-neutral-600 line-through">{formatCurrency(product.price)}</p>
               </>
             )}
-            <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-1">
-                <span className="text-sm font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
-                <span className="shrink-0 rounded-full border border-[var(--pharma-green)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--pharma-green-ink)]">PIX</span>
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="min-w-0 text-sm font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
+                <span className="shrink-0 rounded-full border border-[var(--pharma-green)] px-1 py-0.5 text-[9px] font-bold leading-none text-[var(--pharma-green-ink)] md:px-1.5 md:text-[10px]">PIX</span>
               </div>
-              <Link href={href} className="inline-flex h-11 w-full shrink-0 items-center justify-center rounded-full bg-[var(--pharma-green)] px-3 text-sm font-semibold text-white md:ml-auto md:h-8 md:w-auto md:px-2.5 md:text-xs">
+              <Link
+                href={href}
+                className="relative ml-auto inline-flex h-7 shrink-0 items-center rounded-full bg-[var(--pharma-green)] px-2.5 text-xs font-semibold text-white after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-[''] md:h-8"
+              >
                 Ver →
               </Link>
             </div>
