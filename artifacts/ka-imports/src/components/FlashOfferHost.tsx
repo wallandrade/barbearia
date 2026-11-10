@@ -14,6 +14,7 @@ import {
   savePendingFlashOffer,
   type FlashOffer,
 } from "@/lib/flash-offer";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
 
 function formatRemaining(expiresAt: string, now: number): string {
   const left = Math.max(0, new Date(expiresAt).getTime() - now);
@@ -24,6 +25,7 @@ function formatRemaining(expiresAt: string, now: number): string {
 }
 
 export function FlashOfferHost() {
+  const pharma = useStoreTheme() === PHARMA_COMPACT_THEME;
   const [location, setLocation] = useLocation();
   const addItem = useCart((state) => state.addItem);
   const removeItem = useCart((state) => state.removeItem);
@@ -134,21 +136,21 @@ export function FlashOfferHost() {
   return (
     <>
       {showModal && offer ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-[340px] rounded-[28px] bg-white px-5 pb-5 pt-6 text-center shadow-2xl">
-            <p className="text-[13px] font-bold uppercase tracking-wide text-[#ff6a00]">
+        <div className={`fixed inset-0 z-[80] flex justify-center ${pharma ? "items-end bg-black/35 p-0 sm:items-center sm:bg-black/45 sm:p-4" : "items-center bg-black/45 p-4"}`}>
+          <div className={`w-full max-w-[340px] bg-white px-5 pt-4 text-center shadow-2xl ${pharma ? "max-h-[min(80vh,36rem)] overflow-y-auto rounded-t-[28px] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-none sm:rounded-[28px] sm:px-5 sm:pb-5 sm:pt-6" : "rounded-[28px] pb-5 pt-6"}`}>
+            <p className={`text-[13px] font-bold uppercase tracking-wide ${pharma ? "text-[var(--pharma-green-ink)]" : "text-[#ff6a00]"}`}>
               {carousel ? `Promoção relâmpago · ${offerIndex + 1} de ${offers.length}` : "Promoção relâmpago"}
             </p>
-            <h2 className="mt-1 text-[28px] font-black leading-tight text-neutral-950">Essa oferta é sua</h2>
-            <p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-neutral-500">
+            <h2 className={`mt-1 font-black leading-tight text-neutral-950 ${pharma ? "text-xl sm:text-[28px]" : "text-[28px]"}`}>Essa oferta é sua</h2>
+            <p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-neutral-600">
               Aparece uma vez. Se aceitar, tem 1 hora para pagar no PIX ou no WhatsApp.
             </p>
-            <div className="mt-4 overflow-hidden rounded-2xl bg-[#fff4ea] p-3 text-left">
+            <div className={`mt-4 overflow-hidden rounded-2xl p-3 text-left ${pharma ? "bg-[var(--pharma-green-soft)]" : "bg-[#fff4ea]"}`}>
               <div className="relative">
                 {offer.image ? (
-                  <img src={offer.image} alt="" className="mx-auto h-44 w-full rounded-xl bg-white object-contain" />
+                  <img src={offer.image} alt="" className={`mx-auto w-full rounded-xl bg-white object-contain ${pharma ? "h-28 sm:h-44" : "h-44"}`} />
                 ) : (
-                  <div className="mx-auto h-44 w-full rounded-xl bg-white" />
+                  <div className={`mx-auto w-full rounded-xl bg-white ${pharma ? "h-28 sm:h-44" : "h-44"}`} />
                 )}
                 {carousel ? (
                   <>
@@ -156,7 +158,7 @@ export function FlashOfferHost() {
                       type="button"
                       aria-label="Oferta anterior"
                       onClick={() => stepOffer(-1)}
-                      className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[#ffd7b8] bg-white text-[#ff6a00]"
+                      className={`absolute left-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border bg-white ${pharma ? "border-[var(--pharma-green)]/30 text-[var(--pharma-green-ink)]" : "border-[#ffd7b8] text-[#ff6a00]"}`}
                     >
                       <ChevronLeft className="h-5 w-5" />
                     </button>
@@ -164,7 +166,7 @@ export function FlashOfferHost() {
                       type="button"
                       aria-label="Próxima oferta"
                       onClick={() => stepOffer(1)}
-                      className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[#ffd7b8] bg-white text-[#ff6a00]"
+                      className={`absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border bg-white ${pharma ? "border-[var(--pharma-green)]/30 text-[var(--pharma-green-ink)]" : "border-[#ffd7b8] text-[#ff6a00]"}`}
                     >
                       <ChevronRight className="h-5 w-5" />
                     </button>
@@ -172,8 +174,8 @@ export function FlashOfferHost() {
                 ) : null}
               </div>
               <p className="mt-3 text-[15px] font-bold leading-tight text-neutral-950">{offer.name}</p>
-              <p className="mt-1 text-sm text-neutral-400 line-through">{formatCurrency(offer.chargedPrice)}</p>
-              <p className="text-[26px] font-black leading-none text-[#ff6a00]">{formatCurrency(offer.flashPrice)}</p>
+              <p className="mt-1 text-sm text-neutral-600 line-through">{formatCurrency(offer.chargedPrice)}</p>
+              <p className={`font-black leading-none ${pharma ? "text-2xl text-[var(--pharma-green)] sm:text-[26px]" : "text-[26px] text-[#ff6a00]"}`}>{formatCurrency(offer.flashPrice)}</p>
             </div>
             {carousel ? (
               <div className="mt-3 flex items-center justify-center gap-1.5">
@@ -183,7 +185,7 @@ export function FlashOfferHost() {
                     type="button"
                     aria-label={`Oferta ${index + 1}`}
                     onClick={() => setOfferIndex(index)}
-                    className={`h-1.5 rounded-full ${index === offerIndex ? "w-4 bg-[#ff6a00]" : "w-1.5 bg-[#ffd7b8]"}`}
+                    className={`h-1.5 rounded-full ${index === offerIndex ? (pharma ? "w-4 bg-[var(--pharma-green)]" : "w-4 bg-[#ff6a00]") : (pharma ? "w-1.5 bg-[var(--pharma-green)]/30" : "w-1.5 bg-[#ffd7b8]")}`}
                   />
                 ))}
               </div>
@@ -192,14 +194,14 @@ export function FlashOfferHost() {
               type="button"
               disabled={claiming}
               onClick={() => void acceptOffer()}
-              className="mt-4 h-14 w-full rounded-full bg-[#ff6a00] text-lg font-bold text-white disabled:opacity-60"
+              className={`mt-4 h-14 w-full rounded-full text-lg font-bold text-white disabled:opacity-60 ${pharma ? "bg-[var(--pharma-green)]" : "bg-[#ff6a00]"}`}
             >
               {claiming ? "Reservando..." : "Quero essa oferta"}
             </button>
             <button
               type="button"
               onClick={closeOffers}
-              className="mt-3 text-base font-medium text-neutral-500"
+              className="mt-2 inline-flex h-11 w-full items-center justify-center text-base font-medium text-neutral-600"
             >
               Agora não
             </button>

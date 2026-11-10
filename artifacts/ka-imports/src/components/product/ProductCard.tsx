@@ -108,25 +108,27 @@ export function ProductCard({ product, sellerSlug, priority = false, salesRank, 
             aria-label={isSoldOut ? "Produto esgotado" : "Adicionar ao carrinho"}
             disabled={isSoldOut}
             onClick={handlePharmaAdd}
-            className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--pharma-green)] text-white disabled:bg-neutral-300"
+            className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--pharma-green)] text-white disabled:bg-neutral-300"
           >
             <ShoppingCart className="h-4 w-4" />
           </button>
         </div>
         <div className="flex flex-1 flex-col px-3 pb-3 pt-1">
-          {brand ? <p className="text-xs text-neutral-400">{brand}</p> : null}
+          {brand ? <p className="text-xs font-medium text-neutral-600">{brand}</p> : null}
           <h3 className="line-clamp-3 text-sm font-bold leading-tight text-neutral-900">{product.name}</h3>
           <div className="mt-auto pt-2">
             {pharmaOff != null && (
               <>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">A partir de</p>
-                <p className="text-xs text-neutral-400 line-through">{formatCurrency(product.price)}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-600">A partir de</p>
+                <p className="text-xs text-neutral-600 line-through">{formatCurrency(product.price)}</p>
               </>
             )}
-            <div className="flex items-center gap-1">
-              <span className="whitespace-nowrap text-sm font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
-              <span className="shrink-0 whitespace-nowrap rounded-full border border-[var(--pharma-green)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--pharma-green-ink)]">PIX</span>
-              <Link href={href} className="ml-auto inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-full bg-[var(--pharma-green)] px-2.5 text-xs font-semibold text-white">
+            <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-1">
+                <span className="text-sm font-bold leading-none text-[var(--pharma-green)]">{formatCurrency(pharmaSale)}</span>
+                <span className="shrink-0 rounded-full border border-[var(--pharma-green)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--pharma-green-ink)]">PIX</span>
+              </div>
+              <Link href={href} className="inline-flex h-11 w-full shrink-0 items-center justify-center rounded-full bg-[var(--pharma-green)] px-3 text-sm font-semibold text-white md:ml-auto md:h-8 md:w-auto md:px-2.5 md:text-xs">
                 Ver →
               </Link>
             </div>
