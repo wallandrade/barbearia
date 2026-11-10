@@ -10,3 +10,11 @@ export const cellTechAlertsTable = mysqlTable("cell_tech_alerts", {
 }, (table) => ({
   kindOsPeriod: uniqueIndex("cell_tech_alerts_kind_os_period").on(table.kind, table.osId, table.periodKey),
 }));
+
+/** Desde quando a OS está na situação atual, quando o Gestão Click não manda a data. */
+export const cellTechSituationStateTable = mysqlTable("cell_tech_situation_state", {
+  osId: varchar("os_id", { length: 64 }).primaryKey(),
+  situationKey: varchar("situation_key", { length: 120 }).notNull(),
+  sinceDay: varchar("since_day", { length: 10 }).notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

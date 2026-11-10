@@ -1521,6 +1521,19 @@ async function ensureCellTechAlertsTable(databaseName: string): Promise<void> {
   console.log("[RuntimeSchema] Created table cell_tech_alerts");
 }
 
+async function ensureCellTechSituationStateTable(databaseName: string): Promise<void> {
+  if (await tableExists("cell_tech_situation_state", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE cell_tech_situation_state (
+      os_id VARCHAR(64) NOT NULL PRIMARY KEY,
+      situation_key VARCHAR(120) NOT NULL,
+      since_day VARCHAR(10) NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log("[RuntimeSchema] Created table cell_tech_situation_state");
+}
+
 async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   if (await tableExists("checkout_drafts", databaseName)) return;
   await pool.query(`
@@ -1611,6 +1624,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureAdminImagesTable(databaseName);
     await ensureFlashOfferTables(databaseName);
     await ensureCellTechAlertsTable(databaseName);
+    await ensureCellTechSituationStateTable(databaseName);
     await ensurePixSecretBinding(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");

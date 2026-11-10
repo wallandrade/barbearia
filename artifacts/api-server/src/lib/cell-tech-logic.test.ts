@@ -19,6 +19,16 @@ import {
   buildDeadlineMissedMessage,
   buildFinishedMessage,
   buildNextDayReminder,
+  buildCellTechQueueMessage,
+  buildCellTechStalledMessage,
+  cellTechOnReminderTrack,
+  cellTechQueueDue,
+  cellTechStalledDue,
+  cellTechStalledMinDays,
+  cellTechWebhookAccepted,
+  planCellTechSituationState,
+  selectStalledOrders,
+  type CellTechOrder,
   cellTechAutomaticGroupSendCount,
   cellTechAutomaticGroupSendOpen,
   cellTechGroupSendFromMinutes,
@@ -454,4 +464,221 @@ test("webhook só https", () => {
     normalizeCellTechWebhookUrl("https://wallandrade.app.n8n.cloud/webhook/cell"),
     "https://wallandrade.app.n8n.cloud/webhook/cell",
   );
+});
+
+test("webhook da Cell Tech só conta 2xx", () => {
+  assert.equal(cellTechWebhookAccepted(200), true);
+  assert.equal(cellTechWebhookAccepted(204), true);
+  assert.equal(cellTechWebhookAccepted(299), true);
+  assert.equal(cellTechWebhookAccepted(409), false);
+  assert.equal(cellTechWebhookAccepted(500), false);
+  assert.equal(cellTechWebhookAccepted(199), false);
+});
+
+function queueOrder(partial: Partial<CellTechOrder> & Pick<CellTechOrder, "id" | "code">): CellTechOrder {
+  const deadlineDay = partial.deadlineDay === undefined ? "2026-11-12" : partial.deadlineDay;
+  return {
+    id: partial.id,
+    code: partial.code,
+    clientName: partial.clientName ?? "Ana",
+    technicianId: partial.technicianId ?? "1",
+    technicianName: partial.technicianName ?? "Cassio",
+    situationId: partial.situationId ?? "10",
+    situationName: partial.situationName ?? "Em andamento",
+    priority: "",
+    services: partial.services ?? ["Troca de tela"],
+    equipment: partial.equipment ?? "",
+    entryDay: partial.entryDay ?? "2026-11-01",
+    deadlineDay,
+    finishedDay: partial.finishedDay ?? null,
+    changedDay: partial.changedDay === undefined ? null : partial.changedDay,
+    deadlineLabel: partial.deadlineLabel ?? (deadlineDay ? "12/11/2026" : "Sem prazo"),
+    finished: partial.finished ?? false,
+    partsCost: partial.partsCost === undefined ? 40 : partial.partsCost,
+    profit: partial.profit === undefined ? 1234.56 : partial.profit,
+    working: partial.working ?? true,
+    tone: partial.tone ?? "green",
+    overdue: partial.overdue ?? false,
+    dueToday: partial.dueToday ?? false,
+    statusLabel: partial.statusLabel ?? "No prazo",
+  };
+}
+
+test("fila da manhã ordena, limita e não leva valor", () => {
+  const clock = saoPauloClock(new Date("2026-11-10T11:00:00.000Z"));
+  const orders = [
+    queueOrder({ id: "1", code: "10", clientName: "ana paula", overdue: true, deadlineDay: "2026-11-01", deadlineLabel: "01/11/2026", tone: "red", statusLabel: "Atraso de 9 dias" }),
+    queueOrder({ id: "2", code: "11", clientName: "bia", overdue: true, deadlineDay: "2026-11-08", deadlineLabel: "08/11/2026", tone: "red" }),
+    queueOrder({ id: "3", code: "12", clientName: "caio", dueToday: true, deadlineDay: "2026-11-10", deadlineLabel: "10/11/2026 18:00", tone: "yellow", statusLabel: "Vence hoje" }),
+    queueOrder({ id: "4", code: "13", clientName: "dora", deadlineDay: "2026-11-20", deadlineLabel: "20/11/2026" }),
+    queueOrder({ id: "5", code: "14", clientName: "elias", deadlineDay: null, deadlineLabel: "Sem prazo", tone: "gray", statusLabel: "Sem prazo" }),
+    queueOrder({ id: "6", code: "15", clientName: "fabio", deadlineDay: "2026-11-18", deadlineLabel: "18/11/2026" }),
+    queueOrder({ id: "7", code: "20", clientName: "guto", technicianId: "", technicianName: "Sem técnico", deadlineDay: null, deadlineLabel: "Sem prazo", tone: "gray", statusLabel: "Sem prazo" }),
+    queueOrder({ id: "8", code: "30", clientName: "helena", technicianId: "2", technicianName: "bruno", dueToday: true, deadlineDay: "2026-11-10", deadlineLabel: "10/11/2026", tone: "yellow" }),
+    queueOrder({ id: "9", code: "99", clientName: "igor cancelado", situationName: "Cancelada", finished: true, tone: "green" }),
+    queueOrder({ id: "10", code: "98", clientName: "julia pronta", situationName: "CONCRETIZADO O.S", finished: true, tone: "green", partsCost: 40, profit: 1234.56 }),
+  ];
+  const message = buildCellTechQueueMessage(orders, clock);
+  const bruno = message.indexOf("*Bruno*");
+  const cassio = message.indexOf("*Cassio*");
+  const sem = message.indexOf("Sem técnico");
+  assert.ok(bruno >= 0 && cassio > bruno && sem > cassio);
+  const cassioBlock = message.slice(cassio, sem);
+  const at = (code: string) => cassioBlock.indexOf(`OS ${code}`);
+  assert.ok(at("10") < at("11") && at("11") < at("12") && at("12") < at("15") && at("15") < at("13"));
+  assert.equal(at("14"), -1);
+  assert.match(cassioBlock, /⚠️ 📱 \*OS 10\* · Ana Paula/);
+  assert.match(cassioBlock, /6 abertas/);
+  assert.match(cassioBlock, /📌 \+ 1 no painel/);
+  assert.doesNotMatch(cassioBlock, /Elias|OS 14/);
+  assert.match(message, /Sem técnico\* · 1 aberta/);
+  assert.match(message, /OS 20/);
+  assert.match(message, /Sem prazo/);
+  assert.match(message, /📅 18\/11\/2026/);
+  assert.match(message, /🛠️ \*Fila da Cell Tech\*/);
+  assert.match(message, /📅 10\/11\/2026/);
+  assert.doesNotMatch(message, /igor cancelado|julia pronta|OS 99|OS 98|R\$|lucro|custo|1234/);
+});
+
+test("fila e OS parada esperam 08:00 e recuperam dentro da janela", () => {
+  const from = CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT;
+  const at = (iso: string) => saoPauloClock(new Date(iso));
+  assert.equal(at("2026-11-10T10:59:00.000Z").minutes, 7 * 60 + 59);
+  assert.equal(at("2026-11-10T11:00:00.000Z").minutes, 8 * 60);
+  assert.equal(at("2026-11-10T18:00:00.000Z").minutes, 15 * 60);
+  assert.equal(cellTechQueueDue(at("2026-11-10T10:59:00.000Z"), false, from), false);
+  assert.equal(cellTechStalledDue(at("2026-11-10T03:00:00.000Z"), false, from), false);
+  assert.equal(cellTechQueueDue(at("2026-11-10T11:00:00.000Z"), false, from), true);
+  assert.equal(cellTechStalledDue(at("2026-11-10T11:00:00.000Z"), false, from), true);
+  assert.equal(cellTechQueueDue(at("2026-11-10T18:00:00.000Z"), false, from), true);
+  assert.equal(cellTechQueueDue(at("2026-11-10T18:00:00.000Z"), true, from), false);
+  assert.equal(cellTechStalledDue(at("2026-11-10T21:59:00.000Z"), false, from), true);
+  assert.equal(cellTechStalledDue(at("2026-11-10T22:00:00.000Z"), false, from), false);
+  assert.equal(at("2026-11-10T11:00:00.000Z").dayKey, "2026-11-10");
+  assert.notEqual(at("2026-11-10T11:00:00.000Z").dayKey, at("2026-11-11T11:00:00.000Z").dayKey);
+  assert.equal(cellTechStalledMinDays(""), 3);
+  assert.equal(cellTechStalledMinDays("0"), 3);
+  assert.equal(cellTechStalledMinDays("4"), 4);
+  assert.equal(cellTechStalledMinDays("abc"), 3);
+});
+
+test("OS parada usa a data, a situação e fica fora do lembrete", () => {
+  const clock = saoPauloClock(new Date("2026-11-10T11:00:00.000Z"));
+  const late = parseCellTechOrder({
+    id: "1",
+    codigo: "10",
+    nome_cliente: "Ana",
+    nome_tecnico: "Cassio",
+    tecnico_id: "1",
+    nome_situacao: "Em andamento",
+    situacao_id: "10",
+    previsao_entrega: "2026-11-04",
+    modificado_em: "2026-11-07",
+    servicos: [{ detalhes: "Troca de tela" }],
+    produtos: [{ quantidade: 1, valor_custo: "40.00", valor_total: "80.00" }],
+  }, flags, clock);
+  assert.ok(late);
+  assert.equal(late.changedDay, "2026-11-07");
+  assert.equal(late.overdue, true);
+  assert.equal(cellTechOnReminderTrack(late, clock, { created: true, deadline: true }), true);
+  assert.equal(cellTechOnReminderTrack(late, clock, { created: true, deadline: false }), false);
+  const reminded = new Map([[late.id, { created: true, deadline: true }]]);
+  assert.equal(selectStalledOrders([late], clock, {
+    minDays: 3,
+    situationIds: [],
+    sinceByOs: new Map(),
+    sentByOs: reminded,
+  }).length, 0);
+  const firstDeadline = selectStalledOrders([late], clock, {
+    minDays: 3,
+    situationIds: [],
+    sinceByOs: new Map(),
+    sentByOs: new Map([[late.id, { created: true, deadline: false }]]),
+  });
+  assert.equal(firstDeadline.length, 1);
+  assert.equal(firstDeadline[0]?.days, 3);
+  assert.equal(selectStalledOrders([late], clock, {
+    minDays: 3,
+    situationIds: ["99"],
+    sinceByOs: new Map(),
+    sentByOs: new Map(),
+  }).length, 0);
+
+  const young = queueOrder({
+    id: "2",
+    code: "11",
+    changedDay: "2026-11-08",
+    overdue: true,
+    deadlineDay: "2026-11-04",
+    deadlineLabel: "04/11/2026",
+  });
+  assert.equal(selectStalledOrders([young], clock, {
+    minDays: 3,
+    situationIds: [],
+    sinceByOs: new Map([["2", "2026-11-01"]]),
+    sentByOs: new Map(),
+  }).length, 0);
+
+  const undated = queueOrder({
+    id: "3",
+    code: "12",
+    clientName: "bia",
+    technicianId: "",
+    technicianName: "Sem técnico",
+    changedDay: null,
+    situationId: "10",
+    situationName: "Bancada",
+    services: ["Bateria"],
+  });
+  const tracked = selectStalledOrders([undated], clock, {
+    minDays: 1,
+    situationIds: [],
+    sinceByOs: new Map([["3", "2026-11-09"]]),
+    sentByOs: new Map(),
+  });
+  assert.equal(tracked.length, 1);
+  assert.equal(tracked[0]?.days, 1);
+  const text = buildCellTechStalledMessage(tracked, clock);
+  assert.match(text, /⏳ \*OS parada\*/);
+  assert.match(text, /📅 10\/11\/2026/);
+  assert.match(text, /📱 \*OS 12\* · Bia/);
+  assert.match(text, /🔧 Bateria · 👨‍🔧 Sem técnico/);
+  assert.match(text, /📌 Está em \*Bancada\* há 1 dia\./);
+  assert.doesNotMatch(text, /R\$|lucro|custo|1234/);
+
+  const cancelled = queueOrder({ id: "4", code: "13", situationName: "Cancelada", finished: true, changedDay: "2026-10-01" });
+  assert.equal(selectStalledOrders([cancelled], clock, {
+    minDays: 3,
+    situationIds: [],
+    sinceByOs: new Map(),
+    sentByOs: new Map(),
+  }).length, 0);
+
+  const fresh = planCellTechSituationState([undated], new Map(), clock.dayKey);
+  assert.equal(fresh.sinceByOs.get("3"), "2026-11-10");
+  assert.equal(fresh.writes[0]?.situationKey, "10");
+  const kept = planCellTechSituationState(
+    [undated],
+    new Map([["3", { situationKey: "10", sinceDay: "2026-11-01" }]]),
+    clock.dayKey,
+  );
+  assert.equal(kept.sinceByOs.get("3"), "2026-11-01");
+  assert.equal(kept.writes.length, 0);
+  const moved = queueOrder({ id: "3", code: "12", situationId: "20", situationName: "Aguardando peça", technicianId: "", technicianName: "Sem técnico" });
+  const reset = planCellTechSituationState(
+    [moved],
+    new Map([["3", { situationKey: "10", sinceDay: "2026-11-01" }]]),
+    clock.dayKey,
+  );
+  assert.equal(reset.sinceByOs.get("3"), "2026-11-10");
+  assert.equal(reset.writes[0]?.situationKey, "20");
+  const closed = planCellTechSituationState([cancelled], new Map(), clock.dayKey);
+  assert.equal(closed.writes.length, 0);
+
+  const noChange = parseCellTechOrder({
+    id: "5",
+    codigo: "14",
+    nome_situacao: "Em andamento",
+  }, flags, clock);
+  assert.equal(noChange?.changedDay, null);
 });
