@@ -1,6 +1,7 @@
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getActiveWhatsApp } from "@/lib/utils";
+import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -55,13 +56,14 @@ async function openWhatsApp(text: string) {
 }
 
 export function Footer() {
+  const pharma = useStoreTheme() === PHARMA_COMPACT_THEME;
   return (
     <footer className="bg-white border-t border-border mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <span className="font-bold text-xl text-primary">Yury</span>
+              <span className={`font-bold text-xl ${pharma ? "text-[var(--pharma-green-ink)]" : "text-primary"}`}>Yury</span>
             </div>
             <p className="text-muted-foreground text-sm">
               A sua loja de importados com os melhores preços e garantia de qualidade.

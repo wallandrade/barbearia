@@ -88,7 +88,7 @@ export function PharmaHomeShelves({
   onLaunches: () => void;
 }) {
   return (
-    <div className="mt-8 flex w-full flex-col gap-12">
+    <div className="mt-4 flex w-full flex-col gap-12">
         <CategoryShelf
           shelf={shelves.tirzepatida}
           title={shelves.tirzepatida.label || "Tirzepatida"}

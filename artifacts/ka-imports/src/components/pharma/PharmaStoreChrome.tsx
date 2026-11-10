@@ -93,6 +93,47 @@ function useStoreCatalog(): { categories: string[]; products: PharmaSuggestProdu
   return { categories, products, ready };
 }
 
+
+function PharmaSearchField({
+  searchValue,
+  onSearchValue,
+  onOpenSuggestions,
+  showSuggestions,
+}: {
+  searchValue: string;
+  onSearchValue: (value: string) => void;
+  onOpenSuggestions: (open: boolean) => void;
+  showSuggestions: boolean;
+}) {
+  return (
+    <div className="relative min-w-0 w-full">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+      <input
+        value={searchValue}
+        onChange={(event) => {
+          const value = event.target.value;
+          onSearchValue(value);
+          onOpenSuggestions(value.trim().length > 0);
+        }}
+        onFocus={() => {
+          if (searchValue.trim()) onOpenSuggestions(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onOpenSuggestions(false);
+          }
+        }}
+        placeholder="Buscar produtos..."
+        autoComplete="off"
+        aria-autocomplete="list"
+        aria-expanded={showSuggestions}
+        className="h-11 w-full min-w-0 rounded-full bg-[#f3f4f6] pl-9 pr-3 text-sm outline-none"
+      />
+    </div>
+  );
+}
+
 export function PharmaStoreChrome() {
   const { items, setIsOpen } = useCart();
   const [location, setLocation] = useLocation();
@@ -249,12 +290,12 @@ export function PharmaStoreChrome() {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
-        <div className="h-1 bg-gradient-to-r from-orange-500 via-red-500 to-red-600" />
+        <div className="h-1 bg-gradient-to-r from-[var(--pharma-green)] via-[var(--pharma-green-strong)] to-[var(--pharma-green-ink)]" />
         <div ref={searchRef} className="relative z-20">
         <div className="flex h-14 items-center gap-2 px-3">
           <button
             type="button"
-            className="rounded-full p-2 md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full md:hidden"
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="Menu"
           >
@@ -265,44 +306,27 @@ export function PharmaStoreChrome() {
               <img
                 src={logo}
                 alt={siteName || "Logo da loja"}
-                className="w-auto object-contain"
+                className="w-auto object-contain max-md:!h-8 max-md:!max-w-[7.5rem]"
                 style={{ height: `${Math.round(32 * (logoScale / 100))}px`, maxWidth: `${Math.round(120 * (logoScale / 100))}px` }}
               />
             ) : (
               <span className="max-w-[7rem] truncate text-sm font-bold text-neutral-900">{siteName || "Loja"}</span>
             )}
           </Link>
-          <form onSubmit={handleSearch} className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-            <input
-              value={searchValue}
-              onChange={(event) => {
-                const value = event.target.value;
-                setSearchValue(value);
-                setSuggestionsOpen(value.trim().length > 0);
-              }}
-              onFocus={() => {
-                if (searchValue.trim()) setSuggestionsOpen(true);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setSuggestionsOpen(false);
-                }
-              }}
-              placeholder="Buscar produtos.."
-              autoComplete="off"
-              aria-autocomplete="list"
-              aria-expanded={showSuggestions}
-              className="h-11 w-full rounded-full bg-[#f3f4f6] pl-9 pr-3 text-sm outline-none"
+          <form onSubmit={handleSearch} className="relative hidden min-w-0 flex-1 md:block">
+            <PharmaSearchField
+              searchValue={searchValue}
+              onSearchValue={setSearchValue}
+              onOpenSuggestions={setSuggestionsOpen}
+              showSuggestions={showSuggestions}
             />
           </form>
           {loggedIn ? (
-            <Link href="/minha-conta/pedidos" className="flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200" aria-label="Minha conta">
+            <Link href="/minha-conta/pedidos" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200" aria-label="Minha conta">
               <User className="h-5 w-5" />
             </Link>
           ) : (
-            <button type="button" className="flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200" aria-label="Entrar" onClick={() => setLoginOpen(true)}>
+            <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200" aria-label="Entrar" onClick={() => setLoginOpen(true)}>
               <User className="h-5 w-5" />
             </button>
           )}
@@ -320,6 +344,14 @@ export function PharmaStoreChrome() {
             )}
           </button>
         </div>
+        <form onSubmit={handleSearch} className="relative px-3 pb-2 md:hidden">
+          <PharmaSearchField
+            searchValue={searchValue}
+            onSearchValue={setSearchValue}
+            onOpenSuggestions={setSuggestionsOpen}
+            showSuggestions={showSuggestions}
+          />
+        </form>
         {showSuggestions && (
           <div className="absolute top-full right-3 left-3 z-30 mt-1 max-h-80 overflow-y-auto rounded-2xl border border-neutral-200 bg-white shadow-xl">
             {!catalogReady ? (
