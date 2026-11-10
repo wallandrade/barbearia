@@ -35,11 +35,13 @@ export function PharmaLoginDialog() {
   const [cpf, setCpf] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetNotice, setResetNotice] = useState("");
+  const [resetStatus, setResetStatus] = useState("");
 
   useEffect(() => {
     if (!open) {
       setMode("login");
       setResetNotice("");
+      setResetStatus("");
       return;
     }
     function onKey(event: KeyboardEvent) {
@@ -72,14 +74,18 @@ export function PharmaLoginDialog() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: accountEmail }),
       });
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) {
-        toast.error("Não foi possível enviar agora. Tente de novo ou fale no WhatsApp.");
-        return;
+      const data = (await res.json().catch(() => ({}))) as { status?: string; message?: string };
+      const fallback = "Não conseguimos enviar agora. Tente de novo ou fale no WhatsApp.";
+      if (data.status === "sent" && data.message) {
+        setResetStatus("sent");
+        setResetNotice(data.message);
+      } else {
+        setResetStatus(data.status && data.status !== "sent" ? data.status : "failed");
+        setResetNotice(data.message || fallback);
       }
-      setResetNotice(data.message || "Se o e-mail estiver cadastrado, você vai receber um link.");
     } catch {
-      toast.error("Erro de conexão. Tente novamente ou fale no WhatsApp.");
+      setResetStatus("failed");
+      setResetNotice("Não conseguimos enviar agora. Tente de novo ou fale no WhatsApp.");
     } finally {
       setLoading(false);
     }
@@ -157,12 +163,16 @@ export function PharmaLoginDialog() {
         {mode === "forgot" ? (
           <div className="mt-4 space-y-3">
             <p className="text-sm leading-relaxed text-neutral-600">
-              Informe o e-mail da conta. Se ele estiver cadastrado, você recebe um link para criar uma senha nova.
+              Informe o e-mail da conta para receber o link de uma senha nova.
             </p>
             <input
               type="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setResetNotice("");
+                setResetStatus("");
+              }}
               placeholder="E-mail"
               autoComplete="email"
               className="h-11 w-full rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-900"
@@ -176,9 +186,27 @@ export function PharmaLoginDialog() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enviar link"}
             </button>
             {resetNotice ? (
-              <p className="rounded-xl bg-neutral-50 px-3 py-2 text-sm leading-relaxed text-neutral-700">
+              <p
+                role="status"
+                className={`rounded-xl px-3 py-2 text-sm leading-relaxed ${
+                  resetStatus === "sent"
+                    ? "bg-emerald-50 text-emerald-800"
+                    : resetStatus === "unknown_email"
+                      ? "bg-amber-50 text-amber-900"
+                      : "bg-red-50 text-red-800"
+                }`}
+              >
                 {resetNotice}
               </p>
+            ) : null}
+            {resetStatus === "unknown_email" ? (
+              <button
+                type="button"
+                className="w-full text-sm font-medium text-neutral-800 underline-offset-2 hover:underline"
+                onClick={() => setMode("register")}
+              >
+                Criar conta
+              </button>
             ) : null}
             <button
               type="button"

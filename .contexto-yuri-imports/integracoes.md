@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Senha só conta como enviada com `messageId` | A loja espera a resposta de `POST /v3/smtp/email`. Sem `messageId`, o diálogo não mostra sucesso | A sincronização de contatos e o remetente iguais |
 | 2026-11-10 | Brevo envia o e-mail de senha | `POST https://api.brevo.com/v3/smtp/email` com a mesma `brevo_api_key`. Remetente em `brevo_sender_email` e `brevo_sender_name`. O link usa `brevo_reset_base_url` ou `PASSWORD_RESET_BASE_URL`, senão `https://www.yury-imports.com` | A sincronização de contatos igual. Sem chave ou remetente, nada é enviado |
 | 2026-11-10 | Finalizado fecha a OS mesmo com situações marcadas | Nome Finalizado, Concretizado, Cancelada e os outros do mesmo grupo continuam fechados. A lista do admin soma, não substitui. Baixa no grupo só se a data for hoje | PIX antigo, esgotado e a senha de baixa iguais |
 | 2026-11-10 | Cell Tech manda a fila da manhã e a OS parada | Às 8h, uma mensagem por técnico e outra só se alguma OS aberta está parada. 409 do n8n não marca como enviado. OS que já está no lembrete de prazo não entra na parada | PIX antigo, esgotado, senha de baixa e o relatório das 8h30 iguais |
@@ -357,7 +358,7 @@ Módulo isolado da loja. Não lê `orders`, PIX nem frete.
 
 ## E-mail / CRM
 
-- **Brevo** (`api.brevo.com`) — `lib/brevo.ts`, rotas `routes/brevo.ts` (sync/teste e remetente). A recuperação de senha manda e-mail transacional em `POST /v3/smtp/email` (`lib/password-reset.ts`, `routes/password-reset.ts`). A chave continua `brevo_api_key`. O remetente é `brevo_sender_email` e `brevo_sender_name`, gravados na mesma tela. Essas chaves não entram em `PUBLIC_KEYS`. Sem chave ou sem e-mail de remetente, o pedido de senha não chama o Brevo.
+- **Brevo** (`api.brevo.com`) — `lib/brevo.ts`, rotas `routes/brevo.ts` (sync/teste e remetente). A recuperação de senha manda e-mail transacional em `POST /v3/smtp/email` (`lib/password-reset.ts`, `routes/password-reset.ts`). A chave continua `brevo_api_key`. O remetente é `brevo_sender_email` e `brevo_sender_name`, gravados na mesma tela. Essas chaves não entram em `PUBLIC_KEYS`. Sem chave ou sem e-mail de remetente, o pedido de senha não chama o Brevo. A loja só trata o envio como feito quando a resposta traz `messageId`.
 
 ## WhatsApp
 

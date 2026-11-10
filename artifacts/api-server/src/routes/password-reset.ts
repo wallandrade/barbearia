@@ -11,17 +11,18 @@ import {
   createPasswordResetRateStore,
   customerPasswordError,
   deliverPasswordResetEmail,
-  genericForgotPasswordBody,
+  forgotPasswordResult,
   hashPasswordResetToken,
   isPasswordResetMailReady,
   isPlausibleResetEmail,
   consumePasswordResetAttempt,
+  maskResetEmail,
   normalizeClientIp,
   normalizeResetEmail,
   planForgotPasswordRequest,
   resetTokenStatus,
   resolvePasswordResetBaseUrl,
-  responsePaddingMs,
+  type ForgotPasswordResult,
   type PasswordResetRateStore,
 } from "../lib/password-reset";
 
@@ -41,15 +42,15 @@ function clientIp(req: { ip?: string }): string {
   return normalizeClientIp(req.ip);
 }
 
-async function waitForSimilarResponse(startedAt: number): Promise<void> {
-  const waitMs = responsePaddingMs(Date.now() - startedAt);
-  if (waitMs <= 0) return;
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
+function sendForgotResult(res: { status(code: number): { json(body: unknown): void } }, result: ForgotPasswordResult): void {
+  res.status(result.httpStatus).json({
+    ok: result.ok,
+    status: result.status,
+    message: result.message,
+  });
 }
 
 router.post("/auth/forgot-password", async (req, res) => {
-  const startedAt = Date.now();
-  const response = genericForgotPasswordBody();
   try {
     const now = new Date();
     const email = normalizeResetEmail(req.body?.email);
@@ -62,82 +63,101 @@ router.post("/auth/forgot-password", async (req, res) => {
       countEmail: plausible,
     }).allowed;
 
-    if (allowed && plausible) {
-      const users = await db
-        .select({
-          id: customerUsersTable.id,
-          email: customerUsersTable.email,
-          name: customerUsersTable.name,
-        })
-        .from(customerUsersTable)
-        .where(sql`lower(${customerUsersTable.email}) = ${email}`)
-        .limit(1);
-      const user = users[0] ?? null;
-
-      const apiKey = await readSetting("brevo_api_key");
-      const senderEmail = await readSetting("brevo_sender_email");
-      const senderName = await readSetting("brevo_sender_name");
-      const resetBaseSetting = await readSetting("brevo_reset_base_url");
-      const brevoReady = isPasswordResetMailReady({ apiKey, senderEmail });
-
-      const plan = planForgotPasswordRequest({
-        email,
-        ip,
-        now,
-        store: rateStore,
-        user,
-        brevoReady,
-        skipRateLimit: true,
-      });
-
-      if (plan.outcome === "not_configured") {
-        console.warn("[PasswordReset] Brevo sem chave ou remetente. Pedido não enviado.");
-      }
-
-      if (plan.outcome === "send") {
-        await db
-          .update(customerPasswordResetsTable)
-          .set({ usedAt: now })
-          .where(and(
-            eq(customerPasswordResetsTable.userId, plan.userId),
-            isNull(customerPasswordResetsTable.usedAt),
-          ));
-        await db.insert(customerPasswordResetsTable).values({
-          id: crypto.randomBytes(16).toString("hex"),
-          userId: plan.userId,
-          tokenHash: plan.tokenHash,
-          expiresAt: plan.expiresAt,
-        });
-
-        const resetUrl = buildResetLink(resolvePasswordResetBaseUrl({
-          setting: resetBaseSetting,
-          envValue: process.env.PASSWORD_RESET_BASE_URL,
-        }), plan.token);
-
-        void deliverPasswordResetEmail({
-          apiKey,
-          senderEmail,
-          senderName,
-          toEmail: plan.email,
-          toName: plan.name,
-          resetUrl,
-        }).then((result) => {
-          if (result.sent) {
-            console.info("[PasswordReset] Link enviado", { userId: plan.userId });
-            return;
-          }
-          console.warn("[PasswordReset] Envio não concluído", { userId: plan.userId, status: result.status });
-        }).catch(() => {
-          console.warn("[PasswordReset] Envio não concluído", { userId: plan.userId });
-        });
-      }
+    if (!allowed) {
+      console.warn("[PasswordReset] Limite de pedidos", { email: plausible ? maskResetEmail(email) : "***" });
+      sendForgotResult(res, forgotPasswordResult("rate_limited"));
+      return;
     }
+    if (!plausible) {
+      console.warn("[PasswordReset] E-mail inválido");
+      sendForgotResult(res, forgotPasswordResult("invalid_email"));
+      return;
+    }
+
+    const users = await db
+      .select({
+        id: customerUsersTable.id,
+        email: customerUsersTable.email,
+        name: customerUsersTable.name,
+      })
+      .from(customerUsersTable)
+      .where(sql`lower(${customerUsersTable.email}) = ${email}`)
+      .limit(1);
+    const user = users[0] ?? null;
+
+    const apiKey = await readSetting("brevo_api_key");
+    const senderEmail = await readSetting("brevo_sender_email");
+    const senderName = await readSetting("brevo_sender_name");
+    const resetBaseSetting = await readSetting("brevo_reset_base_url");
+    const brevoReady = isPasswordResetMailReady({ apiKey, senderEmail });
+
+    const plan = planForgotPasswordRequest({
+      email,
+      ip,
+      now,
+      store: rateStore,
+      user,
+      brevoReady,
+      skipRateLimit: true,
+    });
+
+    if (plan.outcome === "unknown_email") {
+      console.info("[PasswordReset] E-mail não cadastrado", { email: maskResetEmail(email) });
+      sendForgotResult(res, forgotPasswordResult("unknown_email"));
+      return;
+    }
+    if (plan.outcome === "not_configured") {
+      console.warn("[PasswordReset] Brevo sem chave ou remetente", { email: maskResetEmail(email) });
+      sendForgotResult(res, forgotPasswordResult("not_configured"));
+      return;
+    }
+    if (plan.outcome !== "send") {
+      sendForgotResult(res, forgotPasswordResult(plan.outcome));
+      return;
+    }
+
+    await db
+      .update(customerPasswordResetsTable)
+      .set({ usedAt: now })
+      .where(and(
+        eq(customerPasswordResetsTable.userId, plan.userId),
+        isNull(customerPasswordResetsTable.usedAt),
+      ));
+    await db.insert(customerPasswordResetsTable).values({
+      id: crypto.randomBytes(16).toString("hex"),
+      userId: plan.userId,
+      tokenHash: plan.tokenHash,
+      expiresAt: plan.expiresAt,
+    });
+
+    const resetUrl = buildResetLink(resolvePasswordResetBaseUrl({
+      setting: resetBaseSetting,
+      envValue: process.env.PASSWORD_RESET_BASE_URL,
+    }), plan.token);
+    const delivery = await deliverPasswordResetEmail({
+      apiKey,
+      senderEmail,
+      senderName,
+      toEmail: plan.email,
+      toName: plan.name,
+      resetUrl,
+    });
+    const masked = maskResetEmail(plan.email);
+    if (delivery.sent && delivery.messageId) {
+      console.info("[PasswordReset] Link enviado", { userId: plan.userId, email: masked });
+      sendForgotResult(res, forgotPasswordResult("sent", plan.email));
+      return;
+    }
+    console.warn("[PasswordReset] Envio não concluído", {
+      userId: plan.userId,
+      email: masked,
+      status: delivery.status,
+    });
+    sendForgotResult(res, forgotPasswordResult("failed"));
   } catch (err) {
     console.error("[PasswordReset] Pedido falhou", err instanceof Error ? err.name : "error");
+    sendForgotResult(res, forgotPasswordResult("failed"));
   }
-
-  await waitForSimilarResponse(startedAt);
-  res.status(200).json(response);
 });
 
 router.post("/auth/reset-password", async (req, res) => {

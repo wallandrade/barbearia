@@ -3,21 +3,26 @@ import crypto from "crypto";
 import test from "node:test";
 import {
   DEFAULT_STORE_BASE_URL,
-  GENERIC_FORGOT_PASSWORD_MESSAGE,
+  FORGOT_PASSWORD_INVALID_EMAIL_MESSAGE,
+  FORGOT_PASSWORD_RATE_LIMIT_MESSAGE,
+  FORGOT_PASSWORD_UNAVAILABLE_MESSAGE,
+  FORGOT_PASSWORD_UNKNOWN_EMAIL_MESSAGE,
   PASSWORD_RESET_EMAIL_LIMIT,
   PASSWORD_RESET_IP_LIMIT,
   PASSWORD_RESET_TTL_MS,
   PASSWORD_RESET_WINDOW_MS,
+  brevoSendAccepted,
   buildBrevoPasswordResetPayload,
   buildResetLink,
   consumePasswordResetToken,
   createPasswordResetRateStore,
   customerPasswordError,
   deliverPasswordResetEmail,
-  genericForgotPasswordBody,
+  forgotPasswordResult,
   generatePasswordResetToken,
   hashPasswordResetToken,
   issuePasswordResetToken,
+  maskResetEmail,
   planForgotPasswordRequest,
   resolvePasswordResetBaseUrl,
   responsePaddingMs,
@@ -89,7 +94,7 @@ test("pedido novo invalida o token anterior do mesmo cliente", () => {
   assert.equal(consumePasswordResetToken(second.records, "nao-existe", 40).status, "missing");
 });
 
-test("resposta do pedido é igual para e-mail existente, ausente, sem Brevo e acima do limite", () => {
+test("cada resultado do pedido tem a frase do que aconteceu", () => {
   const store = createPasswordResetRateStore();
   const now = new Date(1_000);
   const existing = plan({ store, now });
@@ -118,19 +123,37 @@ test("resposta do pedido é igual para e-mail existente, ausente, sem Brevo e ac
   assert.equal(missing.outcome, "unknown_email");
   assert.equal(unconfigured.outcome, "not_configured");
   assert.equal(limited.outcome, "rate_limited");
-  assert.deepEqual(existing.response, genericForgotPasswordBody());
-  assert.deepEqual(existing.response, missing.response);
-  assert.deepEqual(existing.response, unconfigured.response);
-  assert.deepEqual(existing.response, limited.response);
-  assert.equal(existing.response.message, GENERIC_FORGOT_PASSWORD_MESSAGE);
-  assert.equal(JSON.stringify(existing.response), JSON.stringify(limited.response));
+
+  const sent = forgotPasswordResult("sent", "ANA@exemplo.com");
+  const unknown = forgotPasswordResult("unknown_email");
+  const rateLimited = forgotPasswordResult("rate_limited");
+  const invalid = forgotPasswordResult("invalid_email");
+  const unconfiguredResult = forgotPasswordResult("not_configured");
+  const failed = forgotPasswordResult("failed");
+  assert.equal(sent.ok, true);
+  assert.equal(sent.httpStatus, 200);
+  assert.equal(sent.message, "✅ Link enviado para ana@exemplo.com. Confira sua caixa de entrada e o spam.");
+  assert.equal(unknown.message, FORGOT_PASSWORD_UNKNOWN_EMAIL_MESSAGE);
+  assert.equal(unknown.httpStatus, 404);
+  assert.equal(rateLimited.message, FORGOT_PASSWORD_RATE_LIMIT_MESSAGE);
+  assert.equal(rateLimited.httpStatus, 429);
+  assert.equal(invalid.message, FORGOT_PASSWORD_INVALID_EMAIL_MESSAGE);
+  assert.equal(unconfiguredResult.message, FORGOT_PASSWORD_UNAVAILABLE_MESSAGE);
+  assert.equal(failed.message, FORGOT_PASSWORD_UNAVAILABLE_MESSAGE);
+  assert.equal(unconfiguredResult.httpStatus, 503);
+  assert.equal(failed.httpStatus, 502);
+  assert.notEqual(sent.message, unknown.message);
+  assert.notEqual(unknown.message, rateLimited.message);
+  assert.notEqual(rateLimited.message, invalid.message);
   if (existing.outcome === "send") {
-    assert.equal(JSON.stringify(existing.response).includes(existing.token), false);
-    assert.equal(JSON.stringify(existing.response).includes(existing.tokenHash), false);
+    assert.equal(sent.message.includes(existing.token), false);
+    assert.equal(sent.message.includes(existing.tokenHash), false);
   }
+  assert.equal(maskResetEmail("andrade2016wallace@gmail.com"), "an***@gmail.com");
+  assert.equal(maskResetEmail("andrade2016wallace@gmail.com").includes("andrade2016wallace"), false);
 });
 
-test("limite por e-mail e por IP não muda o corpo e libera depois da janela", () => {
+test("limite por e-mail e por IP libera depois da janela", () => {
   const byEmail = createPasswordResetRateStore();
   for (let i = 0; i < PASSWORD_RESET_EMAIL_LIMIT; i += 1) {
     assert.equal(plan({ store: byEmail, ip: `203.0.113.${i + 1}` }).outcome, "send");
@@ -160,7 +183,7 @@ test("limite por e-mail e por IP não muda o corpo e libera depois da janela", (
     user: { id: "nova", email: "nova@exemplo.com", name: "Nova" },
   });
   assert.equal(blocked.outcome, "rate_limited");
-  assert.deepEqual(blocked.response, genericForgotPasswordBody());
+  assert.equal(forgotPasswordResult("rate_limited").message, FORGOT_PASSWORD_RATE_LIMIT_MESSAGE);
 
   const later = plan({
     store: byIp,
@@ -172,10 +195,10 @@ test("limite por e-mail e por IP não muda o corpo e libera depois da janela", (
   assert.equal(later.outcome, "send");
 });
 
-test("e-mail inválido também recebe a resposta genérica e a senha segue o mínimo de 8", () => {
+test("e-mail inválido pede correção e a senha segue o mínimo de 8", () => {
   const invalid = plan({ email: "sem-arroba", user: null, brevoReady: false });
   assert.equal(invalid.outcome, "invalid_email");
-  assert.deepEqual(invalid.response, genericForgotPasswordBody());
+  assert.equal(forgotPasswordResult("invalid_email").message, FORGOT_PASSWORD_INVALID_EMAIL_MESSAGE);
   assert.equal(customerPasswordError("1234567"), "A senha deve ter pelo menos 8 caracteres.");
   assert.equal(customerPasswordError("12345678"), null);
   assert.equal(responsePaddingMs(50, 400), 350);
@@ -201,11 +224,12 @@ test("link usa a base configurada e o envio mockado não chama a rede", async ()
     resetUrl: link,
     fetchImpl: async (url, init) => {
       calls.push({ url: String(url), init });
-      return new Response("{}", { status: 201 });
+      return new Response(JSON.stringify({ messageId: "<20241110.1@smtp-relay.mailin.fr>" }), { status: 201 });
     },
   });
   assert.equal(sent.sent, true);
   assert.equal(sent.status, 201);
+  assert.equal(sent.messageId, "<20241110.1@smtp-relay.mailin.fr>");
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.url, "https://api.brevo.com/v3/smtp/email");
   const headers = new Headers(calls[0]?.init?.headers);
@@ -237,5 +261,32 @@ test("link usa a base configurada e o envio mockado não chama a rede", async ()
     },
   });
   assert.equal(skipped.sent, false);
+  assert.equal(skipped.messageId, null);
   assert.equal(called, false);
+
+  const withoutId = await deliverPasswordResetEmail({
+    apiKey: "xkeysib-teste",
+    senderEmail: "nao-responda@yury-imports.com",
+    senderName: "Yury Imports",
+    toEmail: user.email,
+    toName: user.name,
+    resetUrl: link,
+    fetchImpl: async () => new Response("{}", { status: 201 }),
+  });
+  assert.equal(withoutId.sent, false);
+  assert.equal(withoutId.messageId, null);
+
+  const rejected = await deliverPasswordResetEmail({
+    apiKey: "xkeysib-teste",
+    senderEmail: "nao-responda@yury-imports.com",
+    senderName: "Yury Imports",
+    toEmail: user.email,
+    toName: user.name,
+    resetUrl: link,
+    fetchImpl: async () => new Response(JSON.stringify({ message: "unauthorized" }), { status: 401 }),
+  });
+  assert.equal(rejected.sent, false);
+  assert.deepEqual(brevoSendAccepted(201, {}), { sent: false, messageId: null });
+  assert.deepEqual(brevoSendAccepted(201, { messageId: "  abc  " }), { sent: true, messageId: "abc" });
+  assert.equal(brevoSendAccepted(400, { messageId: "abc" }).sent, false);
 });
