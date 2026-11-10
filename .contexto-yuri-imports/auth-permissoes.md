@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Aba Entrar sem CPF | A tela `/login` pede só e-mail e senha. O pedido sem conta continua ligando pelo e-mail. CPF já gravado na conta continua valendo | API de login ainda aceita `document`. Aba Criar conta, pharma e o claim iguais |
 | 2026-11-10 | Pedido de senha diz o que aconteceu | `POST /api/auth/forgot-password` devolve `sent`, `unknown_email`, `rate_limited`, `invalid_email`, `not_configured` ou `failed`. Sucesso só com `messageId` do Brevo. Log do e-mail ausente sai mascarado | Token SHA-256, 1 h, uso único, limite 3/e-mail e 8/IP, PBKDF2 e `set-password` iguais |
 | 2026-11-10 | Cliente pede link de senha por e-mail | `POST /api/auth/forgot-password` responde sempre a mesma frase. `POST /api/auth/reset-password` troca a senha com o token. A tela `/redefinir-senha` cria a senha nova. O admin continua com `set-password` | Sessão, PBKDF2 e a senha de baixa iguais. PIX, estoque e Cell Tech iguais |
 | 2026-11-08 | Senha admin, query e scripts | Login aceita SHA-256 antigo e PBKDF2 novo. Criar, trocar e semear senha grava PBKDF2. `?token=` de admin só com `ADMIN_ALLOW_QUERY_TOKEN=true`. Scripts exigem usuário e senha no ambiente | Sessão de 12 h, cookie e Bearer iguais. Cliente continua PBKDF2. O login não migra o hash antigo |
@@ -81,7 +82,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 ## Cliente (customer)
 
-- Registro/login: `routes/customer-auth.ts` + `middlewares/customer-auth.ts`. Cadastro/login aceitam **CPF opcional** (`document`); grava em `customer_users.document`.
+- Registro/login: `routes/customer-auth.ts` + `middlewares/customer-auth.ts`. A API aceita **CPF opcional** (`document`) e grava em `customer_users.document`. A aba **Entrar** de `/login` não envia CPF. A aba **Criar conta** continua com o campo.
 - Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha). Ao cadastrar/entrar/abrir Meus pedidos ou carteira, liga `userId` se o **e-mail ou o CPF** da compra bater (`claimGuestOrdersForCustomer`).
 - Sessão **em memória** via Bearer token (não tabela de sessão de cliente) — cai em restart/deploy.
 - Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original”.
