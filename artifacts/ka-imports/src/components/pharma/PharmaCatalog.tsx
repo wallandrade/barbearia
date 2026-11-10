@@ -30,6 +30,39 @@ const ORDER_OPTIONS: Array<{ id: PharmaOrder; label: string }> = [
 
 type Draft = Pick<PharmaCatalogQuery, "categoria" | "marca" | "promo">;
 
+
+function PharmaCatalogSkeleton({ shelves }: { shelves: boolean }) {
+  const cards = shelves ? 4 : 8;
+  const blocks = shelves ? 2 : 1;
+  return (
+    <div className={shelves ? "mt-4 min-h-[70vh] flex w-full flex-col gap-12" : "mt-4"}>
+      {Array.from({ length: blocks }, (_, block) => (
+        <section key={block}>
+          {shelves ? (
+            <div className="mb-4 space-y-2">
+              <div className="h-3 w-20 animate-pulse rounded bg-neutral-200" />
+              <div className="h-8 w-48 animate-pulse rounded-lg bg-neutral-200" />
+            </div>
+          ) : null}
+          <div className="grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {Array.from({ length: cards }, (_, index) => (
+              <div key={`${block}-${index}`} className="overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+                <div className="aspect-square animate-pulse bg-neutral-100" />
+                <div className="space-y-2 px-3 py-3">
+                  <div className="h-3 w-16 animate-pulse rounded bg-neutral-200" />
+                  <div className="h-4 w-full animate-pulse rounded bg-neutral-200" />
+                  <div className="h-4 w-2/3 animate-pulse rounded bg-neutral-200" />
+                  <div className="mt-2 h-5 w-24 animate-pulse rounded bg-neutral-200" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function PharmaCatalog({
   products,
   isLoading,
@@ -112,7 +145,7 @@ export function PharmaCatalog({
   return (
     <section className="min-h-[60vh] flex-1 bg-[#f6f7f9] px-4 py-6 sm:px-6">
       <div className="mx-auto w-full max-w-7xl">
-        {!showHome && (
+        {!(showHome || (isLoading && isPharmaHomeQuery(query))) && (
         <>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={openFilters} className="inline-flex h-11 items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold">
@@ -178,7 +211,7 @@ export function PharmaCatalog({
             onLaunches={() => write({ ...query, vitrine: "lancamentos", pagina: 1 })}
           />
         ) : isLoading ? (
-          <p className="py-16 text-center text-neutral-500">Carregando produtos...</p>
+          <PharmaCatalogSkeleton shelves={isPharmaHomeQuery(query)} />
         ) : isError ? (
           <p className="py-16 text-center text-red-600">Não foi possível carregar os produtos.</p>
         ) : page.slice.length === 0 ? (
