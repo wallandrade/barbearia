@@ -21,6 +21,8 @@ type Settings = {
   alertsEnabled?: boolean;
   doneSituationIds?: string[];
   workingSituationIds?: string[];
+  stalledMinDays?: number;
+  stalledSituationIds?: string[];
 };
 
 type OrderCard = {
@@ -75,6 +77,8 @@ export default function AdminCellTechPanel() {
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [doneIds, setDoneIds] = useState<string[]>([]);
   const [workingIds, setWorkingIds] = useState<string[]>([]);
+  const [stalledIds, setStalledIds] = useState<string[]>([]);
+  const [stalledDays, setStalledDays] = useState("3");
   const [board, setBoard] = useState<Board | null>(null);
   const [technicianId, setTechnicianId] = useState("");
   const [client, setClient] = useState("");
@@ -103,6 +107,8 @@ export default function AdminCellTechPanel() {
       setAlertsEnabled(data.alertsEnabled !== false);
       setDoneIds(data.doneSituationIds || []);
       setWorkingIds(data.workingSituationIds || []);
+      setStalledIds(data.stalledSituationIds || []);
+      setStalledDays(String(data.stalledMinDays ?? 3));
     } catch {
       toast.error("Erro ao carregar a Cell Tech.");
     } finally {
@@ -162,6 +168,8 @@ export default function AdminCellTechPanel() {
           alertsEnabled,
           doneSituationIds: doneIds,
           workingSituationIds: workingIds,
+          stalledSituationIds: stalledIds,
+          stalledMinDays: stalledDays,
         }),
       });
       if (!res.ok) {
@@ -170,6 +178,8 @@ export default function AdminCellTechPanel() {
       }
       const data = await res.json() as Settings;
       setSettings(data);
+      setStalledIds(data.stalledSituationIds || []);
+      setStalledDays(String(data.stalledMinDays ?? 3));
       setAccessToken("");
       setSecretAccessToken("");
       toast.success("Cell Tech salva.");
@@ -250,7 +260,11 @@ export default function AdminCellTechPanel() {
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={alertsEnabled} onChange={(e) => setAlertsEnabled(e.target.checked)} />
-              Avisar o grupo: na hora do cadastro, quando o prazo estoura e, nos dias seguintes, o lembrete para ficar pronto hoje. Relatório às 8h30 e no dia 1 o mensal. O automático só sai das 8h às 19h, horário de Brasília
+              Avisar o grupo: cadastro, prazo, lembrete, fila da manhã e OS parada. Relatório às 8h30 e no dia 1 o mensal. O automático só sai das 8h às 19h, horário de Brasília
+            </label>
+            <label className="text-sm block max-w-xs">
+              <span className="block mb-1 text-muted-foreground">Dias na mesma situação para a OS parada</span>
+              <input type="number" min={1} max={365} value={stalledDays} onChange={(e) => setStalledDays(e.target.value)} className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm" />
             </label>
             <p className="text-xs text-muted-foreground">No n8n, o HTTP Request lê o campo message e a Z-API manda no grupo. O token da Z-API fica no n8n.</p>
             <div className="flex flex-wrap gap-2">
@@ -314,11 +328,11 @@ export default function AdminCellTechPanel() {
       {board && board.situations.length > 0 && (
         <section className="rounded-2xl border border-border bg-white p-4 space-y-2">
           <h3 className="font-semibold text-sm">Situações do Gestão Click</h3>
-          <p className="text-xs text-muted-foreground">Marque o que conta como finalizada e o que conta como técnico trabalhando.</p>
+          <p className="text-xs text-muted-foreground">Marque o que conta como finalizada e o que conta como técnico trabalhando. OS parada sem nenhuma marca olha todas as abertas.</p>
           <div className="space-y-2">
             {board.situations.map((situation) => (
               <div key={situation.id} className="flex flex-wrap items-center gap-4 text-sm">
-                <span className="min-w-40">{situation.name}</span>
+                <span className="min-w-40">{situation.name} <span className="text-muted-foreground">{situation.id}</span></span>
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={doneIds.includes(situation.id)} onChange={() => toggle(doneIds, situation.id, setDoneIds)} />
                   Finalizada
@@ -326,6 +340,10 @@ export default function AdminCellTechPanel() {
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={workingIds.includes(situation.id)} onChange={() => toggle(workingIds, situation.id, setWorkingIds)} />
                   Trabalhando
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={stalledIds.includes(situation.id)} onChange={() => toggle(stalledIds, situation.id, setStalledIds)} />
+                  OS parada
                 </label>
               </div>
             ))}

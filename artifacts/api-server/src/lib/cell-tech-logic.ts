@@ -30,6 +30,8 @@ export type CellTechOrder = {
   entryDay: string | null;
   deadlineDay: string | null;
   finishedDay: string | null;
+  /** Dia de `modificado_em` / `data_modificacao`. Null = o Gestão Click não mandou. */
+  changedDay: string | null;
   deadlineLabel: string;
   finished: boolean;
   /** Custo das peças. Null = o Gestão Click não mandou o custo. */
@@ -175,6 +177,18 @@ export const CELL_TECH_GROUP_SEND_FROM_MINUTES_DEFAULT = 8 * 60;
 
 /** 19:00 em America/Sao_Paulo. O minuto 19:00 já está fora: o envio automático não começa. */
 export const CELL_TECH_GROUP_SEND_UNTIL_MINUTES = 19 * 60;
+
+/** Quantas OS cada técnico mostra na fila da manhã. O restante vira "+ N no painel". */
+export const CELL_TECH_QUEUE_LIMIT = 5;
+
+/** Dias na mesma situação para a OS entrar em "OS parada". */
+export const CELL_TECH_STALLED_DAYS_DEFAULT = 3;
+
+/** Uma linha por dia na fila. A chave única fica (kind queue, este id, o dia). */
+export const CELL_TECH_QUEUE_SLOT = "fila";
+
+/** Uma linha por dia na OS parada. A chave única fica (kind stalled, este id, o dia). */
+export const CELL_TECH_STALLED_SLOT = "parada";
 
 export function reportWindowOpen(clock: CellTechClock): boolean {
   return clock.minutes >= REPORT_AT && clock.minutes < REPORT_AT + 15;
@@ -548,6 +562,7 @@ export function parseCellTechOrder(
     entryDay: entry?.dayKey ?? null,
     deadlineDay: deadline?.dayKey ?? null,
     finishedDay: finished ? (finishedAt?.dayKey ?? updatedAt?.dayKey ?? null) : null,
+    changedDay: updatedAt?.dayKey ?? null,
     deadlineLabel: deadlineLabel(deadline),
     finished,
     partsCost: money.partsCost,
@@ -673,6 +688,203 @@ export function buildNextDayReminder(order: CellTechOrder): string {
   ].join("\n");
 }
 
+/** Fila e OS parada saem no primeiro ciclo aberto do dia. 19:00 já não entra. */
+export function cellTechMorningDigestDue(
+  clock: CellTechClock,
+  alreadySent: boolean,
+  fromMinutes = cellTechGroupSendFromMinutes(),
+): boolean {
+  return !alreadySent && cellTechAutomaticGroupSendOpen(clock, fromMinutes);
+}
+
+export function cellTechQueueDue(
+  clock: CellTechClock,
+  alreadySent: boolean,
+  fromMinutes = cellTechGroupSendFromMinutes(),
+): boolean {
+  return cellTechMorningDigestDue(clock, alreadySent, fromMinutes);
+}
+
+export function cellTechStalledDue(
+  clock: CellTechClock,
+  alreadySent: boolean,
+  fromMinutes = cellTechGroupSendFromMinutes(),
+): boolean {
+  return cellTechMorningDigestDue(clock, alreadySent, fromMinutes);
+}
+
+/** Inteiro de 1 a 365. Vazio ou inválido volta para 3. */
+export function cellTechStalledMinDays(raw: unknown): number {
+  const text = String(raw ?? "").trim();
+  if (!text) return CELL_TECH_STALLED_DAYS_DEFAULT;
+  const days = Number(text);
+  if (!Number.isInteger(days) || days < 1 || days > 365) return CELL_TECH_STALLED_DAYS_DEFAULT;
+  return days;
+}
+
+function cellTechOrderIsOpen(order: CellTechOrder): boolean {
+  if (order.finished) return false;
+  if (/cancel/i.test(order.situationName)) return false;
+  return true;
+}
+
+function cellTechQueueTechnicianKey(order: CellTechOrder): string {
+  const name = order.technicianName.trim();
+  if (!order.technicianId.trim() || !name || name.toLocaleLowerCase("pt-BR") === "sem técnico") return "";
+  return order.technicianId;
+}
+
+function queueRank(order: CellTechOrder): number {
+  if (order.overdue) return 0;
+  if (order.dueToday) return 1;
+  return 2;
+}
+
+function compareQueue(a: CellTechOrder, b: CellTechOrder): number {
+  const rank = queueRank(a) - queueRank(b);
+  if (rank !== 0) return rank;
+  const aDay = a.deadlineDay || "9999-99-99";
+  const bDay = b.deadlineDay || "9999-99-99";
+  if (aDay !== bDay) return aDay < bDay ? -1 : 1;
+  return a.code.localeCompare(b.code, "pt-BR");
+}
+
+function queueOsLines(order: CellTechOrder): string[] {
+  const mark = order.overdue ? "⚠️ " : "";
+  const prazo = !order.deadlineDay || order.deadlineLabel === "Sem prazo" ? "Sem prazo" : `📅 ${order.deadlineLabel}`;
+  return [
+    `${mark}📱 *OS ${order.code}* · ${prettyText(order.clientName)}`,
+    `🔧 ${serviceLabel(order)} · ${prazo}`,
+  ];
+}
+
+export function buildCellTechQueueMessage(orders: CellTechOrder[], clock: CellTechClock): string {
+  const groups = new Map<string, CellTechOrder[]>();
+  for (const order of orders) {
+    if (!cellTechOrderIsOpen(order)) continue;
+    const key = cellTechQueueTechnicianKey(order);
+    const list = groups.get(key);
+    if (list) list.push(order);
+    else groups.set(key, [order]);
+  }
+  const keys = [...groups.keys()].sort((a, b) => {
+    if (a === "") return 1;
+    if (b === "") return -1;
+    const aName = prettyText(groups.get(a)?.[0]?.technicianName || "");
+    const bName = prettyText(groups.get(b)?.[0]?.technicianName || "");
+    return aName.localeCompare(bName, "pt-BR");
+  });
+  const lines = ["🛠️ *Fila da Cell Tech*", `📅 ${formatDay(clock.dayKey)}`];
+  if (keys.length === 0) {
+    lines.push("", "Nenhuma OS aberta.");
+    return lines.join("\n");
+  }
+  for (const key of keys) {
+    const list = groups.get(key) || [];
+    list.sort(compareQueue);
+    const name = key === "" ? "Sem técnico" : prettyText(list[0]?.technicianName || "Sem técnico");
+    const shown = list.slice(0, CELL_TECH_QUEUE_LIMIT);
+    const extra = list.length - shown.length;
+    lines.push("", `👨‍🔧 *${name}* · ${list.length} ${list.length === 1 ? "aberta" : "abertas"}`);
+    for (const order of shown) lines.push(...queueOsLines(order));
+    if (extra > 0) lines.push(`📌 + ${extra} no painel`);
+  }
+  return lines.join("\n");
+}
+
+export function cellTechSituationKey(order: Pick<CellTechOrder, "situationId" | "situationName">): string {
+  return order.situationId.trim() || order.situationName.trim() || "sem-situacao";
+}
+
+export type CellTechSituationSince = {
+  situationKey: string;
+  sinceDay: string;
+};
+
+/** Aberta nova ou com situação trocada começa hoje. A mesma situação guarda o dia antigo. */
+export function planCellTechSituationState(
+  orders: readonly CellTechOrder[],
+  previous: ReadonlyMap<string, CellTechSituationSince>,
+  today: string,
+): { sinceByOs: Map<string, string>; writes: Array<{ osId: string; situationKey: string; sinceDay: string }> } {
+  const sinceByOs = new Map<string, string>();
+  const writes: Array<{ osId: string; situationKey: string; sinceDay: string }> = [];
+  for (const order of orders) {
+    if (!cellTechOrderIsOpen(order)) continue;
+    const situationKey = cellTechSituationKey(order);
+    const prior = previous.get(order.id);
+    if (prior && prior.situationKey === situationKey) {
+      sinceByOs.set(order.id, prior.sinceDay);
+      continue;
+    }
+    sinceByOs.set(order.id, today);
+    writes.push({ osId: order.id, situationKey, sinceDay: today });
+  }
+  return { sinceByOs, writes };
+}
+
+/**
+ * A OS já entrou no lembrete diário de prazo estourado.
+ * Isso acontece no dia seguinte ao aviso único de prazo, e continua enquanto o prazo seguir para trás.
+ * Nesse estado ela não entra na OS parada.
+ */
+export function cellTechOnReminderTrack(
+  order: CellTechOrder,
+  clock: CellTechClock,
+  sent: { created: boolean; deadline: boolean; finished?: boolean },
+): boolean {
+  return openAlerts(order, clock, sent).includes("reminder");
+}
+
+export type CellTechStalledItem = {
+  order: CellTechOrder;
+  days: number;
+};
+
+export function selectStalledOrders(
+  orders: readonly CellTechOrder[],
+  clock: CellTechClock,
+  input: {
+    minDays: number;
+    situationIds: readonly string[];
+    sinceByOs: ReadonlyMap<string, string>;
+    sentByOs: ReadonlyMap<string, { created: boolean; deadline: boolean; finished?: boolean }>;
+  },
+): CellTechStalledItem[] {
+  const allowed = new Set(input.situationIds.map((id) => id.trim()).filter(Boolean));
+  const items: CellTechStalledItem[] = [];
+  for (const order of orders) {
+    if (!cellTechOrderIsOpen(order)) continue;
+    if (allowed.size > 0 && !allowed.has(order.situationId)) continue;
+    const sent = input.sentByOs.get(order.id) ?? { created: false, deadline: false };
+    if (cellTechOnReminderTrack(order, clock, sent)) continue;
+    const since = order.changedDay || input.sinceByOs.get(order.id) || "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) continue;
+    const days = dayDistance(since, clock.dayKey);
+    if (days < input.minDays) continue;
+    items.push({ order, days });
+  }
+  items.sort((a, b) => b.days - a.days || a.order.code.localeCompare(b.order.code, "pt-BR"));
+  return items;
+}
+
+export function buildCellTechStalledMessage(items: readonly CellTechStalledItem[], clock: CellTechClock): string {
+  const lines = ["⏳ *OS parada*", `📅 ${formatDay(clock.dayKey)}`];
+  for (const item of items) {
+    const order = item.order;
+    const technician = cellTechQueueTechnicianKey(order) === "" ? "Sem técnico" : prettyText(order.technicianName);
+    const situation = prettyText(order.situationName) || "Sem situação";
+    const unit = item.days === 1 ? "dia" : "dias";
+    lines.push(
+      "",
+      `📱 *OS ${order.code}* · ${prettyText(order.clientName)}`,
+      `🔧 ${serviceLabel(order)} · 👨‍🔧 ${technician}`,
+      `📌 Está em *${situation}* há ${item.days} ${unit}.`,
+    );
+  }
+  return lines.join("\n");
+}
+
 export function buildFinishedMessage(order: CellTechOrder): string {
   const cancelled = /cancel/i.test(order.situationName);
   const lines = [cancelled ? "🚫 *OS cancelada*" : "✅ *OS concretizada*", "", card(order)];
@@ -729,6 +941,11 @@ export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock
 
 export function cellTechWebhookBody(kind: string, message: string) {
   return { source: "cell-tech", kind, message, text: message };
+}
+
+/** 2xx grava a marca. 409 (n8n bloqueou fora da janela) e o resto não. */
+export function cellTechWebhookAccepted(status: number): boolean {
+  return status >= 200 && status < 300;
 }
 
 export type CellTechCashBox = {

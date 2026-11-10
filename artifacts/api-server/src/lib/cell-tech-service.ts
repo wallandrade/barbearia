@@ -8,6 +8,10 @@ import {
   buildDeadlineMissedMessage,
   buildMonthlyReport,
   buildNextDayReminder,
+  buildCellTechQueueMessage,
+  buildCellTechStalledMessage,
+  CELL_TECH_QUEUE_SLOT,
+  CELL_TECH_STALLED_SLOT,
   cashDayTotals,
   cashTotalsKeyList,
   isLastDayOfMonth,
@@ -23,7 +27,12 @@ import {
   monthKey,
   previousMonthKey,
   cellTechAutomaticGroupSendOpen,
+  cellTechQueueDue,
+  cellTechStalledDue,
+  cellTechWebhookAccepted,
   openAlerts,
+  planCellTechSituationState,
+  selectStalledOrders,
   reportWindowOpen,
   saoPauloClock,
   type CellTechAlertKind,
@@ -36,9 +45,11 @@ import {
   publicCellTechSettings,
   readCellTechAlertIds,
   readCellTechSettings,
+  readCellTechSituationState,
   readSentCellTechAlerts,
   releaseCellTechAlert,
   saveCellTechSettings,
+  writeCellTechSituationState,
   type CellTechSettings,
   type CellTechSettingsInput,
 } from "./cell-tech-store";
@@ -55,7 +66,7 @@ async function postCellTech(url: string, kind: string, message: string): Promise
       body: JSON.stringify(cellTechWebhookBody(kind, message)),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`O n8n respondeu ${response.status}.`);
+    if (!cellTechWebhookAccepted(response.status)) throw new Error(`O n8n respondeu ${response.status}.`);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new Error("O n8n não respondeu a tempo.");
     throw error;
@@ -281,17 +292,79 @@ async function sendMonthClose(settings: CellTechSettings, dayKey: string, readNo
   return sendAutomaticClaimed(settings, "month", "mes", periodKey, buildMonthCloseMessage(dayKey, money, previous), readNow);
 }
 
+const EMPTY_TICK = { noticesSent: 0, dailySent: false, monthlySent: false, cashSent: 0, queueSent: false, stalledSent: false };
+
+async function syncSituationSince(orders: CellTechOrder[], today: string): Promise<Map<string, string>> {
+  const openIds = orders.filter((order) => !order.finished && !/cancel/i.test(order.situationName)).map((order) => order.id);
+  const previous = await readCellTechSituationState(openIds);
+  const plan = planCellTechSituationState(orders, previous, today);
+  await writeCellTechSituationState(plan.writes);
+  return plan.sinceByOs;
+}
+
 export async function runCellTechTick(
   now = new Date(),
   readNow: () => Date = () => new Date(),
-): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number }> {
+): Promise<{ noticesSent: number; dailySent: boolean; monthlySent: boolean; cashSent: number; queueSent: boolean; stalledSent: boolean }> {
   const settings = await readCellTechSettings();
   if (!settings.alertsEnabled || !settings.webhookUrl || !settings.accessToken || !settings.secretAccessToken) {
-    return { noticesSent: 0, dailySent: false, monthlySent: false, cashSent: 0 };
+    return EMPTY_TICK;
   }
   const clock = saoPauloClock(now);
   const loaded = await snapshotOrders(settings, false, clock);
+  let sinceByOs = new Map<string, string>();
+  try {
+    sinceByOs = await syncSituationSince(loaded.orders, clock.dayKey);
+  } catch (error) {
+    console.error("[Cell Tech] situação:", error instanceof Error ? error.message : error);
+  }
   const sent = await readSentCellTechAlerts();
+  let queueSent = false;
+  let stalledSent = false;
+  const windowNow = () => saoPauloClock(readNow());
+  if (cellTechQueueDue(windowNow(), false)) {
+    try {
+      const queued = await readCellTechAlertIds("queue", clock.dayKey);
+      const openCount = loaded.orders.filter((order) => !order.finished && !/cancel/i.test(order.situationName)).length;
+      if (!queued.has(CELL_TECH_QUEUE_SLOT) && openCount > 0) {
+        queueSent = (await sendAutomaticClaimed(
+          settings,
+          "queue",
+          CELL_TECH_QUEUE_SLOT,
+          clock.dayKey,
+          buildCellTechQueueMessage(loaded.orders, clock),
+          readNow,
+        )) === "sent";
+      }
+    } catch (error) {
+      console.error("[Cell Tech] fila:", error instanceof Error ? error.message : error);
+    }
+  }
+  if (cellTechStalledDue(windowNow(), false)) {
+    try {
+      const parked = await readCellTechAlertIds("stalled", clock.dayKey);
+      if (!parked.has(CELL_TECH_STALLED_SLOT)) {
+        const stalled = selectStalledOrders(loaded.orders, clock, {
+          minDays: settings.stalledMinDays,
+          situationIds: settings.stalledSituationIds,
+          sinceByOs,
+          sentByOs: sent,
+        });
+        if (stalled.length > 0) {
+          stalledSent = (await sendAutomaticClaimed(
+            settings,
+            "stalled",
+            CELL_TECH_STALLED_SLOT,
+            clock.dayKey,
+            buildCellTechStalledMessage(stalled, clock),
+            readNow,
+          )) === "sent";
+        }
+      }
+    } catch (error) {
+      console.error("[Cell Tech] OS parada:", error instanceof Error ? error.message : error);
+    }
+  }
   let noticesSent = 0;
   let noticesClosed = false;
   for (const order of loaded.orders) {
@@ -343,7 +416,7 @@ export async function runCellTechTick(
   } catch (error) {
     console.error("[Cell Tech] caixa:", error instanceof Error ? error.message : error);
   }
-  return { noticesSent, dailySent, monthlySent, cashSent };
+  return { noticesSent, dailySent, monthlySent, cashSent, queueSent, stalledSent };
 }
 
 export { GestaoClickError };

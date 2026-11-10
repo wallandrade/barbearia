@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Tabela `cell_tech_situation_state` (+ runtime) | Guarda desde quando a OS está na situação atual, se o Gestão Click não manda a data | `cell_tech_alerts`, pedido, PIX e frete iguais. Sem `tenant_id` |
 | 2026-11-10 | Colunas `whatsapp_support_sessions.nudge_count` e `last_nudge_at` (+ runtime) | Marcam o aviso do menu e a hora dele. Colunas novas, com padrão 0 e nulo | O passo, o pedido pendente e os avisos de pedido iguais |
 | 2026-11-04 | Tabela `cell_tech_alerts` (+ runtime) e job `cell-tech-job.ts` | Marca aviso de OS já enviado. Sem essa tabela o ciclo não manda mensagem | Pedidos, PIX e frete iguais. Sem `tenant_id` |
 | 2026-11-01 | Coluna `flash_campaigns.sort_order` (+ runtime) | `POST /api/admin/flash-campaigns/:id/show-first` põe a campanha na frente do card | Sem `tenant_id`. Chance e visita iguais |

@@ -10,9 +10,9 @@ async function runOnce(): Promise<void> {
   running = true;
   try {
     const result = await runCellTechTick(new Date());
-    if (result.noticesSent > 0 || result.dailySent || result.monthlySent || result.cashSent > 0) {
+    if (result.noticesSent > 0 || result.queueSent || result.stalledSent || result.dailySent || result.monthlySent || result.cashSent > 0) {
       console.log(
-        `[Cell Tech] avisos ${result.noticesSent}, diário ${result.dailySent ? "enviado" : "não"}, mensal ${result.monthlySent ? "enviado" : "não"}, caixa ${result.cashSent}`,
+        `[Cell Tech] avisos ${result.noticesSent}, fila ${result.queueSent ? "enviada" : "não"}, parada ${result.stalledSent ? "enviada" : "não"}, diário ${result.dailySent ? "enviado" : "não"}, mensal ${result.monthlySent ? "enviado" : "não"}, caixa ${result.cashSent}`,
       );
     }
   } catch (error) {
@@ -23,7 +23,7 @@ async function runOnce(): Promise<void> {
 }
 
 export function startCellTechJob(): void {
-  console.log("[Cell Tech] consulta de OS a cada 2 min. Grupo automático das 8h às 19h. Relatórios às 8h30, horário de Brasília.");
+  console.log("[Cell Tech] consulta de OS a cada 2 min. Grupo automático das 8h às 19h. Fila e OS parada na abertura. Relatórios às 8h30, horário de Brasília.");
   setTimeout(() => {
     void runOnce();
   }, START_DELAY_MS);

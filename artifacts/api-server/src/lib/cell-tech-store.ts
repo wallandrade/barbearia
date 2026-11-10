@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import {
+  cellTechStalledMinDays,
   joinIdList,
   normalizeCellTechWebhookUrl,
   splitIdList,
   type CellTechFlags,
+  type CellTechSituationSince,
 } from "./cell-tech-logic";
 import type { CellTechCredentials } from "./cell-tech-client";
 
@@ -16,11 +18,15 @@ const LOJA = "cell_tech_loja_id";
 const ALERTS = "cell_tech_alerts_enabled";
 const DONE = "cell_tech_done_situation_ids";
 const WORKING = "cell_tech_working_situation_ids";
-const KEYS = [ACCESS, SECRET, WEBHOOK, USUARIO, LOJA, ALERTS, DONE, WORKING];
+const STALLED_DAYS = "cell_tech_stalled_min_days";
+const STALLED = "cell_tech_stalled_situation_ids";
+const KEYS = [ACCESS, SECRET, WEBHOOK, USUARIO, LOJA, ALERTS, DONE, WORKING, STALLED_DAYS, STALLED];
 
 export type CellTechSettings = CellTechCredentials & CellTechFlags & {
   webhookUrl: string;
   alertsEnabled: boolean;
+  stalledMinDays: number;
+  stalledSituationIds: string[];
 };
 
 export type CellTechSettingsPublic = {
@@ -34,6 +40,8 @@ export type CellTechSettingsPublic = {
   alertsEnabled: boolean;
   doneSituationIds: string[];
   workingSituationIds: string[];
+  stalledMinDays: number;
+  stalledSituationIds: string[];
 };
 
 export type CellTechSettingsInput = {
@@ -45,6 +53,8 @@ export type CellTechSettingsInput = {
   alertsEnabled?: unknown;
   doneSituationIds?: unknown;
   workingSituationIds?: unknown;
+  stalledMinDays?: unknown;
+  stalledSituationIds?: unknown;
 };
 
 async function database() {
@@ -72,6 +82,8 @@ export async function readCellTechSettings(): Promise<CellTechSettings> {
     alertsEnabled: alerts == null || alerts === "" ? true : alerts === "1",
     doneSituationIds: splitIdList(map.get(DONE)),
     workingSituationIds: splitIdList(map.get(WORKING)),
+    stalledMinDays: cellTechStalledMinDays(map.get(STALLED_DAYS)),
+    stalledSituationIds: splitIdList(map.get(STALLED)),
   };
 }
 
@@ -87,6 +99,8 @@ export function publicCellTechSettings(settings: CellTechSettings): CellTechSett
     alertsEnabled: settings.alertsEnabled,
     doneSituationIds: settings.doneSituationIds,
     workingSituationIds: settings.workingSituationIds,
+    stalledMinDays: settings.stalledMinDays,
+    stalledSituationIds: settings.stalledSituationIds,
   };
 }
 
@@ -125,6 +139,8 @@ export async function saveCellTechSettings(input: CellTechSettingsInput): Promis
   if ("alertsEnabled" in input) await putSetting(ALERTS, input.alertsEnabled === false || input.alertsEnabled === "0" ? "0" : "1");
   if ("doneSituationIds" in input) await putSetting(DONE, joinIdList(input.doneSituationIds));
   if ("workingSituationIds" in input) await putSetting(WORKING, joinIdList(input.workingSituationIds));
+  if ("stalledMinDays" in input) await putSetting(STALLED_DAYS, String(cellTechStalledMinDays(input.stalledMinDays)));
+  if ("stalledSituationIds" in input) await putSetting(STALLED, joinIdList(input.stalledSituationIds));
   return readCellTechSettings();
 }
 
@@ -193,4 +209,57 @@ export async function claimCellTechAlert(kind: string, osId: string, periodKey: 
 export async function releaseCellTechAlert(id: string): Promise<void> {
   const { pool } = await database();
   await pool.execute("DELETE FROM cell_tech_alerts WHERE id = ?", [id]);
+}
+
+function isMissingTable(error: unknown): boolean {
+  return String((error as { code?: string })?.code || "") === "ER_NO_SUCH_TABLE";
+}
+
+export async function readCellTechSituationState(osIds: string[]): Promise<Map<string, CellTechSituationSince>> {
+  const state = new Map<string, CellTechSituationSince>();
+  const ids = [...new Set(osIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return state;
+  const { pool } = await database();
+  try {
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      const chunk = ids.slice(offset, offset + 200);
+      const [rows] = await pool.query(
+        `SELECT os_id AS osId, situation_key AS situationKey, since_day AS sinceDay FROM cell_tech_situation_state WHERE os_id IN (${chunk.map(() => "?").join(",")})`,
+        chunk,
+      );
+      if (!Array.isArray(rows)) continue;
+      for (const row of rows) {
+        const record = row as { osId?: unknown; situationKey?: unknown; sinceDay?: unknown };
+        const osId = String(record.osId ?? "").trim();
+        const situationKey = String(record.situationKey ?? "").trim();
+        const sinceDay = String(record.sinceDay ?? "").trim();
+        if (osId && situationKey && sinceDay) state.set(osId, { situationKey, sinceDay });
+      }
+    }
+    return state;
+  } catch (error) {
+    if (isMissingTable(error)) return state;
+    throw error;
+  }
+}
+
+export async function writeCellTechSituationState(
+  rows: Array<{ osId: string; situationKey: string; sinceDay: string }>,
+): Promise<void> {
+  if (rows.length === 0) return;
+  const { pool } = await database();
+  try {
+    for (let offset = 0; offset < rows.length; offset += 40) {
+      const chunk = rows.slice(offset, offset + 40);
+      const values = chunk.flatMap((row) => [row.osId, row.situationKey, row.sinceDay]);
+      await pool.execute(
+        `INSERT INTO cell_tech_situation_state (os_id, situation_key, since_day) VALUES ${chunk.map(() => "(?, ?, ?)").join(",")}
+         ON DUPLICATE KEY UPDATE situation_key = VALUES(situation_key), since_day = VALUES(since_day), updated_at = CURRENT_TIMESTAMP`,
+        values,
+      );
+    }
+  } catch (error) {
+    if (isMissingTable(error)) return;
+    throw error;
+  }
 }
