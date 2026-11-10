@@ -47,6 +47,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Aba Entrar sem CPF | Login pede só e-mail e senha. Pedido sem conta com o mesmo e-mail continua entrando na conta | Criar conta ainda tem CPF opcional. PIX antigo, esgotado e senha de baixa iguais |
 | 2026-11-10 | Esqueci minha senha confirma o envio | A tela mostra se o link saiu, se o e-mail não tem conta, se passou do limite ou se o envio falhou. Sucesso só quando o Brevo aceita | Token de 1 hora, uso único, WhatsApp e `set-password` iguais. PIX, estoque e Cell Tech iguais |
 | 2026-11-10 | Cliente redefine a senha pelo link do e-mail | Esqueci minha senha envia o link e mantém o WhatsApp. A senha nova tem no mínimo 8 caracteres, como o cadastro | `set-password` do admin continua. PIX, estoque, senha de baixa e Cell Tech iguais |
 | 2026-11-10 | Finalizado conta como OS fechada | O nome fecha junto com a data e com a situação marcada. Fila, parada, prazo e lembrete usam isso. O aviso de baixa só sai se a data for hoje | PIX antigo, compra de esgotado e senha de baixa iguais |
