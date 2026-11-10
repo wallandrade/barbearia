@@ -3,6 +3,7 @@ import { db, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdminAuth, getAdminScope } from "./admin-auth";
 import { syncCustomersToBrevo, testBrevoConnection } from "../lib/brevo";
+import { isPlausibleResetEmail, normalizeResetEmail, normalizeStoreBaseUrl } from "../lib/password-reset";
 
 const router: IRouter = Router();
 
@@ -35,10 +36,16 @@ router.get("/admin/brevo/config", requireAdminAuth, async (req, res) => {
 
     const apiKey = await getSettingValue("brevo_api_key");
     const configured = !!apiKey;
+    const senderEmail = await getSettingValue("brevo_sender_email");
+    const senderName = await getSettingValue("brevo_sender_name");
+    const resetBaseUrl = await getSettingValue("brevo_reset_base_url");
 
     res.json({
       configured,
       apiKeySet: configured ? "***" : null,
+      senderEmail,
+      senderName,
+      resetBaseUrl,
     });
   } catch (err) {
     console.error("[BREVO] Config error:", err);
@@ -55,26 +62,60 @@ router.put("/admin/brevo/config", requireAdminAuth, async (req, res) => {
       return;
     }
 
-    const { apiKey } = req.body as { apiKey?: string };
-    if (!apiKey || !apiKey.trim()) {
-      res.status(400).json({ error: "INVALID_INPUT", message: "API key é obrigatória." });
+    const body = req.body as {
+      apiKey?: string;
+      senderEmail?: string;
+      senderName?: string;
+      resetBaseUrl?: string;
+    };
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    const hasSenderUpdate = body.senderEmail !== undefined
+      || body.senderName !== undefined
+      || body.resetBaseUrl !== undefined;
+    if (!apiKey && !hasSenderUpdate) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe a API key ou o remetente." });
       return;
     }
 
-    // Test connection
-    const test = await testBrevoConnection(apiKey.trim());
-    if (!test.ok) {
-      res.status(400).json({
-        error: "INVALID_API_KEY",
-        message: `Conexão com Brevo falhou: ${test.error}`,
-      });
+    const senderEmail = typeof body.senderEmail === "string" ? normalizeResetEmail(body.senderEmail) : undefined;
+    if (senderEmail && !isPlausibleResetEmail(senderEmail)) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "E-mail do remetente inválido." });
+      return;
+    }
+    const senderName = typeof body.senderName === "string"
+      ? body.senderName.replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80)
+      : undefined;
+    const rawBase = typeof body.resetBaseUrl === "string" ? body.resetBaseUrl.trim() : undefined;
+    const resetBaseUrl = rawBase ? normalizeStoreBaseUrl(rawBase) : rawBase;
+    if (rawBase && !resetBaseUrl) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "URL da loja inválida. Use um endereço https." });
       return;
     }
 
-    // Save API key
-    await setSetting("brevo_api_key", apiKey.trim());
+    if (apiKey) {
+      const test = await testBrevoConnection(apiKey);
+      if (!test.ok) {
+        res.status(400).json({
+          error: "INVALID_API_KEY",
+          message: `Conexão com Brevo falhou: ${test.error}`,
+        });
+        return;
+      }
+      await setSetting("brevo_api_key", apiKey);
+    }
 
-    res.json({ ok: true, message: "Brevo API key salva com sucesso." });
+    if (senderEmail !== undefined) await setSetting("brevo_sender_email", senderEmail);
+    if (senderName !== undefined) await setSetting("brevo_sender_name", senderName);
+    if (resetBaseUrl !== undefined) await setSetting("brevo_reset_base_url", resetBaseUrl || "");
+
+    res.json({
+      ok: true,
+      message: apiKey && hasSenderUpdate
+        ? "Configuração do Brevo salva."
+        : apiKey
+          ? "Brevo API key salva com sucesso."
+          : "Remetente do Brevo salvo.",
+    });
   } catch (err) {
     console.error("[BREVO] Config update error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar configuração." });
