@@ -22,8 +22,10 @@ import {
   generatePasswordResetToken,
   hashPasswordResetToken,
   issuePasswordResetToken,
+  consumePasswordResetAttempt,
   maskResetEmail,
   planForgotPasswordRequest,
+  resolvePasswordResetClientIp,
   resolvePasswordResetBaseUrl,
   responsePaddingMs,
   type ForgotPasswordUser,
@@ -193,6 +195,64 @@ test("limite por e-mail e por IP libera depois da janela", () => {
     user: { id: "nova", email: "nova@exemplo.com", name: "Nova" },
   });
   assert.equal(later.outcome, "send");
+});
+
+test("limite por IP usa o IP do cliente e diz qual trava estourou", () => {
+  assert.equal(resolvePasswordResetClientIp({
+    realIp: "177.10.20.30",
+    forwardedFor: "177.10.20.30, 18.231.197.83",
+    socketIp: "54.232.129.204",
+  }), "177.10.20.30");
+  assert.equal(resolvePasswordResetClientIp({
+    forwardedFor: "177.10.20.30, 18.231.197.83",
+    socketIp: "54.20.73.238",
+  }), "177.10.20.30");
+  assert.equal(resolvePasswordResetClientIp({
+    realIp: "::ffff:177.10.20.30",
+    socketIp: "18.231.197.83",
+  }), "177.10.20.30");
+  assert.notEqual(resolvePasswordResetClientIp({
+    forwardedFor: "177.10.20.30, 18.231.197.83",
+    socketIp: "54.232.129.204",
+  }), "18.231.197.83");
+
+  const byIp = createPasswordResetRateStore();
+  for (let i = 0; i < PASSWORD_RESET_IP_LIMIT; i += 1) {
+    const result = consumePasswordResetAttempt(byIp, {
+      email: `pessoa${i}@exemplo.com`,
+      ip: "177.10.20.30",
+      now: 0,
+      countEmail: true,
+    });
+    assert.equal(result.allowed, true);
+    assert.equal(result.limit, "none");
+  }
+  const ipBlocked = consumePasswordResetAttempt(byIp, {
+    email: "nova@exemplo.com",
+    ip: "177.10.20.30",
+    now: 0,
+    countEmail: true,
+  });
+  assert.equal(ipBlocked.allowed, false);
+  assert.equal(ipBlocked.limit, "ip");
+
+  const byEmail = createPasswordResetRateStore();
+  for (let i = 0; i < PASSWORD_RESET_EMAIL_LIMIT; i += 1) {
+    assert.equal(consumePasswordResetAttempt(byEmail, {
+      email: "ana@exemplo.com",
+      ip: `203.0.113.${i + 1}`,
+      now: 0,
+      countEmail: true,
+    }).limit, "none");
+  }
+  const emailBlocked = consumePasswordResetAttempt(byEmail, {
+    email: "ana@exemplo.com",
+    ip: "203.0.113.50",
+    now: 0,
+    countEmail: true,
+  });
+  assert.equal(emailBlocked.allowed, false);
+  assert.equal(emailBlocked.limit, "email");
 });
 
 test("e-mail inválido pede correção e a senha segue o mínimo de 8", () => {

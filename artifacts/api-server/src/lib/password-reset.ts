@@ -112,9 +112,52 @@ export function isPlausibleResetEmail(email: string): boolean {
   return email.length > 0 && email.length <= 254 && EMAIL_PATTERN.test(email);
 }
 
+export type PasswordResetLimitHit = "none" | "email" | "ip" | "email+ip";
+
+const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+
+function isIpv4(value: string): boolean {
+  if (!IPV4_PATTERN.test(value)) return false;
+  return value.split(".").every((part) => {
+    const octet = Number(part);
+    return octet >= 0 && octet <= 255 && String(octet) === part;
+  });
+}
+
+function isIpv6(value: string): boolean {
+  return value.includes(":") && /^[0-9a-f:.]{2,}$/i.test(value);
+}
+
 export function normalizeClientIp(ip: unknown): string {
-  const value = String(ip ?? "").trim();
+  let value = String(ip ?? "").trim();
+  if (!value) return "unknown";
+  value = value.replace(/^::ffff:/i, "");
+  if (value.startsWith("[") && value.includes("]")) {
+    value = value.slice(1, value.indexOf("]"));
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(value)) {
+    value = value.slice(0, value.lastIndexOf(":"));
+  }
   return value || "unknown";
+}
+
+function listedIps(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value.join(",") : String(value ?? "");
+  return raw
+    .split(",")
+    .map((part) => normalizeClientIp(part))
+    .filter((part) => part !== "unknown" && (isIpv4(part) || isIpv6(part)));
+}
+
+export function resolvePasswordResetClientIp(input: {
+  realIp?: unknown;
+  forwardedFor?: unknown;
+  socketIp?: unknown;
+}): string {
+  return listedIps(input.realIp)[0]
+    || listedIps(input.forwardedFor)[0]
+    || listedIps(input.socketIp)[0]
+    || "unknown";
 }
 
 export function generatePasswordResetToken(): string {
@@ -152,13 +195,21 @@ function pruneHits(hits: number[] | undefined, now: number, windowMs: number): n
 export function consumePasswordResetAttempt(
   store: PasswordResetRateStore,
   input: { email: string; ip: string; now: number; countEmail: boolean },
-): { allowed: boolean } {
+): { allowed: boolean; limit: PasswordResetLimitHit } {
   const ipKey = `ip:${normalizeClientIp(input.ip)}`;
   const emailKey = input.countEmail ? `email:${input.email}` : "";
   const ipHits = pruneHits(store.get(ipKey), input.now, PASSWORD_RESET_WINDOW_MS);
   const emailHits = emailKey ? pruneHits(store.get(emailKey), input.now, PASSWORD_RESET_WINDOW_MS) : [];
-  const limited = ipHits.length >= PASSWORD_RESET_IP_LIMIT
-    || (input.countEmail && emailHits.length >= PASSWORD_RESET_EMAIL_LIMIT);
+  const emailLimited = Boolean(emailKey) && emailHits.length >= PASSWORD_RESET_EMAIL_LIMIT;
+  const ipLimited = ipHits.length >= PASSWORD_RESET_IP_LIMIT;
+  const limit: PasswordResetLimitHit = emailLimited && ipLimited
+    ? "email+ip"
+    : emailLimited
+      ? "email"
+      : ipLimited
+        ? "ip"
+        : "none";
+  const limited = limit !== "none";
 
   if (!limited) {
     ipHits.push(input.now);
@@ -180,7 +231,7 @@ export function consumePasswordResetAttempt(
     }
   }
 
-  return { allowed: !limited };
+  return { allowed: !limited, limit };
 }
 
 export function planForgotPasswordRequest(input: {

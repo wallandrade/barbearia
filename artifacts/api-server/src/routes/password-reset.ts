@@ -17,8 +17,8 @@ import {
   isPlausibleResetEmail,
   consumePasswordResetAttempt,
   maskResetEmail,
-  normalizeClientIp,
   normalizeResetEmail,
+  resolvePasswordResetClientIp,
   planForgotPasswordRequest,
   resetTokenStatus,
   resolvePasswordResetBaseUrl,
@@ -38,8 +38,12 @@ async function readSetting(key: string): Promise<string> {
   return String(rows[0]?.value || "").trim();
 }
 
-function clientIp(req: { ip?: string }): string {
-  return normalizeClientIp(req.ip);
+function clientIp(req: { ip?: string; get(name: string): string | undefined }): string {
+  return resolvePasswordResetClientIp({
+    realIp: req.get("x-real-ip"),
+    forwardedFor: req.get("x-forwarded-for"),
+    socketIp: req.ip,
+  });
 }
 
 function sendForgotResult(res: { status(code: number): { json(body: unknown): void } }, result: ForgotPasswordResult): void {
@@ -56,15 +60,18 @@ router.post("/auth/forgot-password", async (req, res) => {
     const email = normalizeResetEmail(req.body?.email);
     const ip = clientIp(req);
     const plausible = isPlausibleResetEmail(email);
-    const allowed = consumePasswordResetAttempt(rateStore, {
+    const attempt = consumePasswordResetAttempt(rateStore, {
       email,
       ip,
       now: now.getTime(),
       countEmail: plausible,
-    }).allowed;
+    });
 
-    if (!allowed) {
-      console.warn("[PasswordReset] Limite de pedidos", { email: plausible ? maskResetEmail(email) : "***" });
+    if (!attempt.allowed) {
+      console.warn("[PasswordReset] Limite de pedidos", {
+        email: plausible ? maskResetEmail(email) : "***",
+        limit: attempt.limit,
+      });
       sendForgotResult(res, forgotPasswordResult("rate_limited"));
       return;
     }
