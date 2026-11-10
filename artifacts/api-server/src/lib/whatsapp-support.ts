@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { desc, eq, sql } from "drizzle-orm";
+import { mysqlAffectedRows } from "./mysql-affected-rows";
 import { isDeliveredStatus, isInTransitStatus } from "./envioecom";
 import { isOutForDeliveryStatus } from "./order-out-for-delivery-whatsapp";
 import { toWhatsappPhone } from "./order-paid-whatsapp";
@@ -28,6 +29,8 @@ const RATE_MAX = 20;
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
 const FLOOD_TEXT = "Recebi muitas mensagens agora. Espera um minuto e tenta de novo.";
+export const SUPPORT_HUMAN_HANDOFF_TEXT = "Vou te passar para um atendente, já já alguém te responde.";
+const NUDGE_COOLDOWN_DEFAULT_MS = 30 * 60 * 1000;
 const STORE_LINES_TTL_MS = 60_000;
 
 const rateBuckets = new Map<string, { count: number; resetAt: number; warned: boolean }>();
@@ -46,6 +49,8 @@ export type SupportInbound = {
   choiceId: string;
   instanceId: string;
   fromMe: boolean;
+  /** Vídeo, foto, áudio, figurinha, documento ou ligação. */
+  media: boolean;
   /** Mensagem saída da loja numa conversa de cliente. Grupo e recibo de entrega ficam de fora. */
   manualCandidate: boolean;
   skip: boolean;
@@ -57,6 +62,10 @@ export type SupportSession = {
   step: SupportStep;
   problem: string | null;
   orderNumber?: number | null;
+  /** Avisos já enviados sem o cliente tocar numa opção. */
+  nudgeCount?: number;
+  /** Epoch ms do último aviso. */
+  lastNudgeAt?: number | null;
 };
 
 export type SupportOption = {
@@ -150,6 +159,16 @@ function readFromMe(value: unknown): boolean {
   return value === true || value === 1 || value === "true";
 }
 
+const SUPPORT_MEDIA_KEYS = ["image", "video", "audio", "document", "sticker", "ptt", "voice"] as const;
+
+function inboundHasMedia(row: Record<string, unknown>): boolean {
+  for (const key of SUPPORT_MEDIA_KEYS) {
+    const value = row[key];
+    if (value && typeof value === "object") return true;
+  }
+  return /call/i.test(String(row.type || ""));
+}
+
 function phoneDigits(raw: string): string {
   return String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
 }
@@ -192,6 +211,7 @@ export function readSupportInbound(body: unknown): SupportInbound {
     choiceId: readChoiceId(row),
     instanceId,
     fromMe,
+    media: inboundHasMedia(row),
     manualCandidate: fromMe && !group && !foreignType,
     skip,
   };
@@ -229,6 +249,50 @@ function plain(value: string): string {
 
 function isGreeting(raw: string): boolean {
   return /^(oi|ola|menu|bom dia|boa tarde|boa noite|ajuda|inicio|hi|hello)$/.test(plain(raw));
+}
+
+const SUPPORT_ACK_WORDS = new Set([
+  "obrigado",
+  "obrigada",
+  "obg",
+  "vlw",
+  "valeu",
+  "ok",
+  "blz",
+  "beleza",
+  "chegou",
+  "recebi",
+  "perfeito",
+  "show",
+]);
+
+/** Agradecimento ou confirmação curta. Não é pedido de ajuda. */
+export function isSupportAcknowledgement(raw: string | null | undefined): boolean {
+  const text = String(raw || "").trim();
+  if (!text) return false;
+  const hadThanksEmoji = /[\u{1F64F}\u{1F44D}]/u.test(text);
+  const words = text
+    .replace(/\uFE0F/g, "")
+    .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, "")
+    .replace(/[\u{1F64F}\u{1F44D}]/gu, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return hadThanksEmoji;
+  if (words.length === 2 && words[0] === "muito" && (words[1] === "obrigado" || words[1] === "obrigada")) return true;
+  return words.every((word) => SUPPORT_ACK_WORDS.has(word));
+}
+
+/** Minutos em `SUPPORT_NUDGE_COOLDOWN_MIN`. Vazio ou inválido volta para 30. */
+export function supportNudgeCooldownMs(raw = process.env.SUPPORT_NUDGE_COOLDOWN_MIN): number {
+  const text = String(raw ?? "").trim();
+  if (!text) return NUDGE_COOLDOWN_DEFAULT_MS;
+  const minutes = Number(text);
+  if (!Number.isFinite(minutes) || minutes <= 0) return NUDGE_COOLDOWN_DEFAULT_MS;
+  return Math.round(minutes * 60 * 1000);
 }
 
 /** Frase solta no menu inicial. Saudação, opção, CPF e atendente ficam de fora. */
@@ -278,11 +342,21 @@ function resolveChoice(choiceId: string, text: string, step: SupportStep, menu: 
 }
 
 function menuSession(): SupportSession {
-  return { step: "menu", problem: null, orderNumber: null };
+  return { step: "menu", problem: null, orderNumber: null, nudgeCount: 0, lastNudgeAt: null };
 }
 
 function humanSession(): SupportSession {
-  return { step: "human", problem: null, orderNumber: null };
+  return { step: "human", problem: null, orderNumber: null, nudgeCount: 0, lastNudgeAt: null };
+}
+
+function keepNudge(session: SupportSession): SupportSession {
+  return {
+    step: session.step,
+    problem: session.problem,
+    orderNumber: session.orderNumber ?? null,
+    nudgeCount: session.nudgeCount ?? 0,
+    lastNudgeAt: session.lastNudgeAt ?? null,
+  };
 }
 
 function askCpf(session: SupportSession, orderNumber: number): SupportTurn {
@@ -318,13 +392,36 @@ function nudgeButtonLabel(menu: SupportMenuConfig, session: SupportSession): str
 }
 
 /** A lista já está na conversa. A frase solta não manda o menu de novo. */
-function nudgeTurn(menu: SupportMenuConfig, session: SupportSession): SupportTurn {
+function nudgeTurn(menu: SupportMenuConfig, session: SupportSession, now: number): SupportTurn {
   const label = nudgeButtonLabel(menu, session);
   return {
     kind: "nudge",
     message: `Toque em ${label} acima e escolha sua opção.`,
-    session,
+    session: {
+      ...keepNudge(session),
+      nudgeCount: (session.nudgeCount ?? 0) + 1,
+      lastNudgeAt: now,
+    },
   };
+}
+
+function looseMenuTurn(
+  menu: SupportMenuConfig,
+  session: SupportSession,
+  input: { text: string; media?: boolean; now: number; cooldownMs: number },
+): SupportTurn {
+  const text = String(input.text || "");
+  if (input.media || !text.trim() || isSupportAcknowledgement(text)) {
+    return { kind: "silent", session: keepNudge(session) };
+  }
+  if ((session.nudgeCount ?? 0) >= 2) {
+    return { kind: "text", message: SUPPORT_HUMAN_HANDOFF_TEXT, session: humanSession() };
+  }
+  const last = session.lastNudgeAt ?? null;
+  if (last != null && input.now - last < input.cooldownMs) {
+    return { kind: "silent", session: keepNudge(session) };
+  }
+  return nudgeTurn(menu, session, input.now);
 }
 
 function turnForItem(item: SupportMenuItem): SupportTurn {
@@ -350,24 +447,28 @@ function turnForItem(item: SupportMenuItem): SupportTurn {
   };
 }
 
-/** Oi abre o menu uma vez. Com a lista já aberta, a frase sem toque só lembra o botão. Número e CPF só depois de Meu pedido. Atendente cala o menu por 2 horas. */
+/** Oi abre o menu uma vez. Com a lista já aberta, o aviso sai no máximo uma vez no intervalo. Mídia e agradecimento ficam em silêncio. Número e CPF só depois de Meu pedido. Atendente cala o menu por 2 horas. */
 export function decideSupportTurn(input: {
   text?: string | null;
   choiceId?: string | null;
   session?: SupportSession | null;
+  media?: boolean;
+  now?: number;
+  cooldownMs?: number;
 }, menu?: SupportMenuConfig | null): SupportTurn {
   const config = menu ? (supportMenuSaveError(menu).menu ?? defaultSupportMenu()) : defaultSupportMenu();
   const session = input.session?.step ? input.session : menuSession();
   const text = String(input.text || "");
   const choiceId = String(input.choiceId || "");
+  const now = input.now ?? Date.now();
+  const cooldownMs = input.cooldownMs ?? supportNudgeCooldownMs();
   if (session.step === "human") {
     const tapped = choiceId.trim();
     if (!supportMenuItems(config).some((item) => item.id === tapped)) {
       return { kind: "silent", session: humanSession() };
     }
   }
-  if (!choiceId && isGreeting(text)) {
-    if (listAlreadyOpen(input.session)) return nudgeTurn(config, input.session);
+  if (!choiceId && isGreeting(text) && !listAlreadyOpen(input.session)) {
     return mainList(config);
   }
 
@@ -421,7 +522,9 @@ export function decideSupportTurn(input: {
     };
   }
 
-  if (listAlreadyOpen(input.session)) return nudgeTurn(config, input.session);
+  if (listAlreadyOpen(input.session)) {
+    return looseMenuTurn(config, input.session, { text, media: input.media, now, cooldownMs });
+  }
   return mainList(config);
 }
 
@@ -448,6 +551,7 @@ function supportBotTexts(menu: SupportMenuConfig): Set<string> {
     buildSupportNotFoundMessage(),
     buildSupportUnknownMessage(),
     FLOOD_TEXT,
+    SUPPORT_HUMAN_HANDOFF_TEXT,
     `Toque em ${menu.buttonLabel || "Ver opções"} acima e escolha sua opção.`,
     supportListText({
       kind: "list",
@@ -481,6 +585,7 @@ function isAutomaticStoreNotice(text: string): boolean {
   const folded = comparableSupportText(text);
   if (!folded) return false;
   if (folded.includes("toque em ") && folded.includes("acima e escolha sua opcao")) return true;
+  if (folded.includes("vou te passar para um atendente")) return true;
   if (folded.includes("compra foi confirmada")) return true;
   if (folded.includes("codigo de rastreio chegou")) return true;
   if (folded.includes("pedido foi postado")) return true;
@@ -719,8 +824,8 @@ async function storeLinePhones(): Promise<string[]> {
 }
 
 async function database() {
-  const { db, ordersTable, siteSettingsTable, whatsappSupportSessionsTable } = await import("@workspace/db");
-  return { db, ordersTable, siteSettingsTable, whatsappSupportSessionsTable };
+  const { db, pool, ordersTable, siteSettingsTable, whatsappSupportSessionsTable } = await import("@workspace/db");
+  return { db, pool, ordersTable, siteSettingsTable, whatsappSupportSessionsTable };
 }
 
 async function settingValue(key: string): Promise<string> {
@@ -777,10 +882,14 @@ async function loadSession(phone: string): Promise<SupportSession | null> {
   const updated = row.updatedAt instanceof Date ? row.updatedAt.getTime() : 0;
   if (!updated || Date.now() - updated > SESSION_TTL_MS) return null;
   const pending = Number(row.pendingOrder);
+  const nudgeCount = Number(row.nudgeCount);
+  const lastNudge = row.lastNudgeAt instanceof Date ? row.lastNudgeAt.getTime() : null;
   return {
     step: row.step,
     problem: row.problem || null,
     orderNumber: Number.isSafeInteger(pending) && pending > 0 ? pending : null,
+    nudgeCount: Number.isFinite(nudgeCount) && nudgeCount > 0 ? Math.floor(nudgeCount) : 0,
+    lastNudgeAt: lastNudge,
   };
 }
 
@@ -794,6 +903,8 @@ async function saveSession(phone: string, session: SupportSession): Promise<void
       step: session.step,
       problem: session.problem,
       pendingOrder: session.orderNumber ?? null,
+      nudgeCount: session.nudgeCount ?? 0,
+      lastNudgeAt: session.lastNudgeAt ? new Date(session.lastNudgeAt) : null,
       updatedAt: now,
     })
     .onDuplicateKeyUpdate({
@@ -801,9 +912,48 @@ async function saveSession(phone: string, session: SupportSession): Promise<void
         step: session.step,
         problem: session.problem,
         pendingOrder: session.orderNumber ?? null,
+        nudgeCount: session.nudgeCount ?? 0,
+        lastNudgeAt: session.lastNudgeAt ? new Date(session.lastNudgeAt) : null,
         updatedAt: now,
       },
     });
+}
+
+/**
+ * Reserva o aviso antes do n8n. O UPDATE só altera a linha se o intervalo já passou
+ * e ainda não houve 2 avisos. Duas mensagens juntas disputam a mesma linha: o MySQL
+ * deixa uma passar e a outra fica em cooldown ou vira o passe humano.
+ */
+export async function claimSupportNudge(phone: string, now = new Date()): Promise<"claimed" | "cooldown" | "handoff"> {
+  const { pool } = await database();
+  const cutoff = new Date(now.getTime() - supportNudgeCooldownMs());
+  const [claimed] = await pool.query(
+    `UPDATE whatsapp_support_sessions
+        SET nudge_count = nudge_count + 1,
+            last_nudge_at = ?,
+            updated_at = ?
+      WHERE phone = ?
+        AND step IN ('menu', 'problem_menu')
+        AND nudge_count < 2
+        AND (last_nudge_at IS NULL OR last_nudge_at <= ?)`,
+    [now, now, phone, cutoff],
+  );
+  if (mysqlAffectedRows(claimed) === 1) return "claimed";
+  const [handed] = await pool.query(
+    `UPDATE whatsapp_support_sessions
+        SET step = 'human',
+            problem = NULL,
+            pending_order = NULL,
+            nudge_count = 0,
+            last_nudge_at = NULL,
+            updated_at = ?
+      WHERE phone = ?
+        AND step IN ('menu', 'problem_menu')
+        AND nudge_count >= 2`,
+    [now, phone],
+  );
+  if (mysqlAffectedRows(handed) === 1) return "handoff";
+  return "cooldown";
 }
 
 async function withPackages(rows: Array<{
@@ -973,17 +1123,48 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
     loadSession(inbound.phone),
     settingValue(WHATSAPP_SUPPORT_MENU_SETTING).then(parseSupportMenu),
   ]);
-  const turn = decideSupportTurn({ text: inbound.text, choiceId: inbound.choiceId, session }, menu);
+  const turn = decideSupportTurn({
+    text: inbound.text,
+    choiceId: inbound.choiceId,
+    session,
+    media: inbound.media,
+  }, menu);
   if (turn.kind === "silent") {
     await saveSession(inbound.phone, turn.session);
+    return { ok: true, silenced: true, line };
+  }
+  const autoHuman = turn.kind === "text"
+    && turn.message === SUPPORT_HUMAN_HANDOFF_TEXT
+    && turn.session.step === "human"
+    && listAlreadyOpen(session);
+  if (
+    turn.kind === "nudge"
+    && isSupportAiCandidate({ text: inbound.text, choiceId: inbound.choiceId, session })
+  ) {
+    const aiText = await trySupportAiReply(inbound.text, line);
+    if (aiText) {
+      const aiSent = await sendText(inbound.phone, aiText, line);
+      if (aiSent) {
+        await saveSession(inbound.phone, session ?? { step: "menu", problem: null });
+        return { ok: true, line };
+      }
+    }
+  }
+  if (turn.kind === "nudge" || autoHuman) {
+    const claim = await claimSupportNudge(inbound.phone);
+    if (claim === "cooldown") return { ok: true, silenced: true, line };
+    const message = claim === "handoff"
+      ? SUPPORT_HUMAN_HANDOFF_TEXT
+      : turn.kind === "nudge"
+        ? turn.message
+        : `Toque em ${nudgeButtonLabel(menu, session ?? menuSession())} acima e escolha sua opção.`;
+    const warned = await sendText(inbound.phone, message, line);
+    if (!warned) return { ok: false, error: "not_configured", line };
     return { ok: true, line };
   }
   let nextSession = turn.session;
   let sent = false;
-  if (
-    (turn.kind === "list" || turn.kind === "nudge")
-    && isSupportAiCandidate({ text: inbound.text, choiceId: inbound.choiceId, session })
-  ) {
+  if (turn.kind === "list" && isSupportAiCandidate({ text: inbound.text, choiceId: inbound.choiceId, session })) {
     const aiText = await trySupportAiReply(inbound.text, line);
     if (aiText) {
       sent = await sendText(inbound.phone, aiText, line);
@@ -995,7 +1176,7 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
   }
   if (turn.kind === "list") {
     sent = await sendList(inbound.phone, turn, line);
-  } else if (turn.kind === "text" || turn.kind === "nudge") {
+  } else if (turn.kind === "text") {
     sent = await sendText(inbound.phone, turn.message, line);
   } else {
     const found = await findSupportOrders(turn.intent);

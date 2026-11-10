@@ -6,6 +6,10 @@ import {
   buildSupportOrdersMessage,
   classifySupportText,
   decideSupportTurn,
+  type SupportSession,
+  isSupportAcknowledgement,
+  SUPPORT_HUMAN_HANDOFF_TEXT,
+  supportNudgeCooldownMs,
   ATTENDANT_LINE_PHONES,
   isAttendantManualText,
   isStoreLinePhone,
@@ -91,9 +95,81 @@ test("frase sem toque não repete o menu", () => {
       { id: "pix", title: "Pagar agora", description: "Link da loja", action: "text", message: "Pague no site." },
     ],
   });
-  const named = decideSupportTurn({ text: "blz", session: { step: "menu", problem: null } }, custom.menu);
+  const named = decideSupportTurn({ text: "cadê o pedido", session: { step: "menu", problem: null } }, custom.menu);
   assert.equal(named.kind, "nudge");
   if (named.kind === "nudge") assert.equal(named.message, "Toque em Abrir acima e escolha sua opção.");
+});
+
+test("rajada no menu manda um aviso e agradecimento ou mídia fica em silêncio", () => {
+  const cooldownMs = 30 * 60 * 1000;
+  const open: SupportSession = { step: "menu", problem: null, nudgeCount: 0, lastNudgeAt: null };
+  let session: SupportSession = { ...open };
+  const now = 1_700_000_000_000;
+  const burst = ["cade meu pedido", "quero saber", "nao entendi", "me ajuda por favor"];
+  const kinds: string[] = [];
+  for (const text of burst) {
+    const turn = decideSupportTurn({ text, session, now: now + kinds.length * 1000, cooldownMs });
+    kinds.push(turn.kind);
+    session = turn.session;
+  }
+  assert.deepEqual(kinds, ["nudge", "silent", "silent", "silent"]);
+  assert.equal(session.nudgeCount, 1);
+
+  for (const text of ["Obrigada", "OBRIGADA!!!", "Chegou", "chegou.", "🙏", "👍", "Ok", "vlw", "beleza"]) {
+    const turn = decideSupportTurn({ text, session: open, now, cooldownMs });
+    assert.equal(turn.kind, "silent", text);
+    assert.equal(turn.session.step, "menu");
+    assert.equal(turn.session.nudgeCount, 0);
+  }
+  assert.equal(isSupportAcknowledgement("não chegou"), false);
+  const complaint = decideSupportTurn({ text: "não chegou", session: open, now, cooldownMs });
+  assert.equal(complaint.kind, "nudge");
+
+  const video = decideSupportTurn({ text: "", media: true, session: open, now, cooldownMs });
+  assert.equal(video.kind, "silent");
+  const call = decideSupportTurn({ text: "", session: { step: "problem_menu", problem: "problema" }, now, cooldownMs });
+  assert.equal(call.kind, "silent");
+  assert.equal(call.session.step, "problem_menu");
+
+  const videoPayload = readSupportInbound({
+    phone: "35992420559",
+    type: "ReceivedCallback",
+    video: { videoUrl: "https://example.test/video.mp4" },
+  });
+  assert.equal(videoPayload.skip, false);
+  assert.equal(videoPayload.media, true);
+  assert.equal(videoPayload.text, "");
+
+  let warned = { ...open };
+  const first = decideSupportTurn({ text: "cade meu pedido", session: warned, now: 0, cooldownMs });
+  assert.equal(first.kind, "nudge");
+  const second = decideSupportTurn({ text: "ainda nao achei", session: first.session, now: cooldownMs, cooldownMs });
+  assert.equal(second.kind, "nudge");
+  assert.equal(second.session.nudgeCount, 2);
+  const third = decideSupportTurn({ text: "continua sem achar", session: second.session, now: cooldownMs + 1000, cooldownMs });
+  assert.equal(third.kind, "text");
+  if (third.kind === "text") assert.equal(third.message, SUPPORT_HUMAN_HANDOFF_TEXT);
+  assert.equal(third.session.step, "human");
+  const thanksAfter = decideSupportTurn({ text: "Obrigada", session: second.session, now: cooldownMs + 1000, cooldownMs });
+  assert.equal(thanksAfter.kind, "silent");
+  assert.equal(thanksAfter.session.step, "menu");
+
+  const tapped = decideSupportTurn({
+    choiceId: "meu-pedido",
+    session: { step: "menu", problem: null, nudgeCount: 1, lastNudgeAt: now },
+    now,
+    cooldownMs,
+  });
+  assert.equal(tapped.kind, "text");
+  assert.equal(tapped.session.step, "await_lookup");
+
+  const hello = decideSupportTurn({ text: "Oi!" });
+  assert.equal(hello.kind, "list");
+  assert.equal(hello.session.step, "menu");
+  assert.equal(supportNudgeCooldownMs(""), cooldownMs);
+  assert.equal(supportNudgeCooldownMs("15"), 15 * 60 * 1000);
+  assert.equal(supportNudgeCooldownMs("0"), cooldownMs);
+  assert.equal(supportNudgeCooldownMs("abc"), cooldownMs);
 });
 
 test("falar com atendente cala o menu até a sessão acabar", () => {
@@ -175,6 +251,7 @@ test("problema abre o segundo menu", () => {
 test("texto digitado na conversa cala o menu; aviso automático não", () => {
   assert.equal(isAttendantManualText("Oi, já estou vendo seu pedido"), true);
   assert.equal(isAttendantManualText("Toque em Ver opções acima e escolha sua opção."), false);
+  assert.equal(isAttendantManualText(SUPPORT_HUMAN_HANDOFF_TEXT), false);
   assert.equal(isAttendantManualText(""), false);
   assert.equal(isAttendantManualText(defaultSupportMenu().greeting), false);
   assert.equal(isAttendantManualText("Pode comprar em https://www.yury-imports.com/yuri"), false);
