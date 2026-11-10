@@ -1337,12 +1337,20 @@ async function ensureWhatsappSupportSessionsTable(databaseName: string): Promise
         step VARCHAR(32) NOT NULL,
         problem VARCHAR(32) NULL,
         pending_order INT NULL,
+        nudge_count INT NOT NULL DEFAULT 0,
+        last_nudge_at TIMESTAMP NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
   }
   if (!(await columnExists("whatsapp_support_sessions", "pending_order", databaseName))) {
     await pool.query(`ALTER TABLE whatsapp_support_sessions ADD COLUMN pending_order INT NULL`);
+  }
+  if (!(await columnExists("whatsapp_support_sessions", "nudge_count", databaseName))) {
+    await pool.query(`ALTER TABLE whatsapp_support_sessions ADD COLUMN nudge_count INT NOT NULL DEFAULT 0`);
+  }
+  if (!(await columnExists("whatsapp_support_sessions", "last_nudge_at", databaseName))) {
+    await pool.query(`ALTER TABLE whatsapp_support_sessions ADD COLUMN last_nudge_at TIMESTAMP NULL`);
   }
 }
 
