@@ -500,10 +500,9 @@ export function parseCellTechOrder(
     row.modificado_em ?? row.data_modificacao ?? row.data_alteracao ?? row.atualizado_em ?? row.data_atualizacao ?? row.updated_at,
     row.hora_modificacao,
   );
-  const doneConfigured = flags.doneSituationIds.length > 0;
-  const finished = Boolean(finishedAt)
-    || (doneConfigured && flags.doneSituationIds.includes(situationId))
-    || (!doneConfigured && DONE_NAME.test(situationName));
+  /** Data de conclusão, situação marcada ou nome fechado. A lista do admin soma, não substitui o nome. */
+  const markedDone = situationId !== "" && flags.doneSituationIds.includes(situationId);
+  const finished = Boolean(finishedAt) || markedDone || DONE_NAME.test(situationName);
   const workingConfigured = flags.workingSituationIds.length > 0;
   const working = !finished && (
     workingConfigured

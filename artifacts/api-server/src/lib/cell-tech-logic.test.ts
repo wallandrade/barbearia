@@ -682,3 +682,117 @@ test("OS parada usa a data, a situação e fica fora do lembrete", () => {
   }, flags, clock);
   assert.equal(noChange?.changedDay, null);
 });
+
+test("Finalizado fecha mesmo com outras situações marcadas e não gera rajada", () => {
+  const marked = { doneSituationIds: ["99"], workingSituationIds: ["3"] };
+  const sent = { created: false, deadline: false, finished: false };
+  const finalizado = parseCellTechOrder({
+    id: "40",
+    codigo: "1500",
+    nome_cliente: "Ana",
+    nome_situacao: "Finalizado",
+    situacao_id: "7",
+    previsao_entrega: "2026-10-01",
+    modificado_em: "2026-10-20",
+  }, marked, morning);
+  assert.ok(finalizado);
+  assert.equal(finalizado.finished, true);
+  assert.equal(finalizado.finishedDay, "2026-10-20");
+  assert.equal(finalizado.overdue, false);
+  assert.deepEqual(openAlerts(finalizado, morning, sent), []);
+
+  const concretizado = parseCellTechOrder({
+    id: "41",
+    codigo: "1501",
+    nome_cliente: "Bia",
+    nome_situacao: "CONCRETIZADO O.S",
+    situacao_id: "8",
+    data_conclusao: "2026-10-02",
+    previsao_entrega: "2026-10-01",
+  }, marked, morning);
+  assert.ok(concretizado);
+  assert.equal(concretizado.finished, true);
+  assert.equal(concretizado.finishedDay, "2026-10-02");
+  assert.deepEqual(openAlerts(concretizado, morning, sent), []);
+
+  const aberta = parseCellTechOrder({
+    id: "42",
+    codigo: "1502",
+    nome_cliente: "Caio",
+    nome_situacao: "Em andamento",
+    situacao_id: "3",
+    previsao_entrega: "2026-11-01",
+    nome_tecnico: "Cassio",
+    tecnico_id: "1",
+  }, marked, morning);
+  assert.ok(aberta);
+  assert.equal(aberta.finished, false);
+  assert.equal(aberta.working, true);
+  assert.deepEqual(openAlerts(aberta, morning, { created: true, deadline: true }), ["reminder"]);
+
+  const cancelada = parseCellTechOrder({
+    id: "43",
+    codigo: "1503",
+    nome_situacao: "Cancelada",
+    situacao_id: "4",
+    modificado_em: "2026-09-01",
+  }, marked, morning);
+  assert.equal(cancelada?.finished, true);
+  assert.deepEqual(openAlerts(cancelada!, morning, sent), []);
+
+  const marcada = parseCellTechOrder({
+    id: "46",
+    codigo: "1506",
+    nome_situacao: "Sem reparo",
+    situacao_id: "99",
+    modificado_em: "2026-10-11",
+  }, marked, morning);
+  assert.equal(marcada?.finished, true);
+  assert.deepEqual(openAlerts(marcada!, morning, sent), []);
+
+  const hoje = parseCellTechOrder({
+    id: "44",
+    codigo: "1504",
+    nome_cliente: "Dora",
+    nome_situacao: "Finalizado",
+    situacao_id: "7",
+    data_conclusao: "2026-11-04",
+  }, marked, morning);
+  assert.deepEqual(openAlerts(hoje!, morning, sent), ["finished"]);
+
+  const semData = parseCellTechOrder({
+    id: "45",
+    codigo: "1505",
+    nome_situacao: "Finalizado",
+    situacao_id: "7",
+  }, marked, morning);
+  assert.equal(semData?.finished, true);
+  assert.equal(semData?.finishedDay, null);
+  assert.deepEqual(openAlerts(semData!, morning, sent), []);
+
+  const antigas = [
+    { id: "51", codigo: "1601", modificado_em: "2026-08-01" },
+    { id: "52", codigo: "1602", data_conclusao: "2026-09-15" },
+    { id: "53", codigo: "1603", modificado_em: "2026-10-30", data_conclusao: "2026-10-02" },
+    { id: "54", codigo: "1604" },
+    { id: "55", codigo: "1605", nome_situacao: "Cancelada", modificado_em: "2026-07-01" },
+  ].map((row) => parseCellTechOrder({
+    ...row,
+    nome_situacao: row.nome_situacao ?? "Finalizado",
+    situacao_id: "7",
+    previsao_entrega: "2026-06-01",
+  }, marked, morning));
+  const rajada = antigas.flatMap((order) => openAlerts(order!, morning, sent));
+  assert.deepEqual(rajada, []);
+  assert.equal(antigas.every((order) => order?.finished), true);
+
+  const fila = buildCellTechQueueMessage([finalizado, concretizado, aberta, cancelada!], morning);
+  assert.match(fila, /OS 1502/);
+  assert.doesNotMatch(fila, /OS 1500|OS 1501|OS 1503/);
+  assert.deepEqual(selectStalledOrders([finalizado, aberta], morning, {
+    minDays: 1,
+    situationIds: [],
+    sinceByOs: new Map([[finalizado.id, "2026-08-01"], [aberta.id, "2026-11-01"]]),
+    sentByOs: new Map(),
+  }).map((item) => item.order.code), ["1502"]);
+});
