@@ -39,6 +39,7 @@ import shippingQueueRouter from "./shipping-queue";
 import shippingDeliveryEstimateRouter from "./shipping-delivery-estimate";
 
 import brevoRouter from "./brevo";
+import passwordResetRouter from "./password-reset";
 import reportanaRouter from "./reportana";
 import envioecomRouter from "./envioecom";
 import superfreteRouter from "./superfrete";
@@ -75,6 +76,7 @@ router.use(financialDreRouter);
 router.use(marketingExpensesRouter);
 router.use(trackingRouter);
 router.use(customerAuthRouter);
+router.use(passwordResetRouter);
 router.use(affiliateRouter);
 router.use(rafflesRouter);
 router.use(supportRouter);

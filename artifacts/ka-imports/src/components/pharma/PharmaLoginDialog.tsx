@@ -34,10 +34,12 @@ export function PharmaLoginDialog() {
   const [password, setPassword] = useState("");
   const [cpf, setCpf] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetNotice, setResetNotice] = useState("");
 
   useEffect(() => {
     if (!open) {
       setMode("login");
+      setResetNotice("");
       return;
     }
     function onKey(event: KeyboardEvent) {
@@ -55,6 +57,32 @@ export function PharmaLoginDialog() {
     }
     const text = `Olá, esqueci minha senha. E-mail da conta: ${accountEmail}`;
     window.open(makeWhatsAppLink(text), "_blank", "noopener,noreferrer");
+  }
+
+  async function sendResetLink() {
+    const accountEmail = email.trim();
+    if (!accountEmail) {
+      toast.error("Informe o e-mail da conta.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: accountEmail }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) {
+        toast.error("Não foi possível enviar agora. Tente de novo ou fale no WhatsApp.");
+        return;
+      }
+      setResetNotice(data.message || "Se o e-mail estiver cadastrado, você vai receber um link.");
+    } catch {
+      toast.error("Erro de conexão. Tente novamente ou fale no WhatsApp.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!open) return null;
@@ -129,7 +157,7 @@ export function PharmaLoginDialog() {
         {mode === "forgot" ? (
           <div className="mt-4 space-y-3">
             <p className="text-sm leading-relaxed text-neutral-600">
-              A senha não volta por e-mail. Informe o e-mail da conta e chame no WhatsApp para redefinir.
+              Informe o e-mail da conta. Se ele estiver cadastrado, você recebe um link para criar uma senha nova.
             </p>
             <input
               type="email"
@@ -141,8 +169,21 @@ export function PharmaLoginDialog() {
             />
             <button
               type="button"
+              onClick={() => void sendResetLink()}
+              disabled={loading}
+              className="flex h-11 w-full items-center justify-center rounded-xl bg-[var(--pharma-cart)] text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enviar link"}
+            </button>
+            {resetNotice ? (
+              <p className="rounded-xl bg-neutral-50 px-3 py-2 text-sm leading-relaxed text-neutral-700">
+                {resetNotice}
+              </p>
+            ) : null}
+            <button
+              type="button"
               onClick={openPasswordHelp}
-              className="flex h-11 w-full items-center justify-center rounded-xl bg-[var(--pharma-cart)] text-sm font-semibold text-white"
+              className="flex h-11 w-full items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-sm font-semibold text-neutral-800"
             >
               Falar no WhatsApp
             </button>

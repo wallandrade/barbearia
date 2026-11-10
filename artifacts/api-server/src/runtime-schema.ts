@@ -495,6 +495,22 @@ async function ensureCustomerUsersTable(databaseName: string): Promise<void> {
   }
 }
 
+async function ensureCustomerPasswordResetsTable(databaseName: string): Promise<void> {
+  if (await tableExists("customer_password_resets", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE customer_password_resets (
+      id VARCHAR(64) NOT NULL PRIMARY KEY,
+      user_id VARCHAR(255) NOT NULL,
+      token_hash VARCHAR(64) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY customer_password_resets_token_hash_uq (token_hash),
+      KEY customer_password_resets_user_idx (user_id)
+    )
+  `);
+}
+
 async function ensureAffiliatesTables(databaseName: string): Promise<void> {
   if (!(await tableExists("affiliates", databaseName))) {
     await pool.query(`
@@ -1598,6 +1614,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureCouponsColumns(databaseName);
     await ensureOrderBumpsColumns(databaseName);
     await ensureCustomerUsersTable(databaseName);
+    await ensureCustomerPasswordResetsTable(databaseName);
     await ensureAffiliatesTables(databaseName);
     await ensureRaffleTables(databaseName);
     await ensureSupportTicketsTable(databaseName);

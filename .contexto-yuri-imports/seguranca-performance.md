@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-11-08
+> **Última atualização:** 2026-11-10
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Pedido de senha não diz se o e-mail existe | A resposta, o status e o tempo mínimo são os mesmos. O banco guarda só o hash. Log sem token e sem senha. Limite em memória por e-mail e por IP | Checkout token e a senha de admin iguais. A rota de redefinição informa link inválido ou expirado |
 | 2026-11-08 | Cobrança PIX nova não usa a rota antiga sem segredo | A transação gravada pelo servidor não confirma em `/webhook/raffle-pix` nem no callback aberto de cobrança avulsa. Linha antiga, sem marca, continua | Checkout token e PBKDF2 iguais. Valor do aviso ainda não barra. Sem rotação de segredo |
 | 2026-11-08 | Webhook PIX recusa UNPAID e NOT_OK | O formato antigo de status pago continua. Corpo cru, código PIX e URL com `whsec` saem do log. `/webhook/raffle-pix` não passou a exigir gateway | Checkout token, PBKDF2 e a origem oficial de `POST /api/orders` iguais. Sem rotação de segredo. Valor do aviso ainda não barra |
 | 2026-11-08 | Checkout, senha admin e baixa de estoque | Header `Authorization` inválido não pula token nem limite. Checkout token só assina com `CHECKOUT_TOKEN_SECRET` de pelo menos 32 caracteres; sem isso a emissão e o write protegido respondem 503. `?token=` de admin fica desligado salvo `ADMIN_ALLOW_QUERY_TOKEN=true`. Senha nova de admin usa PBKDF2; SHA-256 antigo ainda entra. Baixa não grava senha embutida. Scripts de admin exigem `ADMIN_USERNAME` e `ADMIN_PASSWORD` | `POST /api/orders` com origem oficial continua sem token. Sessões já abertas continuam. WhatsApp `?token=` é outro controle. Hash antigo no banco não é reescrito sozinho |
@@ -40,6 +41,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 - Rate limit **em memória** para POSTs públicos sensíveis (pedidos, checkout PIX, cobranças, suporte, KYC, rifa, etc.).
 - Chat de compostos: limiter **próprio** em `routes/peptide-chat.ts` (20 / 10 min / IP); fora da lista de writes que exigem checkout token. Sem chave OpenAI o POST ainda responde (ficha local).
+- Recuperação de senha: `POST /api/auth/forgot-password` e `POST /api/auth/reset-password` ficam fora do checkout token. O pedido tem limite próprio em memória (3/hora por e-mail, 8/hora por IP) e responde sempre 200 com a mesma frase. A espera mínima deixa o tempo parecido. O token cru não entra no banco nem no log.
 - Atendimento WhatsApp: `POST /api/whatsapp/support/inbound` fica fora do checkout token. Exige o token do atendimento (mínimo 8 caracteres) na query ou no header `x-whatsapp-support-token`. 20 mensagens a cada 10 minutos por telefone.
 - `GET /api/security/checkout-token` → HMAC. O segredo vem só de `CHECKOUT_TOKEN_SECRET`, com pelo menos 32 caracteres. Sem isso, a emissão e o write que exige token respondem 503. Não há segredo embutido.
 - Writes exigem `x-checkout-token`, com duas exceções: Bearer de sessão de cliente ou de admin conferida no banco; `POST /api/orders` com origem oficial vazia ou permitida. Header `Authorization` inválido não entra na exceção e segue para o token e para o limite.

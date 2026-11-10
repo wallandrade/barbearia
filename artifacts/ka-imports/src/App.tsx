@@ -111,6 +111,7 @@ const PixPayment          = lazy(() => import("@/pages/PixPayment"));
 const Success             = lazy(() => import("@/pages/Success"));
 const AdminLogin          = lazy(() => import("@/pages/AdminLogin"));
 const CustomerLogin       = lazy(() => import("@/pages/CustomerLogin"));
+const RedefinirSenha      = lazy(() => import("@/pages/RedefinirSenha"));
 const CustomerOrders      = lazy(() => import("@/pages/CustomerOrders"));
 const PaymentLink         = lazy(() => import("@/pages/PaymentLink"));
 const ProductDetail       = lazy(() => import("@/pages/ProductDetail"));
@@ -195,6 +196,7 @@ function Router() {
         <Route path="/admin"            component={Admin} />
         <Route path="/motoboy"          component={MotoboyPortal} />
         <Route path="/login"            component={CustomerLogin} />
+        <Route path="/redefinir-senha"  component={RedefinirSenha} />
         <Route path="/minha-conta/pedidos" component={CustomerOrders} />
         <Route path="/r/:code"          component={ReferralShortLink} />
         <Route path="/pagamento"        component={PaymentLink} />

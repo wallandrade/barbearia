@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Tabela `customer_password_resets` (+ runtime) | Guarda o hash do link de senha, a expiração e o uso. A loja ganha `/redefinir-senha` | `customer_users` e a senha do admin iguais. Sem `tenant_id` |
 | 2026-11-10 | Tabela `cell_tech_situation_state` (+ runtime) | Guarda desde quando a OS está na situação atual, se o Gestão Click não manda a data | `cell_tech_alerts`, pedido, PIX e frete iguais. Sem `tenant_id` |
 | 2026-11-10 | Colunas `whatsapp_support_sessions.nudge_count` e `last_nudge_at` (+ runtime) | Marcam o aviso do menu e a hora dele. Colunas novas, com padrão 0 e nulo | O passo, o pedido pendente e os avisos de pedido iguais |
 | 2026-11-04 | Tabela `cell_tech_alerts` (+ runtime) e job `cell-tech-job.ts` | Marca aviso de OS já enviado. Sem essa tabela o ciclo não manda mensagem | Pedidos, PIX e frete iguais. Sem `tenant_id` |

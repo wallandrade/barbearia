@@ -1,6 +1,6 @@
 # Auth e permissões — Yuri Import
 
-> **Última atualização:** 2026-11-08
+> **Última atualização:** 2026-11-10
 
 RBAC/admin e auth de cliente **como implementados**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-10 | Cliente pede link de senha por e-mail | `POST /api/auth/forgot-password` responde sempre a mesma frase. `POST /api/auth/reset-password` troca a senha com o token. A tela `/redefinir-senha` cria a senha nova. O admin continua com `set-password` | Sessão, PBKDF2 e a senha de baixa iguais. PIX, estoque e Cell Tech iguais |
 | 2026-11-08 | Senha admin, query e scripts | Login aceita SHA-256 antigo e PBKDF2 novo. Criar, trocar e semear senha grava PBKDF2. `?token=` de admin só com `ADMIN_ALLOW_QUERY_TOKEN=true`. Scripts exigem usuário e senha no ambiente | Sessão de 12 h, cookie e Bearer iguais. Cliente continua PBKDF2. O login não migra o hash antigo |
 | 2026-10-28 | Baixa do espelho Motoboy/Minas sem senha | `POST /api/integrations/inventory/exit` aceita só o token. `GET .../exit-status` devolve `passwordRequired: false` | Dar baixa agora no Admin, hash da senha e token do snapshot iguais |
 | 2026-10-19 | Aba Promoções e `/api/admin/flash-campaigns` só com `requirePrimaryAdmin` | Admin de vendedor não vê e não grava a oferta relâmpago | Cupons, produtos e a sessão iguais |
@@ -82,8 +83,9 @@ RBAC/admin e auth de cliente **como implementados**. Precedência: código > mem
 - Registro/login: `routes/customer-auth.ts` + `middlewares/customer-auth.ts`. Cadastro/login aceitam **CPF opcional** (`document`); grava em `customer_users.document`.
 - Pedidos guest: `guestAccessToken` em `orders` (sem conta → sem senha). Ao cadastrar/entrar/abrir Meus pedidos ou carteira, liga `userId` se o **e-mail ou o CPF** da compra bater (`claimGuestOrdersForCustomer`).
 - Sessão **em memória** via Bearer token (não tabela de sessão de cliente) — cai em restart/deploy.
-- Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original” nem reset por e-mail.
-- Loja pharma (`PharmaLoginDialog`): **Não tenho conta** abre o cadastro; **Esqueci minha senha** abre o WhatsApp com o e-mail informado. A redefinição continua no admin (`set-password`).
+- Senha cliente: **PBKDF2** + salt (hash irreversível) — **não** existe “mostrar senha original”.
+- Recuperação: `POST /api/auth/forgot-password` (público) sempre responde `{ ok, message }` igual, com ou sem a conta. Se o e-mail existir, grava só o SHA-256 do token em `customer_password_resets` (1 h, uso único, invalida os anteriores). O envio usa a chave `brevo_api_key` e o remetente `brevo_sender_email` / `brevo_sender_name`. Sem isso, a API só registra aviso. Limite em memória: 3 pedidos por hora no e-mail e 8 no IP. `POST /api/auth/reset-password` aplica PBKDF2 novo, o mesmo de `set-password`. A página é `/redefinir-senha`. O WhatsApp continua no diálogo.
+- Loja pharma (`PharmaLoginDialog`): **Não tenho conta** abre o cadastro; **Esqueci minha senha** pede o e-mail e envia o link, e ainda tem o botão do WhatsApp. A redefinição pelo admin (`set-password`) continua.
 - Admin primário: `POST /api/admin/customers/:id/set-password` gera ou define nova senha e devolve o plaintext **uma vez**; UI Admin aba Clientes → botão **Senha**.
 - Admin primário: impersonate `POST /api/admin/customers/:id/impersonate`.
 - Admin primário: carteira do cliente `POST /api/admin/customers/:id/store-credit` (`add` / `zero`); listagem já manda `storeCreditBalance`.

@@ -2030,6 +2030,11 @@ export default function Admin() {
   const [brevoApiKey, setBrevoApiKey] = useState("");
   const [brevoConfigured, setBrevoConfigured] = useState(false);
   const [brevoTesting, setBrevoTesting] = useState(false);
+  const [brevoSenderEmail, setBrevoSenderEmail] = useState("");
+  const [brevoSenderName, setBrevoSenderName] = useState("");
+  const [brevoResetBaseUrl, setBrevoResetBaseUrl] = useState("");
+  const [brevoSenderLoaded, setBrevoSenderLoaded] = useState(false);
+  const [brevoSenderSaving, setBrevoSenderSaving] = useState(false);
   const [clientErrors, setClientErrors] = useState<ClientErrorEvent[]>([]);
   const [clientErrorsLoading, setClientErrorsLoading] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
@@ -2849,8 +2854,17 @@ export default function Admin() {
     try {
       const res = await fetch(`${BASE}/api/admin/brevo/config`, { headers: authHeaders() });
       if (res.ok) {
-        const data = await res.json() as { configured?: boolean };
+        const data = await res.json() as {
+          configured?: boolean;
+          senderEmail?: string;
+          senderName?: string;
+          resetBaseUrl?: string;
+        };
         setBrevoConfigured(!!data.configured);
+        setBrevoSenderEmail(data.senderEmail || "");
+        setBrevoSenderName(data.senderName || "");
+        setBrevoResetBaseUrl(data.resetBaseUrl || "");
+        setBrevoSenderLoaded(true);
       }
     } catch { /* ignore */ }
   }, []);
@@ -2878,6 +2892,32 @@ export default function Admin() {
       setBrevoTesting(false);
     }
   }, [brevoApiKey]);
+
+  const saveBrevoSender = useCallback(async () => {
+    setBrevoSenderSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/brevo/config`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          senderEmail: brevoSenderEmail,
+          senderName: brevoSenderName,
+          resetBaseUrl: brevoResetBaseUrl,
+        }),
+      });
+      const data = await res.json() as { message?: string };
+      if (!res.ok) {
+        toast.error(data.message || "Erro ao salvar o remetente do Brevo.");
+        return;
+      }
+      toast.success(data.message || "Remetente do Brevo salvo.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao salvar o remetente do Brevo.");
+    } finally {
+      setBrevoSenderSaving(false);
+    }
+  }, [brevoResetBaseUrl, brevoSenderEmail, brevoSenderName]);
 
   const fetchClientErrors = useCallback(async () => {
     setClientErrorsLoading(true);
@@ -8186,6 +8226,15 @@ export default function Admin() {
               brevoConfigured={brevoConfigured}
               brevoTesting={brevoTesting}
               onTestBrevoConnection={testBrevoConnection}
+              brevoSenderEmail={brevoSenderEmail}
+              setBrevoSenderEmail={setBrevoSenderEmail}
+              brevoSenderName={brevoSenderName}
+              setBrevoSenderName={setBrevoSenderName}
+              brevoResetBaseUrl={brevoResetBaseUrl}
+              setBrevoResetBaseUrl={setBrevoResetBaseUrl}
+              brevoSenderLoaded={brevoSenderLoaded}
+              brevoSenderSaving={brevoSenderSaving}
+              onSaveBrevoSender={saveBrevoSender}
             />
           </div>
         ) : null}
@@ -20053,7 +20102,7 @@ function ReportanaSettingsCard() {
   );
 }
 
-function ConfiguracoesPanel({ settings, loading, products, productsLoading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection }: {
+function ConfiguracoesPanel({ settings, loading, products, productsLoading, clientErrors, clientErrorsLoading, onRefreshClientErrors, onTestOutboundWebhook, onSave, onDelete, brevoApiKey, setBrevoApiKey, brevoConfigured, brevoTesting, onTestBrevoConnection, brevoSenderEmail, setBrevoSenderEmail, brevoSenderName, setBrevoSenderName, brevoResetBaseUrl, setBrevoResetBaseUrl, brevoSenderLoaded, brevoSenderSaving, onSaveBrevoSender }: {
   settings: Record<string, string>;
   loading: Record<string, boolean>;
   products: BannerLinkProduct[];
@@ -20069,6 +20118,15 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
   brevoConfigured: boolean;
   brevoTesting: boolean;
   onTestBrevoConnection: () => void;
+  brevoSenderEmail: string;
+  setBrevoSenderEmail: (value: string) => void;
+  brevoSenderName: string;
+  setBrevoSenderName: (value: string) => void;
+  brevoResetBaseUrl: string;
+  setBrevoResetBaseUrl: (value: string) => void;
+  brevoSenderLoaded: boolean;
+  brevoSenderSaving: boolean;
+  onSaveBrevoSender: () => void;
 }) {
   const [sitePw, setSitePw] = useState(settings["site_password"] ?? "");
   const [paymentPw, setPaymentPw] = useState(settings["payment_password"] ?? "");
@@ -21428,7 +21486,7 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
             Integração Brevo
           </h2>
           <p className="text-muted-foreground text-sm">
-            Configure sua API key do Brevo para habilitar sincronização de clientes e campanhas.
+            A mesma chave sincroniza clientes e envia o e-mail de redefinição de senha. O remetente precisa estar verificado no Brevo.
           </p>
         </div>
 
@@ -21461,6 +21519,46 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
           <Button onClick={onTestBrevoConnection} disabled={brevoTesting || !brevoApiKey.trim()}>
             {brevoTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
             Testar e salvar API
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-xs font-medium">E-mail do remetente</label>
+          <input
+            type="email"
+            value={brevoSenderEmail}
+            onChange={(e) => setBrevoSenderEmail(e.target.value)}
+            placeholder="nao-responda@yury-imports.com"
+            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="block text-xs font-medium">Nome do remetente</label>
+          <input
+            type="text"
+            value={brevoSenderName}
+            onChange={(e) => setBrevoSenderName(e.target.value)}
+            placeholder="Yury Imports"
+            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="block text-xs font-medium">Endereço da loja no link (opcional)</label>
+          <input
+            type="url"
+            value={brevoResetBaseUrl}
+            onChange={(e) => setBrevoResetBaseUrl(e.target.value)}
+            placeholder="https://www.yury-imports.com"
+            className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            Se ficar vazio, o link usa https://www.yury-imports.com/redefinir-senha. Sem chave ou sem e-mail do remetente, a loja não envia e o cliente vê a mesma mensagem genérica.
+          </p>
+        </div>
+        <div className="flex justify-end">
+          <Button onClick={onSaveBrevoSender} disabled={brevoSenderSaving || !brevoSenderLoaded}>
+            {brevoSenderSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Salvar remetente
           </Button>
         </div>
       </div>
