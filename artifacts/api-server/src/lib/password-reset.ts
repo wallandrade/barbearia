@@ -8,14 +8,20 @@ export const PASSWORD_RESET_WINDOW_MS = 60 * 60 * 1000;
 export const PASSWORD_RESET_MIN_RESPONSE_MS = 400;
 export const PASSWORD_RESET_PATH = "/redefinir-senha";
 export const DEFAULT_STORE_BASE_URL = "https://www.yury-imports.com";
-export const GENERIC_FORGOT_PASSWORD_MESSAGE =
-  "Se o e-mail estiver cadastrado, você vai receber um link para redefinir a senha.";
 export const INVALID_RESET_TOKEN_MESSAGE = "Este link é inválido ou expirou. Peça um novo.";
 export const PASSWORD_TOO_SHORT_MESSAGE = "A senha deve ter pelo menos 8 caracteres.";
+export const FORGOT_PASSWORD_INVALID_EMAIL_MESSAGE = "Informe um e-mail válido.";
+export const FORGOT_PASSWORD_RATE_LIMIT_MESSAGE = "Muitas tentativas. Aguarde alguns minutos e tente de novo.";
+export const FORGOT_PASSWORD_UNKNOWN_EMAIL_MESSAGE = "Não encontramos uma conta com esse e-mail. Confira o e-mail ou crie uma conta.";
+export const FORGOT_PASSWORD_UNAVAILABLE_MESSAGE = "Não conseguimos enviar agora. Tente de novo ou fale no WhatsApp.";
 
-export type GenericForgotPasswordResponse = {
-  ok: true;
-  message: typeof GENERIC_FORGOT_PASSWORD_MESSAGE;
+export type ForgotPasswordStatus = "sent" | "unknown_email" | "rate_limited" | "invalid_email" | "not_configured" | "failed";
+
+export type ForgotPasswordResult = {
+  ok: boolean;
+  status: ForgotPasswordStatus;
+  message: string;
+  httpStatus: number;
 };
 
 export type PasswordResetRateStore = Map<string, number[]>;
@@ -29,11 +35,9 @@ export type ForgotPasswordUser = {
 export type ForgotPasswordPlan =
   | {
       outcome: "invalid_email" | "rate_limited" | "unknown_email" | "not_configured";
-      response: GenericForgotPasswordResponse;
     }
   | {
       outcome: "send";
-      response: GenericForgotPasswordResponse;
       userId: string;
       email: string;
       name: string;
@@ -53,8 +57,47 @@ export type ResetTokenStatus = "missing" | "used" | "expired" | "valid";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function genericForgotPasswordBody(): GenericForgotPasswordResponse {
-  return { ok: true, message: GENERIC_FORGOT_PASSWORD_MESSAGE };
+export function maskResetEmail(email: string): string {
+  const normalized = normalizeResetEmail(email);
+  const at = normalized.indexOf("@");
+  if (at <= 0 || !normalized.slice(at + 1)) return "***";
+  return `${normalized.slice(0, at).slice(0, 2)}***@${normalized.slice(at + 1)}`;
+}
+
+export function forgotPasswordResult(status: ForgotPasswordStatus, email = ""): ForgotPasswordResult {
+  if (status === "sent") {
+    return {
+      ok: true,
+      status,
+      httpStatus: 200,
+      message: `✅ Link enviado para ${normalizeResetEmail(email)}. Confira sua caixa de entrada e o spam.`,
+    };
+  }
+  if (status === "unknown_email") {
+    return { ok: false, status, httpStatus: 404, message: FORGOT_PASSWORD_UNKNOWN_EMAIL_MESSAGE };
+  }
+  if (status === "rate_limited") {
+    return { ok: false, status, httpStatus: 429, message: FORGOT_PASSWORD_RATE_LIMIT_MESSAGE };
+  }
+  if (status === "invalid_email") {
+    return { ok: false, status, httpStatus: 400, message: FORGOT_PASSWORD_INVALID_EMAIL_MESSAGE };
+  }
+  return {
+    ok: false,
+    status,
+    httpStatus: status === "not_configured" ? 503 : 502,
+    message: FORGOT_PASSWORD_UNAVAILABLE_MESSAGE,
+  };
+}
+
+export function brevoSendAccepted(status: number, body: unknown): { sent: boolean; messageId: string | null } {
+  if (status < 200 || status >= 300) return { sent: false, messageId: null };
+  const raw = body && typeof body === "object" && "messageId" in body
+    ? (body as { messageId?: unknown }).messageId
+    : "";
+  const messageId = typeof raw === "string" ? raw.trim() : "";
+  if (!messageId) return { sent: false, messageId: null };
+  return { sent: true, messageId };
 }
 
 export function createPasswordResetRateStore(): PasswordResetRateStore {
@@ -69,9 +112,52 @@ export function isPlausibleResetEmail(email: string): boolean {
   return email.length > 0 && email.length <= 254 && EMAIL_PATTERN.test(email);
 }
 
+export type PasswordResetLimitHit = "none" | "email" | "ip" | "email+ip";
+
+const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+
+function isIpv4(value: string): boolean {
+  if (!IPV4_PATTERN.test(value)) return false;
+  return value.split(".").every((part) => {
+    const octet = Number(part);
+    return octet >= 0 && octet <= 255 && String(octet) === part;
+  });
+}
+
+function isIpv6(value: string): boolean {
+  return value.includes(":") && /^[0-9a-f:.]{2,}$/i.test(value);
+}
+
 export function normalizeClientIp(ip: unknown): string {
-  const value = String(ip ?? "").trim();
+  let value = String(ip ?? "").trim();
+  if (!value) return "unknown";
+  value = value.replace(/^::ffff:/i, "");
+  if (value.startsWith("[") && value.includes("]")) {
+    value = value.slice(1, value.indexOf("]"));
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(value)) {
+    value = value.slice(0, value.lastIndexOf(":"));
+  }
   return value || "unknown";
+}
+
+function listedIps(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value.join(",") : String(value ?? "");
+  return raw
+    .split(",")
+    .map((part) => normalizeClientIp(part))
+    .filter((part) => part !== "unknown" && (isIpv4(part) || isIpv6(part)));
+}
+
+export function resolvePasswordResetClientIp(input: {
+  realIp?: unknown;
+  forwardedFor?: unknown;
+  socketIp?: unknown;
+}): string {
+  return listedIps(input.realIp)[0]
+    || listedIps(input.forwardedFor)[0]
+    || listedIps(input.socketIp)[0]
+    || "unknown";
 }
 
 export function generatePasswordResetToken(): string {
@@ -109,13 +195,21 @@ function pruneHits(hits: number[] | undefined, now: number, windowMs: number): n
 export function consumePasswordResetAttempt(
   store: PasswordResetRateStore,
   input: { email: string; ip: string; now: number; countEmail: boolean },
-): { allowed: boolean } {
+): { allowed: boolean; limit: PasswordResetLimitHit } {
   const ipKey = `ip:${normalizeClientIp(input.ip)}`;
   const emailKey = input.countEmail ? `email:${input.email}` : "";
   const ipHits = pruneHits(store.get(ipKey), input.now, PASSWORD_RESET_WINDOW_MS);
   const emailHits = emailKey ? pruneHits(store.get(emailKey), input.now, PASSWORD_RESET_WINDOW_MS) : [];
-  const limited = ipHits.length >= PASSWORD_RESET_IP_LIMIT
-    || (input.countEmail && emailHits.length >= PASSWORD_RESET_EMAIL_LIMIT);
+  const emailLimited = Boolean(emailKey) && emailHits.length >= PASSWORD_RESET_EMAIL_LIMIT;
+  const ipLimited = ipHits.length >= PASSWORD_RESET_IP_LIMIT;
+  const limit: PasswordResetLimitHit = emailLimited && ipLimited
+    ? "email+ip"
+    : emailLimited
+      ? "email"
+      : ipLimited
+        ? "ip"
+        : "none";
+  const limited = limit !== "none";
 
   if (!limited) {
     ipHits.push(input.now);
@@ -137,7 +231,7 @@ export function consumePasswordResetAttempt(
     }
   }
 
-  return { allowed: !limited };
+  return { allowed: !limited, limit };
 }
 
 export function planForgotPasswordRequest(input: {
@@ -150,7 +244,6 @@ export function planForgotPasswordRequest(input: {
   createToken?: () => string;
   skipRateLimit?: boolean;
 }): ForgotPasswordPlan {
-  const response = genericForgotPasswordBody();
   const email = normalizeResetEmail(input.email);
   const plausible = isPlausibleResetEmail(email);
   if (!input.skipRateLimit) {
@@ -160,16 +253,15 @@ export function planForgotPasswordRequest(input: {
       now: input.now.getTime(),
       countEmail: plausible,
     });
-    if (!rate.allowed) return { outcome: "rate_limited", response };
+    if (!rate.allowed) return { outcome: "rate_limited" };
   }
-  if (!plausible) return { outcome: "invalid_email", response };
-  if (!input.user) return { outcome: "unknown_email", response };
-  if (!input.brevoReady) return { outcome: "not_configured", response };
+  if (!plausible) return { outcome: "invalid_email" };
+  if (!input.user) return { outcome: "unknown_email" };
+  if (!input.brevoReady) return { outcome: "not_configured" };
 
   const token = (input.createToken ?? generatePasswordResetToken)();
   return {
     outcome: "send",
-    response,
     userId: input.user.id,
     email: input.user.email,
     name: input.user.name,
@@ -320,9 +412,9 @@ export async function deliverPasswordResetEmail(input: {
   toName: string;
   resetUrl: string;
   fetchImpl?: typeof fetch;
-}): Promise<{ sent: boolean; status: number | null }> {
+}): Promise<{ sent: boolean; status: number | null; messageId: string | null }> {
   if (!isPasswordResetMailReady({ apiKey: input.apiKey, senderEmail: input.senderEmail })) {
-    return { sent: false, status: null };
+    return { sent: false, status: null, messageId: null };
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const payload = buildBrevoPasswordResetPayload(input);
@@ -335,9 +427,12 @@ export async function deliverPasswordResetEmail(input: {
         accept: "application/json",
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
     });
-    return { sent: response.ok, status: response.status };
+    const body = await response.json().catch(() => null);
+    const accepted = brevoSendAccepted(response.status, body);
+    return { sent: accepted.sent, status: response.status, messageId: accepted.messageId };
   } catch {
-    return { sent: false, status: null };
+    return { sent: false, status: null, messageId: null };
   }
 }
