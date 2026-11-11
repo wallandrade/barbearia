@@ -750,6 +750,22 @@ test("Finalizado fecha mesmo com outras situações marcadas e não gera rajada"
   assert.equal(marcada?.finished, true);
   assert.deepEqual(openAlerts(marcada!, morning, sent), []);
 
+  const semReparoNome = [
+    { id: "47", codigo: "1507", nome_situacao: "SEM REPARO", situacao_id: "98", modificado_em: "2026-11-04" },
+    { id: "48", codigo: "1508", nome_situacao: "Sem Reparo", situacao_id: "98", data_conclusao: "2026-11-04" },
+    { id: "49", codigo: "1509", nome_situacao: "sem reparo", situacao_id: "98", previsao_entrega: "2026-06-01" },
+  ].map((row) => parseCellTechOrder(row, flags, morning));
+  assert.equal(semReparoNome.every((order) => order?.finished && !order.working), true);
+  assert.deepEqual(semReparoNome.flatMap((order) => openAlerts(order!, morning, { created: false, deadline: false, finished: false })), []);
+  assert.deepEqual(selectStalledOrders(semReparoNome.map((order) => order!), morning, {
+    minDays: 1,
+    situationIds: [],
+    sinceByOs: new Map(semReparoNome.map((order) => [order!.id, "2026-08-01"])),
+    sentByOs: new Map(),
+  }), []);
+  const emReparo = parseCellTechOrder({ id: "50", codigo: "1510", nome_situacao: "EM REPARO", situacao_id: "97" }, flags, morning);
+  assert.equal(emReparo?.finished, false);
+
   const hoje = parseCellTechOrder({
     id: "44",
     codigo: "1504",

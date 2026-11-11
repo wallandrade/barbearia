@@ -59,7 +59,12 @@ export type CellTechListQuery = {
   scope?: "open" | "done" | "all";
 };
 
-const DONE_NAME = /finaliz|conclu|entregue|cancel|baixad|concretiz/i;
+const DONE_NAME = /finaliz|conclu|entregue|cancel|baixad|concretiz|\bsem\s+reparo\b/i;
+
+/** "SEM REPARO" fecha a OS, mas não é serviço feito: não sai aviso de OS concretizada. */
+export function situationIsNoRepair(name: string): boolean {
+  return /\bsem\s+reparo\b/i.test(name.trim());
+}
 
 /** "SEM REPARO" não é técnico trabalhando. "EM REPARO" e "EM ANDAMENTO" são. */
 export function situationIsWorking(name: string): boolean {
@@ -649,6 +654,7 @@ export function openAlerts(
   sent: { created: boolean; deadline: boolean; finished?: boolean },
 ): CellTechAlertKind[] {
   if (order.finished) {
+    if (situationIsNoRepair(order.situationName)) return [];
     if (!sent.finished && order.finishedDay === clock.dayKey) return ["finished"];
     return [];
   }
