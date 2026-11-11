@@ -88,6 +88,7 @@ const ALLOWED_KEYS = [
   "n8n_out_for_delivery_webhook_url",
   "n8n_support_webhook_url",
   "n8n_support_menu_webhook_url",
+  "n8n_delivery_correction_webhook_url",
   "n8n_whatsapp_support_token",
   ...POLY_N8N_SETTING_KEYS,
   WHATSAPP_SUPPORT_MENU_SETTING,

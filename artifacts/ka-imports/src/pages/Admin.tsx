@@ -841,6 +841,7 @@ import { toast } from "sonner";
 
 
 import { Button } from "@/components/ui/button";
+import { DeliveryCorrectionModal, type DeliveryCorrectionNotice } from "@/components/DeliveryCorrectionModal";
 import { AnimatePresence, motion } from "framer-motion";
 import { canSavePromoEnd, isPromoEndScheduleIncomplete, promoEndsAtFromParts, splitPromoEndsAt } from "@/lib/promo-ends-at";
 import { DEFAULT_PHARMA_GREEN, normalizeThemeColor } from "@/lib/store-theme";
@@ -11172,6 +11173,8 @@ function OrdersPanel({
   const [envioecomAccounts, setEnvioecomAccounts] = useState<EnvioEcomAccountPublic[]>([]);
   const [superfreteAccounts, setSuperfreteAccounts] = useState<SuperfreteAccountPublic[]>([]);
   const [freightChoice, setFreightChoice] = useState<null | { order: AdminOrder; packageId?: string | null }>(null);
+  const [deliveryCorrection, setDeliveryCorrection] = useState<null | { orderId: string; phone: string; notice: DeliveryCorrectionNotice }>(null);
+  const [deliveryCorrectionBusy, setDeliveryCorrectionBusy] = useState(false);
   const [superfreteAccountPicker, setSuperfreteAccountPicker] = useState<null | { order: AdminOrder; packageId?: string | null }>(null);
   const [superfreteQuoteModal, setSuperfreteQuoteModal] = useState<null | {
     order: AdminOrder;
@@ -11337,6 +11340,32 @@ function OrdersPanel({
 
   const ENVIOECOM_CARRIER_OPTIONS = ENVIOECOM_CHECKOUT_CARRIER_OPTIONS;
 
+  const showDeliveryCorrection = (order: AdminOrder, data: { deliveryCorrection?: DeliveryCorrectionNotice }) => {
+    if (!data.deliveryCorrection?.message) return;
+    setDeliveryCorrection({ orderId: order.id, phone: order.clientPhone, notice: data.deliveryCorrection });
+  };
+
+  const resendDeliveryCorrection = async () => {
+    if (!deliveryCorrection) return;
+    setDeliveryCorrectionBusy(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${deliveryCorrection.orderId}/delivery-correction/resend`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json() as { message?: string; deliveryCorrection?: DeliveryCorrectionNotice };
+      if (!res.ok || !data.deliveryCorrection) {
+        toast.error(data.message || "Não foi possível reenviar.");
+        return;
+      }
+      setDeliveryCorrection((current) => current ? { ...current, notice: data.deliveryCorrection! } : current);
+    } catch {
+      toast.error("Erro ao reenviar o WhatsApp.");
+    } finally {
+      setDeliveryCorrectionBusy(false);
+    }
+  };
+
   const quoteEnvioEcom = async (order: AdminOrder, carriers?: string[], accountId?: string | null, packageId?: string | null) => {
     setEnvioecomBusy((prev) => ({ ...prev, [order.id]: true }));
     try {
@@ -11362,8 +11391,10 @@ function OrdersPanel({
         origin_zipcode?: string | null;
         accountId?: string | null;
         message?: string;
+        deliveryCorrection?: DeliveryCorrectionNotice;
       };
       if (!res.ok) {
+        showDeliveryCorrection(order, data);
         toast.error(data.message || "Falha ao cotar frete EnvioEcom.");
         return;
       }
@@ -11552,8 +11583,10 @@ function OrdersPanel({
           volume: { height: number; width: number; length: number; weight: number } | null;
         }>;
         message?: string;
+        deliveryCorrection?: DeliveryCorrectionNotice;
       };
       if (!res.ok) {
+        showDeliveryCorrection(order, data);
         toast.error(data.message || "Falha ao cotar SuperFrete.");
         return;
       }
@@ -11608,8 +11641,10 @@ function OrdersPanel({
         paymentPending?: boolean;
         packages?: unknown[];
         enviado?: boolean;
+        deliveryCorrection?: DeliveryCorrectionNotice;
       };
       if (!res.ok) {
+        showDeliveryCorrection(order, data);
         toast.error(data.message || "Falha ao criar etiqueta SuperFrete.");
         return;
       }
@@ -11729,8 +11764,10 @@ function OrdersPanel({
         accountId?: string | null;
         packages?: unknown[];
         packageId?: string | null;
+        deliveryCorrection?: DeliveryCorrectionNotice;
       };
       if (!res.ok) {
+        showDeliveryCorrection(order, data);
         const extra =
           data.details && typeof data.details === "object"
             ? ` ${JSON.stringify(data.details)}`
@@ -13699,6 +13736,11 @@ function OrdersPanel({
                           </span>
                         )}
                         {statusBadge(order.status)}
+                        {order.clientDataCorrectedAt ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
+                            Dados corrigidos pelo cliente
+                          </span>
+                        ) : null}
                         {isCard ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs font-semibold border border-purple-200">
                             <CreditCard className="w-3 h-3" />Cartão{order.cardInstallments ? ` · ${order.cardInstallments}x` : ""}
@@ -15073,6 +15115,16 @@ function OrdersPanel({
             </div>
           </div>
         )}
+
+        {deliveryCorrection ? (
+          <DeliveryCorrectionModal
+            notice={deliveryCorrection.notice}
+            phone={deliveryCorrection.phone}
+            busy={deliveryCorrectionBusy}
+            onClose={() => setDeliveryCorrection(null)}
+            onResend={() => { void resendDeliveryCorrection(); }}
+          />
+        ) : null}
 
         {superfreteAccountPicker && (
           <div className="fixed inset-0 z-[127] bg-black/45 flex items-center justify-center p-4">
@@ -20134,6 +20186,7 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
   const [outboundUrlPaid, setOutboundUrlPaid] = useState(settings["outbound_webhook_url_order_paid"] ?? "");
   const [outboundUrlCancelled, setOutboundUrlCancelled] = useState(settings["outbound_webhook_url_order_cancelled"] ?? "");
   const [n8nOrderPaidUrl, setN8nOrderPaidUrl] = useState(settings["n8n_order_paid_webhook_url"] ?? "");
+  const [n8nDeliveryCorrectionUrl, setN8nDeliveryCorrectionUrl] = useState(settings["n8n_delivery_correction_webhook_url"] ?? "");
   const [n8nFilmagemUrl, setN8nFilmagemUrl] = useState(settings["n8n_filmagem_webhook_url"] ?? "");
   const [n8nTrackingUrl, setN8nTrackingUrl] = useState(settings["n8n_tracking_webhook_url"] ?? "");
   const [n8nPostedUrl, setN8nPostedUrl] = useState(settings["n8n_posted_webhook_url"] ?? "");
@@ -20152,6 +20205,7 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
     n8n_delivered_webhook_url_poly: settings["n8n_delivered_webhook_url_poly"] ?? "",
     n8n_support_webhook_url_poly: settings["n8n_support_webhook_url_poly"] ?? "",
     n8n_support_menu_webhook_url_poly: settings["n8n_support_menu_webhook_url_poly"] ?? "",
+    n8n_delivery_correction_webhook_url_poly: settings["n8n_delivery_correction_webhook_url_poly"] ?? "",
   }));
   const [outboundSecret, setOutboundSecret] = useState(settings["outbound_webhook_secret"] ?? "");
   const [showSitePw, setShowSitePw] = useState(false);
@@ -21223,6 +21277,32 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
           No n8n, os campos phone e message do HTTP Request precisam ser expressão: {`{{ $json.body.phone }}`} e {`{{ $json.body.message }}`}. Se continuarem fixos, todo pedido pago repete a mensagem de teste.
         </p>
         <div>
+          <label className="block text-xs font-medium mb-1">URL da correção de CPF, CEP ou endereço</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={n8nDeliveryCorrectionUrl}
+              onChange={(e) => setN8nDeliveryCorrectionUrl(e.target.value)}
+              placeholder="https://….app.n8n.cloud/webhook/corrigir-entrega"
+              className="w-full h-10 px-3 rounded-xl border-2 border-border outline-none focus:border-primary text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const value = n8nDeliveryCorrectionUrl.trim();
+                if (!value) { onDelete("n8n_delivery_correction_webhook_url"); return; }
+                onSave("n8n_delivery_correction_webhook_url", value);
+              }}
+              disabled={!!loading["n8n_delivery_correction_webhook_url"]}
+            >
+              {loading["n8n_delivery_correction_webhook_url"] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Quando a etiqueta falha por CPF, CEP ou endereço, a loja manda um POST com event, phone, name, orderNumber, fields, message e link. No n8n, leia {`{{ $json.body.message }}`}. Sem esta URL, o admin ainda vê a mensagem para copiar.
+        </p>
+        <div>
           <label className="block text-xs font-medium mb-1">URL da filmagem</label>
           <div className="flex gap-2">
             <input
@@ -21446,6 +21526,7 @@ function ConfiguracoesPanel({ settings, loading, products, productsLoading, clie
           ["n8n_delivered_webhook_url_poly", "URL do pedido entregue da Poly", "https://….app.n8n.cloud/webhook/…"],
           ["n8n_support_webhook_url_poly", "URL do atendimento da Poly", "https://….app.n8n.cloud/webhook/…"],
           ["n8n_support_menu_webhook_url_poly", "URL do menu da Poly", "https://….app.n8n.cloud/webhook/…"],
+          ["n8n_delivery_correction_webhook_url_poly", "URL da correção de entrega da Poly", "https://….app.n8n.cloud/webhook/…"],
         ] as const).map(([key, label, placeholder]) => (
           <div key={key}>
             <label className="block text-xs font-medium mb-1">{label}</label>

@@ -82,6 +82,8 @@ export const ordersTable = mysqlTable("orders", {
   inventoryReserved: boolean("inventory_reserved").notNull().default(false),
   /** Saldo da promoção já foi descontado neste pedido. Evita descontar de novo no webhook. */
   promoStockConsumed: boolean("promo_stock_consumed").notNull().default(false),
+  /** Cliente corrigiu CPF/CEP/endereço pelo link da etiqueta. */
+  clientDataCorrectedAt: timestamp("client_data_corrected_at"),
   /** WhatsApp do pedido pago já foi entregue ao n8n. Um retry de PIX não manda de novo. */
   paidWhatsappSentAt: timestamp("paid_whatsapp_sent_at"),
   /** WhatsApp da filmagem já foi entregue ao n8n. Separado do pedido pago. */

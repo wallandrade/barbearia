@@ -3006,6 +3006,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     ipIsp:                  o.ipIsp ?? null,
     ipIsProxy:              o.ipIsProxy ?? null,
     isPrioridade:           !!(o as any).isPrioridade,
+    clientDataCorrectedAt:  o.clientDataCorrectedAt?.toISOString?.() ?? null,
     enviado:                !!o.enviado,
     shippingForecastDate:   String((o as { shippingForecastDate?: string | null }).shippingForecastDate || "").trim().slice(0, 10) || null,
     aguardandoEstoque:      !!(o as { aguardandoEstoque?: boolean }).aguardandoEstoque,

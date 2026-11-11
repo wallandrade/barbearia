@@ -3,6 +3,7 @@ export * from "./pix-secret-transactions";
 export * from "./checkout-drafts";
 export * from "./order-shipments";
 export * from "./order-activity";
+export * from "./order-delivery-corrections";
 export * from "./custom-charges";
 export * from "./admin-users";
 export * from "./coupons";

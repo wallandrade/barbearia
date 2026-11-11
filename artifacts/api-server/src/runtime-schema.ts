@@ -177,6 +177,10 @@ async function ensureOrdersColumns(databaseName: string): Promise<void> {
       name: "is_prioridade",
       sql: "ALTER TABLE orders ADD COLUMN is_prioridade TINYINT(1) NOT NULL DEFAULT 0",
     },
+    {
+      name: "client_data_corrected_at",
+      sql: "ALTER TABLE orders ADD COLUMN client_data_corrected_at TIMESTAMP NULL",
+    },
     // Campos de geolocalização do IP
     { name: "ip_city",     sql: "ALTER TABLE orders ADD COLUMN ip_city VARCHAR(100) NULL" },
     { name: "ip_region",   sql: "ALTER TABLE orders ADD COLUMN ip_region VARCHAR(100) NULL" },
@@ -493,6 +497,26 @@ async function ensureCustomerUsersTable(databaseName: string): Promise<void> {
   if (!(await columnExists("customer_users", "document", databaseName))) {
     await pool.query("ALTER TABLE customer_users ADD COLUMN document VARCHAR(32) NULL");
   }
+}
+
+async function ensureOrderDeliveryCorrectionsTable(databaseName: string): Promise<void> {
+  if (await tableExists("order_delivery_corrections", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE order_delivery_corrections (
+      id VARCHAR(64) NOT NULL PRIMARY KEY,
+      order_id VARCHAR(255) NOT NULL,
+      token VARCHAR(64) NOT NULL,
+      fields VARCHAR(64) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      whatsapp_attempted_at TIMESTAMP NULL,
+      whatsapp_sent_at TIMESTAMP NULL,
+      whatsapp_error VARCHAR(255) NULL,
+      corrected_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY order_delivery_corrections_token_uq (token),
+      KEY order_delivery_corrections_order_idx (order_id)
+    )
+  `);
 }
 
 async function ensureCustomerPasswordResetsTable(databaseName: string): Promise<void> {
@@ -1615,6 +1639,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureOrderBumpsColumns(databaseName);
     await ensureCustomerUsersTable(databaseName);
     await ensureCustomerPasswordResetsTable(databaseName);
+    await ensureOrderDeliveryCorrectionsTable(databaseName);
     await ensureAffiliatesTables(databaseName);
     await ensureRaffleTables(databaseName);
     await ensureSupportTicketsTable(databaseName);

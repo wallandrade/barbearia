@@ -15,6 +15,7 @@ export const POLY_N8N_SETTING_KEYS = [
   "n8n_delivered_webhook_url_poly",
   "n8n_support_webhook_url_poly",
   "n8n_support_menu_webhook_url_poly",
+  "n8n_delivery_correction_webhook_url_poly",
 ] as const;
 
 export type WhatsappLine = "poly" | "main";

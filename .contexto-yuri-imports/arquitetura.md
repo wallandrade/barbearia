@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-11-10
+> **Última atualização:** 2026-11-11
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-11 | Tabela `order_delivery_corrections` e coluna `orders.client_data_corrected_at` (+ runtime) | Link público `/corrigir-entrega` para CPF, CEP e endereço. Vale 7 dias, só sem etiqueta. A loja ganha a página e o modal do admin | PIX, estoque e a senha de baixa iguais. Sem `tenant_id` |
 | 2026-11-10 | Tabela `customer_password_resets` (+ runtime) | Guarda o hash do link de senha, a expiração e o uso. A loja ganha `/redefinir-senha` | `customer_users` e a senha do admin iguais. Sem `tenant_id` |
 | 2026-11-10 | Tabela `cell_tech_situation_state` (+ runtime) | Guarda desde quando a OS está na situação atual, se o Gestão Click não manda a data | `cell_tech_alerts`, pedido, PIX e frete iguais. Sem `tenant_id` |
 | 2026-11-10 | Colunas `whatsapp_support_sessions.nudge_count` e `last_nudge_at` (+ runtime) | Marcam o aviso do menu e a hora dele. Colunas novas, com padrão 0 e nulo | O passo, o pedido pendente e os avisos de pedido iguais |

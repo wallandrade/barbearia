@@ -4,6 +4,7 @@ import { db, orderShipmentsTable, ordersTable } from "@workspace/db";
 import { getAdminScope, requireAdminAuth, requirePrimaryAdmin } from "./admin-auth";
 import { broadcastNotification } from "./notifications";
 import { recordAdminActivity } from "../lib/order-activity";
+import { withDeliveryCorrection } from "../lib/delivery-correction";
 import { queueReportanaOrderSync } from "../lib/reportana";
 import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import { announcePosted } from "../lib/order-posted-whatsapp";
@@ -68,6 +69,27 @@ const WEBHOOK_EVENTS = [
   "order.delivered",
   "order.cancelled",
 ];
+
+async function replyFreightError(
+  err: unknown,
+  res: import("express").Response,
+  orderId: string,
+): Promise<void> {
+  if (err instanceof OrderShipmentError) {
+    res.status(err.status).json(await withDeliveryCorrection(orderId, { error: err.code, message: err.message }));
+    return;
+  }
+  if (err instanceof SuperfreteApiError) {
+    const status = err.status >= 400 && err.status < 600 ? err.status : 502;
+    res.status(status).json(await withDeliveryCorrection(orderId, {
+      error: err.code || "SUPERFRETE_ERROR",
+      message: err.message,
+      details: err.details,
+    }));
+    return;
+  }
+  mapApiError(err, res);
+}
 
 function mapApiError(err: unknown, res: import("express").Response): void {
   if (err instanceof OrderShipmentError) {
@@ -434,7 +456,7 @@ router.post("/admin/superfrete/orders/:id/quote", requireAdminAuth, async (req, 
     }
     const toCep = digitsOnly(loaded.order.addressCep);
     if (toCep.length !== 8) {
-      res.status(400).json({ error: "INVALID_ADDRESS", message: "Pedido sem CEP de destino válido." });
+      res.status(400).json(await withDeliveryCorrection(loaded.order.id, { error: "INVALID_ADDRESS", message: "Pedido sem CEP de destino válido." }));
       return;
     }
     const phone = digitsOnly(loaded.order.clientPhone);
@@ -461,7 +483,7 @@ router.post("/admin/superfrete/orders/:id/quote", requireAdminAuth, async (req, 
       quotes: withVolume,
     });
   } catch (err) {
-    mapApiError(err, res);
+    await replyFreightError(err, res, String(req.params.id || ""));
   }
 });
 
@@ -504,7 +526,7 @@ router.post("/admin/superfrete/orders/:id/create", requireAdminAuth, async (req,
     }
     const document = digitsOnly(order.clientDocument);
     if (document.length !== 11 && document.length !== 14) {
-      res.status(400).json({ error: "INVALID_DOCUMENT", message: "CPF ou CNPJ do destinatário é obrigatório na SuperFrete." });
+      res.status(400).json(await withDeliveryCorrection(order.id, { error: "INVALID_DOCUMENT", message: "CPF ou CNPJ do destinatário é obrigatório na SuperFrete." }));
       return;
     }
     const uf = String(order.addressState || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
@@ -512,7 +534,7 @@ router.post("/admin/superfrete/orders/:id/create", requireAdminAuth, async (req,
     const city = String(order.addressCity || "").trim();
     const toCep = digitsOnly(order.addressCep);
     if (!street || !city || uf.length !== 2 || toCep.length !== 8) {
-      res.status(400).json({ error: "INVALID_ADDRESS", message: "Endereço do pedido incompleto (rua, cidade, UF e CEP)." });
+      res.status(400).json(await withDeliveryCorrection(order.id, { error: "INVALID_ADDRESS", message: "Endereço do pedido incompleto (rua, cidade, UF e CEP)." }));
       return;
     }
     const origin = await lookupOriginAddress(auth.originCep);
@@ -595,7 +617,7 @@ router.post("/admin/superfrete/orders/:id/create", requireAdminAuth, async (req,
       enviado: applied.enviado,
     });
   } catch (err) {
-    mapApiError(err, res);
+    await replyFreightError(err, res, String(req.params.id || ""));
   }
 });
 

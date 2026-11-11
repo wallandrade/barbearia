@@ -6,6 +6,7 @@ import { broadcastNotification } from "./notifications";
 import { getCustomerSession, requireCustomerAuth } from "../middlewares/customer-auth";
 import { uploadBufferToR2 } from "../lib/r2";
 import { recordAdminActivity } from "../lib/order-activity";
+import { withDeliveryCorrection } from "../lib/delivery-correction";
 import { queueReportanaOrderSync } from "../lib/reportana";
 import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import { announcePosted } from "../lib/order-posted-whatsapp";
@@ -155,6 +156,28 @@ function parseProducts(raw: unknown): OrderProduct[] {
     }
   }
   return [];
+}
+
+async function replyFreightError(
+  err: unknown,
+  res: import("express").Response,
+  orderId: string,
+): Promise<void> {
+  if (err instanceof OrderShipmentError || err instanceof CarrierLossError) {
+    res.status(err.status).json(await withDeliveryCorrection(orderId, { error: err.code, message: err.message }));
+    return;
+  }
+  if (err instanceof EnvioEcomApiError) {
+    const status = err.status >= 400 && err.status < 600 ? err.status : 502;
+    const detailText = formatEnvioEcomDetails(err.details);
+    res.status(status).json(await withDeliveryCorrection(orderId, {
+      error: err.code || "ENVIOECOM_ERROR",
+      message: detailText ? `${err.message} ${detailText}` : err.message,
+      details: err.details,
+    }));
+    return;
+  }
+  mapApiError(err, res);
 }
 
 function mapApiError(err: unknown, res: import("express").Response): void {
@@ -857,7 +880,7 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
     const { order } = loaded;
     const cep = digitsOnly(order.addressCep);
     if (cep.length !== 8) {
-      res.status(400).json({ error: "INVALID_ADDRESS", message: "Pedido sem CEP de destino válido." });
+      res.status(400).json(await withDeliveryCorrection(order.id, { error: "INVALID_ADDRESS", message: "Pedido sem CEP de destino válido." }));
       return;
     }
 
@@ -901,7 +924,7 @@ router.post("/admin/envioecom/orders/:id/quote", requireAdminAuth, async (req, r
       accountId,
     });
   } catch (err) {
-    mapApiError(err, res);
+    await replyFreightError(err, res, String(req.params.id || ""));
   }
 });
 
@@ -1024,7 +1047,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
 
     const cepDestino = digitsOnly(order.addressCep);
     if (cepDestino.length !== 8) {
-      res.status(400).json({ error: "INVALID_ADDRESS", message: "Pedido sem CEP de destino válido." });
+      res.status(400).json(await withDeliveryCorrection(order.id, { error: "INVALID_ADDRESS", message: "Pedido sem CEP de destino válido." }));
       return;
     }
 
@@ -1080,10 +1103,10 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
     const email = String(order.clientEmail || "").trim().toLowerCase();
 
     if (documentDigits.length !== 11 && documentDigits.length !== 14) {
-      res.status(400).json({
+      res.status(400).json(await withDeliveryCorrection(order.id, {
         error: "INVALID_DOCUMENT",
         message: "CPF/CNPJ do pedido inválido para criar envio EnvioEcom.",
-      });
+      }));
       return;
     }
     if (phone.length < 10 || phone.length > 13) {
@@ -1094,10 +1117,10 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       return;
     }
     if (!logradouro || !bairro || !localidade || uf.length !== 2) {
-      res.status(400).json({
+      res.status(400).json(await withDeliveryCorrection(order.id, {
         error: "INVALID_ADDRESS",
         message: "Endereço incompleto no pedido (rua, bairro, cidade e UF são obrigatórios).",
-      });
+      }));
       return;
     }
 
@@ -1209,11 +1232,11 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       const message = createError?.message
         ? `EnvioEcom: ${createError.message}`
         : "EnvioEcom não retornou barcode/shipping_id. Verifique saldo e resposta da API.";
-      res.status(502).json({
+      res.status(502).json(await withDeliveryCorrection(order.id, {
         error: createError?.code || "CREATE_INCOMPLETE",
         message,
         createResponse: created,
-      });
+      }));
       return;
     }
 
@@ -1332,7 +1355,7 @@ router.post("/admin/envioecom/orders/:id/create", requireAdminAuth, async (req, 
       createResponse: created,
     });
   } catch (err) {
-    mapApiError(err, res);
+    await replyFreightError(err, res, String(req.params.id || ""));
   }
 });
 
