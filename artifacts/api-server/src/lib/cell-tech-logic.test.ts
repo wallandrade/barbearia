@@ -306,6 +306,53 @@ test("avisos da OS no grupo", () => {
   assert.deepEqual(openAlerts(oldClosed, morning, { created: false, deadline: false }), []);
 });
 
+test("SEM REPARO não entra no relatório do dia nem do mês", () => {
+  const feita = parseCellTechOrder({
+    id: "60",
+    codigo: "2001",
+    nome_cliente: "Lia Pronta",
+    nome_situacao: "CONCRETIZADO O.S",
+    data_conclusao: "2026-11-03",
+  }, flags, morning);
+  const semReparoHoje = parseCellTechOrder({
+    id: "61",
+    codigo: "2002",
+    nome_cliente: "Nando Sem",
+    nome_situacao: "SEM REPARO",
+    modificado_em: "2026-11-04",
+  }, flags, morning);
+  const semReparoMes = parseCellTechOrder({
+    id: "62",
+    codigo: "2003",
+    nome_cliente: "Otto Sem",
+    nome_situacao: "Sem Reparo",
+    data_conclusao: "2026-11-02",
+  }, flags, morning);
+  const semReparoSemData = parseCellTechOrder({
+    id: "63",
+    codigo: "2004",
+    nome_cliente: "Pia Sem",
+    nome_situacao: "sem reparo",
+  }, flags, morning);
+  const emReparo = parseCellTechOrder({
+    id: "64",
+    codigo: "2005",
+    nome_cliente: "Eva Aberta",
+    nome_situacao: "EM REPARO",
+  }, flags, morning);
+  const orders = [feita, semReparoHoje, semReparoMes, semReparoSemData, emReparo].filter((order) => order != null);
+  const daily = buildDailyReport(orders, morning);
+  assert.match(daily, /Finalizadas desde ontem\* · 1/);
+  assert.match(daily, /Lia Pronta/);
+  assert.doesNotMatch(daily, /Nando Sem|Otto Sem|Pia Sem/);
+  const monthly = buildMonthlyReport(orders, morning);
+  assert.match(monthly, /Feitas em novembro de 2026\* · 1/);
+  assert.match(monthly, /Lia Pronta/);
+  assert.match(monthly, /Ainda abertas\* · 1/);
+  assert.match(monthly, /Eva Aberta/);
+  assert.doesNotMatch(monthly, /Nando Sem|Otto Sem|Pia Sem|Finalizadas sem data/);
+});
+
 test("concretizada entra no mês em que foi atualizada", () => {
   const clock = saoPauloClock(new Date("2026-11-06T12:30:00.000Z"));
   const order = parseCellTechOrder({

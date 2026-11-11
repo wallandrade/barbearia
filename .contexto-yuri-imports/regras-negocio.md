@@ -1,6 +1,6 @@
 # Regras de negócio — Yuri Import
 
-> **Última atualização:** 2026-11-10
+> **Última atualização:** 2026-11-11
 
 Descreve o que **já existe no código** do e-commerce Yuri Import (grafia no app/domínio frequentemente **Yury**). Não especula features futuras.
 
@@ -47,6 +47,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-11 | SEM REPARO fica fora do relatório | Não entra em Finalizadas desde ontem nem em Feitas em <mês>, nem na contagem | Continua fechada: fora da fila, da OS parada e do aviso de OS concretizada. EM REPARO continua aberta |
 | 2026-11-10 | Aba Entrar sem CPF | Login pede só e-mail e senha. Pedido sem conta com o mesmo e-mail continua entrando na conta | Criar conta ainda tem CPF opcional. PIX antigo, esgotado e senha de baixa iguais |
 | 2026-11-10 | Esqueci minha senha confirma o envio | A tela mostra se o link saiu, se o e-mail não tem conta, se passou do limite ou se o envio falhou. Sucesso só quando o Brevo aceita | Token de 1 hora, uso único, WhatsApp e `set-password` iguais. PIX, estoque e Cell Tech iguais |
 | 2026-11-10 | Cliente redefine a senha pelo link do e-mail | Esqueci minha senha envia o link e mantém o WhatsApp. A senha nova tem no mínimo 8 caracteres, como o cadastro | `set-password` do admin continua. PIX, estoque, senha de baixa e Cell Tech iguais |
@@ -556,7 +557,7 @@ Reenvio aberto vira `reenvio_enviado` na API quando a etiqueta existe e o rastre
 ## Cell Tech
 
 - Aba do admin principal, separada da loja. OS, técnico, prazo e serviço vêm do Gestão Click. Pedido, PIX, estoque e frete não entram.
-- Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo. Finalizado, Concretizado e Cancelada fecham a OS pelo nome, mesmo se o admin marcou outras situações. A marca da aba soma nomes que não entram nesse grupo.
+- Verde = no prazo. Amarelo = vence hoje. Vermelho = passou do prazo. Cinza = sem prazo. Finalizado, Concretizado, Cancelada e SEM REPARO fecham a OS pelo nome, mesmo se o admin marcou outras situações. SEM REPARO não entra no relatório do dia nem do mês. A marca da aba soma nomes que não entram nesse grupo.
 - Grupo da loja: aviso no cadastro, no prazo estourado, lembrete nos dias seguintes, fila da manhã por técnico, OS parada e, uma vez, quando a baixa é de hoje (concretizada ou cancelada). A fila e a OS parada usam o mesmo interruptor dos outros avisos. Os dias e as situações da parada ficam na aba. Conclusão de outro dia não entra, mesmo alterada hoje. Sem data, não entra. A concretizada leva o custo das peças e o lucro da OS. A cancelada não leva esses valores. No fechamento do caixa do dia, lido por Fechado em, uma mensagem com vendas, lucro, vendas de OS e lucro de OS, mesmo se um relatório falhar. Caixa de outro dia não entra. No sábado, depois desse caixa, sai uma vez a semana de segunda a sábado, com venda bruta, custo, lucro e quanto fechou positivo ou negativo em relação à semana anterior. No último dia do mês, depois desse caixa, sai uma vez a venda bruta, o custo e o lucro líquido do mês inteiro, e se fechou positivo ou negativo em relação ao mês anterior. O botão Atualizar só recarrega a lista. Relatório diário às 8h30 e mensal no dia 1 às 8h30 (Brasília), pelo webhook n8n da própria aba. Nenhum envio ao grupo começa antes das 8h nem às 19:00 ou depois, no relógio de Brasília. O ciclo relê a hora antes de cada mensagem. Mensagem que não chegou a ser marcada continua nas regras de sempre e o ciclo seguinte, já no dia novo e antes das 19h, só manda o que essas regras ainda aceitam. Cadastro e baixa de um dia que virou não saem no dia seguinte. Prazo não avisado continua. Lembrete é o do dia corrente. Caixa, semana e mês olham o dia do fechamento: o que passou das 19h nesse dia não ganha uma segunda fila. Não há disparo depois das 19h para compensar. O teste do grupo e os botões de relatório do dia e do mês continuam manuais.
 
 ## Multi-tenant
