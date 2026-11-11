@@ -33,6 +33,7 @@ import {
 } from "@/lib/customer-order-view";
 import { superfreteServiceName } from "@/lib/superfrete-status";
 import { Copy, Gift, Loader2, LogOut, Package, Save, Ticket, Users, CheckCircle2, Clock, MessageCircle, Truck, X, Bell, FlaskConical } from "lucide-react";
+import { BrandLoader } from "@/components/pharma/BrandLoader";
 import PeptideToolsMenu from "@/components/PeptideToolsMenu";
 import PeptideIndividualsGrid from "@/components/PeptideIndividualsGrid";
 import PeptideFinderQuiz from "@/components/PeptideFinderQuiz";
@@ -727,7 +728,7 @@ export default function CustomerOrders() {
                   )}
                   {loading ? (
                     <div className="py-14 flex items-center justify-center text-muted-foreground border border-border rounded-2xl">
-                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      <BrandLoader size="sm" className="mr-2" />
                       Carregando pedidos...
                     </div>
                   ) : orders.length === 0 ? (
@@ -1295,7 +1296,7 @@ export default function CustomerOrders() {
 
                   {affiliateLoading ? (
                     <div className="py-12 flex items-center justify-center text-muted-foreground border border-border rounded-2xl bg-white">
-                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      <BrandLoader size="sm" className="mr-2" />
                       Carregando dados da afiliação...
                     </div>
                   ) : (

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Loader2, MapPin } from "lucide-react";
+import { BrandLoader } from "@/components/pharma/BrandLoader";
 import { useSearch } from "wouter";
 import { toast } from "sonner";
 
@@ -143,7 +144,7 @@ export default function CorrigirEntrega() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          <div className="flex justify-center py-8"><BrandLoader size="sm" /></div>
         ) : error ? (
           <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm leading-relaxed text-red-700">{error}</p>
         ) : done ? (
