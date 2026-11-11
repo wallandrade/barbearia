@@ -89,7 +89,7 @@ export function defaultSupportMenu(): SupportMenuConfig {
         title: "Falar com atendente",
         description: "Uma pessoa responde",
         action: "human",
-        message: "Certo. Vou chamar um atendente para continuar por aqui.",
+        message: "Certo! Já vou chamar um atendente. 😊\nPara adiantar, me conta em uma mensagem o que você precisa (por exemplo: dúvida sobre produto, status do pedido, pagamento, troca ou garantia). Se for sobre um pedido, manda o número ou o CPF da compra. Assim, quando o atendente entrar, ele já sabe do que se trata.",
       },
     ],
   };

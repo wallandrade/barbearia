@@ -92,7 +92,7 @@ function defaultMenu(): MenuConfig {
         title: "Falar com atendente",
         description: "Uma pessoa responde",
         action: "human",
-        message: "Certo. Vou chamar um atendente para continuar por aqui.",
+        message: "Certo! Já vou chamar um atendente. 😊\nPara adiantar, me conta em uma mensagem o que você precisa (por exemplo: dúvida sobre produto, status do pedido, pagamento, troca ou garantia). Se for sobre um pedido, manda o número ou o CPF da compra. Assim, quando o atendente entrar, ele já sabe do que se trata.",
       },
     ],
   };
@@ -217,7 +217,7 @@ function ItemEditor({
     }
     if (!next.message.trim()) {
       if (action === "lookup") next.message = "Me envia o número do pedido ou o CPF da compra, só os números.";
-      if (action === "human") next.message = "Certo. Vou chamar um atendente para continuar por aqui.";
+      if (action === "human") next.message = "Certo! Já vou chamar um atendente. 😊\nPara adiantar, me conta em uma mensagem o que você precisa (por exemplo: dúvida sobre produto, status do pedido, pagamento, troca ou garantia). Se for sobre um pedido, manda o número ou o CPF da compra. Assim, quando o atendente entrar, ele já sabe do que se trata.";
       if (action === "handoff") next.message = "Me envia o número do pedido ou o CPF, só os números.";
     }
     if (action === "handoff" && !next.followup?.trim()) next.followup = "Vou passar para o atendente olhar esse caso.";

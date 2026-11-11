@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-11-10
+> **Última atualização:** 2026-11-11
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-11 | Texto padrão de Falar com atendente | A resposta pede o assunto e, se for pedido, o número ou o CPF. O eco do bot continua reconhecendo o texto com quebra de linha e emoji | A sessão `human` e o menu já salvo no admin iguais |
 | 2026-11-10 | Senha só conta como enviada com `messageId` | A loja espera a resposta de `POST /v3/smtp/email`. Sem `messageId`, o diálogo não mostra sucesso | A sincronização de contatos e o remetente iguais |
 | 2026-11-10 | Brevo envia o e-mail de senha | `POST https://api.brevo.com/v3/smtp/email` com a mesma `brevo_api_key`. Remetente em `brevo_sender_email` e `brevo_sender_name`. O link usa `brevo_reset_base_url` ou `PASSWORD_RESET_BASE_URL`, senão `https://www.yury-imports.com` | A sincronização de contatos igual. Sem chave ou remetente, nada é enviado |
 | 2026-11-10 | Finalizado fecha a OS mesmo com situações marcadas | Nome Finalizado, Concretizado, Cancelada e os outros do mesmo grupo continuam fechados. A lista do admin soma, não substitui. Baixa no grupo só se a data for hoje | PIX antigo, esgotado e a senha de baixa iguais |
