@@ -172,6 +172,21 @@ test("rajada no menu manda um aviso e agradecimento ou mídia fica em silêncio"
   assert.equal(supportNudgeCooldownMs("abc"), cooldownMs);
 });
 
+test("eco do texto de chamar atendente reconhece quebra de linha e emoji", () => {
+  const message = defaultSupportMenu().items.find((item) => item.id === "atendente")?.message || "";
+  assert.match(message, /😊/);
+  assert.equal(message.includes("\n"), true);
+  assert.equal(isAttendantManualText(message), false);
+  assert.equal(isAttendantManualText(message.replace(/\n/g, "\n\n")), false);
+  assert.equal(isAttendantManualText(message.replace(/\n/g, " ")), false);
+  const handoff = decideSupportTurn({ choiceId: "atendente" });
+  assert.equal(handoff.kind, "text");
+  if (handoff.kind === "text") {
+    assert.equal(handoff.message, message);
+    assert.equal(isAttendantManualText(handoff.message), false);
+  }
+});
+
 test("falar com atendente cala o menu até a sessão acabar", () => {
   const handoff = decideSupportTurn({ choiceId: "atendente" });
   assert.equal(handoff.kind, "text");
