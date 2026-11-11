@@ -97,6 +97,7 @@ export type AdminOrder = {
     ticketTrackingCode?: string | null;
   } | null;
   isPrioridade?: boolean | null;
+  clientDataCorrectedAt?: string | null;
   pixCode?: string | null;
   pixBase64?: string | null;
   manualTrackingCode?: string | null;
