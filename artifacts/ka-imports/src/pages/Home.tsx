@@ -11,6 +11,8 @@ import { clearSellerContext } from "@/lib/utils";
 import { bestManualDisplayRank, sortCategoryProducts, topSoldRanksById } from "@/lib/catalog-sort";
 import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
 import { PharmaCatalog } from "@/components/pharma/PharmaCatalog";
+import { PharmaHomeHero } from "@/components/pharma/PharmaHomeHero";
+import { isPharmaHomeQuery, parsePharmaCatalogQuery } from "@/lib/pharma-catalog-query";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -339,9 +341,13 @@ export default function Home() {
   const hasHeroBanner = Boolean(banners["banner_desktop"] || banners["banner_mobile"]);
   const hasCatalogBanner = Boolean(banners["catalog_banner_desktop"] || banners["catalog_banner_mobile"]);
   const shouldRenderHero = hasHeroBanner || !bannersLoaded;
+  const showPharmaHomeHero =
+    storeTheme === PHARMA_COMPACT_THEME && isPharmaHomeQuery(parsePharmaCatalogQuery(searchString));
 
   return (
     <AppLayout>
+      {showPharmaHomeHero && <PharmaHomeHero products={data?.products ?? []} isLoading={isLoading} />}
+
       {shouldRenderHero && (
         <section className="w-full bg-muted/20">
           {hasHeroBanner ? (

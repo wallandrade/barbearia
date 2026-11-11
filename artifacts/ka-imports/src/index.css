@@ -96,3 +96,26 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(43 70% 38%);
 }
+
+/* Hero da home (tema farmácia): produto flutuando devagar. */
+@keyframes pharma-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+}
+@keyframes pharma-float-shadow {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; }
+  50% { transform: translateX(-50%) scale(0.82); opacity: 0.6; }
+}
+.pharma-float {
+  animation: pharma-float 5s ease-in-out infinite;
+  will-change: transform;
+}
+.pharma-float-shadow {
+  animation: pharma-float-shadow 5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pharma-float,
+  .pharma-float-shadow {
+    animation: none;
+  }
+}
