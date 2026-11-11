@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Bike, MapPin, Plus, Pencil, Send } from "lucide-react";
+import { BrandLoader } from "@/components/pharma/BrandLoader";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -176,7 +177,7 @@ export default function MotoboyPortal() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+        <BrandLoader size="lg" />
       </div>
     );
   }

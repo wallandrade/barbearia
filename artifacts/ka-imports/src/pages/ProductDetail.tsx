@@ -10,7 +10,8 @@ import { normalizeSelectedVariants, parseVariantGroups, variantGalleryImages, va
 import { isProductUnavailable, useCart } from "@/store/use-cart";
 import { claimPendingFlashIfAny } from "@/lib/flash-offer";
 import { fetchAndCacheSellerWhatsApp, formatCurrency, setSellerContext } from "@/lib/utils";
-import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, ShoppingCart } from "lucide-react";
+import { BrandLoader } from "@/components/pharma/BrandLoader";
 import { toast } from "sonner";
 import { PHARMA_COMPACT_THEME, useStoreTheme } from "@/lib/store-theme";
 import { PharmaProductPurchase } from "@/components/pharma/PharmaProductPurchase";
@@ -166,7 +167,7 @@ export default function ProductDetail() {
 
         {isLoading ? (
           <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <BrandLoader size="lg" />
           </div>
         ) : isError ? (
           <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-6 text-center">

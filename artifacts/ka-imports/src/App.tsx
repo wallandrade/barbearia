@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { BrandLoader } from "@/components/pharma/BrandLoader";
 import { SitePasswordGate } from "@/components/SitePasswordGate";
 import SocialProofWidget from "@/components/SocialProofWidget";
 import { FlashOfferHost } from "@/components/FlashOfferHost";
@@ -145,7 +146,7 @@ const queryClient = new QueryClient({
 function PageLoader() {
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <BrandLoader size="lg" />
     </div>
   );
 }
