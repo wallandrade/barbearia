@@ -136,8 +136,8 @@ export function FlashOfferHost() {
   return (
     <>
       {showModal && offer ? (
-        <div className={`fixed inset-0 z-[80] flex justify-center ${pharma ? "items-end bg-black/35 p-0 sm:items-center sm:bg-black/45 sm:p-4" : "items-center bg-black/45 p-4"}`}>
-          <div className={`w-full max-w-[340px] bg-white px-5 pt-4 text-center shadow-2xl ${pharma ? "max-h-[min(80vh,36rem)] overflow-y-auto rounded-t-[28px] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-none sm:rounded-[28px] sm:px-5 sm:pb-5 sm:pt-6" : "rounded-[28px] pb-5 pt-6"}`}>
+        <div className={`fixed inset-0 z-[80] flex justify-center ${pharma ? "items-center bg-black/45 p-4" : "items-center bg-black/45 p-4"}`}>
+          <div className={`w-full max-w-[340px] bg-white px-5 pt-4 text-center shadow-2xl ${pharma ? "max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[28px] pb-5 sm:pt-6" : "rounded-[28px] pb-5 pt-6"}`}>
             <p className={`text-[13px] font-bold uppercase tracking-wide ${pharma ? "text-[var(--pharma-green-ink)]" : "text-[#ff6a00]"}`}>
               {carousel ? `Promoção relâmpago · ${offerIndex + 1} de ${offers.length}` : "Promoção relâmpago"}
             </p>
