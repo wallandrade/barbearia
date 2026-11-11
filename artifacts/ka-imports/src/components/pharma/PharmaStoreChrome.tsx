@@ -322,11 +322,11 @@ export function PharmaStoreChrome() {
             />
           </form>
           {loggedIn ? (
-            <Link href="/minha-conta/pedidos" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200" aria-label="Minha conta">
+            <Link href="/minha-conta/pedidos" className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200" aria-label="Minha conta">
               <User className="h-5 w-5" />
             </Link>
           ) : (
-            <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200" aria-label="Entrar" onClick={() => setLoginOpen(true)}>
+            <button type="button" className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200" aria-label="Entrar" onClick={() => setLoginOpen(true)}>
               <User className="h-5 w-5" />
             </button>
           )}
