@@ -8,6 +8,7 @@ import { usePharmaAddedNotice } from "@/components/pharma/PharmaAddedNotice";
 import { catalogUnitPrice } from "@/lib/catalog-unit-price";
 import { pharmaOffPercent, pharmaSalePrice } from "@/lib/pharma-catalog-query";
 import { ShoppingCart } from "lucide-react";
+import { TrustMarks } from "@/components/pharma/TrustMarks";
 import { toast } from "sonner";
 
 type SelectedVariant = { groupName?: string; option?: string };
@@ -205,6 +206,8 @@ export function PharmaProductPurchase({
           </button>
         </div>
       )}
+
+      <TrustMarks className="justify-center pt-0.5" />
     </div>
   );
 }
