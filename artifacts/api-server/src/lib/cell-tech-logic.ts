@@ -907,7 +907,8 @@ export function buildDailyReport(orders: CellTechOrder[], clock: CellTechClock):
   const yesterday = addDays(clock.dayKey, -1);
   const dueToday = orders.filter((order) => !order.finished && order.dueToday && !order.overdue);
   const overdue = orders.filter((order) => order.overdue);
-  const finishedRecent = orders.filter((order) => order.finishedDay === yesterday || order.finishedDay === clock.dayKey);
+  const finishedRecent = orders.filter((order) =>
+    reportableDone(order) && (order.finishedDay === yesterday || order.finishedDay === clock.dayKey));
   return [
     "📊 *Cell Tech*",
     `Relatório de *${formatDay(clock.dayKey)}*`,
@@ -920,8 +921,13 @@ export function buildDailyReport(orders: CellTechOrder[], clock: CellTechClock):
   ].join("\n");
 }
 
+/** SEM REPARO fecha a OS, mas não é serviço feito: fica fora da contagem dos relatórios. */
+function reportableDone(order: CellTechOrder): boolean {
+  return !situationIsNoRepair(order.situationName);
+}
+
 function finishedInMonth(order: CellTechOrder, key: string): boolean {
-  return Boolean(order.finishedDay && monthKey(order.finishedDay) === key);
+  return reportableDone(order) && Boolean(order.finishedDay && monthKey(order.finishedDay) === key);
 }
 
 export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock): string {
@@ -929,7 +935,7 @@ export function buildMonthlyReport(orders: CellTechOrder[], clock: CellTechClock
   const current = monthKey(clock.dayKey);
   const donePrevious = orders.filter((order) => finishedInMonth(order, previous));
   const doneCurrent = orders.filter((order) => finishedInMonth(order, current));
-  const doneUndated = orders.filter((order) => order.finished && !order.finishedDay);
+  const doneUndated = orders.filter((order) => reportableDone(order) && order.finished && !order.finishedDay);
   const open = orders.filter((order) => !order.finished);
   return [
     "📊 *Cell Tech*",
