@@ -2,7 +2,7 @@ import { mysqlAffectedRows } from "./mysql-affected-rows";
 
 /**
  * Moderação só dos grupos "Yuri imports 1" a "Yuri imports 7". Nasce desligada.
- * Liga com WHATSAPP_GROUP_MODERATION_ENABLED=1 ou a setting whatsapp_group_moderation_enabled=1.
+ * Só age em convite de grupo do WhatsApp (chat.whatsapp.com).
  * Não envia mensagem no grupo. Apaga para todos e remove o participante.
  * Z-API: DELETE /messages?messageId&phone&owner=false e POST /remove-participant { groupId, phones }.
  * Admins: GET /group-metadata/{groupId}, com cache.
@@ -22,7 +22,7 @@ export const GROUP_MODERATION_FLOOD_WINDOW_MS = 60 * 1000;
 const ADMIN_CACHE_MS = 10 * 60 * 1000;
 const PENDING_RETRY_MS = 2 * 60 * 1000;
 
-export type GroupModerationReason = "invite" | "external_link" | "repeat" | "flood";
+export type GroupModerationReason = "invite";
 export type GroupModerationShield = "admin" | "store" | "allowlist";
 
 export type GroupModerationInbound = {
@@ -228,43 +228,9 @@ export function groupSpamReason(
   return null;
 }
 
-function hostAllowed(host: string, allowHosts: readonly string[]): boolean {
-  const normalized = host.toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
-  return allowHosts.some((raw) => {
-    const allow = raw.toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
-    return Boolean(allow) && (normalized === allow || normalized.endsWith(`.${allow}`));
-  });
-}
-
-function rememberLinkHost(hosts: Set<string>, host: string): void {
-  const clean = host.toLowerCase().replace(/\.$/, "");
-  if (!clean.includes(".") || !/[a-z]/i.test(clean)) return;
-  hosts.add(clean);
-}
-
-export function detectGroupLinkViolation(text: string, allowHosts: readonly string[]): "invite" | "external_link" | null {
-  const value = String(text || "");
-  if (/chat\.whatsapp\.com/i.test(value) || /wa\.me\//i.test(value) || /whatsapp\.com\/channel/i.test(value) || /t\.me\//i.test(value) || /telegram\.me\//i.test(value)) {
-    return "invite";
-  }
-  const hosts = new Set<string>();
-  const withScheme = /(?:https?:\/\/|www\.)([a-z0-9.-]+\.[a-z]{2,})/gi;
-  for (const match of value.matchAll(withScheme)) {
-    const index = match.index ?? 0;
-    if (value[index - 1] === "@") continue;
-    if (match[1]) rememberLinkHost(hosts, match[1]);
-  }
-  const bare = /(?:^|[\s(])((?:[a-z0-9-]+\.)+[a-z]{2,})(?:\/[^\s)]*)?/gi;
-  for (const match of value.matchAll(bare)) {
-    const index = match.index ?? 0;
-    const before = value[index] === " " || value[index] === "(" ? index + 1 : index;
-    if (value[before - 1] === "@") continue;
-    if (match[1]) rememberLinkHost(hosts, match[1]);
-  }
-  for (const host of hosts) {
-    if (!hostAllowed(host, allowHosts)) return "external_link";
-  }
-  return null;
+/** Só o convite de grupo do WhatsApp. Outro link, figurinha e texto normal não entram. */
+export function detectGroupLinkViolation(text: string): "invite" | null {
+  return /chat\.whatsapp\.com/i.test(String(text || "")) ? "invite" : null;
 }
 
 export function moderationSnippet(text: string): string {
@@ -297,10 +263,8 @@ export function decideGroupModeration(input: {
 }): { act: false; shield: GroupModerationShield } | { act: false; reason: null } | { act: true; reason: GroupModerationReason } {
   const shield = groupShield(input);
   if (shield) return { act: false, shield };
-  const link = detectGroupLinkViolation(input.text, input.allowHosts);
+  const link = detectGroupLinkViolation(input.text);
   if (link) return { act: true, reason: link };
-  const spam = groupSpamReason(input.recent, input.text, input.now);
-  if (spam) return { act: true, reason: spam };
   return { act: false, reason: null };
 }
 
