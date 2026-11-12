@@ -8,6 +8,7 @@ import {
   MessageCircle, AlertTriangle, MapPin, Loader2, Tag, X, CheckCircle2, Zap, Minus, Plus, ExternalLink, Camera, IdCard, FileText, Clock, Calendar
 } from "lucide-react";
 import { BrandLoader } from "@/components/pharma/BrandLoader";
+import { TrustMarks } from "@/components/pharma/TrustMarks";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
@@ -3120,6 +3121,7 @@ export default function Checkout() {
                     No momento, os pagamentos estão temporariamente desativados. Tente novamente em instantes.
                   </div>
                 )}
+                <TrustMarks className="justify-center pt-1" />
               </div>
             </div>
           </div>

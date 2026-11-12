@@ -18,6 +18,16 @@ const TIRZEPATIDA_FOLD = "tirzepatida";
 /** Ordem preferida dos cards menores; o 1º disponível vira o card largo. */
 const CARD_PREFERENCE = ["retatrutide", "retatrutida", "peptideo", "botox", "estetica", "agua"];
 const MAX_CARDS = 5;
+/**
+ * Covers com melhor enquadramento no card pequeno (caixa + frasco, pouco fundo).
+ * Só escolhe outra foto já publicada no catálogo; não altera a API.
+ */
+const HERO_COVER_PREFERENCE: Record<string, string[]> = {
+  botox: [
+    "4fbafe35871c6da4", // Nabota 100UI — crop quadrado
+    "409fd891750ad8df", // Xeomin 100UI — caixa + frasco
+  ],
+};
 
 type Slot = {
   category: string;
@@ -41,7 +51,11 @@ function buildSlot(category: string, products: Array<PharmaCatalogProduct & { im
   const withImage = pool
     .filter((product) => usableImage(product))
     .sort((a, b) => Number(b.soldQty || 0) - Number(a.soldQty || 0));
-  const cover = withImage[0];
+  const preferredIds = HERO_COVER_PREFERENCE[foldCatalogLabel(category)] ?? [];
+  const preferred = preferredIds
+    .map((id) => withImage.find((product) => product.id === id))
+    .find(Boolean);
+  const cover = preferred ?? withImage[0];
   if (!cover) return null;
   const prices = pool.map((product) => pharmaSalePrice(product, now)).filter((price) => Number.isFinite(price) && price > 0);
   return {
