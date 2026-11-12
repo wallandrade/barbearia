@@ -12,11 +12,13 @@ import {
   supplierSitesTable,
 } from "@workspace/db";
 import { rankStoreBestsellers, supplierSearchUrl } from "./supplier-price-sales";
+import { explainAgainstIdentity, identifySupplierProduct, mentionsSupplierBrand, supplierSearchTerms } from "./supplier-price-match";
 import {
   atacadoBrasilUrlAllowed,
+  cloudflareBlockReason,
   parseSupplierPage,
+  productLinksFromSearch,
   readCatalogItems,
-  sitemapProductUrls,
   SUPPLIER_PRICE_TIMEOUT_MS,
   SUPPLIER_PRICE_USER_AGENT,
   type CatalogRow,
@@ -42,7 +44,9 @@ function sourceUrl(site: { baseUrl: string; parserType: string }, map: { externa
   return page;
 }
 
-async function readBody(url: string, fetchImpl: FetchImpl): Promise<{ status: number; body: string; error?: string }> {
+const BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+async function readBody(url: string, fetchImpl: FetchImpl, userAgent = SUPPLIER_PRICE_USER_AGENT): Promise<{ status: number; body: string; error?: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SUPPLIER_PRICE_TIMEOUT_MS);
   try {
@@ -51,12 +55,15 @@ async function readBody(url: string, fetchImpl: FetchImpl): Promise<{ status: nu
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "User-Agent": SUPPLIER_PRICE_USER_AGENT,
+        "User-Agent": userAgent,
         Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
       },
     });
     const body = await response.text();
+    const blocked = cloudflareBlockReason(response.status, body) || (body.includes("Just a moment") ? "bloqueio Cloudflare" : null);
+    if (blocked && userAgent === SUPPLIER_PRICE_USER_AGENT) return readBody(url, fetchImpl, BROWSER_USER_AGENT);
+    if (blocked) return { status: response.status, body, error: blocked };
     return { status: response.status, body };
   } catch {
     return { status: 0, body: "", error: "Tempo esgotado ou falha de rede." };
@@ -65,9 +72,11 @@ async function readBody(url: string, fetchImpl: FetchImpl): Promise<{ status: nu
   }
 }
 
-let collecting: Promise<{ collected: number; failed: number }> | null = null;
+export type CollectResult = { collected: number; failed: number; notes: string[] };
 
-export function collectSupplierPrices(fetchImpl: FetchImpl = fetch): Promise<{ collected: number; failed: number }> {
+let collecting: Promise<CollectResult> | null = null;
+
+export function collectSupplierPrices(fetchImpl: FetchImpl = fetch): Promise<CollectResult> {
   if (collecting) return collecting;
   collecting = runCollect(fetchImpl).finally(() => {
     collecting = null;
@@ -104,12 +113,13 @@ export async function loadBestsellerRanking() {
   };
 }
 
-async function runCollect(fetchImpl: FetchImpl): Promise<{ collected: number; failed: number }> {
+async function runCollect(fetchImpl: FetchImpl): Promise<CollectResult> {
   const sites = await db.select().from(supplierSitesTable);
   const maps = await db.select().from(supplierProductMapsTable);
   const activeSites = sites.filter((site) => site.active);
   let collected = 0;
   let failed = 0;
+  const searchNotes: string[] = [];
   const catalogCache = new Map<string, { status: number; body: string; error?: string }>();
   const sales = await loadBestsellerRanking().catch(() => ({ products: [] as Array<{ name: string }> }));
   const names = sales.products.map((item) => item.name);
@@ -155,56 +165,119 @@ async function runCollect(fetchImpl: FetchImpl): Promise<{ collected: number; fa
       if (parsed.ok && parsed.priceUsd != null) collected += 1;
       else failed += 1;
     }
-    await rememberCatalog(site, maps.filter((map) => map.supplierSiteId === site.id), names, fetchImpl);
+    const notes = await rememberCatalog(site, maps.filter((map) => map.supplierSiteId === site.id), names, fetchImpl);
+    searchNotes.push(...notes);
   }));
-  return { collected, failed };
+  for (const note of searchNotes) console.log(note);
+  return { collected, failed, notes: searchNotes };
 }
 
-async function pool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
-  let cursor = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const current = items[cursor];
-      cursor += 1;
-      await worker(current);
-    }
-  });
-  await Promise.all(runners);
+function noteLine(siteName: string, product: string, status: "encontrado" | "nao_encontrado" | "erro", detail: string): string {
+  return `[SupplierPrice] ${siteName} | ${product} | ${status} | ${detail}`;
+}
+
+async function readSearchRows(
+  site: { parserType: string },
+  url: string,
+  fetchImpl: FetchImpl,
+): Promise<{ rows: CatalogRow[]; error?: string }> {
+  const response = await readBody(url, fetchImpl);
+  if (response.error) return { rows: [], error: response.error };
+  let rows = readCatalogItems(site.parserType, response.body, url);
+  if (rows.length || site.parserType === "woocommerce_store" || site.parserType === "bypharmacon_catalog") return { rows };
+  const links = productLinksFromSearch(response.body, url).filter((link) => site.parserType !== "atacadobrasil_html" || atacadoBrasilUrlAllowed(link));
+  for (const link of links) {
+    const page = await readBody(link, fetchImpl);
+    if (page.error) continue;
+    rows.push(...readCatalogItems(site.parserType, page.body, link));
+  }
+  return { rows };
 }
 
 async function rememberCatalog(
-  site: { id: string; baseUrl: string; parserType: string },
+  site: { id: string; name: string; baseUrl: string; parserType: string },
   maps: Array<{ externalUrl: string | null }>,
   names: string[],
   fetchImpl: FetchImpl,
-): Promise<void> {
-  if (site.parserType === "unsupported") return;
-  const base = site.baseUrl.replace(/\/+$/, "");
-  const searches = names
-    .map((name) => supplierSearchUrl(site.parserType, base, name))
-    .filter((url): url is string => Boolean(url))
-    .filter((url) => site.parserType === "woocommerce_store" || site.parserType === "bypharmacon_catalog" || !url.includes("/api/"));
-  let urls: string[] = [];
-  if (site.parserType === "woocommerce_store") {
-    urls = [...searches];
-  } else if (site.parserType === "bypharmacon_catalog") {
-    urls = [`${base}/api/catalog`];
-  } else {
-    const host = new URL(base).hostname;
-    const sitemap = await readBody(`${base}/sitemap.xml`, fetchImpl);
-    const fromSitemap = sitemap.body ? sitemapProductUrls(sitemap.body, host) : [];
-    const manual = maps.map((map) => String(map.externalUrl || "")).filter((url) => url && (site.parserType !== "atacadobrasil_html" || atacadoBrasilUrlAllowed(url)));
-    urls = [...new Set([...searches, ...manual, ...fromSitemap])].filter((url) => !url.includes("atacadobrasilpy.com/api/")).slice(0, 16);
+): Promise<string[]> {
+  const notes: string[] = [];
+  if (site.parserType === "unsupported") {
+    for (const name of names) notes.push(noteLine(site.name, name, "erro", "loja desligada"));
+    return notes;
   }
+  const base = site.baseUrl.replace(/\/+$/, "");
   const rows: CatalogRow[] = [];
-  await pool(urls, 2, async (url) => {
-    const response = await readBody(url, fetchImpl);
-    if (response.error) return;
-    rows.push(...readCatalogItems(site.parserType, response.body, url));
-  });
+  if (site.parserType === "bypharmacon_catalog") {
+    const catalog = await readSearchRows(site, `${base}/api/catalog`, fetchImpl);
+    if (catalog.error) {
+      for (const name of names) notes.push(noteLine(site.name, name, "erro", catalog.error));
+    } else {
+      rows.push(...catalog.rows);
+    }
+  } else {
+    for (const name of names) {
+      const term = supplierSearchTerms(name)[0] || name;
+      const url = supplierSearchUrl(site.parserType, base, term);
+      if (!url || (site.parserType !== "woocommerce_store" && url.includes("/api/"))) {
+        notes.push(noteLine(site.name, name, "erro", "busca não suportada"));
+        continue;
+      }
+      const found = await readSearchRows(site, url, fetchImpl);
+      if (found.error) {
+        notes.push(noteLine(site.name, name, "erro", found.error));
+        continue;
+      }
+      rows.push(...found.rows);
+    }
+  }
+  const manual = maps
+    .map((map) => String(map.externalUrl || ""))
+    .filter((url) => url && (site.parserType !== "atacadobrasil_html" || atacadoBrasilUrlAllowed(url)));
+  for (const url of manual) {
+    const page = await readBody(url, fetchImpl);
+    if (page.error) continue;
+    rows.push(...readCatalogItems(site.parserType, page.body, url));
+  }
+  const wanted = names.map((name) => ({ name, identity: identifySupplierProduct(name) }));
+  for (const name of names) {
+    if (notes.some((line) => line.includes(`| ${name} | erro |`))) continue;
+    const matches = rows.filter((row) => explainAgainstIdentity(name, row.identity, row.exclusionReason || "").match && row.priceUsd != null);
+    const rejected = rows.filter((row) => {
+      const identity = wanted.find((item) => item.name === name)?.identity;
+      if (!identity?.ok || !mentionsSupplierBrand(row.rawName, identity.identity.brandKey)) return false;
+      return !explainAgainstIdentity(name, row.identity, row.exclusionReason || "").match;
+    });
+    if (matches.length) {
+      const cheapest = [...matches].sort((a, b) => (a.priceUsd ?? 0) - (b.priceUsd ?? 0))[0];
+      notes.push(noteLine(site.name, name, "encontrado", `${matches.length} oferta(s), menor US$ ${cheapest.priceUsd}`));
+    } else if (rejected.length) {
+      notes.push(noteLine(site.name, name, "nao_encontrado", `${rejected.length} candidato(s) rejeitado(s)`));
+    } else {
+      notes.push(noteLine(site.name, name, "nao_encontrado", "nenhuma oferta com a marca"));
+    }
+  }
   await db.delete(supplierCatalogItemsTable).where(eq(supplierCatalogItemsTable.siteId, site.id));
   const now = new Date();
+  const seen = new Set<string>();
   for (const row of rows) {
+    let queryName: string | null = null;
+    let rejectReason: string | null = null;
+    for (const item of wanted) {
+      if (!item.identity.ok || !mentionsSupplierBrand(row.rawName, item.identity.identity.brandKey)) continue;
+      const verdict = explainAgainstIdentity(item.name, row.identity, row.exclusionReason || "");
+      if (verdict.match) {
+        queryName = item.name;
+        rejectReason = null;
+        break;
+      }
+      if (!queryName) {
+        queryName = item.name;
+        rejectReason = verdict.reason.slice(0, 255);
+      }
+    }
+    const key = `${row.url || ""}|${row.rawName}|${queryName || ""}|${rejectReason || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     await db.insert(supplierCatalogItemsTable).values({
       id: crypto.randomBytes(16).toString("hex"),
       siteId: site.id,
@@ -217,11 +290,13 @@ async function rememberCatalog(
       localCurrency: row.localCurrency,
       stockQty: row.stockQty != null && Number.isFinite(row.stockQty) ? row.stockQty : null,
       inStock: row.inStock,
-      fingerprint: row.identity?.fingerprint || null,
+      fingerprint: rejectReason ? null : row.identity?.fingerprint || null,
       exclusionReason: row.exclusionReason,
+      queryName,
+      rejectReason,
       collectedAt: now,
     });
-    if (!row.identity) continue;
+    if (!row.identity || rejectReason) continue;
     const [existing] = await db.select().from(supplierEquivalenceGroupsTable).where(eq(supplierEquivalenceGroupsTable.fingerprint, row.identity.fingerprint)).limit(1);
     if (!existing) {
       await db.insert(supplierEquivalenceGroupsTable).values({
@@ -239,6 +314,7 @@ async function rememberCatalog(
       }).where(eq(supplierEquivalenceGroupsTable.fingerprint, row.identity.fingerprint));
     }
   }
+  return notes;
 }
 
 export async function latestSnapshots(mapId: string, limit = 2) {

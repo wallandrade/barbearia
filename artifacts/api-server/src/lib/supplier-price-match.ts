@@ -1,4 +1,4 @@
-export type DoseUnit = "mg" | "ui";
+export type DoseUnit = "mg" | "ui" | "ml";
 export type PackForm = "frasco" | "caneta" | "comprimido";
 
 export type ProductIdentity = {
@@ -69,6 +69,11 @@ export function anabolicExclusion(name: string, category?: string | null): strin
 
 function brandOf(text: string): { key: string; label: string } | null {
   if (/\btirzec\b/.test(text)) return { key: "tirzec", label: "Tirzec" };
+  if (/\bgluconex\b/.test(text)) return { key: "gluconex", label: "Gluconex" };
+  if (/\blipoless\b/.test(text)) return { key: "lipoless", label: "Lipoless" };
+  if (/\blipoland\b/.test(text)) return { key: "lipoland", label: "Lipoland" };
+  if (/\blipostabil\b/.test(text)) return { key: "lipostabil", label: "Lipostabil" };
+  if (/agua bacteriost/.test(text)) return { key: "agua-bacteriostatica", label: "Agua bacteriostatica" };
   const tg = /(?:^|\s)t\.?\s*g\.?(?:\s|$)/.test(text)
     || /tirzepatid[ae]\s+t\.?\s*g/.test(text)
     || (/\bindufar\b/.test(text) && (/tirzepatid/.test(text) || /(?:^|\s)t\.?\s*g\.?(?:\s|$)/.test(text) || /\btg\b/.test(text)));
@@ -79,26 +84,48 @@ function brandOf(text: string): { key: string; label: string } | null {
   return null;
 }
 
-function doseOf(text: string): { value: number; unit: DoseUnit } | null {
-  const mg = text.match(/(\d+(?:[.,]\d+)?)\s*mg\b/);
-  if (mg) return { value: Number(mg[1].replace(",", ".")), unit: "mg" };
+function doseNumbers(text: string): number[] {
+  return [...text.matchAll(/(\d+(?:[.,]\d+)?)\s*mg\b/g)]
+    .filter((match) => !/total\s+$/.test(text.slice(Math.max(0, (match.index || 0) - 8), match.index)))
+    .map((match) => Number(match[1].replace(",", ".")))
+    .filter((value) => Number.isFinite(value));
+}
+
+function doseOf(text: string, packQty: number): { value: number; unit: DoseUnit } | null {
+  const values = [...new Set(doseNumbers(text))];
+  if (values.length === 1) return { value: values[0], unit: "mg" };
+  if (values.length === 2 && packQty > 1) {
+    const [small, large] = [...values].sort((a, b) => a - b);
+    if (Math.abs(small * packQty - large) < 0.05) return { value: small, unit: "mg" };
+    return null;
+  }
+  if (values.length > 2) return null;
+  const total = text.match(/total\s+(\d+(?:[.,]\d+)?)\s*mg\b/);
+  if (total && packQty > 1) {
+    const amount = Number(total[1].replace(",", "."));
+    if (Number.isFinite(amount) && amount % packQty === 0) return { value: amount / packQty, unit: "mg" };
+  }
   const ui = text.match(/(\d+(?:[.,]\d+)?)\s*(?:ui|u\.i\.)\b/);
   if (ui) return { value: Number(ui[1].replace(",", ".")), unit: "ui" };
+  const ml = text.match(/(\d+(?:[.,]\d+)?)\s*ml\b/);
+  if (ml) return { value: Number(ml[1].replace(",", ".")), unit: "ml" };
   return null;
 }
 
-function packOf(text: string): { qty: number; form: PackForm } | null {
-  const matches = [...text.matchAll(/\b(\d+)\s*(frascos?|ampolas?|ampollas?|viales?|vials?|canetas?|comprimidos?|capsulas?)\b/g)];
-  if (!matches.length) return null;
+function packOf(text: string, take: "strict" | "first" = "strict"): { qty: number; form: PackForm; explicit: boolean } | null {
+  const matches = [...text.matchAll(/\b0*(\d+)\s*(frascos?|ampolas?|ampollas?|viales?|vials?|canetas?|comprimidos?|capsulas?|seringas?|jeringas?)\b/g)];
+  const kit = text.match(/\bkit\s+com\s+0*(\d+)\b/);
   const parsed = matches.map((match) => {
     const word = match[2];
-    const form: PackForm = /caneta/.test(word) ? "caneta" : /comprimido|capsula/.test(word) ? "comprimido" : "frasco";
+    const form: PackForm = /caneta|seringa|jeringa/.test(word) ? "caneta" : /comprimido|capsula/.test(word) ? "comprimido" : "frasco";
     return { qty: Number(match[1]), form };
   });
+  if (kit && !parsed.length) parsed.push({ qty: Number(kit[1]), form: "frasco" });
+  if (!parsed.length) return { qty: 1, form: "frasco", explicit: false };
   const qty = new Set(parsed.map((item) => item.qty));
   const form = new Set(parsed.map((item) => item.form));
-  if (qty.size !== 1 || form.size !== 1) return null;
-  return parsed[0];
+  if (qty.size !== 1 || form.size !== 1) return take === "first" ? { ...parsed[0], explicit: true } : null;
+  return { ...parsed[0], explicit: true };
 }
 
 const FORM_LABEL: Record<PackForm, [string, string]> = {
@@ -108,17 +135,21 @@ const FORM_LABEL: Record<PackForm, [string, string]> = {
 };
 
 export function identifySupplierProduct(name: string, extra?: string | null, category?: string | null): IdentityResult {
-  const blocked = anabolicExclusion(name, category) || anabolicExclusion(extra || "", category);
+  const blocked = anabolicExclusion(name, category);
   if (blocked) return { ok: false, reason: "anabolizante", detail: blocked };
-  const text = foldSupplierName(`${name} ${extra || ""}`);
-  const brand = brandOf(text);
-  const dose = doseOf(text);
-  const pack = packOf(text);
+  const nameText = foldSupplierName(name);
+  const extraText = foldSupplierName(extra || "");
+  const brand = brandOf(nameText) || brandOf(extraText);
+  const namePack = packOf(nameText, "strict");
+  const extraPack = extraText ? packOf(extraText, "first") : null;
+  const pack = namePack?.explicit ? namePack : extraPack?.explicit ? extraPack : namePack;
+  const dose = (pack ? doseOf(nameText, pack.qty) : null) || (pack && extraText ? doseOf(extraText, pack.qty) : null)
+    || (brand && pack?.explicit && !/\d+\s*(mg|ml|ui)\b/.test(nameText) ? { value: 0, unit: "mg" as const } : null);
   if (!brand || !dose || !pack || !Number.isFinite(dose.value) || pack.qty < 1) {
     return { ok: false, reason: "incompleto", detail: "Falta marca, dose ou quantidade da embalagem." };
   }
   const formLabel = pack.qty === 1 ? FORM_LABEL[pack.form][0] : FORM_LABEL[pack.form][1];
-  const doseLabel = Number.isInteger(dose.value) ? String(dose.value) : String(dose.value);
+  const doseLabel = dose.value === 0 ? "" : `${Number.isInteger(dose.value) ? dose.value : dose.value} ${dose.unit} `;
   const fingerprint = `${brand.key}|${dose.value}|${dose.unit}|${pack.qty}|${pack.form}`;
   return {
     ok: true,
@@ -130,10 +161,59 @@ export function identifySupplierProduct(name: string, extra?: string | null, cat
       packQty: pack.qty,
       packForm: pack.form,
       fingerprint,
-      displayName: `${brand.label} ${doseLabel} ${dose.unit} ${pack.qty} ${formLabel}`,
-      confidence: 0.92,
+      displayName: `${brand.label} ${doseLabel}${pack.qty} ${formLabel}`.replace(/\s+/g, " ").trim(),
+      confidence: dose.value === 0 ? 0.7 : 0.92,
     },
   };
+}
+
+export function supplierSearchTerms(name: string): string[] {
+  const identity = identifySupplierProduct(name);
+  if (!identity.ok) {
+    const words = foldSupplierName(name).split(" ").filter((word) => word.length > 2).slice(0, 3);
+    return [words.join(" ") || name];
+  }
+  const dose = identity.identity.doseValue > 0
+    ? ` ${Number.isInteger(identity.identity.doseValue) ? identity.identity.doseValue : identity.identity.doseValue}`
+    : "";
+  return [`${identity.identity.brandLabel}${dose}`.trim()];
+}
+
+export function mentionsSupplierBrand(name: string, brandKey: string): boolean {
+  const text = foldSupplierName(name);
+  if (brandKey === "agua-bacteriostatica") return text.includes("agua bacteriost");
+  if (brandKey === "tg") return /\btg\b|\bt g\b|\bindufar\b/.test(text);
+  return text.includes(brandKey);
+}
+
+export function explainSupplierMatch(wantedName: string, candidateName: string): { match: boolean; reason: string } {
+  const candidate = identifySupplierProduct(candidateName);
+  return explainAgainstIdentity(wantedName, candidate.ok ? candidate.identity : null, candidate.ok ? "" : candidate.detail);
+}
+
+export function explainAgainstIdentity(wantedName: string, candidate: ProductIdentity | null, fallback: string): { match: boolean; reason: string } {
+  const wanted = identifySupplierProduct(wantedName);
+  if (!wanted.ok) return { match: false, reason: wanted.detail };
+  if (!candidate) return { match: false, reason: fallback || "Falta marca, dose ou quantidade da embalagem." };
+  if (wanted.identity.fingerprint === candidate.fingerprint) return { match: true, reason: "marca, dose e quantidade batem" };
+  if (wanted.identity.brandKey !== candidate.brandKey) return { match: false, reason: "marca diferente" };
+  const bits: string[] = [];
+  if (wanted.identity.doseValue !== candidate.doseValue || wanted.identity.doseUnit !== candidate.doseUnit) {
+    const found = candidate.doseValue === 0 ? "dose não informada" : `${candidate.doseValue} ${candidate.doseUnit}`;
+    const expected = wanted.identity.doseValue === 0 ? "dose não informada" : `${wanted.identity.doseValue} ${wanted.identity.doseUnit}`;
+    bits.push(`dose ${found} em vez de ${expected}`);
+  }
+  if (wanted.identity.packQty !== candidate.packQty || wanted.identity.packForm !== candidate.packForm) {
+    bits.push(`embalagem de ${candidate.packQty} em vez de ${wanted.identity.packQty}`);
+  }
+  return { match: false, reason: bits.join("; ") || "não é o mesmo produto" };
+}
+
+/** Cotação tipo R$ 5,68 não é o preço do produto quando o valor em dólar já é alto. */
+export function hideFxLocalPrice(local: number | null, usd: number | null): number | null {
+  if (local == null || !Number.isFinite(local)) return null;
+  if (usd != null && usd >= 20 && local < 12) return null;
+  return local;
 }
 
 export type DealOffer = {

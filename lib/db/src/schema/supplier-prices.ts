@@ -56,6 +56,8 @@ export const supplierCatalogItemsTable = mysqlTable("supplier_catalog_items", {
   inStock: boolean("in_stock").notNull().default(false),
   fingerprint: varchar("fingerprint", { length: 80 }),
   exclusionReason: varchar("exclusion_reason", { length: 255 }),
+  queryName: varchar("query_name", { length: 255 }),
+  rejectReason: varchar("reject_reason", { length: 255 }),
   collectedAt: timestamp("collected_at").notNull().defaultNow(),
 });
 

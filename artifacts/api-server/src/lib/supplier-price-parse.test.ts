@@ -10,6 +10,8 @@ import {
   parseBypharmaconCatalog,
   parseJsonLdProduct,
   parseSupplierPage,
+  productBrl,
+  productLinksFromSearch,
   parseWooCommerceStore,
 } from "./supplier-price-parse";
 import { rankSupplierOffers } from "./supplier-price-rank";
@@ -44,6 +46,8 @@ test("parsers leem as fixtures sem rede", () => {
   if (!ld.ok) return;
   assert.equal(ld.priceUsd, 84);
   assert.equal(ld.localPrice, 477.12);
+  assert.equal(productBrl("1 USD = R$ 5,68. PIX BRL R$ 477,12"), 477.12);
+  assert.equal(productBrl("cotação R$ 5,68"), null);
   assert.equal(ld.localCurrency, "BRL");
   assert.equal(ld.inStock, true);
 
@@ -60,6 +64,8 @@ test("parsers leem as fixtures sem rede", () => {
   assert.equal(html.sku, "3068");
 
   assert.equal(atacadoBrasilUrlAllowed("https://atacadobrasilpy.com/api/img/15"), false);
+  const links = productLinksFromSearch('<a href="/produto/tirzepatida-tirzec-15mg-0-5ml-04-vial-60mg-19">Tirzec</a><a href="/api/produtos">api</a>', "https://atacadobrasilpy.com/busca?q=Tirzec");
+  assert.deepEqual(links, ["https://atacadobrasilpy.com/produto/tirzepatida-tirzec-15mg-0-5ml-04-vial-60mg-19"]);
   const blockedApi = parseAtacadoBrasilHtml("<html></html>", "https://atacadobrasilpy.com/api/produtos");
   assert.equal(blockedApi.ok, false);
 

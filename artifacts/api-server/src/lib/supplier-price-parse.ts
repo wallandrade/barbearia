@@ -82,9 +82,24 @@ function brlAmount(raw: string | null | undefined): number | null {
   return Number.isFinite(amount) ? amount : null;
 }
 
-function firstBrl(text: string): number | null {
-  const match = text.match(/R\$\s*([\d.]+,\d{2}|\d+(?:\.\d+)?)/);
-  return match ? brlAmount(match[1]) : null;
+export function productBrl(text: string, usd: number | null = null): number | null {
+  const matches = [...text.matchAll(/R\$\s*([\d.]+,\d{2}|\d+(?:\.\d+)?)/g)];
+  const amounts: number[] = [];
+  for (const match of matches) {
+    const index = match.index ?? 0;
+    const before = text.slice(Math.max(0, index - 18), index).toLowerCase();
+    if (/(?:usd|u\$|d[oó]lar|cota[cç][aã]o|c[aâ]mbio)\s*[=:]?\s*$/.test(before)) continue;
+    const amount = brlAmount(match[1]);
+    if (amount != null) amounts.push(amount);
+  }
+  if (!amounts.length) return null;
+  const product = amounts.filter((amount) => amount >= 12);
+  if (usd != null && usd > 0 && product.length) {
+    const target = usd * 5.6;
+    const near = product.find((amount) => Math.abs(amount - target) / target < 0.35);
+    return near ?? null;
+  }
+  return (product[0] ?? amounts[amounts.length - 1]) ?? null;
 }
 
 export function wooPrice(prices: WooProduct["prices"]): { amount: number | null; currency: string | null } {
@@ -230,8 +245,8 @@ export function parseJsonLdProduct(html: string, pageUrl: string | null): Suppli
     url: pageUrl,
     sku: product.sku == null ? null : String(product.sku),
     priceUsd: Number.isFinite(price) ? price : null,
-    localPrice: firstBrl(text),
-    localCurrency: firstBrl(text) == null ? null : "BRL",
+    localPrice: productBrl(text, Number.isFinite(price) ? price : null),
+    localCurrency: productBrl(text, Number.isFinite(price) ? price : null) == null ? null : "BRL",
     tiers: [],
     inStock,
     stockQty: null,
@@ -264,7 +279,7 @@ export function parseAtacadoBrasilHtml(html: string, pageUrl: string | null): Su
   const text = decode(html);
   const sku = text.match(/SKU\s*(\d+)/i)?.[1] || null;
   const retail = tiersRaw[0] ?? brlAmount(text.match(/Varejo\s+U\$\s*([\d.,]+)/i)?.[1]?.replace(".", "").replace(",", "."));
-  const local = firstBrl(text);
+  const local = productBrl(text, retail);
   const tiers = tiersRaw.length >= 4
     ? [
       { min: 1, max: 4, amount: tiersRaw[0] },
@@ -334,7 +349,10 @@ function rowFromIdentity(input: {
   stockQty: number | null;
 }): CatalogRow | null {
   const identity = identifySupplierProduct(input.name, input.extra, input.category);
-  if (!identity.ok && identity.reason !== "anabolizante") return null;
+  if (!identity.ok && identity.reason !== "anabolizante") {
+    const branded = identifySupplierProduct(input.name).ok || /\b(tirzec|gluconex|lipoless|lipoland|lipostabil|tg|agua)\b/i.test(input.name);
+    if (!branded) return null;
+  }
   return {
     rawName: input.name.slice(0, 255),
     url: input.url,
@@ -428,7 +446,7 @@ export function readCatalogItems(parserType: string, body: string, pageUrl: stri
     }
     const found = rowFromIdentity({
       name: parsed.name,
-      extra: body.replace(/<[^>]+>/g, " ").slice(0, 2000),
+      extra: body.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 2500),
       url: parsed.url,
       sku: parsed.sku,
       priceUsd: parsed.priceUsd,
@@ -457,6 +475,32 @@ export function sitemapProductUrls(xml: string, hostname: string): string[] {
       // ignora
     }
     if (found.length >= 12) break;
+  }
+  return found;
+}
+
+export function productLinksFromSearch(html: string, pageUrl: string): string[] {
+  let base: URL;
+  try {
+    base = new URL(pageUrl);
+  } catch {
+    return [];
+  }
+  const found: string[] = [];
+  for (const match of html.matchAll(/href=["']([^"']+)["']/gi)) {
+    let url: URL;
+    try {
+      url = new URL(match[1], base);
+    } catch {
+      continue;
+    }
+    if (url.hostname !== base.hostname) continue;
+    if (url.pathname.startsWith("/api/")) continue;
+    if (/\/busca|\/catalogo|\/wp-json/.test(url.pathname)) continue;
+    if (!/\/produto\/|\/p\/|\/product\/|\/emagrecimento\/|\/medicamento\/|\/peptideo\//.test(url.pathname)) continue;
+    const absolute = url.toString();
+    if (!found.includes(absolute)) found.push(absolute);
+    if (found.length >= 4) break;
   }
   return found;
 }
