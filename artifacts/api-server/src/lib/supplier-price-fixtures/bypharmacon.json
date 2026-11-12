@@ -1,0 +1,18 @@
+{
+  "products": [
+    {
+      "name": "TG 15MG",
+      "handle": "tg-15mg-85",
+      "sku": "24",
+      "brand": "TG",
+      "priceRetail": 85,
+      "inStock": true,
+      "stock": 1077,
+      "images": ["https://cdn.exemplo/tg.png"],
+      "priceTiersUSD": [
+        { "min_quantity": 1, "max_quantity": 4, "amount": 85 },
+        { "min_quantity": 5, "max_quantity": null, "amount": 84 }
+      ]
+    }
+  ]
+}

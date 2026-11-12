@@ -873,6 +873,7 @@ import type { AdminOrder, AdminProduct, AdminUser, Coupon, CustomCharge, KycDocu
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import AdminEnvioEcomTrackingPanel from "@/pages/AdminEnvioEcomTrackingPanel";
 import LossBlacklistBoard from "@/components/admin/LossBlacklistBoard";
+import { SupplierPriceBoard } from "@/components/admin/SupplierPriceBoard";
 import AdminImagesPanel from "@/components/admin/AdminImagesPanel";
 import WhatsAppGroupCampaignCard from "@/components/admin/WhatsAppGroupCampaignCard";
 import WhatsAppSupportAiCard from "@/components/admin/WhatsAppSupportAiCard";
@@ -5116,6 +5117,8 @@ export default function Admin() {
             </Button>
           </div>
         </div>
+
+        {tab === "orders" ? <SupplierPriceBoard headers={authHeaders()} /> : null}
 
         {/* ── Dashboard Stats ─────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-border/60 shadow-sm p-5 mb-6">

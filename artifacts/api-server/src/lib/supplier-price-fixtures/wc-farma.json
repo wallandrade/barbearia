@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Tirzepatida TG 15mg 4 Ampolas",
+    "permalink": "https://farma.fit/emagrecimento/tg-15mg-antiga/",
+    "sku": "SKU-VELHO",
+    "slug": "tg-15mg-antiga",
+    "is_in_stock": false,
+    "prices": { "price": "7800", "currency_minor_unit": 2, "currency_code": "USD" },
+    "short_description": "4 ampolas",
+    "images": [{ "src": "https://farma.fit/velha.jpg" }]
+  },
+  {
+    "name": "Tirzepatida TG 15mg 4 Ampolas Caixa Nova",
+    "permalink": "https://farma.fit/emagrecimento/tg-15mg-tirzepatida/",
+    "sku": "SKU-GEN15821",
+    "slug": "tg-15mg-tirzepatida",
+    "is_in_stock": true,
+    "prices": { "price": "11500", "currency_minor_unit": 2, "currency_code": "USD", "currency_prefix": "$" },
+    "short_description": "4 ampolas caixa nova",
+    "images": [{ "src": "https://farma.fit/nova.jpg" }]
+  }
+]

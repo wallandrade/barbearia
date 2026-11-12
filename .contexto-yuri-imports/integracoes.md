@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-12 | Ranking de custo por fornecedor | O admin consulta preço de custo. A coleta é só leitura, a cada 6 h, com botão Atualizar agora | Preço de venda, catálogo, PIX, estoque, WhatsApp, e-mail e n8n iguais |
 | 2026-11-11 | SEM REPARO fica fora do relatório | Não entra em "Finalizadas desde ontem" nem em "Feitas em <mês>", nem na contagem. Continua fechada | OS parada, a fila e o aviso de OS concretizada iguais. EM REPARO continua aberta |
 | 2026-11-11 | WhatsApp de correção de entrega via n8n | Se a etiqueta falha por CPF, CEP ou endereço, a API faz um POST `{ event: "corrigir_dados_entrega", phone, name, orderNumber, fields, message, link }` na URL `n8n_delivery_correction_webhook_url` (Poly usa `_poly` quando existe). Uma vez por token. O admin ainda mostra a mensagem | O webhook do pedido pago continua `{ phone, message }`. Sem POST de teste |
 | 2026-11-11 | Texto padrão de Falar com atendente | A resposta pede o assunto e, se for pedido, o número ou o CPF. O eco do bot continua reconhecendo o texto com quebra de linha e emoji | A sessão `human` e o menu já salvo no admin iguais |
