@@ -75,6 +75,24 @@ test("produto sem fornecedor fica como não encontrado", () => {
   assert.equal(hit?.tieWith, "Farmácia Santa Rita Paraguai");
   assert.equal(miss?.found, false);
   assert.equal(miss?.offers.length, 0);
+  assert.equal(hit?.localPrice, 477.12);
+  const [fx] = attachBestsellers({
+    bestsellers: [{ rank: 1, productId: "tg", name: "TG 15 mg 4 frascos", image: null, soldQty: 4, fingerprint: "tg|15|mg|4|frasco" }],
+    groups: [{
+      fingerprint: "tg|15|mg|4|frasco",
+      displayName: "TG",
+      confidence: 1,
+      status: "confirmed",
+      pinned: false,
+      offers: [
+        { siteId: "dili", siteName: "Dili Farma", url: "https://dili.example/tg", priceUsd: 84, localPrice: 5.68, localCurrency: "BRL", inStock: true, image: null, collectedAt: "2026-11-12T03:00:00.000Z", packQty: 4, source: "manual", rawName: "TG 15 mg 4 frascos" },
+      ],
+    }],
+    candidates: [{ queryName: "TG 15 mg 4 frascos", siteId: "fit", siteName: "Farma.fit", rawName: "TG 15mg 1 ampola", url: "https://farma.fit/tg-1", priceUsd: 30, reason: "embalagem de 1 em vez de 4" }],
+  });
+  assert.equal(fx?.localPrice, null);
+  assert.equal(fx?.candidates.length, 1);
+  assert.match(fx?.candidates[0]?.reason || "", /embalagem de 1/);
 });
 
 test("busca do fornecedor não usa a API da Atacado Brasil", () => {

@@ -1669,6 +1669,8 @@ async function ensureSupplierPriceTables(databaseName: string): Promise<void> {
         in_stock TINYINT(1) NOT NULL DEFAULT 0,
         fingerprint VARCHAR(80) NULL,
         exclusion_reason VARCHAR(255) NULL,
+        query_name VARCHAR(255) NULL,
+        reject_reason VARCHAR(255) NULL,
         collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY supplier_catalog_items_site_idx (site_id),
         KEY supplier_catalog_items_fp_idx (fingerprint)
@@ -1687,6 +1689,14 @@ async function ensureSupplierPriceTables(databaseName: string): Promise<void> {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
+  }
+  if (await tableExists("supplier_catalog_items", databaseName)) {
+    if (!(await columnExists("supplier_catalog_items", "query_name", databaseName))) {
+      await pool.query("ALTER TABLE supplier_catalog_items ADD COLUMN query_name VARCHAR(255) NULL");
+    }
+    if (!(await columnExists("supplier_catalog_items", "reject_reason", databaseName))) {
+      await pool.query("ALTER TABLE supplier_catalog_items ADD COLUMN reject_reason VARCHAR(255) NULL");
+    }
   }
   const { seedSupplierPrices } = await import("./lib/supplier-price-seed");
   await seedSupplierPrices();

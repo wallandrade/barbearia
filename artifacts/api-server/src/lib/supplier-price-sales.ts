@@ -1,4 +1,4 @@
-import { anabolicExclusion, identifySupplierProduct } from "./supplier-price-match";
+import { anabolicExclusion, hideFxLocalPrice, identifySupplierProduct } from "./supplier-price-match";
 import type { DealGroup, DealOffer } from "./supplier-price-match";
 
 /** Status reais do pedido que a loja trata como pago. O resto não entra na venda. */
@@ -116,9 +116,20 @@ export function supplierSearchUrl(parserType: string, baseUrl: string, productNa
   return null;
 }
 
+export type RejectedCandidate = {
+  queryName: string;
+  siteId: string;
+  siteName: string;
+  rawName: string;
+  url: string | null;
+  priceUsd: number | null;
+  reason: string;
+};
+
 export function attachBestsellers(input: {
   bestsellers: Bestseller[];
   groups: DealGroup[];
+  candidates?: RejectedCandidate[];
 }): Array<Bestseller & {
   found: boolean;
   cheapestStore: string | null;
@@ -133,6 +144,7 @@ export function attachBestsellers(input: {
   url: string | null;
   badge: "auto" | "confirmado" | null;
   offers: DealOffer[];
+  candidates: RejectedCandidate[];
 }> {
   return input.bestsellers.map((product) => {
     const group = input.groups.find((item) => item.status !== "rejected" && (
@@ -152,7 +164,7 @@ export function attachBestsellers(input: {
       found: inStock.length > 0,
       cheapestStore: cheapest?.siteName || null,
       priceUsd: cheapest?.priceUsd ?? null,
-      localPrice: cheapest?.localPrice ?? null,
+      localPrice: hideFxLocalPrice(cheapest?.localPrice ?? null, cheapest?.priceUsd ?? null),
       localCurrency: cheapest?.localCurrency ?? null,
       storeCount: new Set(shown.map((offer) => offer.siteId)).size,
       gapUsd: !cheapest || !second || cheapest.priceUsd == null || second.priceUsd == null ? null : (tied ? 0 : Number((second.priceUsd - cheapest.priceUsd).toFixed(2))),
@@ -161,7 +173,8 @@ export function attachBestsellers(input: {
       collectedAt: cheapest?.collectedAt || null,
       url: cheapest?.url || null,
       badge: group ? (group.status === "confirmed" || group.offers.some((offer) => offer.source === "manual") ? "confirmado" : "auto") : null,
-      offers: rankShown(shown),
+      offers: rankShown(shown).map((offer) => ({ ...offer, localPrice: hideFxLocalPrice(offer.localPrice, offer.priceUsd) })),
+      candidates: (input.candidates || []).filter((candidate) => candidate.queryName === product.name),
     };
   });
 }

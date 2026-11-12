@@ -1,6 +1,8 @@
-import { desc, eq } from "drizzle-orm";
-import { db, siteSettingsTable, supplierPriceSnapshotsTable } from "@workspace/db";
+import { desc, eq, sql } from "drizzle-orm";
+import { db, siteSettingsTable, supplierCatalogItemsTable, supplierPriceSnapshotsTable } from "@workspace/db";
 import { collectSupplierPrices } from "./lib/supplier-price-collect";
+
+const SEARCH_GENERATION = "2026-11-busca-nome";
 
 const CHECK_MS = 10 * 60 * 1000;
 const DEFAULT_HOURS = 6;
@@ -22,9 +24,15 @@ async function collectIfDue(): Promise<void> {
       .orderBy(desc(supplierPriceSnapshotsTable.collectedAt))
       .limit(1);
     const last = latest?.collectedAt ? new Date(latest.collectedAt).getTime() : 0;
-    if (last && Date.now() - last < intervalMs) return;
+    const generation = await setting("supplier_price_search_generation");
+    const [catalog] = await db.select({ total: sql<number>`count(*)` }).from(supplierCatalogItemsTable);
+    const catalogEmpty = Number(catalog?.total || 0) === 0;
+    const firstSearch = generation !== SEARCH_GENERATION || catalogEmpty;
+    if (last && Date.now() - last < intervalMs && !firstSearch) return;
     const result = await collectSupplierPrices();
-    console.log(`[SupplierPrice] coleta ${result.collected} ok, ${result.failed} com erro.`);
+    await db.insert(siteSettingsTable).values({ key: "supplier_price_search_generation", value: SEARCH_GENERATION, updatedAt: new Date() })
+      .onDuplicateKeyUpdate({ set: { value: SEARCH_GENERATION, updatedAt: new Date() } });
+    console.log(`[SupplierPrice] coleta ${result.collected} ok, ${result.failed} com erro. Busca: ${result.notes.length} linhas.`);
   } catch (err) {
     console.error("[SupplierPrice] coleta falhou:", err instanceof Error ? err.message : "erro");
   }

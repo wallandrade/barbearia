@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anabolicExclusion, groupCatalogOffers, identifySupplierProduct, selectCheapestDeals, type DealGroup } from "./supplier-price-match";
+import { anabolicExclusion, explainSupplierMatch, groupCatalogOffers, identifySupplierProduct, selectCheapestDeals, supplierSearchTerms, type DealGroup } from "./supplier-price-match";
 
 test("nomes equivalentes só casam com marca, dose e embalagem", () => {
   const names = [
@@ -24,8 +24,8 @@ test("nomes equivalentes só casam com marca, dose e embalagem", () => {
   assert.notEqual(tirzec.ok && tirzec.identity.fingerprint, fingerprints[0]);
 
   const vague = identifySupplierProduct("TG 15MG");
-  assert.equal(vague.ok, false);
-  if (!vague.ok) assert.equal(vague.reason, "incompleto");
+  assert.equal(vague.ok && vague.identity.packQty, 1);
+  assert.notEqual(vague.ok && vague.identity.fingerprint, fingerprints[0]);
 
   const molecule = identifySupplierProduct("Tirzepatida 15mg 4 ampolas");
   assert.equal(molecule.ok, false);
@@ -141,4 +141,29 @@ test("a linha conta todas as lojas da comparação e o empate cita a 2ª", () =>
   assert.equal(card?.tieWith, "Farmácia Santa Rita Paraguai");
   assert.equal(card?.gapUsd, 0);
   assert.equal(card?.nextGapUsd, 1);
+});
+
+test("nomes da loja casam com a ficha do fornecedor e 1 unidade não casa com kit", () => {
+  const pairs: Array<[string, string]> = [
+    ["Tirzec 15mg Tirzepatida 4 Ampolas", "TIRZEC TIRZEPATIDA 15MG – 04 VIAL"],
+    ["TG Tirzepatida 15mg 4 frasco total 60mg", "Tirzepatida TG 15MG/0,5ML - 04 Vial (60MG)"],
+    ["Gluconex 15mg 4 ampolas", "Tirzepatida Gluconex 15mg 4 ampolas"],
+    ["Lipoless 15mg 4 frasco total 60mg", "Tirzepatida Lipoless 15MG/0,5ML - 04 Vial (60MG)"],
+    ["Lipoland 15mg 4 ampollas", "Tirzepatida Lipoland 15MG/0,5ML - 04 Vial (60MG)"],
+    ["Agua Bacteriostática 3ml", "Bergano Água Bacteriostática 3ML - 01 Vial"],
+    ["Lipostabil endovena Aventis ORIGINAL kit com 5 ampolas", "Lipostabil endovenoso kit com 5 ampolas"],
+  ];
+  for (const [store, supplier] of pairs) {
+    const verdict = explainSupplierMatch(store, supplier);
+    assert.equal(verdict.match, true, `${store} x ${supplier}: ${verdict.reason}`);
+  }
+  const one = explainSupplierMatch("Tirzec 15mg Tirzepatida 4 Ampolas", "Tirzec 15mg 1 ampola");
+  assert.equal(one.match, false);
+  assert.match(one.reason, /embalagem de 1/);
+  const md = explainSupplierMatch("Lipoless 60mg MD", "Tirzepatida Lipoless 15mg 4 ampolas");
+  assert.equal(md.match, false);
+  const syringe = explainSupplierMatch("Gluconex 15mg 4 ampolas", "Tirzepatida Gluconex 15mg 4 seringas");
+  assert.equal(syringe.match, false);
+  assert.equal(supplierSearchTerms("Tirzec 15mg Tirzepatida 4 Ampolas")[0], "Tirzec 15");
+  assert.equal(supplierSearchTerms("Agua Bacteriostática 3ml")[0], "Agua bacteriostatica 3");
 });

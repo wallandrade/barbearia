@@ -243,7 +243,21 @@ async function dealsPayload() {
   return {
     windowDays: sales.windowDays,
     usedFullHistory: sales.usedFullHistory,
-    products: attachBestsellers({ bestsellers: sales.products, groups: grouped }),
+    products: attachBestsellers({
+      bestsellers: sales.products,
+      groups: grouped,
+      candidates: items
+        .filter((item) => item.queryName && item.rejectReason)
+        .map((item) => ({
+          queryName: item.queryName || "",
+          siteId: item.siteId,
+          siteName: siteName.get(item.siteId) || item.siteId,
+          rawName: item.rawName,
+          url: item.externalUrl,
+          priceUsd: item.priceUsd != null ? Number(item.priceUsd) : null,
+          reason: item.rejectReason || "",
+        })),
+    }),
     excluded: items.filter((item) => item.exclusionReason).length,
   };
 }

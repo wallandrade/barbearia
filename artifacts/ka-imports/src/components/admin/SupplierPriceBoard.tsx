@@ -18,6 +18,15 @@ type Compared = {
   source: "auto" | "manual";
 };
 
+type Candidate = {
+  siteId: string;
+  siteName: string;
+  rawName: string;
+  url: string | null;
+  priceUsd: number | null;
+  reason: string;
+};
+
 type Deal = {
   rank: number;
   productId: string | null;
@@ -38,6 +47,7 @@ type Deal = {
   url: string | null;
   badge: "auto" | "confirmado" | null;
   offers: Compared[];
+  candidates?: Candidate[];
 };
 
 type Site = { id: string; name: string; active: boolean };
@@ -54,7 +64,7 @@ function moneyLocal(value: number | null, currency: string | null): string {
   return `${prefix} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
 }
 
-function OfferList({ product, onLink, onDecide }: { product: Deal; onLink: () => void; onDecide: (action: string) => void }) {
+function OfferList({ product, onLink, onDecide, onUse }: { product: Deal; onLink: () => void; onDecide: (action: string) => void; onUse: (candidate: Candidate) => void }) {
   return (
     <div className="space-y-2">
       {product.found && product.url ? <a href={product.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">Abrir a mais barata <ExternalLink className="w-3 h-3" /></a> : (
@@ -79,11 +89,23 @@ function OfferList({ product, onLink, onDecide }: { product: Deal; onLink: () =>
           </li>
         ))}
       </ul>
+      {(product.candidates || []).length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted-foreground">Encontrados e não usados</p>
+          {(product.candidates || []).map((candidate) => (
+            <div key={`${candidate.siteId}-${candidate.url}-${candidate.rawName}`} className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm">
+              <p className="font-medium">{candidate.siteName} · {candidate.rawName}</p>
+              <p className="text-xs text-amber-800">{candidate.reason}{candidate.priceUsd != null ? ` · ${moneyUsd(candidate.priceUsd)}` : ""}</p>
+              <button type="button" className="text-xs font-semibold text-primary underline" onClick={() => onUse(candidate)}>Vincular</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function FragmentRow({ product, open, onToggle, onLink, onDecide }: { product: Deal; open: boolean; onToggle: () => void; onLink: () => void; onDecide: (action: string) => void }) {
+function FragmentRow({ product, open, onToggle, onLink, onDecide, onUse }: { product: Deal; open: boolean; onToggle: () => void; onLink: () => void; onDecide: (action: string) => void; onUse: (candidate: Candidate) => void }) {
   return (
     <>
       <tr className="border-b border-border/70 cursor-pointer" onClick={onToggle}>
@@ -104,7 +126,7 @@ function FragmentRow({ product, open, onToggle, onLink, onDecide }: { product: D
       {open ? (
         <tr>
           <td colSpan={8} className="pb-4">
-            <OfferList product={product} onLink={onLink} onDecide={onDecide} />
+            <OfferList product={product} onLink={onLink} onDecide={onDecide} onUse={onUse} />
           </td>
         </tr>
       ) : null}
@@ -220,6 +242,34 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
     }
   }
 
+  async function linkCandidate(product: Deal, candidate: Candidate) {
+    const units = Number((product.fingerprint || "").split("|")[3]) || 1;
+    setBusy(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/supplier-prices/maps`, {
+        method: "POST",
+        headers: { ...headersRef.current, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: product.name,
+          productId: product.productId,
+          supplierSiteId: candidate.siteId,
+          externalUrl: candidate.url,
+          unitsPerPack: units,
+          imageUrl: product.image,
+          active: true,
+        }),
+      });
+      if (!res.ok) {
+        toast.error("Não foi possível vincular.");
+        return;
+      }
+      toast.success("Vínculo salvo. A próxima coleta lê essa ficha.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <div className="bg-white rounded-2xl border border-border/60 shadow-sm p-4 sm:p-6">
@@ -262,7 +312,7 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
             </thead>
             <tbody>
               {products.map((product) => (
-                <FragmentRow key={`${product.productId || product.name}-${product.rank}`} product={product} open={open === String(product.rank)} onToggle={() => setOpen(open === String(product.rank) ? null : String(product.rank))} onLink={() => setForm({ ...form, displayName: product.name })} onDecide={(action) => void decide(product.fingerprint || "", action)} />
+                <FragmentRow key={`${product.productId || product.name}-${product.rank}`} product={product} open={open === String(product.rank)} onToggle={() => setOpen(open === String(product.rank) ? null : String(product.rank))} onLink={() => setForm({ ...form, displayName: product.name })} onDecide={(action) => void decide(product.fingerprint || "", action)} onUse={(candidate) => void linkCandidate(product, candidate)} />
               ))}
             </tbody>
           </table>
@@ -295,29 +345,8 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
                 <ChevronDown className={`w-4 h-4 mt-1 ${open === String(product.rank) ? "rotate-180" : ""}`} />
               </button>
               {open === String(product.rank) ? (
-                <div className="px-3 pb-3 space-y-2">
-                  {product.found && product.url ? <a href={product.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">Abrir a mais barata <ExternalLink className="w-3 h-3" /></a> : (
-                    <button type="button" className="text-xs underline" onClick={() => setForm({ ...form, displayName: product.name })}>Vincular manualmente</button>
-                  )}
-                  {product.fingerprint ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint || "", "confirm")}>Confirmar</button>
-                      <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint || "", "reject")}>Rejeitar</button>
-                    </div>
-                  ) : null}
-                  <ul className="space-y-1">
-                    {product.offers.map((offer) => (
-                      <li key={`${offer.siteId}-${offer.url}`} className="rounded-xl bg-muted/40 px-3 py-2 text-sm flex flex-wrap gap-x-3">
-                        <span className="font-semibold w-6">{offer.position ?? "–"}</span>
-                        <span>{offer.siteName}</span>
-                        <span>{moneyUsd(offer.priceUsd)}</span>
-                        {moneyLocal(offer.localPrice, offer.localCurrency) ? <span className="text-muted-foreground">{moneyLocal(offer.localPrice, offer.localCurrency)}</span> : null}
-                        <span className={offer.label === "ok" ? "text-emerald-700" : "text-amber-700"}>{offer.label === "ok" ? "em estoque" : "fora de estoque"}</span>
-                        <span className="text-xs text-muted-foreground">{offer.source === "manual" ? "vínculo" : "auto"}</span>
-                        {offer.url ? <a href={offer.url} target="_blank" rel="noreferrer" className="text-xs text-primary">Ficha</a> : null}
-                      </li>
-                    ))}
-                  </ul>
+                <div className="px-3 pb-3">
+                  <OfferList product={product} onLink={() => setForm({ ...form, displayName: product.name })} onDecide={(action) => void decide(product.fingerprint || "", action)} onUse={(candidate) => void linkCandidate(product, candidate)} />
                 </div>
               ) : null}
             </li>
