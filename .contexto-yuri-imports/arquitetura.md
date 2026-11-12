@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-11-11
+> **Última atualização:** 2026-11-12
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-12 | Tabela `whatsapp_group_moderation_log` (+ runtime) | Guarda a mensagem moderada no grupo para poder desfazer. Chave é o id da mensagem | Campanha dos grupos, atendimento e pedido iguais. Sem `tenant_id` |
 | 2026-11-11 | Tabela `order_delivery_corrections` e coluna `orders.client_data_corrected_at` (+ runtime) | Link público `/corrigir-entrega` para CPF, CEP e endereço. Vale 7 dias, só sem etiqueta. A loja ganha a página e o modal do admin | PIX, estoque e a senha de baixa iguais. Sem `tenant_id` |
 | 2026-11-10 | Tabela `customer_password_resets` (+ runtime) | Guarda o hash do link de senha, a expiração e o uso. A loja ganha `/redefinir-senha` | `customer_users` e a senha do admin iguais. Sem `tenant_id` |
 | 2026-11-10 | Tabela `cell_tech_situation_state` (+ runtime) | Guarda desde quando a OS está na situação atual, se o Gestão Click não manda a data | `cell_tech_alerts`, pedido, PIX e frete iguais. Sem `tenant_id` |

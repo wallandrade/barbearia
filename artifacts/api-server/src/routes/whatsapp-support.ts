@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { requirePrimaryAdmin } from "./admin-auth";
 import { supportAiEnabled, setSupportAiEnabled } from "../lib/whatsapp-support-ai";
 import { startWhatsappHistoryImport, supportExampleTotal, whatsappHistoryImportStatus } from "../lib/whatsapp-history-import";
+import { handleGroupModeration, isGroupModerationCandidate } from "../lib/whatsapp-group-moderation";
 import { handleSupportInbound, supportInboundLog, supportToken, supportTokensMatch } from "../lib/whatsapp-support";
 
 const router: IRouter = Router();
@@ -16,11 +17,46 @@ router.post("/whatsapp/support/inbound", async (req, res) => {
       res.status(401).json({ error: "UNAUTHORIZED" });
       return;
     }
+    if (isGroupModerationCandidate(req.body)) {
+      const moderated = await handleGroupModeration(req.body);
+      console.log("[WhatsApp grupos] moderação", {
+        ok: moderated.ok,
+        skipped: moderated.skipped === true,
+        reason: moderated.reason || "",
+        action: moderated.action || "",
+        groupTail: moderated.groupTail || "",
+      });
+      res.status(200).json(moderated);
+      return;
+    }
     const result = await handleSupportInbound(req.body);
     console.log("[WhatsApp atendimento] resultado", result);
     res.status(200).json(result);
   } catch (err) {
     console.error("[WhatsApp atendimento]", err instanceof Error ? err.message : err);
+    res.status(200).json({ ok: false, error: "exception" });
+  }
+});
+
+router.post("/whatsapp/groups/inbound", async (req, res) => {
+  try {
+    const expected = await supportToken();
+    const got = String(req.query.token || req.get("x-whatsapp-support-token") || "").trim();
+    if (!supportTokensMatch(expected, got)) {
+      res.status(401).json({ error: "UNAUTHORIZED" });
+      return;
+    }
+    const moderated = await handleGroupModeration(req.body);
+    console.log("[WhatsApp grupos] moderação", {
+      ok: moderated.ok,
+      skipped: moderated.skipped === true,
+      reason: moderated.reason || "",
+      action: moderated.action || "",
+      groupTail: moderated.groupTail || "",
+    });
+    res.status(200).json(moderated);
+  } catch (err) {
+    console.error("[WhatsApp grupos]", err instanceof Error ? err.message : err);
     res.status(200).json({ ok: false, error: "exception" });
   }
 });

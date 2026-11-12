@@ -356,7 +356,7 @@ const corsAllowedHeaders = ["Content-Type", "Authorization"];
 
 app.use(cors((req, callback) => {
   // A Z-API chama este webhook de servidor e manda Origin. A senha da rota valida a chamada.
-  if (req.path === "/api/whatsapp/support/inbound") {
+  if (req.path === "/api/whatsapp/support/inbound" || req.path === "/api/whatsapp/groups/inbound") {
     callback(null, {
       origin: true,
       credentials: true,

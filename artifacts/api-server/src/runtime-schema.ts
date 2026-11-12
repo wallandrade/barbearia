@@ -1406,6 +1406,22 @@ async function ensureWhatsappSupportExamplesTable(databaseName: string): Promise
   `);
 }
 
+async function ensureWhatsappGroupModerationTable(databaseName: string): Promise<void> {
+  if (await tableExists("whatsapp_group_moderation_log", databaseName)) return;
+  await pool.query(`
+    CREATE TABLE whatsapp_group_moderation_log (
+      message_id VARCHAR(160) NOT NULL PRIMARY KEY,
+      group_id VARCHAR(64) NOT NULL,
+      group_name VARCHAR(128) NULL,
+      participant_phone VARCHAR(32) NOT NULL,
+      reason VARCHAR(32) NOT NULL,
+      snippet VARCHAR(280) NOT NULL,
+      action VARCHAR(64) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
 async function ensureWhatsappGroupCampaignTables(databaseName: string): Promise<void> {
   if (!(await tableExists("whatsapp_group_custom_posts", databaseName))) {
     await pool.query(`
@@ -1764,6 +1780,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureWhatsappSupportSessionsTable(databaseName);
     await ensureWhatsappSupportExamplesTable(databaseName);
     await ensureWhatsappGroupCampaignTables(databaseName);
+    await ensureWhatsappGroupModerationTable(databaseName);
     await ensureAdminImagesTable(databaseName);
     await ensureFlashOfferTables(databaseName);
     await ensureCellTechAlertsTable(databaseName);
