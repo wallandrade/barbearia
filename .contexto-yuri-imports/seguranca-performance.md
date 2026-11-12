@@ -1,6 +1,6 @@
 # Segurança e performance — Yuri Import
 
-> **Última atualização:** 2026-11-10
+> **Última atualização:** 2026-11-12
 
 Controles de segurança/performance **no código** (`artifacts/api-server/src/app.ts` e afins).
 
@@ -8,6 +8,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-12 | Moderação de grupo usa o token do atendimento | `POST /api/whatsapp/groups/inbound` e o grupo que chega no webhook já existente exigem o mesmo token. Sem checkout token. Nasce desligada | O limite do atendimento 1:1 e o checkout token iguais |
 | 2026-11-10 | Limite do link de senha deixa de usar o IP do proxy | A chave é `X-Real-IP`, senão o primeiro de `X-Forwarded-For`. O log diz se estourou e-mail ou IP | O `Map` continua em memória. 3/hora no e-mail e 8/hora no IP iguais |
 | 2026-11-10 | Pedido de senha informa se a conta existe | O dono pediu a confirmação real. `sent` só com `messageId`. E-mail ausente, limite, e-mail inválido e falha de envio têm frases diferentes. O log mascara o e-mail | Hash do token, limite 3/8, PBKDF2 e checkout token iguais. Sem token nem senha no log |
 | 2026-11-10 | Pedido de senha não diz se o e-mail existe | A resposta, o status e o tempo mínimo são os mesmos. O banco guarda só o hash. Log sem token e sem senha. Limite em memória por e-mail e por IP | Checkout token e a senha de admin iguais. A rota de redefinição informa link inválido ou expirado |
@@ -44,7 +45,7 @@ Controles de segurança/performance **no código** (`artifacts/api-server/src/ap
 - Rate limit **em memória** para POSTs públicos sensíveis (pedidos, checkout PIX, cobranças, suporte, KYC, rifa, etc.).
 - Chat de compostos: limiter **próprio** em `routes/peptide-chat.ts` (20 / 10 min / IP); fora da lista de writes que exigem checkout token. Sem chave OpenAI o POST ainda responde (ficha local).
 - Recuperação de senha: `POST /api/auth/forgot-password` e `POST /api/auth/reset-password` ficam fora do checkout token. O pedido tem limite próprio em memória (3/hora por e-mail, 8/hora por IP), num `Map` do processo. O IP é `X-Real-IP`, senão o primeiro de `X-Forwarded-For`, senão `req.ip`. `req.ip` com `trust proxy` 1, atrás da borda da Railway, era o IP do proxy (18.231 / 54.20 / 54.232) e misturava todos os clientes. O log do limite diz se estourou e-mail ou IP, com o e-mail mascarado. A resposta diz o resultado: enviado, e-mail sem conta, limite, e-mail inválido ou falha. Sucesso só com `messageId` do Brevo. O token cru não entra no banco nem no log.
-- Atendimento WhatsApp: `POST /api/whatsapp/support/inbound` fica fora do checkout token. Exige o token do atendimento (mínimo 8 caracteres) na query ou no header `x-whatsapp-support-token`. 20 mensagens a cada 10 minutos por telefone.
+- Atendimento WhatsApp: `POST /api/whatsapp/support/inbound` fica fora do checkout token. Exige o token do atendimento (mínimo 8 caracteres) na query ou no header `x-whatsapp-support-token`. 20 mensagens a cada 10 minutos por telefone. `POST /api/whatsapp/groups/inbound` usa o mesmo token e também fica fora do checkout token. A moderação nasce desligada.
 - `GET /api/security/checkout-token` → HMAC. O segredo vem só de `CHECKOUT_TOKEN_SECRET`, com pelo menos 32 caracteres. Sem isso, a emissão e o write que exige token respondem 503. Não há segredo embutido.
 - Writes exigem `x-checkout-token`, com duas exceções: Bearer de sessão de cliente ou de admin conferida no banco; `POST /api/orders` com origem oficial vazia ou permitida. Header `Authorization` inválido não entra na exceção e segue para o token e para o limite.
 - `ADMIN_ALLOW_QUERY_TOKEN` nasce desligado. Cookie e Bearer continuam. `true` religa `?token=` só na sessão admin.
