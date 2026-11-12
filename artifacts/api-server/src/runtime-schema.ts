@@ -1601,6 +1601,97 @@ async function ensureCheckoutDraftsTable(databaseName: string): Promise<void> {
   `);
 }
 
+async function ensureSupplierPriceTables(databaseName: string): Promise<void> {
+  if (!(await tableExists("supplier_sites", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_sites (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        base_url VARCHAR(255) NOT NULL,
+        parser_type VARCHAR(40) NOT NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_product_maps", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_product_maps (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        product_id VARCHAR(255) NULL,
+        display_name VARCHAR(255) NOT NULL,
+        image_url VARCHAR(512) NULL,
+        supplier_site_id VARCHAR(64) NOT NULL,
+        external_url VARCHAR(512) NULL,
+        external_sku VARCHAR(120) NULL,
+        units_per_pack INT NOT NULL DEFAULT 1,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY supplier_product_maps_site_idx (supplier_site_id)
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_price_snapshots", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_price_snapshots (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        map_id VARCHAR(64) NOT NULL,
+        price_usd DECIMAL(12,2) NULL,
+        local_price DECIMAL(12,2) NULL,
+        local_currency VARCHAR(8) NULL,
+        quantity_tiers JSON NULL,
+        stock_qty INT NULL,
+        availability VARCHAR(32) NULL,
+        read_name VARCHAR(255) NULL,
+        read_image VARCHAR(512) NULL,
+        ok TINYINT(1) NOT NULL DEFAULT 0,
+        error_message VARCHAR(255) NULL,
+        collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY supplier_price_snapshots_map_idx (map_id)
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_catalog_items", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_catalog_items (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        site_id VARCHAR(64) NOT NULL,
+        external_url VARCHAR(512) NULL,
+        sku VARCHAR(120) NULL,
+        raw_name VARCHAR(255) NOT NULL,
+        image_url VARCHAR(512) NULL,
+        price_usd DECIMAL(12,2) NULL,
+        local_price DECIMAL(12,2) NULL,
+        local_currency VARCHAR(8) NULL,
+        stock_qty INT NULL,
+        in_stock TINYINT(1) NOT NULL DEFAULT 0,
+        fingerprint VARCHAR(80) NULL,
+        exclusion_reason VARCHAR(255) NULL,
+        collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY supplier_catalog_items_site_idx (site_id),
+        KEY supplier_catalog_items_fp_idx (fingerprint)
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_equivalence_groups", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_equivalence_groups (
+        fingerprint VARCHAR(80) NOT NULL PRIMARY KEY,
+        display_name VARCHAR(255) NOT NULL,
+        confidence DECIMAL(4,2) NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'auto',
+        pinned TINYINT(1) NOT NULL DEFAULT 0,
+        merged_into VARCHAR(80) NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  const { seedSupplierPrices } = await import("./lib/supplier-price-seed");
+  await seedSupplierPrices();
+}
+
 async function ensurePixSecretBinding(databaseName: string): Promise<void> {
   if (!(await tableExists("pix_secret_transactions", databaseName))) {
     await pool.query(`
@@ -1668,6 +1759,7 @@ export async function ensureRuntimeSchema(): Promise<void> {
     await ensureCellTechAlertsTable(databaseName);
     await ensureCellTechSituationStateTable(databaseName);
     await ensurePixSecretBinding(databaseName);
+    await ensureSupplierPriceTables(databaseName);
 
     console.log("[RuntimeSchema] Schema sync completed.");
   } catch (error) {

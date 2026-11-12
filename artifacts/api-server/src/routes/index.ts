@@ -40,6 +40,7 @@ import shippingDeliveryEstimateRouter from "./shipping-delivery-estimate";
 
 import brevoRouter from "./brevo";
 import passwordResetRouter from "./password-reset";
+import supplierPricesRouter from "./supplier-prices";
 import deliveryCorrectionRouter from "./delivery-correction";
 import reportanaRouter from "./reportana";
 import envioecomRouter from "./envioecom";
@@ -78,6 +79,7 @@ router.use(marketingExpensesRouter);
 router.use(trackingRouter);
 router.use(customerAuthRouter);
 router.use(passwordResetRouter);
+router.use(supplierPricesRouter);
 router.use(deliveryCorrectionRouter);
 router.use(affiliateRouter);
 router.use(rafflesRouter);

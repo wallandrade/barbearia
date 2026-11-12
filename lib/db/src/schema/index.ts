@@ -4,6 +4,7 @@ export * from "./checkout-drafts";
 export * from "./order-shipments";
 export * from "./order-activity";
 export * from "./order-delivery-corrections";
+export * from "./supplier-prices";
 export * from "./custom-charges";
 export * from "./admin-users";
 export * from "./coupons";
