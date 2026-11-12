@@ -29,6 +29,8 @@ type Deal = {
   localCurrency: string | null;
   storeCount: number;
   gapUsd: number | null;
+  nextGapUsd: number | null;
+  tieWith: string | null;
   tied: boolean;
   collectedAt: string | null;
   url: string | null;
@@ -188,7 +190,8 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
                     {product.cheapestStore} · {moneyUsd(product.priceUsd)}
                     {moneyLocal(product.localPrice, product.localCurrency) ? ` · ${moneyLocal(product.localPrice, product.localCurrency)} no site` : ""}
                     {" · "}{product.storeCount} lojas
-                    {product.tied ? " · empate no menor preço" : product.gapUsd != null ? ` · ${moneyUsd(product.gapUsd)} acima na 2ª` : ""}
+                    {product.tieWith ? ` · empate com ${product.tieWith}` : product.gapUsd != null ? ` · ${moneyUsd(product.gapUsd)} acima na 2ª` : ""}
+                    {product.tieWith && product.nextGapUsd != null ? ` · próximo preço ${moneyUsd(product.nextGapUsd)} a mais` : ""}
                     {" · "}{when(product.collectedAt)} BRT
                   </p>
                 </div>

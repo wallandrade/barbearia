@@ -171,6 +171,8 @@ export type DealCard = {
   localCurrency: string | null;
   storeCount: number;
   gapUsd: number | null;
+  nextGapUsd: number | null;
+  tieWith: string | null;
   tied: boolean;
   collectedAt: string | null;
   url: string | null;
@@ -200,27 +202,30 @@ export function selectCheapestDeals(groups: DealGroup[], input: { seed: string; 
 }
 
 function toCard(group: DealGroup): DealCard | null {
-  const inStock = group.offers.filter((offer) => offer.inStock && offer.priceUsd != null);
-  const stores = new Set(inStock.map((offer) => offer.siteId));
-  if (stores.size < 2) return null;
-  const sorted = [...inStock].sort((a, b) => (a.priceUsd ?? 0) - (b.priceUsd ?? 0) || a.siteName.localeCompare(b.siteName, "pt-BR"));
-  const cheapest = sorted[0];
-  if (!cheapest || cheapest.priceUsd == null) return null;
-  const nextDifferent = sorted.find((offer) => offer.priceUsd != null && Math.abs(offer.priceUsd - cheapest.priceUsd!) >= 0.009);
-  const secondSame = sorted.filter((offer) => offer.priceUsd != null && Math.abs(offer.priceUsd - cheapest.priceUsd!) < 0.009);
   const ranked = rankPackage(group.offers);
+  const inStock = ranked.filter((offer) => offer.label === "ok" && offer.priceUsd != null);
+  const inStockSites = new Set(inStock.map((offer) => offer.siteId));
+  if (inStockSites.size < 2) return null;
+  const cheapest = inStock[0];
+  const second = inStock[1];
+  if (!cheapest || cheapest.priceUsd == null || !second || second.priceUsd == null) return null;
+  const cheapestPrice = cheapest.priceUsd;
+  const tied = Math.abs(second.priceUsd - cheapestPrice) < 0.009;
+  const nextDifferent = inStock.find((offer) => offer.priceUsd != null && Math.abs(offer.priceUsd - cheapestPrice) >= 0.009);
   return {
     fingerprint: group.fingerprint,
     name: group.displayName,
     image: cheapest.image || group.offers.find((offer) => offer.image)?.image || null,
     badge: group.status === "confirmed" || group.offers.some((offer) => offer.source === "manual") ? "confirmado" : "auto",
     cheapestStore: cheapest.siteName,
-    priceUsd: cheapest.priceUsd,
+    priceUsd: cheapestPrice,
     localPrice: cheapest.localPrice,
     localCurrency: cheapest.localCurrency,
-    storeCount: stores.size,
-    gapUsd: nextDifferent?.priceUsd != null ? Number((nextDifferent.priceUsd - cheapest.priceUsd).toFixed(2)) : null,
-    tied: secondSame.length > 1 && nextDifferent == null,
+    storeCount: new Set(ranked.map((offer) => offer.siteId)).size,
+    gapUsd: tied ? 0 : Number((second.priceUsd - cheapestPrice).toFixed(2)),
+    nextGapUsd: nextDifferent?.priceUsd != null ? Number((nextDifferent.priceUsd - cheapestPrice).toFixed(2)) : null,
+    tieWith: tied ? second.siteName : null,
+    tied,
     collectedAt: cheapest.collectedAt,
     url: cheapest.url,
     offers: ranked,

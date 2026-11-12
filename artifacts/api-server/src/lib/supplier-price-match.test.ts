@@ -117,6 +117,28 @@ test("comparação interna empata no mesmo preço da embalagem", () => {
   ], { seed: "2026-11-12:0" });
   assert.ok(card);
   assert.deepEqual(card!.offers.filter((offer) => offer.position != null).map((offer) => offer.position), [1, 1, 3]);
-  assert.equal(card!.gapUsd, 1);
+  assert.equal(card!.tieWith, "Farmácia Santa Rita Paraguai");
+  assert.equal(card!.gapUsd, 0);
+  assert.equal(card!.nextGapUsd, 1);
   assert.equal(card!.storeCount, 3);
+});
+
+test("a linha conta todas as lojas da comparação e o empate cita a 2ª", () => {
+  const base = group("tg|15|mg|4|frasco", 84, 84);
+  const [card] = selectCheapestDeals([{
+    ...base,
+    displayName: "TG 15 mg 4 frascos",
+    offers: [
+      { ...base.offers[0], siteId: "dili", siteName: "Dili Farma", priceUsd: 84 },
+      { ...base.offers[1], siteId: "santa", siteName: "Farmácia Santa Rita Paraguai", priceUsd: 84 },
+      { ...base.offers[0], siteId: "brasil", siteName: "Atacado Brasil PY", url: "https://brasil.example", priceUsd: 85 },
+      { ...base.offers[0], siteId: "by", siteName: "ByPharmacon", url: "https://by.example", priceUsd: 85 },
+      { ...base.offers[0], siteId: "fit", siteName: "Farma.fit", url: "https://fit.example", priceUsd: 115 },
+    ],
+  }], { seed: "2026-11-12:0" });
+  assert.equal(card?.offers.length, 5);
+  assert.equal(card?.storeCount, 5);
+  assert.equal(card?.tieWith, "Farmácia Santa Rita Paraguai");
+  assert.equal(card?.gapUsd, 0);
+  assert.equal(card?.nextGapUsd, 1);
 });
