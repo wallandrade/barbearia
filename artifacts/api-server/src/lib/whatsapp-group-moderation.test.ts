@@ -112,14 +112,28 @@ test("admin, loja e allowlist não são punidos", () => {
   assert.equal(moderationSwitchOn("", "1"), true);
 });
 
-test("só os grupos Yuri imports, pelo id ou pelo nome", () => {
-  assert.equal(groupNameMatches("Yuri imports 7"), true);
-  assert.equal(groupNameMatches("  YURI IMPORTS "), true);
-  assert.equal(groupNameMatches("Outro grupo"), false);
-  assert.equal(groupIsWatched("120363370084115387-group", "Qualquer", []), false);
-  assert.equal(groupIsWatched("120363370084115387-group", "Yuri imports 5", []), true);
-  assert.equal(groupIsWatched("120363370084115387-group", "Outro", ["120363370084115387-group"]), true);
-  assert.equal(groupIsWatched("outro-group", "Yuri imports 1", ["120363370084115387-group"]), false);
+test("só os grupos Yuri imports 1 a 7, pelo nome exato ou pelo ID sem nome", () => {
+  for (let number = 1; number <= 7; number += 1) {
+    assert.equal(groupNameMatches(`Yuri imports ${number}`), true);
+    assert.equal(groupIsWatched("qualquer-id", `Yuri imports ${number}`, []), true);
+  }
+  assert.equal(groupNameMatches("  YURI IMPORTS 3 "), true);
+  assert.equal(groupNameMatches("Yuri imports"), false);
+  assert.equal(groupNameMatches("Yuri imports 8"), false);
+  assert.equal(groupNameMatches("Yuri imports extra"), false);
+  assert.equal(groupIsWatched("120363370084115387-group", "", ["120363370084115387-group"]), true);
+  assert.equal(groupIsWatched("120363370084115387-group", "", []), false);
+});
+
+test("Cell Tech e qualquer outro grupo são ignorados", () => {
+  const cellId = "120363000000000000-group";
+  assert.equal(groupNameMatches("Cell Tech - Grupo"), false);
+  assert.equal(groupNameMatches("Cell Tech"), false);
+  assert.equal(groupIsWatched(cellId, "Cell Tech - Grupo", [cellId]), false);
+  assert.equal(groupIsWatched(cellId, "Cell Tech", []), false);
+  assert.equal(groupIsWatched("familia-group", "Família", ["familia-group"]), false);
+  assert.equal(groupIsWatched("outro-group", "Outro grupo", []), false);
+  assert.equal(groupIsWatched("120363370084115387-group", "Yuri imports 8", ["120363370084115387-group"]), false);
 });
 
 test("webhook de grupo e metadata dos admins", () => {

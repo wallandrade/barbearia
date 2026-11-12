@@ -1,7 +1,7 @@
 import { mysqlAffectedRows } from "./mysql-affected-rows";
 
 /**
- * Moderação dos grupos "Yuri imports". Nasce desligada.
+ * Moderação só dos grupos "Yuri imports 1" a "Yuri imports 7". Nasce desligada.
  * Liga com WHATSAPP_GROUP_MODERATION_ENABLED=1 ou a setting whatsapp_group_moderation_enabled=1.
  * Não envia mensagem no grupo. Apaga para todos e remove o participante.
  * Z-API: DELETE /messages?messageId&phone&owner=false e POST /remove-participant { groupId, phones }.
@@ -15,7 +15,6 @@ export const GROUP_MODERATION_LINK_HOSTS_SETTING = "whatsapp_group_moderation_li
 export const GROUP_MODERATION_STORE_PHONE_SETTING = "whatsapp_group_moderation_store_phone";
 
 export const GROUP_MODERATION_STORE_PHONE = "5535999768759";
-export const GROUP_MODERATION_NAME_PREFIX = "yuri imports";
 export const GROUP_MODERATION_REPEAT_COUNT = 4;
 export const GROUP_MODERATION_REPEAT_WINDOW_MS = 10 * 60 * 1000;
 export const GROUP_MODERATION_FLOOD_COUNT = 8;
@@ -74,6 +73,7 @@ export function phonesMatch(left: string, right: string): boolean {
   return size >= 10 && (a.endsWith(b) || b.endsWith(a));
 }
 
+/** Nome exato "Yuri imports N", com N de 1 a 7. Outro nome não entra. */
 export function groupNameMatches(name: string): boolean {
   const folded = name
     .normalize("NFD")
@@ -81,13 +81,19 @@ export function groupNameMatches(name: string): boolean {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
-  return folded === GROUP_MODERATION_NAME_PREFIX || folded.startsWith(`${GROUP_MODERATION_NAME_PREFIX} `);
+  return /^yuri imports [1-7]$/.test(folded);
 }
 
+/**
+ * Só os grupos Yuri imports 1 a 7.
+ * Com nome, vale o nome exato. Sem nome, vale só um ID da allowlist.
+ * Cell Tech e qualquer outro nome ficam de fora, mesmo se o ID estiver na lista.
+ */
 export function groupIsWatched(groupId: string, groupName: string, configuredIds: readonly string[]): boolean {
-  const ids = configuredIds.map((id) => id.trim()).filter(Boolean);
-  if (ids.length > 0) return ids.some((id) => id === groupId.trim());
-  return groupNameMatches(groupName);
+  if (groupName.trim()) return groupNameMatches(groupName);
+  const id = groupId.trim();
+  if (!id) return false;
+  return configuredIds.some((item) => item.trim() === id);
 }
 
 function pushText(parts: string[], value: unknown): void {
