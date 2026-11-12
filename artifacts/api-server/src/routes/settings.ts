@@ -92,6 +92,7 @@ const ALLOWED_KEYS = [
   "supplier_price_collect_enabled",
   "supplier_price_collect_interval_hours",
   "supplier_price_draw_offset",
+  "supplier_price_sales_window_days",
   "n8n_whatsapp_support_token",
   ...POLY_N8N_SETTING_KEYS,
   WHATSAPP_SUPPORT_MENU_SETTING,

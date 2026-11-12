@@ -11,9 +11,10 @@ import {
   supplierSitesTable,
 } from "@workspace/db";
 import { requireAdminAuth } from "./admin-auth";
-import { collectSupplierPrices } from "../lib/supplier-price-collect";
-import { groupCatalogOffers, selectCheapestDeals } from "../lib/supplier-price-match";
+import { collectSupplierPrices, loadBestsellerRanking } from "../lib/supplier-price-collect";
+import { groupCatalogOffers } from "../lib/supplier-price-match";
 import { rankSupplierOffers, type RankedOfferInput } from "../lib/supplier-price-rank";
+import { attachBestsellers } from "../lib/supplier-price-sales";
 
 const router: IRouter = Router();
 
@@ -182,16 +183,6 @@ router.get("/admin/supplier-prices/ranking", requireAdminAuth, async (_req, res)
   res.json({ products });
 });
 
-function todayKey(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-}
-
-async function drawOffset(): Promise<number> {
-  const [row] = await db.select({ value: siteSettingsTable.value }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "supplier_price_draw_offset")).limit(1);
-  const value = Number(row?.value || 0);
-  return Number.isFinite(value) ? value : 0;
-}
-
 async function dealsPayload() {
   const [sites, items, maps, groups, snapshots] = await Promise.all([
     db.select().from(supplierSitesTable),
@@ -248,26 +239,16 @@ async function dealsPayload() {
       mergedInto: group.mergedInto,
     })),
   });
-  const offset = await drawOffset();
+  const sales = await loadBestsellerRanking();
   return {
-    seed: `${todayKey()}:${offset}`,
-    products: selectCheapestDeals(grouped, { seed: `${todayKey()}:${offset}`, limit: 10 }),
+    windowDays: sales.windowDays,
+    usedFullHistory: sales.usedFullHistory,
+    products: attachBestsellers({ bestsellers: sales.products, groups: grouped }),
     excluded: items.filter((item) => item.exclusionReason).length,
   };
 }
 
 router.get("/admin/supplier-prices/deals", requireAdminAuth, async (_req, res) => {
-  res.json(await dealsPayload());
-});
-
-router.post("/admin/supplier-prices/redraw", requireAdminAuth, async (_req, res) => {
-  const next = (await drawOffset()) + 1;
-  const [row] = await db.select({ key: siteSettingsTable.key }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "supplier_price_draw_offset")).limit(1);
-  if (row) {
-    await db.update(siteSettingsTable).set({ value: String(next), updatedAt: new Date() }).where(eq(siteSettingsTable.key, "supplier_price_draw_offset"));
-  } else {
-    await db.insert(siteSettingsTable).values({ key: "supplier_price_draw_offset", value: String(next) });
-  }
   res.json(await dealsPayload());
 });
 

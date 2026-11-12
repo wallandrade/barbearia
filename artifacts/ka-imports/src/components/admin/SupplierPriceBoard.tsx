@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ExternalLink, Loader2, RefreshCw, Shuffle } from "lucide-react";
+import { ChevronDown, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -19,10 +19,13 @@ type Compared = {
 };
 
 type Deal = {
-  fingerprint: string;
+  rank: number;
+  productId: string | null;
   name: string;
   image: string | null;
-  badge: "auto" | "confirmado";
+  soldQty: number;
+  fingerprint: string | null;
+  found: boolean;
   cheapestStore: string | null;
   priceUsd: number | null;
   localPrice: number | null;
@@ -31,9 +34,9 @@ type Deal = {
   gapUsd: number | null;
   nextGapUsd: number | null;
   tieWith: string | null;
-  tied: boolean;
   collectedAt: string | null;
   url: string | null;
+  badge: "auto" | "confirmado" | null;
   offers: Compared[];
 };
 
@@ -109,23 +112,6 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
     }
   }
 
-  async function redraw() {
-    setBusy(true);
-    try {
-      const res = await fetch(`${BASE}/api/admin/supplier-prices/redraw`, { method: "POST", headers: headersRef.current });
-      const data = await res.json() as { products?: Deal[] };
-      if (!res.ok) {
-        toast.error("Não foi possível sortear.");
-        return;
-      }
-      setProducts(data.products || []);
-    } catch {
-      toast.error("Não foi possível sortear.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function decide(fingerprint: string, action: string) {
     await fetch(`${BASE}/api/admin/supplier-prices/groups`, {
       method: "POST",
@@ -159,14 +145,11 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
     <section className="bg-white rounded-2xl border border-border/60 shadow-sm p-5 mb-6">
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div>
-          <h2 className="text-sm font-bold text-foreground">Mais barato hoje — top 10</h2>
-          <p className="text-xs text-muted-foreground">Só consulta. Produto igual em pelo menos duas lojas. Anabolizante não entra.</p>
+          <h2 className="text-sm font-bold text-foreground">Seus 10 mais vendidos — onde está mais barato hoje</h2>
+          <p className="text-xs text-muted-foreground">Só pedidos pagos. Só consulta. Anabolizante não entra.</p>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
           <button type="button" onClick={() => setFormOpen((value) => !value)} className="h-9 px-3 rounded-xl border border-border text-xs font-semibold">Vínculos</button>
-          <button type="button" onClick={() => void redraw()} disabled={busy} className="h-9 px-3 rounded-xl border border-border text-xs font-semibold inline-flex items-center gap-1">
-            <Shuffle className="w-3.5 h-3.5" /> Sortear outros 10
-          </button>
           <button type="button" onClick={() => void refreshNow()} disabled={busy} className="h-9 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-60">
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Atualizar agora
           </button>
@@ -174,37 +157,46 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
       </div>
 
       {loading ? <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div> : products.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Ainda não há produto comparado em duas lojas. Use Atualizar agora.</p>
+        <p className="text-sm text-muted-foreground">Nenhuma venda paga no período. Use Atualizar agora depois que houver pedidos.</p>
       ) : (
         <ul className="divide-y divide-border rounded-2xl border border-border">
           {products.map((product) => (
-            <li key={product.fingerprint}>
-              <button type="button" onClick={() => setOpen(open === product.fingerprint ? null : product.fingerprint)} className="w-full text-left px-3 py-3 flex gap-3 items-start">
+            <li key={`${product.productId || product.name}-${product.rank}`}>
+              <button type="button" onClick={() => setOpen(open === String(product.rank) ? null : String(product.rank))} className="w-full text-left px-3 py-3 flex gap-3 items-start">
+                <span className="font-bold text-sm w-5 pt-3">{product.rank}</span>
                 {product.image ? <img src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover bg-muted" /> : <div className="h-12 w-12 rounded-xl bg-muted" />}
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-sm">{product.name}</span>
-                    <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full ${product.badge === "confirmado" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{product.badge}</span>
+                    <span className="text-xs text-muted-foreground">{product.soldQty} vendidos</span>
+                    {product.badge ? <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full ${product.badge === "confirmado" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{product.badge}</span> : null}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {product.cheapestStore} · {moneyUsd(product.priceUsd)}
-                    {moneyLocal(product.localPrice, product.localCurrency) ? ` · ${moneyLocal(product.localPrice, product.localCurrency)} no site` : ""}
-                    {" · "}{product.storeCount} lojas
-                    {product.tieWith ? ` · empate com ${product.tieWith}` : product.gapUsd != null ? ` · ${moneyUsd(product.gapUsd)} acima na 2ª` : ""}
-                    {product.tieWith && product.nextGapUsd != null ? ` · próximo preço ${moneyUsd(product.nextGapUsd)} a mais` : ""}
-                    {" · "}{when(product.collectedAt)} BRT
-                  </p>
+                  {product.found ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {product.cheapestStore} · {moneyUsd(product.priceUsd)}
+                      {moneyLocal(product.localPrice, product.localCurrency) ? ` · ${moneyLocal(product.localPrice, product.localCurrency)} no site` : ""}
+                      {" · "}{product.storeCount} lojas
+                      {product.tieWith ? ` · empate com ${product.tieWith}` : product.gapUsd != null ? ` · ${moneyUsd(product.gapUsd)} acima na 2ª` : ""}
+                      {product.tieWith && product.nextGapUsd != null ? ` · próximo preço ${moneyUsd(product.nextGapUsd)} a mais` : ""}
+                      {" · "}{when(product.collectedAt)} BRT
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-700 mt-1">não encontrado nos fornecedores</p>
+                  )}
                 </div>
-                <ChevronDown className={`w-4 h-4 mt-1 ${open === product.fingerprint ? "rotate-180" : ""}`} />
+                <ChevronDown className={`w-4 h-4 mt-1 ${open === String(product.rank) ? "rotate-180" : ""}`} />
               </button>
-              {open === product.fingerprint ? (
+              {open === String(product.rank) ? (
                 <div className="px-3 pb-3 space-y-2">
-                  {product.url ? <a href={product.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">Abrir a mais barata <ExternalLink className="w-3 h-3" /></a> : null}
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint, "confirm")}>Confirmar</button>
-                    <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint, "reject")}>Rejeitar</button>
-                    <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint, "pin")}>Fixar</button>
-                  </div>
+                  {product.found && product.url ? <a href={product.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">Abrir a mais barata <ExternalLink className="w-3 h-3" /></a> : (
+                    <button type="button" className="text-xs underline" onClick={() => { setForm({ ...form, displayName: product.name }); setFormOpen(true); }}>Vincular manualmente</button>
+                  )}
+                  {product.fingerprint ? (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint || "", "confirm")}>Confirmar</button>
+                      <button type="button" className="text-xs underline" onClick={() => void decide(product.fingerprint || "", "reject")}>Rejeitar</button>
+                    </div>
+                  ) : null}
                   <ul className="space-y-1">
                     {product.offers.map((offer) => (
                       <li key={`${offer.siteId}-${offer.url}`} className="rounded-xl bg-muted/40 px-3 py-2 text-sm flex flex-wrap gap-x-3">

@@ -1,13 +1,17 @@
 import crypto from "crypto";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import {
   db,
+  ordersTable,
+  productsTable,
+  siteSettingsTable,
   supplierCatalogItemsTable,
   supplierEquivalenceGroupsTable,
   supplierPriceSnapshotsTable,
   supplierProductMapsTable,
   supplierSitesTable,
 } from "@workspace/db";
+import { rankStoreBestsellers, supplierSearchUrl } from "./supplier-price-sales";
 import {
   atacadoBrasilUrlAllowed,
   parseSupplierPage,
@@ -71,6 +75,35 @@ export function collectSupplierPrices(fetchImpl: FetchImpl = fetch): Promise<{ c
   return collecting;
 }
 
+export async function loadBestsellerRanking() {
+  const [setting] = await db.select({ value: siteSettingsTable.value }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "supplier_price_sales_window_days")).limit(1);
+  const days = Number(setting?.value || 30);
+  const windowDays = Number.isFinite(days) && days > 0 ? Math.min(365, Math.round(days)) : 30;
+  const orders = await db.select({
+    status: ordersTable.status,
+    createdAt: ordersTable.createdAt,
+    parentOrderId: ordersTable.parentOrderId,
+    products: ordersTable.products,
+  }).from(ordersTable).where(inArray(ordersTable.status, ["paid", "completed"]));
+  const ranked = rankStoreBestsellers(orders.map((order) => ({
+    status: order.status,
+    createdAt: order.createdAt,
+    parentOrderId: order.parentOrderId,
+    products: order.products as never,
+  })), { now: new Date(), windowDays });
+  const ids = ranked.products.map((item) => item.productId).filter((id): id is string => Boolean(id));
+  if (!ids.length) return ranked;
+  const photos = await db.select({ id: productsTable.id, image: productsTable.image }).from(productsTable).where(inArray(productsTable.id, ids));
+  const photoById = new Map(photos.map((row) => [row.id, row.image]));
+  return {
+    ...ranked,
+    products: ranked.products.map((item) => ({
+      ...item,
+      image: item.image || (item.productId ? photoById.get(item.productId) || null : null),
+    })),
+  };
+}
+
 async function runCollect(fetchImpl: FetchImpl): Promise<{ collected: number; failed: number }> {
   const sites = await db.select().from(supplierSitesTable);
   const maps = await db.select().from(supplierProductMapsTable);
@@ -78,6 +111,8 @@ async function runCollect(fetchImpl: FetchImpl): Promise<{ collected: number; fa
   let collected = 0;
   let failed = 0;
   const catalogCache = new Map<string, { status: number; body: string; error?: string }>();
+  const sales = await loadBestsellerRanking().catch(() => ({ products: [] as Array<{ name: string }> }));
+  const names = sales.products.map((item) => item.name);
   await Promise.all(activeSites.map(async (site) => {
     const siteMaps = maps.filter((map) => map.active && map.supplierSiteId === site.id);
     for (const map of siteMaps) {
@@ -120,7 +155,7 @@ async function runCollect(fetchImpl: FetchImpl): Promise<{ collected: number; fa
       if (parsed.ok && parsed.priceUsd != null) collected += 1;
       else failed += 1;
     }
-    await rememberCatalog(site, maps.filter((map) => map.supplierSiteId === site.id), fetchImpl);
+    await rememberCatalog(site, maps.filter((map) => map.supplierSiteId === site.id), names, fetchImpl);
   }));
   return { collected, failed };
 }
@@ -140,13 +175,18 @@ async function pool<T>(items: T[], limit: number, worker: (item: T) => Promise<v
 async function rememberCatalog(
   site: { id: string; baseUrl: string; parserType: string },
   maps: Array<{ externalUrl: string | null }>,
+  names: string[],
   fetchImpl: FetchImpl,
 ): Promise<void> {
   if (site.parserType === "unsupported") return;
   const base = site.baseUrl.replace(/\/+$/, "");
+  const searches = names
+    .map((name) => supplierSearchUrl(site.parserType, base, name))
+    .filter((url): url is string => Boolean(url))
+    .filter((url) => site.parserType === "woocommerce_store" || site.parserType === "bypharmacon_catalog" || !url.includes("/api/"));
   let urls: string[] = [];
   if (site.parserType === "woocommerce_store") {
-    urls = [1, 2].map((page) => `${base}/wp-json/wc/store/products?per_page=50&page=${page}`);
+    urls = [...searches];
   } else if (site.parserType === "bypharmacon_catalog") {
     urls = [`${base}/api/catalog`];
   } else {
@@ -154,7 +194,7 @@ async function rememberCatalog(
     const sitemap = await readBody(`${base}/sitemap.xml`, fetchImpl);
     const fromSitemap = sitemap.body ? sitemapProductUrls(sitemap.body, host) : [];
     const manual = maps.map((map) => String(map.externalUrl || "")).filter((url) => url && (site.parserType !== "atacadobrasil_html" || atacadoBrasilUrlAllowed(url)));
-    urls = [...new Set([...manual, ...fromSitemap])].slice(0, 12);
+    urls = [...new Set([...searches, ...manual, ...fromSitemap])].filter((url) => !url.includes("atacadobrasilpy.com/api/")).slice(0, 16);
   }
   const rows: CatalogRow[] = [];
   await pool(urls, 2, async (url) => {
