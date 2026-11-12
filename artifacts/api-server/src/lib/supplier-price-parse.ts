@@ -1,3 +1,5 @@
+import { identifySupplierProduct, type ProductIdentity } from "./supplier-price-match";
+
 export const SUPPLIER_PRICE_USER_AGENT = "YuryImportsSupplierPriceBot/1.0 (+https://www.yury-imports.com)";
 export const SUPPLIER_PRICE_TIMEOUT_MS = 20_000;
 
@@ -302,4 +304,159 @@ export function parseSupplierPage(input: {
   if (input.parserType === "json_ld") return parseJsonLdProduct(input.body, input.url || null);
   if (input.parserType === "atacadobrasil_html") return parseAtacadoBrasilHtml(input.body, input.url || null);
   return { ok: false, error: "Parser não suportado." };
+}
+
+export type CatalogRow = {
+  rawName: string;
+  url: string | null;
+  sku: string | null;
+  priceUsd: number | null;
+  localPrice: number | null;
+  localCurrency: string | null;
+  image: string | null;
+  inStock: boolean;
+  stockQty: number | null;
+  identity: ProductIdentity | null;
+  exclusionReason: string | null;
+};
+
+function rowFromIdentity(input: {
+  name: string;
+  extra?: string | null;
+  category?: string | null;
+  url: string | null;
+  sku: string | null;
+  priceUsd: number | null;
+  localPrice: number | null;
+  localCurrency: string | null;
+  image: string | null;
+  inStock: boolean;
+  stockQty: number | null;
+}): CatalogRow | null {
+  const identity = identifySupplierProduct(input.name, input.extra, input.category);
+  if (!identity.ok && identity.reason !== "anabolizante") return null;
+  return {
+    rawName: input.name.slice(0, 255),
+    url: input.url,
+    sku: input.sku,
+    priceUsd: input.priceUsd,
+    localPrice: input.localPrice,
+    localCurrency: input.localCurrency,
+    image: input.image,
+    inStock: input.inStock,
+    stockQty: input.stockQty,
+    identity: identity.ok ? identity.identity : null,
+    exclusionReason: identity.ok ? null : identity.detail,
+  };
+}
+
+export function readCatalogItems(parserType: string, body: string, pageUrl: string | null): CatalogRow[] {
+  if (parserType === "woocommerce_store") {
+    let items: WooProduct[] = [];
+    try {
+      const parsed = JSON.parse(body) as unknown;
+      items = Array.isArray(parsed) ? parsed as WooProduct[] : [];
+    } catch {
+      return [];
+    }
+    return items.flatMap((item) => {
+      const categories = Array.isArray((item as WooProduct & { categories?: Array<{ name?: string }> }).categories)
+        ? (item as WooProduct & { categories?: Array<{ name?: string }> }).categories!.map((category) => category.name || "").join(" ")
+        : "";
+      const money = wooPrice(item.prices);
+      const found = rowFromIdentity({
+        name: decode(String(item.name || "")),
+        extra: decode(`${item.short_description || ""} ${item.description || ""}`),
+        category: categories,
+        url: item.permalink || null,
+        sku: item.sku || null,
+        priceUsd: money.currency && money.currency !== "USD" ? null : money.amount,
+        localPrice: null,
+        localCurrency: null,
+        image: item.images?.[0]?.src || null,
+        inStock: Boolean(item.is_in_stock),
+        stockQty: null,
+      });
+      return found ? [found] : [];
+    });
+  }
+  if (parserType === "bypharmacon_catalog") {
+    let products: Array<Record<string, unknown>> = [];
+    try {
+      products = (JSON.parse(body) as { products?: Array<Record<string, unknown>> }).products || [];
+    } catch {
+      return [];
+    }
+    return products.flatMap((product) => {
+      const handle = String(product.handle || "");
+      const found = rowFromIdentity({
+        name: String(product.name || ""),
+        extra: `${product.brand || ""} ${product.description || ""} ${product.group || ""}`,
+        category: String(product.group || product.category || ""),
+        url: handle ? `https://bypharmacon.com/produtos/${handle}` : null,
+        sku: product.sku == null ? null : String(product.sku),
+        priceUsd: product.priceRetail == null ? null : Number(product.priceRetail),
+        localPrice: null,
+        localCurrency: null,
+        image: Array.isArray(product.images) && typeof product.images[0] === "string" ? product.images[0] : null,
+        inStock: Boolean(product.inStock),
+        stockQty: product.stock == null ? null : Number(product.stock),
+      });
+      return found ? [found] : [];
+    });
+  }
+  if (parserType === "json_ld" || parserType === "atacadobrasil_html") {
+    const parsed = parserType === "json_ld" ? parseJsonLdProduct(body, pageUrl) : parseAtacadoBrasilHtml(body, pageUrl);
+    if (!parsed.ok) {
+      const blocked = identifySupplierProduct(body.slice(0, 500));
+      if (!blocked.ok && blocked.reason === "anabolizante") {
+        return [{
+          rawName: "bloqueado",
+          url: pageUrl,
+          sku: null,
+          priceUsd: null,
+          localPrice: null,
+          localCurrency: null,
+          image: null,
+          inStock: false,
+          stockQty: null,
+          identity: null,
+          exclusionReason: blocked.detail,
+        }];
+      }
+      return [];
+    }
+    const found = rowFromIdentity({
+      name: parsed.name,
+      extra: body.replace(/<[^>]+>/g, " ").slice(0, 2000),
+      url: parsed.url,
+      sku: parsed.sku,
+      priceUsd: parsed.priceUsd,
+      localPrice: parsed.localPrice,
+      localCurrency: parsed.localCurrency,
+      image: parsed.image,
+      inStock: parsed.inStock,
+      stockQty: parsed.stockQty,
+    });
+    return found ? [found] : [];
+  }
+  return [];
+}
+
+export function sitemapProductUrls(xml: string, hostname: string): string[] {
+  const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/gi)].map((match) => match[1].trim());
+  const found: string[] = [];
+  for (const url of urls) {
+    try {
+      const parsed = new URL(url);
+      if (!parsed.hostname.endsWith(hostname.replace(/^www\./, "")) && parsed.hostname !== hostname) continue;
+      if (parsed.pathname.startsWith("/api/")) continue;
+      if (!/\/produto\/|\/p\/|\/product\//.test(parsed.pathname)) continue;
+      found.push(parsed.toString());
+    } catch {
+      // ignora
+    }
+    if (found.length >= 12) break;
+  }
+  return found;
 }

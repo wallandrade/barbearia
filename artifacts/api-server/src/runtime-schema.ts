@@ -1653,6 +1653,41 @@ async function ensureSupplierPriceTables(databaseName: string): Promise<void> {
       )
     `);
   }
+  if (!(await tableExists("supplier_catalog_items", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_catalog_items (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        site_id VARCHAR(64) NOT NULL,
+        external_url VARCHAR(512) NULL,
+        sku VARCHAR(120) NULL,
+        raw_name VARCHAR(255) NOT NULL,
+        image_url VARCHAR(512) NULL,
+        price_usd DECIMAL(12,2) NULL,
+        local_price DECIMAL(12,2) NULL,
+        local_currency VARCHAR(8) NULL,
+        stock_qty INT NULL,
+        in_stock TINYINT(1) NOT NULL DEFAULT 0,
+        fingerprint VARCHAR(80) NULL,
+        exclusion_reason VARCHAR(255) NULL,
+        collected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY supplier_catalog_items_site_idx (site_id),
+        KEY supplier_catalog_items_fp_idx (fingerprint)
+      )
+    `);
+  }
+  if (!(await tableExists("supplier_equivalence_groups", databaseName))) {
+    await pool.query(`
+      CREATE TABLE supplier_equivalence_groups (
+        fingerprint VARCHAR(80) NOT NULL PRIMARY KEY,
+        display_name VARCHAR(255) NOT NULL,
+        confidence DECIMAL(4,2) NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'auto',
+        pinned TINYINT(1) NOT NULL DEFAULT 0,
+        merged_into VARCHAR(80) NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
   const { seedSupplierPrices } = await import("./lib/supplier-price-seed");
   await seedSupplierPrices();
 }

@@ -3,12 +3,16 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import {
   db,
+  siteSettingsTable,
+  supplierCatalogItemsTable,
+  supplierEquivalenceGroupsTable,
   supplierPriceSnapshotsTable,
   supplierProductMapsTable,
   supplierSitesTable,
 } from "@workspace/db";
 import { requireAdminAuth } from "./admin-auth";
 import { collectSupplierPrices } from "../lib/supplier-price-collect";
+import { groupCatalogOffers, selectCheapestDeals } from "../lib/supplier-price-match";
 import { rankSupplierOffers, type RankedOfferInput } from "../lib/supplier-price-rank";
 
 const router: IRouter = Router();
@@ -176,6 +180,129 @@ router.get("/admin/supplier-prices/ranking", requireAdminAuth, async (_req, res)
     offers: rankSupplierOffers(group.offers),
   }));
   res.json({ products });
+});
+
+function todayKey(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+async function drawOffset(): Promise<number> {
+  const [row] = await db.select({ value: siteSettingsTable.value }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "supplier_price_draw_offset")).limit(1);
+  const value = Number(row?.value || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+async function dealsPayload() {
+  const [sites, items, maps, groups, snapshots] = await Promise.all([
+    db.select().from(supplierSitesTable),
+    db.select().from(supplierCatalogItemsTable),
+    db.select().from(supplierProductMapsTable),
+    db.select().from(supplierEquivalenceGroupsTable),
+    db.select().from(supplierPriceSnapshotsTable),
+  ]);
+  const siteName = new Map(sites.map((site) => [site.id, site.name]));
+  const latestByMap = new Map<string, (typeof snapshots)[number]>();
+  for (const snap of snapshots) {
+    const current = latestByMap.get(snap.mapId);
+    if (!current || new Date(snap.collectedAt).getTime() > new Date(current.collectedAt).getTime()) latestByMap.set(snap.mapId, snap);
+  }
+  const grouped = groupCatalogOffers({
+    items: items.map((item) => ({
+      siteId: item.siteId,
+      siteName: siteName.get(item.siteId) || item.siteId,
+      url: item.externalUrl,
+      sku: item.sku,
+      rawName: item.rawName,
+      image: item.imageUrl,
+      priceUsd: item.priceUsd != null ? Number(item.priceUsd) : null,
+      localPrice: item.localPrice != null ? Number(item.localPrice) : null,
+      localCurrency: item.localCurrency,
+      inStock: item.inStock,
+      fingerprint: item.fingerprint,
+      exclusionReason: item.exclusionReason,
+      collectedAt: item.collectedAt ? new Date(item.collectedAt).toISOString() : null,
+    })),
+    maps: maps.map((map) => {
+      const snap = latestByMap.get(map.id);
+      return {
+        siteId: map.supplierSiteId,
+        siteName: siteName.get(map.supplierSiteId) || map.supplierSiteId,
+        url: map.externalUrl,
+        sku: map.externalSku,
+        displayName: map.displayName,
+        image: map.imageUrl,
+        priceUsd: snap?.priceUsd != null ? Number(snap.priceUsd) : null,
+        localPrice: snap?.localPrice != null ? Number(snap.localPrice) : null,
+        localCurrency: snap?.localCurrency || null,
+        inStock: snap?.availability === "in_stock",
+        collectedAt: snap?.collectedAt ? new Date(snap.collectedAt).toISOString() : null,
+        active: map.active,
+      };
+    }),
+    saved: groups.map((group) => ({
+      fingerprint: group.fingerprint,
+      displayName: group.displayName,
+      confidence: Number(group.confidence),
+      status: group.status === "confirmed" || group.status === "rejected" ? group.status : "auto",
+      pinned: group.pinned,
+      mergedInto: group.mergedInto,
+    })),
+  });
+  const offset = await drawOffset();
+  return {
+    seed: `${todayKey()}:${offset}`,
+    products: selectCheapestDeals(grouped, { seed: `${todayKey()}:${offset}`, limit: 10 }),
+    excluded: items.filter((item) => item.exclusionReason).length,
+  };
+}
+
+router.get("/admin/supplier-prices/deals", requireAdminAuth, async (_req, res) => {
+  res.json(await dealsPayload());
+});
+
+router.post("/admin/supplier-prices/redraw", requireAdminAuth, async (_req, res) => {
+  const next = (await drawOffset()) + 1;
+  const [row] = await db.select({ key: siteSettingsTable.key }).from(siteSettingsTable).where(eq(siteSettingsTable.key, "supplier_price_draw_offset")).limit(1);
+  if (row) {
+    await db.update(siteSettingsTable).set({ value: String(next), updatedAt: new Date() }).where(eq(siteSettingsTable.key, "supplier_price_draw_offset"));
+  } else {
+    await db.insert(siteSettingsTable).values({ key: "supplier_price_draw_offset", value: String(next) });
+  }
+  res.json(await dealsPayload());
+});
+
+router.post("/admin/supplier-prices/groups", requireAdminAuth, async (req, res) => {
+  const fingerprint = String(req.body?.fingerprint || "").trim();
+  const action = String(req.body?.action || "").trim();
+  if (!fingerprint) {
+    res.status(400).json({ error: "INVALID_INPUT", message: "Informe o grupo." });
+    return;
+  }
+  const [existing] = await db.select().from(supplierEquivalenceGroupsTable).where(eq(supplierEquivalenceGroupsTable.fingerprint, fingerprint)).limit(1);
+  const now = new Date();
+  const patch: Partial<typeof supplierEquivalenceGroupsTable.$inferInsert> = { updatedAt: now };
+  if (action === "confirm") patch.status = "confirmed";
+  else if (action === "reject") patch.status = "rejected";
+  else if (action === "pin") patch.pinned = true;
+  else if (action === "unpin") patch.pinned = false;
+  else if (action === "merge") patch.mergedInto = String(req.body?.into || "").trim() || null;
+  else {
+    res.status(400).json({ error: "INVALID_INPUT", message: "Ação inválida." });
+    return;
+  }
+  if (!existing) {
+    await db.insert(supplierEquivalenceGroupsTable).values({
+      fingerprint,
+      displayName: String(req.body?.displayName || fingerprint).slice(0, 255),
+      confidence: "1.00",
+      status: patch.status || "auto",
+      pinned: Boolean(patch.pinned),
+      mergedInto: patch.mergedInto || null,
+    });
+  } else {
+    await db.update(supplierEquivalenceGroupsTable).set(patch).where(eq(supplierEquivalenceGroupsTable.fingerprint, fingerprint));
+  }
+  res.json(await dealsPayload());
 });
 
 export default router;

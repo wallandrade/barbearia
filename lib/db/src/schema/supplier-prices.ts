@@ -41,6 +41,35 @@ export const supplierPriceSnapshotsTable = mysqlTable("supplier_price_snapshots"
   collectedAt: timestamp("collected_at").notNull().defaultNow(),
 });
 
+/** Produto lido no catálogo. Não vira produto da loja. */
+export const supplierCatalogItemsTable = mysqlTable("supplier_catalog_items", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  siteId: varchar("site_id", { length: 64 }).notNull(),
+  externalUrl: varchar("external_url", { length: 512 }),
+  sku: varchar("sku", { length: 120 }),
+  rawName: varchar("raw_name", { length: 255 }).notNull(),
+  imageUrl: varchar("image_url", { length: 512 }),
+  priceUsd: decimal("price_usd", { precision: 12, scale: 2 }),
+  localPrice: decimal("local_price", { precision: 12, scale: 2 }),
+  localCurrency: varchar("local_currency", { length: 8 }),
+  stockQty: int("stock_qty"),
+  inStock: boolean("in_stock").notNull().default(false),
+  fingerprint: varchar("fingerprint", { length: 80 }),
+  exclusionReason: varchar("exclusion_reason", { length: 255 }),
+  collectedAt: timestamp("collected_at").notNull().defaultNow(),
+});
+
+/** Grupo de produtos iguais. Confirmado/rejeitado/fixado pelo admin não volta sozinho para auto. */
+export const supplierEquivalenceGroupsTable = mysqlTable("supplier_equivalence_groups", {
+  fingerprint: varchar("fingerprint", { length: 80 }).primaryKey(),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  confidence: decimal("confidence", { precision: 4, scale: 2 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default("auto"),
+  pinned: boolean("pinned").notNull().default(false),
+  mergedInto: varchar("merged_into", { length: 80 }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export type SupplierSite = typeof supplierSitesTable.$inferSelect;
 export type SupplierProductMap = typeof supplierProductMapsTable.$inferSelect;
 export type SupplierPriceSnapshot = typeof supplierPriceSnapshotsTable.$inferSelect;
