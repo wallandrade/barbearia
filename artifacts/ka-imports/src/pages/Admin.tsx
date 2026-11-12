@@ -1434,7 +1434,7 @@ interface ShippingOption { id: string; name: string; description: string | null;
 interface MotoboyNeighborhood { id: string; neighborhoodName: string; city: string | null; price: number; sortOrder: number; isActive: boolean; notes: string | null; createdAt: string; }
 interface MotoboyCepRange { id: string; label: string; city: string; cepStart: number; cepEnd: number; price: number; intervalHours: number; isActive: boolean; sortOrder: number; notes: string | null; }
 
-type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "flashCampaigns" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro" | "cellTech";
+type TabType = "orders" | "charges" | "commissions" | "expenses" | "dre" | "sellers" | "coupons" | "flashCampaigns" | "products" | "fretes" | "orderBumps" | "kyc" | "users" | "customers" | "recurringCustomers" | "support" | "biblioteca" | "inventory" | "rastreios" | "listaNegra" | "extrato" | "depositos" | "webhook" | "configuracoes" | "atendimento" | "automacao" | "imagens" | "socialProof" | "raffles" | "checkout" | "seguro" | "cellTech" | "fornecedores";
 
 interface CommissionPendingOrder {
   id: string;
@@ -1723,8 +1723,8 @@ export default function Admin() {
     topProducts?: Array<{ name: string; quantity: number; revenue: number }>;
   }>(null);
   const [financialSummaryLoading, setFinancialSummaryLoading] = React.useState(false);
-  const [, setLocation] = useLocation();
-  const [tab, setTab] = useState<TabType>("orders");
+  const [location, setLocation] = useLocation();
+  const [tab, setTab] = useState<TabType>(location.startsWith("/admin/fornecedores") ? "fornecedores" : "orders");
   const [ordersKind, setOrdersKind] = useState<AdminOrdersKind>("normal");
   const [pendingOrdersKindOrderId, setPendingOrdersKindOrderId] = useState<string | null>(null);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
@@ -5118,8 +5118,6 @@ export default function Admin() {
           </div>
         </div>
 
-        {tab === "orders" ? <SupplierPriceBoard headers={authHeaders()} /> : null}
-
         {/* ── Dashboard Stats ─────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-border/60 shadow-sm p-5 mb-6">
           {/* Filter row */}
@@ -5430,6 +5428,7 @@ export default function Admin() {
               { key: "products",      label: "Produtos",         icon: "ShoppingBag", count: products.length },
             ] : []),
             { key: "rastreios",     label: "Rastreios",        icon: "Truck" },
+            { key: "fornecedores",  label: "Fornecedores",     icon: "Store" },
             ...(isPrimary ? [
               { key: "listaNegra",   label: "Lista negra",      icon: "ShieldAlert" },
             ] : []),
@@ -5468,7 +5467,11 @@ export default function Admin() {
             { key: "webhook",       label: "Webhook",          icon: "Link" },
           ] as Array<{ key: TabType; label: string; icon: string; count?: number }>).map(({ key, label, icon, count }) => (
             <button key={key}
-              onClick={() => setTab(key)}
+              onClick={() => {
+                setTab(key);
+                if (key === "fornecedores") setLocation("/admin/fornecedores");
+                else if (location.startsWith("/admin/fornecedores")) setLocation("/admin");
+              }}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             >
               <IconLucide name={icon} className="w-4 h-4" />
@@ -5480,7 +5483,9 @@ export default function Admin() {
           ))}
         </div>
 
-        {tab === "dre" ? (
+        {tab === "fornecedores" ? (
+          <SupplierPriceBoard headers={authHeaders()} />
+        ) : tab === "dre" ? (
           <AdminDrePanel
             initialDateFrom={statsDateFrom}
             initialDateTo={statsDateTo}

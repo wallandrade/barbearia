@@ -195,6 +195,7 @@ function Router() {
         <Route path="/pix/:id"          component={PixPayment} />
         <Route path="/success"          component={Success} />
         <Route path="/admin/login"      component={AdminLogin} />
+        <Route path="/admin/fornecedores" component={Admin} />
         <Route path="/admin"            component={Admin} />
         <Route path="/motoboy"          component={MotoboyPortal} />
         <Route path="/login"            component={CustomerLogin} />

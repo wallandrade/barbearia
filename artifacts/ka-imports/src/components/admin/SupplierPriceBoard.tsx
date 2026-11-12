@@ -54,6 +54,64 @@ function moneyLocal(value: number | null, currency: string | null): string {
   return `${prefix} ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
 }
 
+function OfferList({ product, onLink, onDecide }: { product: Deal; onLink: () => void; onDecide: (action: string) => void }) {
+  return (
+    <div className="space-y-2">
+      {product.found && product.url ? <a href={product.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">Abrir a mais barata <ExternalLink className="w-3 h-3" /></a> : (
+        <button type="button" className="text-xs underline" onClick={onLink}>Vincular manualmente</button>
+      )}
+      {product.fingerprint ? (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="text-xs underline" onClick={() => onDecide("confirm")}>Confirmar</button>
+          <button type="button" className="text-xs underline" onClick={() => onDecide("reject")}>Rejeitar</button>
+        </div>
+      ) : null}
+      <ul className="space-y-1">
+        {product.offers.map((offer) => (
+          <li key={`${offer.siteId}-${offer.url}`} className="rounded-xl bg-muted/40 px-3 py-2 text-sm flex flex-wrap gap-x-3">
+            <span className="font-semibold w-6">{offer.position ?? "–"}</span>
+            <span>{offer.siteName}</span>
+            <span>{moneyUsd(offer.priceUsd)}</span>
+            {moneyLocal(offer.localPrice, offer.localCurrency) ? <span className="text-muted-foreground">{moneyLocal(offer.localPrice, offer.localCurrency)}</span> : null}
+            <span className={offer.label === "ok" ? "text-emerald-700" : "text-amber-700"}>{offer.label === "ok" ? "em estoque" : "fora de estoque"}</span>
+            <span className="text-xs text-muted-foreground">{offer.source === "manual" ? "vínculo" : "auto"}</span>
+            {offer.url ? <a href={offer.url} target="_blank" rel="noreferrer" className="text-xs text-primary">Ficha</a> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function FragmentRow({ product, open, onToggle, onLink, onDecide }: { product: Deal; open: boolean; onToggle: () => void; onLink: () => void; onDecide: (action: string) => void }) {
+  return (
+    <>
+      <tr className="border-b border-border/70 cursor-pointer" onClick={onToggle}>
+        <td className="py-3 pr-3 font-semibold">{product.rank}</td>
+        <td className="py-3 pr-3">
+          <div className="flex items-center gap-3">
+            {product.image ? <img src={product.image} alt="" className="h-10 w-10 rounded-lg object-cover bg-muted" /> : <div className="h-10 w-10 rounded-lg bg-muted" />}
+            <span className="font-medium">{product.name}</span>
+          </div>
+        </td>
+        <td className="py-3 pr-3">{product.soldQty}</td>
+        <td className="py-3 pr-3">{product.found ? product.cheapestStore : "—"}</td>
+        <td className="py-3 pr-3">{product.found ? `${moneyUsd(product.priceUsd)}${moneyLocal(product.localPrice, product.localCurrency) ? ` · ${moneyLocal(product.localPrice, product.localCurrency)}` : ""}` : "não encontrado"}</td>
+        <td className="py-3 pr-3">{product.found ? product.storeCount : "—"}</td>
+        <td className="py-3 pr-3">{product.tieWith ? `empate com ${product.tieWith}` : product.gapUsd != null ? `${moneyUsd(product.gapUsd)} acima na 2ª` : "—"}</td>
+        <td className="py-3">{product.found ? `${when(product.collectedAt)} BRT` : "—"}</td>
+      </tr>
+      {open ? (
+        <tr>
+          <td colSpan={8} className="pb-4">
+            <OfferList product={product} onLink={onLink} onDecide={onDecide} />
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
 function when(value: string | null): string {
   if (!value) return "sem coleta";
   return new Date(value).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -66,7 +124,7 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
   const [open, setOpen] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
+  const [windowDays, setWindowDays] = useState<7 | 30 | 90>(30);
   const [form, setForm] = useState({ displayName: "", supplierSiteId: "", externalUrl: "", externalSku: "", unitsPerPack: "4", imageUrl: "" });
   const headersRef = useRef(headers);
   headersRef.current = headers;
@@ -80,10 +138,11 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
         fetch(`${BASE}/api/admin/supplier-prices/sites`, { headers: auth }),
         fetch(`${BASE}/api/admin/supplier-prices/maps`, { headers: auth }),
       ]);
-      const deals = await dealsRes.json() as { products?: Deal[] };
+      const deals = await dealsRes.json() as { products?: Deal[]; windowDays?: number };
       const siteBody = await sitesRes.json() as { sites?: Site[] };
       const mapBody = await mapsRes.json() as { maps?: MapRow[] };
       setProducts(deals.products || []);
+      if (deals.windowDays === 7 || deals.windowDays === 30 || deals.windowDays === 90) setWindowDays(deals.windowDays);
       setSites(siteBody.sites || []);
       setMaps(mapBody.maps || []);
     } catch {
@@ -112,6 +171,27 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
     }
   }
 
+  async function changeWindow(days: 7 | 30 | 90) {
+    setBusy(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/settings/supplier_price_sales_window_days`, {
+        method: "PUT",
+        headers: { ...headersRef.current, "Content-Type": "application/json" },
+        body: JSON.stringify({ value: String(days) }),
+      });
+      if (!res.ok) {
+        toast.error("Não foi possível salvar o período.");
+        return;
+      }
+      setWindowDays(days);
+      await load();
+    } catch {
+      toast.error("Não foi possível salvar o período.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function decide(fingerprint: string, action: string) {
     await fetch(`${BASE}/api/admin/supplier-prices/groups`, {
       method: "POST",
@@ -134,7 +214,6 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
         return;
       }
       toast.success("Vínculo salvo. Ele tem prioridade sobre o casamento automático.");
-      setFormOpen(false);
       await load();
     } finally {
       setBusy(false);
@@ -142,14 +221,21 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
   }
 
   return (
-    <section className="bg-white rounded-2xl border border-border/60 shadow-sm p-5 mb-6">
+    <section className="space-y-6">
+      <div className="bg-white rounded-2xl border border-border/60 shadow-sm p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div>
-          <h2 className="text-sm font-bold text-foreground">Seus 10 mais vendidos — onde está mais barato hoje</h2>
-          <p className="text-xs text-muted-foreground">Só pedidos pagos. Só consulta. Anabolizante não entra.</p>
+          <h2 className="text-lg font-bold text-foreground">Seus 10 mais vendidos — onde está mais barato hoje</h2>
+          <p className="text-sm text-muted-foreground">Só pedidos pagos. Só consulta. Anabolizante não entra.</p>
         </div>
-        <div className="ml-auto flex flex-wrap gap-2">
-          <button type="button" onClick={() => setFormOpen((value) => !value)} className="h-9 px-3 rounded-xl border border-border text-xs font-semibold">Vínculos</button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-border p-0.5">
+            {([7, 30, 90] as const).map((days) => (
+              <button key={days} type="button" disabled={busy} onClick={() => void changeWindow(days)} className={`h-9 px-3 rounded-lg text-xs font-semibold ${windowDays === days ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+                {days} dias
+              </button>
+            ))}
+          </div>
           <button type="button" onClick={() => void refreshNow()} disabled={busy} className="h-9 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-60">
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Atualizar agora
           </button>
@@ -159,7 +245,29 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
       {loading ? <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div> : products.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma venda paga no período. Use Atualizar agora depois que houver pedidos.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-2xl border border-border">
+        <>
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                <th className="py-2 pr-3 font-medium">#</th>
+                <th className="py-2 pr-3 font-medium">Produto</th>
+                <th className="py-2 pr-3 font-medium">Vendidos</th>
+                <th className="py-2 pr-3 font-medium">Mais barata</th>
+                <th className="py-2 pr-3 font-medium">Preço</th>
+                <th className="py-2 pr-3 font-medium">Lojas</th>
+                <th className="py-2 pr-3 font-medium">Diferença</th>
+                <th className="py-2 font-medium">Coleta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map((product) => (
+                <FragmentRow key={`${product.productId || product.name}-${product.rank}`} product={product} open={open === String(product.rank)} onToggle={() => setOpen(open === String(product.rank) ? null : String(product.rank))} onLink={() => setForm({ ...form, displayName: product.name })} onDecide={(action) => void decide(product.fingerprint || "", action)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <ul className="md:hidden divide-y divide-border rounded-2xl border border-border">
           {products.map((product) => (
             <li key={`${product.productId || product.name}-${product.rank}`}>
               <button type="button" onClick={() => setOpen(open === String(product.rank) ? null : String(product.rank))} className="w-full text-left px-3 py-3 flex gap-3 items-start">
@@ -189,7 +297,7 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
               {open === String(product.rank) ? (
                 <div className="px-3 pb-3 space-y-2">
                   {product.found && product.url ? <a href={product.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">Abrir a mais barata <ExternalLink className="w-3 h-3" /></a> : (
-                    <button type="button" className="text-xs underline" onClick={() => { setForm({ ...form, displayName: product.name }); setFormOpen(true); }}>Vincular manualmente</button>
+                    <button type="button" className="text-xs underline" onClick={() => setForm({ ...form, displayName: product.name })}>Vincular manualmente</button>
                   )}
                   {product.fingerprint ? (
                     <div className="flex flex-wrap gap-2">
@@ -215,10 +323,11 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
             </li>
           ))}
         </ul>
+        </>
       )}
+      </div>
 
-      {formOpen ? (
-        <div className="mt-4 rounded-2xl border border-border p-4 space-y-3">
+      <div className="bg-white rounded-2xl border border-border/60 shadow-sm p-4 sm:p-6 space-y-3">
           <p className="text-sm font-semibold">Vínculo manual</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="Nome, ex. TG 15 mg 4 frascos" className="h-10 px-3 rounded-xl border border-border text-sm" />
@@ -234,8 +343,7 @@ export function SupplierPriceBoard({ headers }: { headers: Record<string, string
           <ul className="text-xs text-muted-foreground space-y-1">
             {maps.map((map) => <li key={map.id}>{map.displayName} · {sites.find((site) => site.id === map.supplierSiteId)?.name} · {map.active ? "ativo" : "inativo"}</li>)}
           </ul>
-        </div>
-      ) : null}
+      </div>
     </section>
   );
 }
