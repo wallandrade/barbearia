@@ -58,11 +58,20 @@ export function rankSupplierOffers(offers: RankedOfferInput[]): RankedOffer[] {
     if (priceA !== priceB) return priceA - priceB;
     return a.supplierName.localeCompare(b.supplierName, "pt-BR");
   });
-  let position = 0;
+  let index = 0;
+  let lastPrice: number | null = null;
+  let lastPosition = 0;
   for (const offer of ranked) {
     if (offer.label !== "ok") continue;
-    position += 1;
-    offer.position = position;
+    index += 1;
+    const price = offer.pricePerUnitUsd;
+    if (lastPrice != null && price != null && Math.abs(price - lastPrice) < 1e-9) {
+      offer.position = lastPosition;
+      continue;
+    }
+    offer.position = index;
+    lastPosition = index;
+    lastPrice = price;
   }
   return ranked;
 }

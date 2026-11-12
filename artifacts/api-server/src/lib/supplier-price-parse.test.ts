@@ -93,10 +93,43 @@ test("ranking põe o mais barato por unidade na frente e o erro no fim", () => {
     "ByPharmacon",
     "Farma.fit",
   ]);
-  assert.deepEqual(ranked.filter((row) => row.position != null).map((row) => row.position), [1, 2, 3, 4, 5]);
+  assert.deepEqual(ranked.filter((row) => row.position != null).map((row) => row.position), [1, 1, 3, 3, 5]);
   assert.equal(ranked.at(-2)?.label, "fora_de_estoque");
   assert.equal(ranked.at(-1)?.label, "erro");
   assert.equal(ranked.find((row) => row.supplierName === "ByPharmacon")?.swingWarning, true);
   assert.equal(ranked.find((row) => row.supplierName === "Dili Farma")?.swingWarning, false);
   assert.equal(ranked.find((row) => row.supplierName === "Farma.fit")?.swingWarning, false);
+});
+
+test("empate no mesmo USD por unidade usa ranking de competição", () => {
+  const offer = (name: string, priceUsd: number, unitsPerPack = 4) => ({
+    mapId: name,
+    supplierName: name,
+    url: null,
+    unitsPerPack,
+    priceUsd,
+    localPrice: null,
+    localCurrency: null,
+    tiers: null,
+    inStock: true,
+    stockQty: null,
+    ok: true,
+    error: null,
+    collectedAt: null,
+    previousPriceUsd: null,
+  });
+  const ranked = rankSupplierOffers([
+    offer("Farma.fit", 115),
+    offer("ByPharmacon", 85),
+    offer("Atacado Brasil PY", 85),
+    offer("Farmácia Santa Rita Paraguai", 84),
+    offer("Dili Farma", 84),
+  ]);
+  assert.deepEqual(ranked.map((row) => [row.supplierName, row.position]), [
+    ["Dili Farma", 1],
+    ["Farmácia Santa Rita Paraguai", 1],
+    ["Atacado Brasil PY", 3],
+    ["ByPharmacon", 3],
+    ["Farma.fit", 5],
+  ]);
 });
