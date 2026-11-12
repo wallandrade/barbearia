@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  GROUP_MODERATION_FLOOD_COUNT,
-  GROUP_MODERATION_REPEAT_COUNT,
   decideGroupModeration,
   detectGroupLinkViolation,
   groupAdminPhones,
@@ -11,7 +9,6 @@ import {
   groupModerationScanText,
   groupNameMatches,
   groupShield,
-  groupSpamReason,
   isGroupModerationCandidate,
   moderationActionLabel,
   moderationSnippet,
@@ -32,16 +29,39 @@ const open = {
   adminPhones: [] as string[],
 };
 
-test("convite e link de fora saem; o site da loja fica", () => {
-  assert.equal(detectGroupLinkViolation("entra em https://chat.whatsapp.com/AbC123", hosts), "invite");
-  assert.equal(detectGroupLinkViolation("chama wa.me/5511999999999", hosts), "invite");
-  assert.equal(detectGroupLinkViolation("https://whatsapp.com/channel/0029", hosts), "invite");
-  assert.equal(detectGroupLinkViolation("grupo t.me/spam", hosts), "invite");
-  assert.equal(detectGroupLinkViolation("https://bit.ly/abc", hosts), "external_link");
-  assert.equal(detectGroupLinkViolation("https://yury-imports.com.evil.net/a", hosts), "external_link");
-  assert.equal(detectGroupLinkViolation("veja https://www.yury-imports.com/produto/1", hosts), null);
-  assert.equal(detectGroupLinkViolation("meu email joao@gmail.com", hosts), null);
-  assert.equal(detectGroupLinkViolation("bom dia", hosts), null);
+test("só o convite chat.whatsapp.com gera ação", () => {
+  assert.equal(detectGroupLinkViolation("entra em https://chat.whatsapp.com/AbC123"), "invite");
+  assert.equal(detectGroupLinkViolation("http://chat.whatsapp.com/AbC123"), "invite");
+  assert.equal(detectGroupLinkViolation("chat.whatsapp.com/AbC123"), "invite");
+  assert.equal(detectGroupLinkViolation("https://www.chat.whatsapp.com/AbC123"), "invite");
+  assert.equal(detectGroupLinkViolation("chama wa.me/5511999999999"), null);
+  assert.equal(detectGroupLinkViolation("https://whatsapp.com/channel/0029"), null);
+  assert.equal(detectGroupLinkViolation("grupo t.me/spam"), null);
+  assert.equal(detectGroupLinkViolation("https://bit.ly/abc"), null);
+  assert.equal(detectGroupLinkViolation("veja https://www.yury-imports.com/produto/1"), null);
+  assert.equal(detectGroupLinkViolation("bom dia"), null);
+  const invite = decideGroupModeration({ ...open, text: "https://chat.whatsapp.com/AbC123" });
+  assert.equal(invite.act, true);
+  if (invite.act) assert.equal(invite.reason, "invite");
+});
+
+test("figurinha, mídia e texto normal não geram ação", () => {
+  const sticker = groupModerationScanText({
+    isGroup: true,
+    type: "ReceivedCallback",
+    sticker: { stickerUrl: "https://mmg.whatsapp.net/sticker.webp", mimeType: "image/webp" },
+  });
+  assert.equal(sticker, "");
+  assert.equal(decideGroupModeration({ ...open, text: sticker }).act, false);
+  const repeated = Array.from({ length: 12 }, (_, index) => ({ text: "", at: open.now - index * 1000 }));
+  assert.equal(decideGroupModeration({ ...open, text: sticker, recent: repeated }).act, false);
+  const photo = groupModerationScanText({
+    image: { imageUrl: "https://mmg.whatsapp.net/photo.jpg", caption: "" },
+    video: { videoUrl: "https://mmg.whatsapp.net/video.mp4", caption: "olha isso" },
+  });
+  assert.equal(decideGroupModeration({ ...open, text: photo }).act, false);
+  assert.equal(decideGroupModeration({ ...open, text: "bom dia, chegou sim" }).act, false);
+  assert.equal(decideGroupModeration({ ...open, text: "https://bit.ly/abc" }).act, false);
 });
 
 test("legenda e botão entram; a URL da foto não", () => {
@@ -54,12 +74,12 @@ test("legenda e botão entram; a URL da foto não", () => {
     participantPhone: "5511988887777",
     image: { imageUrl: "https://mmg.whatsapp.net/photo.jpg", caption: "" },
   };
-  assert.equal(detectGroupLinkViolation(groupModerationScanText(photo), hosts), null);
+  assert.equal(detectGroupLinkViolation(groupModerationScanText(photo)), null);
   const caption = {
     ...photo,
     image: { imageUrl: "https://mmg.whatsapp.net/photo.jpg", caption: "https://chat.whatsapp.com/Convite" },
   };
-  assert.equal(detectGroupLinkViolation(groupModerationScanText(caption), hosts), "invite");
+  assert.equal(detectGroupLinkViolation(groupModerationScanText(caption)), "invite");
   const button = {
     ...photo,
     hydratedTemplate: {
@@ -67,7 +87,8 @@ test("legenda e botão entram; a URL da foto não", () => {
       hydratedButtons: [{ urlButton: { displayText: "canal", url: "https://t.me/oferta" } }],
     },
   };
-  assert.equal(detectGroupLinkViolation(groupModerationScanText(button), hosts), "invite");
+  assert.equal(detectGroupLinkViolation(groupModerationScanText(button)), null);
+  assert.equal(decideGroupModeration({ ...open, text: groupModerationScanText(button) }).act, false);
   const storeButton = {
     ...photo,
     buttonsMessage: {
@@ -75,24 +96,17 @@ test("legenda e botão entram; a URL da foto não", () => {
       buttons: [{ buttonText: { displayText: "https://yury-imports.com/produto/2" } }],
     },
   };
-  assert.equal(detectGroupLinkViolation(groupModerationScanText(storeButton), hosts), null);
+  assert.equal(detectGroupLinkViolation(groupModerationScanText(storeButton)), null);
 });
 
-test("repetição e flood", () => {
+test("rajada e repetição não geram ação", () => {
   const now = 10 * 60 * 1000;
-  const repeated = Array.from({ length: GROUP_MODERATION_REPEAT_COUNT - 1 }, (_, index) => ({
-    text: "PROMOÇÃO imperdível",
-    at: now - (index + 1) * 1000,
+  const burst = Array.from({ length: 20 }, (_, index) => ({
+    text: index % 2 === 0 ? "" : "oi",
+    at: now - index * 500,
   }));
-  assert.equal(groupSpamReason(repeated, "promocao imperdivel", now), "repeat");
-  assert.equal(groupSpamReason(repeated.slice(0, 2), "promocao imperdivel", now), null);
-  const burst = Array.from({ length: GROUP_MODERATION_FLOOD_COUNT - 1 }, (_, index) => ({
-    text: `oi ${index}`,
-    at: now - index * 1000,
-  }));
-  assert.equal(groupSpamReason(burst, "mais uma", now), "flood");
-  const old = burst.map((item) => ({ ...item, at: now - 2 * 60 * 1000 }));
-  assert.equal(groupSpamReason(old, "mais uma", now), null);
+  assert.equal(decideGroupModeration({ ...open, text: "", recent: burst, now }).act, false);
+  assert.equal(decideGroupModeration({ ...open, text: "PROMOÇÃO imperdível", recent: burst, now }).act, false);
 });
 
 test("admin, loja e allowlist não são punidos", () => {
