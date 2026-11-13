@@ -1,6 +1,6 @@
 # Integrações — Yuri Import
 
-> **Última atualização:** 2026-11-12
+> **Última atualização:** 2026-11-13
 
 Providers externos **presentes no código**. Precedência: código > memória.
 
@@ -8,6 +8,7 @@ Providers externos **presentes no código**. Precedência: código > memória.
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-13 | Backup diário do MySQL para o R2 | `scripts/src/db-backup-r2.mjs` gera o SQL, comprime e envia `mysql/YYYY-MM-DD_HHmm.sql.gz`. O job do App Platform ainda não está criado | PIX, pedido, checkout e moderação iguais |
 | 2026-11-12 | Moderação só apaga convite de grupo | Figurinha, mídia, texto, repetição, flood e outros links não removem. Só `chat.whatsapp.com` | A lista de grupos 1 a 7 e o atendimento 1:1 iguais |
 | 2026-11-12 | Ranking de custo por fornecedor | O admin consulta preço de custo. A coleta é só leitura, a cada 6 h, com botão Atualizar agora | Preço de venda, catálogo, PIX, estoque, WhatsApp, e-mail e n8n iguais |
 | 2026-11-11 | SEM REPARO fica fora do relatório | Não entra em "Finalizadas desde ontem" nem em "Feitas em <mês>", nem na contagem. Continua fechada | OS parada, a fila e o aviso de OS concretizada iguais. EM REPARO continua aberta |
@@ -359,6 +360,7 @@ Módulo isolado da loja. Não lê `orders`, PIX nem frete.
 ## Storage
 
 - **Cloudflare R2** via `@aws-sdk/client-s3` — `artifacts/api-server/src/lib/r2.ts` (imagens de produto, settings, etiquetas, PDFs EnvioEcom, aba Imagem em `admin-images/`, etc.).
+- Backup do MySQL: `scripts/src/db-backup-r2.mjs` envia `mysql/YYYY-MM-DD_HHmm.sql.gz` para o bucket `yuri-imports-db-backups`. O job no App Platform ainda é manual. Doc: `docs/DB_BACKUP_R2.md`.
 - Scripts de migração de imagens: `scripts/src/migrate-product-images-to-r2.ts`.
 
 ## E-mail / CRM
