@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://api.yury-imports.com/api/:path*"
+      "destination": "https://yuri-imports-9483v.ondigitalocean.app/api/:path*"
     },
     {
       "source": "/((?!api/|assets/|favicon.ico|robots.txt|sitemap.xml|sw.js|manifest.webmanifest).*)",

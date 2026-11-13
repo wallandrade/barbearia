@@ -1,6 +1,6 @@
 # Arquitetura — Yuri Import
 
-> **Última atualização:** 2026-11-12
+> **Última atualização:** 2026-11-13
 
 Stack, pastas e deploy **como existem no código**. Precedência: código > memória > tipagens.
 
@@ -8,6 +8,7 @@ Stack, pastas e deploy **como existem no código**. Precedência: código > mem�
 
 | Data | O quê | Impacto | O que NÃO mudou |
 |------|--------|---------|-----------------|
+| 2026-11-13 | Front aponta `/api` para a DigitalOcean | Os dois `vercel.json` reescrevem para `https://yuri-imports-9483v.ondigitalocean.app/api/:path*`. O CSP troca o host Railway por esse e pelo R2 | Manutenção, PIX, esgotado e a moderação iguais |
 | 2026-11-12 | Tabela `whatsapp_group_moderation_log` (+ runtime) | Guarda a mensagem moderada no grupo para poder desfazer. Chave é o id da mensagem | Campanha dos grupos, atendimento e pedido iguais. Sem `tenant_id` |
 | 2026-11-11 | Tabela `order_delivery_corrections` e coluna `orders.client_data_corrected_at` (+ runtime) | Link público `/corrigir-entrega` para CPF, CEP e endereço. Vale 7 dias, só sem etiqueta. A loja ganha a página e o modal do admin | PIX, estoque e a senha de baixa iguais. Sem `tenant_id` |
 | 2026-11-10 | Tabela `customer_password_resets` (+ runtime) | Guarda o hash do link de senha, a expiração e o uso. A loja ganha `/redefinir-senha` | `customer_users` e a senha do admin iguais. Sem `tenant_id` |
@@ -105,7 +106,7 @@ APPCNPay, DentPeg, webhooks, Cloudflare R2, Brevo, WhatsApp (links), SSE admin, 
 ## Deploy
 
 - **API:** Railway + Nixpacks — serviço `@workspace/api-server` ligado a GitHub **`wallandrade/barbearia`** / branch **`main`** (auto-deploy on push). Start: `railway.json` + `nixpacks.toml`.
-- **FE:** Vercel — `vercel.json` / `artifacts/ka-imports/vercel.json` reescreve `/api/*` → `https://api.yury-imports.com/api/:path*`.
+- **FE:** Vercel — `vercel.json` / `artifacts/ka-imports/vercel.json` reescreve `/api/*` → `https://yuri-imports-9483v.ondigitalocean.app/api/:path*`.
 - Remote **`oficialkaimports`** existe em paralelo (histórico divergente); **não** é o source do Railway deste serviço.
 - Anti-padrão: no Railway, **Redeploy** do deployment antigo (ex. frete grátis) sem puxar a `main` nova — a API fica sem settings novas (ex. `motoboy_eligible_product_ids` → 400 `INVALID_KEY`). Preferir deploy da `main` atual (push novo ou Deploy latest).
 
