@@ -9,6 +9,7 @@ import { isCustomerTrackingCode } from "./reportana-payload";
 import { isSuperfreteDelivered, isSuperfretePosted } from "./superfrete-status";
 import { trySupportAiReply } from "./whatsapp-support-ai";
 import {
+  SUPPORT_PIX_KEY_ID,
   defaultSupportMenu,
   parseSupportMenu,
   supportMenuFollowup,
@@ -359,11 +360,20 @@ function activeItems(menu: SupportMenuConfig, session: SupportSession): SupportM
   return firstList?.items || menu.items;
 }
 
+function isPixKeyText(raw: string): boolean {
+  const value = plain(raw).replace(/\s+/g, " ");
+  return value === "pix" || value === "chave pix" || value === "chavepix";
+}
+
 function resolveChoice(choiceId: string, text: string, step: SupportStep, menu: SupportMenuConfig, session: SupportSession): string | null {
   const direct = String(choiceId || "").trim();
   if (direct && supportMenuItems(menu).some((item) => item.id === direct)) return direct;
   if (step === "await_lookup" || step === "await_problem" || step === "await_cpf" || step === "human") return null;
-  return optionByLooseText(direct || text, activeItems(menu, session).map(toOption));
+  const options = activeItems(menu, session).map(toOption);
+  const loose = optionByLooseText(direct || text, options);
+  if (loose) return loose;
+  if (isPixKeyText(direct || text) && options.some((option) => option.id === SUPPORT_PIX_KEY_ID)) return SUPPORT_PIX_KEY_ID;
+  return null;
 }
 
 function menuSession(): SupportSession {
