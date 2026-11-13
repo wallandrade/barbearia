@@ -314,6 +314,12 @@ export function cpfPromptIsDue(lastAt: number | null | undefined, now: number, c
   return now - lastAt >= cooldownMs;
 }
 
+/** Segundo local, sem milissegundos. A gravação e a devolução usam o mesmo texto. */
+export function cpfPromptStamp(now = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 /** Frase solta no menu inicial. Saudação, opção, CPF e atendente ficam de fora. */
 export function isSupportAiCandidate(input: { text?: string | null; choiceId?: string | null; session?: SupportSession | null }): boolean {
   const text = String(input.text || "").trim();
@@ -1005,6 +1011,7 @@ export async function claimSupportNudge(phone: string, now = new Date()): Promis
 export async function claimSupportCpfPrompt(phone: string, session: SupportSession, now = new Date()): Promise<"claimed" | "cooldown"> {
   const { pool } = await database();
   const cutoff = new Date(now.getTime() - supportCpfPromptCooldownMs());
+  const stamp = cpfPromptStamp(now);
   await pool.query(
     `INSERT INTO whatsapp_support_sessions
       (phone, step, problem, pending_order, nudge_count, last_cpf_prompt_at, updated_at)
@@ -1021,7 +1028,7 @@ export async function claimSupportCpfPrompt(phone: string, session: SupportSessi
             updated_at = ?
       WHERE phone = ?
         AND (last_cpf_prompt_at IS NULL OR last_cpf_prompt_at <= ?)`,
-    [now, session.step, session.problem, session.orderNumber ?? null, now, phone, cutoff],
+    [stamp, session.step, session.problem, session.orderNumber ?? null, now, phone, cutoff],
   );
   if (mysqlAffectedRows(claimed) === 1) return "claimed";
   await pool.query(
@@ -1034,6 +1041,35 @@ export async function claimSupportCpfPrompt(phone: string, session: SupportSessi
     [session.step, session.problem, session.orderNumber ?? null, phone],
   );
   return "cooldown";
+}
+
+/** Devolve o intervalo se o n8n não entregou esta reserva. Não apaga uma marca mais nova. */
+export async function releaseSupportCpfPrompt(phone: string, claimedAt: Date): Promise<void> {
+  const { pool } = await database();
+  await pool.query(
+    `UPDATE whatsapp_support_sessions
+        SET last_cpf_prompt_at = NULL,
+            updated_at = updated_at
+      WHERE phone = ?
+        AND last_cpf_prompt_at = ?`,
+    [phone, cpfPromptStamp(claimedAt)],
+  );
+}
+
+/** Manda o CPF só com a reserva. Se o envio falha ou estoura, devolve a marca. */
+export async function sendClaimedCpfPrompt(input: {
+  claim: () => Promise<"claimed" | "cooldown">;
+  send: () => Promise<boolean>;
+  release: () => Promise<void>;
+}): Promise<"sent" | "silent" | "failed"> {
+  if (await input.claim() !== "claimed") return "silent";
+  try {
+    if (await input.send()) return "sent";
+  } catch (err) {
+    console.warn("[WhatsApp atendimento] pedido de CPF", err instanceof Error ? err.message : err);
+  }
+  await input.release();
+  return "failed";
 }
 
 function cpfSessionChanged(before: SupportSession | null, after: SupportSession): boolean {
@@ -1238,10 +1274,14 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
     return { ok: true, silenced: true, line };
   }
   if (turn.kind === "text" && turn.message === ASK_CPF_MESSAGE && turn.session.step === "await_cpf") {
-    const claim = await claimSupportCpfPrompt(inbound.phone, turn.session);
-    if (claim !== "claimed") return { ok: true, silenced: true, line };
-    const prompted = await sendText(inbound.phone, turn.message, line);
-    if (!prompted) return { ok: false, error: "not_configured", line };
+    const claimedAt = new Date();
+    const delivery = await sendClaimedCpfPrompt({
+      claim: () => claimSupportCpfPrompt(inbound.phone, turn.session, claimedAt),
+      send: () => sendText(inbound.phone, turn.message, line),
+      release: () => releaseSupportCpfPrompt(inbound.phone, claimedAt),
+    });
+    if (delivery === "silent") return { ok: true, silenced: true, line };
+    if (delivery === "failed") return { ok: false, error: "not_configured", line };
     return { ok: true, line };
   }
   const autoHuman = turn.kind === "text"

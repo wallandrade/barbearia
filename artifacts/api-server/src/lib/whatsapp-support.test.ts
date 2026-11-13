@@ -7,6 +7,7 @@ import {
   classifySupportText,
   decideSupportTurn,
   cpfPromptIsDue,
+  sendClaimedCpfPrompt,
   type SupportSession,
   isSupportAcknowledgement,
   SUPPORT_HUMAN_HANDOFF_TEXT,
@@ -103,6 +104,51 @@ test("pedido de CPF sai no máximo uma vez a cada 2 horas", () => {
     return "claimed";
   });
   assert.deepEqual(raced, ["claimed", "cooldown"]);
+});
+
+test("envio do CPF que falha pede de novo na mensagem seguinte", async () => {
+  const cooldownMs = 2 * 60 * 60 * 1000;
+  const now = 1_700_000_000_000;
+  const waiting = {
+    step: "await_cpf" as const,
+    problem: null,
+    orderNumber: 1782,
+    lastCpfPromptAt: null as number | null,
+  };
+  let lock: number | null = null;
+  const failed = await sendClaimedCpfPrompt({
+    claim: async () => {
+      lock = now;
+      return "claimed";
+    },
+    send: async () => false,
+    release: async () => {
+      if (lock === now) lock = null;
+    },
+  });
+  assert.equal(failed, "failed");
+  assert.equal(lock, null);
+  const retry = decideSupportTurn({
+    text: "oi",
+    session: { ...waiting, lastCpfPromptAt: lock },
+    now: now + 1000,
+    cpfCooldownMs: cooldownMs,
+  });
+  assert.equal(retry.kind, "text");
+  if (retry.kind === "text") assert.match(retry.message, /CPF/);
+
+  let released = false;
+  const thrown = await sendClaimedCpfPrompt({
+    claim: async () => "claimed",
+    send: async () => {
+      throw new Error("timeout");
+    },
+    release: async () => {
+      released = true;
+    },
+  });
+  assert.equal(thrown, "failed");
+  assert.equal(released, true);
 });
 
 test("frase sem toque não repete o menu", () => {
