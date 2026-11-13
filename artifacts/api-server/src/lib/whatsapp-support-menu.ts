@@ -1,6 +1,20 @@
 export const WHATSAPP_SUPPORT_MENU_SETTING = "whatsapp_support_menu";
 
 const STORE_URL = "https://www.yury-imports.com";
+export const SUPPORT_PIX_KEY_ID = "chave-pix";
+
+/** Texto da chave. `SUPPORT_PIX_KEY_MESSAGE` troca este padrão. */
+export const SUPPORT_PIX_KEY_MESSAGE = `Chave pix e-mail:
+jonathanbarros2306@gmail.com
+
+Nome: Jonathan Machado Barros
+Banco: Inter`;
+
+export function supportPixKeyMessage(raw = process.env.SUPPORT_PIX_KEY_MESSAGE): string {
+  const text = String(raw ?? "").trim();
+  return text || SUPPORT_PIX_KEY_MESSAGE;
+}
+
 const MAX_ITEMS = 10;
 const MAX_TITLE = 24;
 const MAX_DESCRIPTION = 72;
@@ -83,6 +97,13 @@ export function defaultSupportMenu(): SupportMenuConfig {
           problemItem("voltou", "Voltou ao vendedor", "O correio devolveu", "voltou ao vendedor"),
           problemItem("outro", "Outro problema", "Outro caso", "outro problema"),
         ],
+      },
+      {
+        id: SUPPORT_PIX_KEY_ID,
+        title: "Chave PIX",
+        description: "Pagar por PIX",
+        action: "text",
+        message: supportPixKeyMessage(),
       },
       {
         id: "atendente",

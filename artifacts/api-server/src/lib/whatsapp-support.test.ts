@@ -24,7 +24,7 @@ import {
   supportSituationLabel,
   supportTokensMatch,
 } from "./whatsapp-support";
-import { defaultSupportMenu, supportMenuSaveError } from "./whatsapp-support-menu";
+import { defaultSupportMenu, supportMenuSaveError, supportPixKeyMessage, SUPPORT_PIX_KEY_MESSAGE } from "./whatsapp-support-menu";
 
 test("oi abre o menu e número ou CPF viram busca", () => {
   assert.equal(classifySupportText("Oi!").kind, "menu");
@@ -63,6 +63,52 @@ test("oi abre a lista e o pedido só entra depois do toque", () => {
   assert.equal(supportDocumentMatches("123.456.789-09", "12345678909"), true);
   assert.equal(supportDocumentMatches("123.456.789-09", "00000000000"), false);
   assert.equal(supportDocumentMatches("", "12345678909"), false);
+});
+
+test("chave pix manda a chave e as outras opções seguem iguais", () => {
+  const previous = process.env.SUPPORT_PIX_KEY_MESSAGE;
+  delete process.env.SUPPORT_PIX_KEY_MESSAGE;
+  try {
+    assert.equal(supportPixKeyMessage(), SUPPORT_PIX_KEY_MESSAGE);
+    const opened = decideSupportTurn({ text: "Oi!" });
+    assert.equal(opened.kind, "list");
+    if (opened.kind === "list") {
+      assert.deepEqual(opened.options.map((option) => option.id), ["meu-pedido", "comprar", "problema", "chave-pix", "atendente"]);
+      assert.equal(opened.options.every((option) => option.title.length <= 24 && option.description.length <= 72), true);
+      assert.equal(opened.options.length <= 10, true);
+    }
+
+    const picked = decideSupportTurn({ choiceId: "chave-pix", session: { step: "menu", problem: null } });
+    assert.equal(picked.kind, "text");
+    if (picked.kind === "text") assert.equal(picked.message, SUPPORT_PIX_KEY_MESSAGE);
+    assert.equal(picked.session.step, "menu");
+
+    const typed = decideSupportTurn({ text: "chave pix", session: { step: "menu", problem: null } });
+    assert.equal(typed.kind, "text");
+    if (typed.kind === "text") assert.equal(typed.message, SUPPORT_PIX_KEY_MESSAGE);
+    assert.equal(typed.session.step, "menu");
+
+    const word = decideSupportTurn({ text: "PIX", session: { step: "menu", problem: null } });
+    assert.equal(word.kind, "text");
+    if (word.kind === "text") assert.equal(word.message, SUPPORT_PIX_KEY_MESSAGE);
+
+    const order = decideSupportTurn({ choiceId: "meu-pedido" });
+    assert.equal(order.session.step, "await_lookup");
+    const buy = decideSupportTurn({ choiceId: "comprar" });
+    assert.equal(buy.kind, "text");
+    if (buy.kind === "text") assert.match(buy.message, /yury-imports.com/);
+    assert.equal(buy.session.step, "menu");
+    const human = decideSupportTurn({ choiceId: "atendente" });
+    assert.equal(human.session.step, "human");
+
+    process.env.SUPPORT_PIX_KEY_MESSAGE = "Chave de teste";
+    const overridden = decideSupportTurn({ choiceId: "chave-pix" });
+    assert.equal(overridden.kind, "text");
+    if (overridden.kind === "text") assert.equal(overridden.message, "Chave de teste");
+  } finally {
+    if (previous === undefined) delete process.env.SUPPORT_PIX_KEY_MESSAGE;
+    else process.env.SUPPORT_PIX_KEY_MESSAGE = previous;
+  }
 });
 
 test("pedido de CPF sai no máximo uma vez a cada 2 horas", () => {

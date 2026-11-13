@@ -88,6 +88,13 @@ function defaultMenu(): MenuConfig {
         ],
       },
       {
+        id: "chave-pix",
+        title: "Chave PIX",
+        description: "Pagar por PIX",
+        action: "text",
+        message: "Chave pix e-mail:\njonathanbarros2306@gmail.com\n\nNome: Jonathan Machado Barros\nBanco: Inter",
+      },
+      {
         id: "atendente",
         title: "Falar com atendente",
         description: "Uma pessoa responde",
