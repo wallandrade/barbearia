@@ -1,9 +1,9 @@
 /**
  * Modo de manutenção da loja (front na Vercel).
- * Ligado por padrão. Para desligar: troque MAINTENANCE_MODE_DEFAULT para false, ou defina VITE_MAINTENANCE=0 no build da Vercel, e republique.
+ * Desligado por padrão. Para religar: defina VITE_MAINTENANCE=1 no build da Vercel, ou troque MAINTENANCE_MODE_DEFAULT para true, e republique.
  * VITE_MAINTENANCE=0 desliga mesmo com a constante true. VITE_MAINTENANCE=1 liga mesmo com a constante false.
  */
-export const MAINTENANCE_MODE_DEFAULT = true;
+export const MAINTENANCE_MODE_DEFAULT = false;
 
 export const MAINTENANCE_MODE: boolean = (() => {
   const env = import.meta.env.VITE_MAINTENANCE;
