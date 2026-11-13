@@ -1379,6 +1379,7 @@ async function ensureWhatsappSupportSessionsTable(databaseName: string): Promise
         pending_order INT NULL,
         nudge_count INT NOT NULL DEFAULT 0,
         last_nudge_at TIMESTAMP NULL,
+        last_cpf_prompt_at TIMESTAMP NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -1391,6 +1392,9 @@ async function ensureWhatsappSupportSessionsTable(databaseName: string): Promise
   }
   if (!(await columnExists("whatsapp_support_sessions", "last_nudge_at", databaseName))) {
     await pool.query(`ALTER TABLE whatsapp_support_sessions ADD COLUMN last_nudge_at TIMESTAMP NULL`);
+  }
+  if (!(await columnExists("whatsapp_support_sessions", "last_cpf_prompt_at", databaseName))) {
+    await pool.query(`ALTER TABLE whatsapp_support_sessions ADD COLUMN last_cpf_prompt_at TIMESTAMP NULL`);
   }
 }
 

@@ -66,6 +66,8 @@ export type SupportSession = {
   nudgeCount?: number;
   /** Epoch ms do último aviso. */
   lastNudgeAt?: number | null;
+  /** Epoch ms do último pedido de CPF. */
+  lastCpfPromptAt?: number | null;
 };
 
 export type SupportOption = {
@@ -295,6 +297,23 @@ export function supportNudgeCooldownMs(raw = process.env.SUPPORT_NUDGE_COOLDOWN_
   return Math.round(minutes * 60 * 1000);
 }
 
+const CPF_PROMPT_COOLDOWN_DEFAULT_MS = 120 * 60 * 1000;
+
+/** Minutos em `SUPPORT_CPF_PROMPT_COOLDOWN_MIN`. Vazio ou inválido volta para 120. */
+export function supportCpfPromptCooldownMs(raw = process.env.SUPPORT_CPF_PROMPT_COOLDOWN_MIN): number {
+  const text = String(raw ?? "").trim();
+  if (!text) return CPF_PROMPT_COOLDOWN_DEFAULT_MS;
+  const minutes = Number(text);
+  if (!Number.isFinite(minutes) || minutes <= 0) return CPF_PROMPT_COOLDOWN_DEFAULT_MS;
+  return Math.round(minutes * 60 * 1000);
+}
+
+/** O pedido de CPF cabe agora. `lastAt` nulo sempre cabe. */
+export function cpfPromptIsDue(lastAt: number | null | undefined, now: number, cooldownMs: number): boolean {
+  if (lastAt == null) return true;
+  return now - lastAt >= cooldownMs;
+}
+
 /** Frase solta no menu inicial. Saudação, opção, CPF e atendente ficam de fora. */
 export function isSupportAiCandidate(input: { text?: string | null; choiceId?: string | null; session?: SupportSession | null }): boolean {
   const text = String(input.text || "").trim();
@@ -342,11 +361,11 @@ function resolveChoice(choiceId: string, text: string, step: SupportStep, menu: 
 }
 
 function menuSession(): SupportSession {
-  return { step: "menu", problem: null, orderNumber: null, nudgeCount: 0, lastNudgeAt: null };
+  return { step: "menu", problem: null, orderNumber: null, nudgeCount: 0, lastNudgeAt: null, lastCpfPromptAt: null };
 }
 
 function humanSession(): SupportSession {
-  return { step: "human", problem: null, orderNumber: null, nudgeCount: 0, lastNudgeAt: null };
+  return { step: "human", problem: null, orderNumber: null, nudgeCount: 0, lastNudgeAt: null, lastCpfPromptAt: null };
 }
 
 function keepNudge(session: SupportSession): SupportSession {
@@ -356,14 +375,27 @@ function keepNudge(session: SupportSession): SupportSession {
     orderNumber: session.orderNumber ?? null,
     nudgeCount: session.nudgeCount ?? 0,
     lastNudgeAt: session.lastNudgeAt ?? null,
+    lastCpfPromptAt: session.lastCpfPromptAt ?? null,
   };
 }
 
-function askCpf(session: SupportSession, orderNumber: number): SupportTurn {
+function keepCpf(session: SupportSession, orderNumber = session.orderNumber ?? null): SupportSession {
+  return {
+    ...keepNudge(session),
+    step: "await_cpf",
+    orderNumber,
+  };
+}
+
+function askCpf(session: SupportSession, orderNumber: number, now: number, cooldownMs: number): SupportTurn {
+  const next = keepCpf(session, orderNumber);
+  if (!cpfPromptIsDue(session.lastCpfPromptAt, now, cooldownMs)) {
+    return { kind: "silent", session: next };
+  }
   return {
     kind: "text",
     message: ASK_CPF_MESSAGE,
-    session: { step: "await_cpf", problem: session.problem, orderNumber },
+    session: { ...next, lastCpfPromptAt: now },
   };
 }
 
@@ -455,6 +487,7 @@ export function decideSupportTurn(input: {
   media?: boolean;
   now?: number;
   cooldownMs?: number;
+  cpfCooldownMs?: number;
 }, menu?: SupportMenuConfig | null): SupportTurn {
   const config = menu ? (supportMenuSaveError(menu).menu ?? defaultSupportMenu()) : defaultSupportMenu();
   const session = input.session?.step ? input.session : menuSession();
@@ -462,13 +495,14 @@ export function decideSupportTurn(input: {
   const choiceId = String(input.choiceId || "");
   const now = input.now ?? Date.now();
   const cooldownMs = input.cooldownMs ?? supportNudgeCooldownMs();
+  const cpfCooldownMs = input.cpfCooldownMs ?? supportCpfPromptCooldownMs();
   if (session.step === "human") {
     const tapped = choiceId.trim();
     if (!supportMenuItems(config).some((item) => item.id === tapped)) {
       return { kind: "silent", session: humanSession() };
     }
   }
-  if (!choiceId && isGreeting(text) && !listAlreadyOpen(input.session)) {
+  if (!choiceId && isGreeting(text) && session.step !== "await_cpf" && !listAlreadyOpen(input.session)) {
     return mainList(config);
   }
 
@@ -478,7 +512,7 @@ export function decideSupportTurn(input: {
 
   if (session.step === "await_cpf") {
     const intent = classifySupportText(text);
-    if (intent.kind === "order") return askCpf(session, intent.orderNumber);
+    if (intent.kind === "order") return askCpf(session, intent.orderNumber, now, cpfCooldownMs);
     const orderNumber = Number(session.orderNumber);
     if (intent.kind === "document" && Number.isSafeInteger(orderNumber) && orderNumber > 0) {
       const handoffItem = session.problem ? findMenuItem(config, session.problem) : null;
@@ -494,12 +528,19 @@ export function decideSupportTurn(input: {
         session: session.problem ? humanSession() : menuSession(),
       };
     }
-    return { kind: "text", message: ASK_CPF_MESSAGE, session };
+    if (!cpfPromptIsDue(session.lastCpfPromptAt, now, cpfCooldownMs)) {
+      return { kind: "silent", session: keepCpf(session) };
+    }
+    return {
+      kind: "text",
+      message: ASK_CPF_MESSAGE,
+      session: { ...keepCpf(session), lastCpfPromptAt: now },
+    };
   }
 
   if (session.step === "await_lookup" || session.step === "await_problem") {
     const intent = classifySupportText(text);
-    if (intent.kind === "order") return askCpf(session, intent.orderNumber);
+    if (intent.kind === "order") return askCpf(session, intent.orderNumber, now, cpfCooldownMs);
     if (intent.kind === "document") {
       const handoff = session.step === "await_problem";
       const handoffItem = handoff ? findMenuItem(config, session.problem) : null;
@@ -884,12 +925,14 @@ async function loadSession(phone: string): Promise<SupportSession | null> {
   const pending = Number(row.pendingOrder);
   const nudgeCount = Number(row.nudgeCount);
   const lastNudge = row.lastNudgeAt instanceof Date ? row.lastNudgeAt.getTime() : null;
+  const lastCpf = row.lastCpfPromptAt instanceof Date ? row.lastCpfPromptAt.getTime() : null;
   return {
     step: row.step,
     problem: row.problem || null,
     orderNumber: Number.isSafeInteger(pending) && pending > 0 ? pending : null,
     nudgeCount: Number.isFinite(nudgeCount) && nudgeCount > 0 ? Math.floor(nudgeCount) : 0,
     lastNudgeAt: lastNudge,
+    lastCpfPromptAt: lastCpf,
   };
 }
 
@@ -905,6 +948,7 @@ async function saveSession(phone: string, session: SupportSession): Promise<void
       pendingOrder: session.orderNumber ?? null,
       nudgeCount: session.nudgeCount ?? 0,
       lastNudgeAt: session.lastNudgeAt ? new Date(session.lastNudgeAt) : null,
+      lastCpfPromptAt: session.lastCpfPromptAt ? new Date(session.lastCpfPromptAt) : null,
       updatedAt: now,
     })
     .onDuplicateKeyUpdate({
@@ -914,6 +958,7 @@ async function saveSession(phone: string, session: SupportSession): Promise<void
         pendingOrder: session.orderNumber ?? null,
         nudgeCount: session.nudgeCount ?? 0,
         lastNudgeAt: session.lastNudgeAt ? new Date(session.lastNudgeAt) : null,
+        lastCpfPromptAt: session.lastCpfPromptAt ? new Date(session.lastCpfPromptAt) : null,
         updatedAt: now,
       },
     });
@@ -954,6 +999,61 @@ export async function claimSupportNudge(phone: string, now = new Date()): Promis
   );
   if (mysqlAffectedRows(handed) === 1) return "handoff";
   return "cooldown";
+}
+
+/** Reserva o pedido de CPF. Só uma mensagem no intervalo altera a linha. */
+export async function claimSupportCpfPrompt(phone: string, session: SupportSession, now = new Date()): Promise<"claimed" | "cooldown"> {
+  const { pool } = await database();
+  const cutoff = new Date(now.getTime() - supportCpfPromptCooldownMs());
+  await pool.query(
+    `INSERT INTO whatsapp_support_sessions
+      (phone, step, problem, pending_order, nudge_count, last_cpf_prompt_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, NULL, ?)
+     ON DUPLICATE KEY UPDATE updated_at = updated_at`,
+    [phone, session.step, session.problem, session.orderNumber ?? null, session.nudgeCount ?? 0, now],
+  );
+  const [claimed] = await pool.query(
+    `UPDATE whatsapp_support_sessions
+        SET last_cpf_prompt_at = ?,
+            step = ?,
+            problem = ?,
+            pending_order = ?,
+            updated_at = ?
+      WHERE phone = ?
+        AND (last_cpf_prompt_at IS NULL OR last_cpf_prompt_at <= ?)`,
+    [now, session.step, session.problem, session.orderNumber ?? null, now, phone, cutoff],
+  );
+  if (mysqlAffectedRows(claimed) === 1) return "claimed";
+  await pool.query(
+    `UPDATE whatsapp_support_sessions
+        SET step = ?,
+            problem = ?,
+            pending_order = ?,
+            updated_at = updated_at
+      WHERE phone = ?`,
+    [session.step, session.problem, session.orderNumber ?? null, phone],
+  );
+  return "cooldown";
+}
+
+function cpfSessionChanged(before: SupportSession | null, after: SupportSession): boolean {
+  if (!before) return true;
+  return before.step !== after.step
+    || (before.problem ?? null) !== (after.problem ?? null)
+    || (before.orderNumber ?? null) !== (after.orderNumber ?? null);
+}
+
+async function rememberCpfSession(phone: string, session: SupportSession): Promise<void> {
+  const { pool } = await database();
+  await pool.query(
+    `UPDATE whatsapp_support_sessions
+        SET step = ?,
+            problem = ?,
+            pending_order = ?,
+            updated_at = updated_at
+      WHERE phone = ?`,
+    [session.step, session.problem, session.orderNumber ?? null, phone],
+  );
 }
 
 async function withPackages(rows: Array<{
@@ -1130,8 +1230,19 @@ export async function handleSupportInbound(body: unknown): Promise<{ ok: boolean
     media: inbound.media,
   }, menu);
   if (turn.kind === "silent") {
+    if (turn.session.step === "await_cpf") {
+      if (cpfSessionChanged(session, turn.session)) await rememberCpfSession(inbound.phone, turn.session);
+      return { ok: true, silenced: true, line };
+    }
     await saveSession(inbound.phone, turn.session);
     return { ok: true, silenced: true, line };
+  }
+  if (turn.kind === "text" && turn.message === ASK_CPF_MESSAGE && turn.session.step === "await_cpf") {
+    const claim = await claimSupportCpfPrompt(inbound.phone, turn.session);
+    if (claim !== "claimed") return { ok: true, silenced: true, line };
+    const prompted = await sendText(inbound.phone, turn.message, line);
+    if (!prompted) return { ok: false, error: "not_configured", line };
+    return { ok: true, line };
   }
   const autoHuman = turn.kind === "text"
     && turn.message === SUPPORT_HUMAN_HANDOFF_TEXT

@@ -6,6 +6,7 @@ import {
   buildSupportOrdersMessage,
   classifySupportText,
   decideSupportTurn,
+  cpfPromptIsDue,
   type SupportSession,
   isSupportAcknowledgement,
   SUPPORT_HUMAN_HANDOFF_TEXT,
@@ -61,6 +62,47 @@ test("oi abre a lista e o pedido só entra depois do toque", () => {
   assert.equal(supportDocumentMatches("123.456.789-09", "12345678909"), true);
   assert.equal(supportDocumentMatches("123.456.789-09", "00000000000"), false);
   assert.equal(supportDocumentMatches("", "12345678909"), false);
+});
+
+test("pedido de CPF sai no máximo uma vez a cada 2 horas", () => {
+  const cooldownMs = 2 * 60 * 60 * 1000;
+  const now = 1_700_000_000_000;
+  const waiting = {
+    step: "await_cpf" as const,
+    problem: null,
+    orderNumber: 1782,
+    lastCpfPromptAt: now,
+  };
+  const again = decideSupportTurn({ text: "oi", session: waiting, now: now + 1000, cpfCooldownMs: cooldownMs });
+  assert.equal(again.kind, "silent");
+  assert.equal(again.session.step, "await_cpf");
+  const audio = decideSupportTurn({ text: "", media: true, session: waiting, now: now + 2000, cpfCooldownMs: cooldownMs });
+  assert.equal(audio.kind, "silent");
+
+  const later = decideSupportTurn({ text: "oi", session: waiting, now: now + cooldownMs, cpfCooldownMs: cooldownMs });
+  assert.equal(later.kind, "text");
+  if (later.kind === "text") assert.match(later.message, /CPF/);
+
+  const lookedUp = decideSupportTurn({
+    text: "123.456.789-09",
+    session: waiting,
+    now: now + 1000,
+    cpfCooldownMs: cooldownMs,
+  });
+  assert.equal(lookedUp.kind, "lookup");
+
+  const switched = decideSupportTurn({ text: "#2408", session: waiting, now: now + 1000, cpfCooldownMs: cooldownMs });
+  assert.equal(switched.kind, "silent");
+  assert.equal(switched.session.orderNumber, 2408);
+  assert.equal(switched.session.step, "await_cpf");
+
+  let claimedAt: number | null = null;
+  const raced = [0, 1].map(() => {
+    if (!cpfPromptIsDue(claimedAt, now, cooldownMs)) return "cooldown";
+    claimedAt = now;
+    return "claimed";
+  });
+  assert.deepEqual(raced, ["claimed", "cooldown"]);
 });
 
 test("frase sem toque não repete o menu", () => {
