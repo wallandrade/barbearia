@@ -11,11 +11,14 @@
     "smoke:tenant": "tsx ./src/smoke-tenant-isolation.ts",
     "smoke:tenant:write": "tsx ./src/smoke-tenant-isolation-write.ts",
     "audit:endpoints": "tsx ./src/audit-endpoints-scope.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "backup:db:r2": "node --max-old-space-size=192 ./src/db-backup-r2.mjs",
+    "restore:db:r2": "node ./src/db-restore-r2.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.916.0",
     "@types/node": "catalog:",
+    "mysql2": "^3.11.0",
     "tsx": "catalog:"
   }
 }

@@ -598,6 +598,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.0
+      mysql2:
+        specifier: ^3.11.0
+        version: 3.22.0(@types/node@25.6.0)
       tsx:
         specifier: 'catalog:'
         version: 4.21.0
