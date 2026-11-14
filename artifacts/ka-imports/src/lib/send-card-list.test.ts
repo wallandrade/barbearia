@@ -13,6 +13,7 @@ import {
   sendCardProductImage,
   sendCardThumbProducts,
   sortSendCardOrders,
+  splitSendCardOrders,
 } from "./send-card-list";
 
 test("Aguardando ser coletado sai; Aguardando postagem fica", () => {
@@ -256,4 +257,16 @@ test("SuperFrete released sai do card igual etiqueta emitida; pending fica", () 
       { superfreteStatus: "released" },
     ],
   }), false);
+});
+
+test("Envio Shopee fica na coluna da direita e sai junto quando o pedido já saiu da fila", () => {
+  const normal = { id: "a", status: "paid", enviado: false, shippingVia: null };
+  const shopee = { id: "b", status: "paid", enviado: false, shippingVia: "shopee" };
+  const shipped = { id: "c", status: "paid", enviado: true, shippingVia: "shopee" };
+  const onCard = [normal, shopee, shipped].filter(isOnSendCard);
+  const split = splitSendCardOrders(onCard);
+  assert.deepEqual(split.postal.map((order) => order.id), ["a"]);
+  assert.deepEqual(split.shopee.map((order) => order.id), ["b"]);
+  assert.equal(split.postal.some((order) => order.id === "b"), false);
+  assert.equal(split.shopee.some((order) => order.id === "c"), false);
 });

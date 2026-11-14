@@ -216,6 +216,21 @@ export function sendCardBadgeCount(orders: SendCardOrder[]): number {
   return new Set(orders.map(sendCardBadgeKey)).size;
 }
 
+export function isShopeeShippingVia(value: string | null | undefined): boolean {
+  return String(value || "").trim().toLowerCase() === "shopee";
+}
+
+/** Separa a fila já filtrada por `isOnSendCard`. Enviado ou etiqueta pronta não entra em nenhuma coluna. */
+export function splitSendCardOrders<T extends { shippingVia?: string | null }>(orders: T[]): { postal: T[]; shopee: T[] } {
+  const postal: T[] = [];
+  const shopee: T[] = [];
+  for (const order of orders) {
+    if (isShopeeShippingVia(order.shippingVia)) shopee.push(order);
+    else postal.push(order);
+  }
+  return { postal, shopee };
+}
+
 export function sortSendCardOrders<T extends { createdAt?: string | null }>(orders: T[]): T[] {
   return [...orders].sort((a, b) => {
     const aTime = new Date(a.createdAt || 0).getTime();

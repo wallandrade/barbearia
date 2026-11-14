@@ -399,6 +399,12 @@ function SendQueueCard<T extends {
   onPhotoOpen,
   onPhotoHover,
   onPhotoHoverEnd,
+  tone = "amber",
+  className = "mt-3",
+  onTransfer,
+  transferLabel,
+  transferIcon,
+  transferBusyId,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -413,32 +419,61 @@ function SendQueueCard<T extends {
   onPhotoOpen: (src: string, name: string) => void;
   onPhotoHover: (hover: { src: string; name: string; top: number; left: number }) => void;
   onPhotoHoverEnd: () => void;
+  tone?: "amber" | "orange";
+  className?: string;
+  onTransfer?: (order: T, event: React.MouseEvent<HTMLButtonElement>) => void;
+  transferLabel?: string;
+  transferIcon?: React.ReactNode;
+  transferBusyId?: string | null;
 }) {
+  const palette = tone === "orange"
+    ? {
+        card: "bg-orange-50 border-orange-300 hover:bg-orange-100",
+        title: "text-orange-700",
+        button: "text-orange-900 bg-white border-orange-300 hover:bg-orange-100",
+        badge: "bg-orange-200 text-orange-800",
+        empty: "text-orange-700/80",
+        row: "bg-white border-orange-200",
+        name: "text-orange-950",
+        meta: "text-orange-700/80",
+        total: "text-orange-800 bg-orange-100",
+      }
+    : {
+        card: "bg-amber-50 border-amber-300 hover:bg-amber-100",
+        title: "text-amber-700",
+        button: "text-amber-900 bg-white border-amber-300 hover:bg-amber-100",
+        badge: "bg-amber-200 text-amber-800",
+        empty: "text-amber-700/80",
+        row: "bg-white border-amber-200",
+        name: "text-amber-900",
+        meta: "text-amber-700/80",
+        total: "text-amber-700 bg-amber-100",
+      };
   return (
     <div
-      className="mt-3 rounded-xl border p-4 bg-amber-50 border-amber-300 cursor-pointer hover:bg-amber-100 transition"
+      className={`${className} rounded-xl border p-4 cursor-pointer transition ${palette.card}`}
       onClick={onOpenList}
       title={titleAttr}
     >
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className={`text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5 ${palette.title}`}>
           {icon} {title}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={onCopy}
-            className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-900 bg-white border border-amber-300 px-2 py-0.5 rounded-full hover:bg-amber-100"
+            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${palette.button}`}
           >
             <Copy className="w-3 h-3" /> Copiar TXT
           </button>
-          <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${palette.badge}`}>
             {badge}
           </span>
         </div>
       </div>
       {orders.length === 0 ? (
-        <p className="text-sm text-amber-700/80 flex items-center gap-1.5">
+        <p className={`text-sm flex items-center gap-1.5 ${palette.empty}`}>
           <CheckCircle className="w-4 h-4 text-green-500" /> {emptyText}
         </p>
       ) : (
@@ -446,6 +481,7 @@ function SendQueueCard<T extends {
           {orders.map((order) => {
             const lateDays = daysSince(order.createdAt);
             const late = lateDays > 3;
+            const busy = transferBusyId === order.id;
             return (
               <div
                 key={order.id}
@@ -454,7 +490,7 @@ function SendQueueCard<T extends {
                   event.stopPropagation();
                   onOpenOrder(order);
                 }}
-                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border cursor-pointer hover:brightness-[0.98] ${late ? "bg-red-50 border-red-300" : "bg-white border-amber-200"}`}
+                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border cursor-pointer hover:brightness-[0.98] ${late ? "bg-red-50 border-red-300" : palette.row}`}
               >
                 <SendCardProductThumbs
                   items={sendCardThumbProducts(order as SendCardOrder)}
@@ -464,17 +500,29 @@ function SendQueueCard<T extends {
                   onHoverEnd={onPhotoHoverEnd}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-medium truncate ${late ? "text-red-950" : "text-amber-900"}`}>{order.clientName}</p>
-                  <p className={`text-xs ${late ? "text-red-800/80" : "text-amber-700/80"}`}>#{getOrderReference(order)} · {formatDateBR(order.createdAt)}</p>
+                  <p className={`text-sm font-medium truncate ${late ? "text-red-950" : palette.name}`}>{order.clientName}</p>
+                  <p className={`text-xs ${late ? "text-red-800/80" : palette.meta}`}>#{getOrderReference(order)} · {formatDateBR(order.createdAt)}</p>
                 </div>
                 {late ? (
                   <span className="text-[10px] font-semibold text-red-800 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                     {lateDays} dias sem enviar
                   </span>
                 ) : null}
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${late ? "text-red-800 bg-red-100" : "text-amber-700 bg-amber-100"}`}>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${late ? "text-red-800 bg-red-100" : palette.total}`}>
                   {formatCurrency(Number(order.total))}
                 </span>
+                {onTransfer ? (
+                  <button
+                    type="button"
+                    title={transferLabel}
+                    aria-label={transferLabel}
+                    disabled={busy}
+                    onClick={(event) => onTransfer(order, event)}
+                    className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full border border-current/20 bg-white hover:bg-black/5 disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : transferIcon}
+                  </button>
+                ) : null}
               </div>
             );
           })}
@@ -834,7 +882,7 @@ function formatRaffleDescriptionPreview(value: string | undefined | null): strin
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, Motorbike, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package, ShieldAlert, IdCard, FileText, ExternalLink } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, X, CheckCircle, CheckCircle2, XCircle, Zap, Info, Pencil, MessageCircle, Tag, Bell, RefreshCw, Download, LogOut, QrCode, LinkIcon, Ticket, ShoppingBag, Clock, Upload, ChevronDown, ChevronUp, Copy, CopyPlus, Users, Percent, Calendar, DollarSign, ShieldCheck, CreditCard, Truck, Motorbike, UserPlus, Eye, EyeOff, ToggleLeft, Webhook, ImageOff, Lock, AlertTriangle, Star, Send, Mail, KeyRound, Search, Wallet, Undo2, Package, ShieldAlert, IdCard, FileText, ExternalLink, ArrowLeft, ArrowRight } from "lucide-react";
 import { IconLucide } from "@/components/ui/IconLucide";
 
 import { toast } from "sonner";
@@ -865,6 +913,7 @@ import {
   sendCardProductImage,
   sendCardThumbProducts,
   sortSendCardOrders,
+  splitSendCardOrders,
   type SendCardCatalogProduct,
   type SendCardOrder,
 } from "@/lib/send-card-list";
@@ -1688,6 +1737,7 @@ export default function Admin() {
 
   const [dashboardImagePreview, setDashboardImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [dashboardPhotoHover, setDashboardPhotoHover] = useState<{ src: string; name: string; top: number; left: number } | null>(null);
+  const [shippingViaSavingId, setShippingViaSavingId] = useState<string | null>(null);
   // Financial summary (gateway fees/liquido real)
   const [financialSummary, setFinancialSummary] = React.useState<null | {
     totalRevenue: number;
@@ -4537,11 +4587,14 @@ export default function Admin() {
   const sendCardOrders = sortSendCardOrders(
     orders.filter((order) => isOnSendCard(order as SendCardOrder) && !isCheckoutMotoboyOrder(order)),
   );
+  const sendCardSplit = splitSendCardOrders(sendCardOrders);
   const motoboySendCardOrders = sortSendCardOrders(
     orders.filter((order) => isOnMotoboySendCard(order)),
   );
-  const postalSendCardOrders = sendCardOrders;
+  const postalSendCardOrders = sendCardSplit.postal;
+  const shopeeSendCardOrders = sendCardSplit.shopee;
   const postalSendCardBadge = sendCardBadgeCount(postalSendCardOrders as SendCardOrder[]);
+  const shopeeSendCardBadge = sendCardBadgeCount(shopeeSendCardOrders as SendCardOrder[]);
   const motoboySendCardBadge = sendCardBadgeCount(motoboySendCardOrders as SendCardOrder[]);
   const copySendQueueTxt = async (
     event: React.MouseEvent<HTMLButtonElement>,
@@ -4561,6 +4614,39 @@ export default function Admin() {
       toast.success(mode === "manual" ? "Texto aberto para copia manual." : `${copiedLabel} (${list.length}).`);
     } catch {
       toast.error("Nao foi possivel copiar os pedidos.");
+    }
+  };
+  const moveSendChannel = async (
+    order: AdminOrder,
+    shippingVia: "shopee" | null,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (shippingViaSavingId) return;
+    const previous = order.shippingVia === "shopee" ? "shopee" : null;
+    if (previous === shippingVia) return;
+    const apply = (list: AdminOrder[]) => list.map((row) => (row.id === order.id ? { ...row, shippingVia } : row));
+    setShippingViaSavingId(order.id);
+    setOrders(apply);
+    setSellerAllOrders(apply);
+    setStatsOrdersData(apply);
+    try {
+      const res = await fetch(`${BASE}/api/admin/orders/${encodeURIComponent(order.id)}/shipping-channel`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ shippingVia }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      toast.success(shippingVia === "shopee" ? "Pedido marcado como Envio Shopee." : "Pedido voltou para envio normal.");
+    } catch {
+      const revert = (list: AdminOrder[]) => list.map((row) => (row.id === order.id ? { ...row, shippingVia: previous } : row));
+      setOrders(revert);
+      setSellerAllOrders(revert);
+      setStatsOrdersData(revert);
+      toast.error("Nao foi possivel mover o pedido.");
+    } finally {
+      setShippingViaSavingId(null);
     }
   };
   const sendCardCatalog: SendCardCatalogProduct[] = products.map((product) => ({
@@ -5297,24 +5383,55 @@ export default function Admin() {
             </div>
           </div>
 
-          <SendQueueCard
-            title="Pedidos para Enviar"
-            icon={<Truck className="w-4 h-4" />}
-            orders={postalSendCardOrders}
-            badge={postalSendCardBadge}
-            emptyText={motoboySendCardOrders.length === 0 ? "Todos os pedidos pagos já foram enviados!" : "Nenhum pedido normal para enviar."}
-            titleAttr="Ver pedidos para enviar"
-            onOpenList={() => setTab("orders")}
-            onCopy={(event) => { void copySendQueueTxt(event, postalSendCardOrders, "Nao ha pedidos para enviar.", "Pedidos para enviar copiados"); }}
-            onOpenOrder={(order) => goToOrder(order.id, order.createdAt, getOrderReference(order))}
-            catalog={sendCardCatalog}
-            onPhotoOpen={(src, name) => {
-              setDashboardPhotoHover(null);
-              setDashboardImagePreview({ src, name });
-            }}
-            onPhotoHover={setDashboardPhotoHover}
-            onPhotoHoverEnd={() => setDashboardPhotoHover(null)}
-          />
+          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <SendQueueCard
+              className=""
+              title="Pedidos para Enviar"
+              icon={<Truck className="w-4 h-4" />}
+              orders={postalSendCardOrders}
+              badge={postalSendCardBadge}
+              emptyText={motoboySendCardOrders.length === 0 && shopeeSendCardOrders.length === 0 ? "Todos os pedidos pagos já foram enviados!" : "Nenhum pedido normal para enviar."}
+              titleAttr="Ver pedidos para enviar"
+              onOpenList={() => setTab("orders")}
+              onCopy={(event) => { void copySendQueueTxt(event, postalSendCardOrders, "Nao ha pedidos para enviar.", "Pedidos para enviar copiados"); }}
+              onOpenOrder={(order) => goToOrder(order.id, order.createdAt, getOrderReference(order))}
+              catalog={sendCardCatalog}
+              onPhotoOpen={(src, name) => {
+                setDashboardPhotoHover(null);
+                setDashboardImagePreview({ src, name });
+              }}
+              onPhotoHover={setDashboardPhotoHover}
+              onPhotoHoverEnd={() => setDashboardPhotoHover(null)}
+              onTransfer={(order, event) => { void moveSendChannel(order, "shopee", event); }}
+              transferLabel="Mover para Envio Shopee"
+              transferIcon={<ArrowRight className="w-3.5 h-3.5" />}
+              transferBusyId={shippingViaSavingId}
+            />
+            <SendQueueCard
+              className=""
+              tone="orange"
+              title="Envio Shopee"
+              icon={<Package className="w-4 h-4" />}
+              orders={shopeeSendCardOrders}
+              badge={shopeeSendCardBadge}
+              emptyText="Nenhum pedido marcado para a Shopee."
+              titleAttr="Ver envios pela Shopee"
+              onOpenList={() => setTab("orders")}
+              onCopy={(event) => { void copySendQueueTxt(event, shopeeSendCardOrders, "Nao ha pedidos da Shopee para enviar.", "Envio Shopee copiado"); }}
+              onOpenOrder={(order) => goToOrder(order.id, order.createdAt, getOrderReference(order))}
+              catalog={sendCardCatalog}
+              onPhotoOpen={(src, name) => {
+                setDashboardPhotoHover(null);
+                setDashboardImagePreview({ src, name });
+              }}
+              onPhotoHover={setDashboardPhotoHover}
+              onPhotoHoverEnd={() => setDashboardPhotoHover(null)}
+              onTransfer={(order, event) => { void moveSendChannel(order, null, event); }}
+              transferLabel="Voltar para Pedidos para enviar"
+              transferIcon={<ArrowLeft className="w-3.5 h-3.5" />}
+              transferBusyId={shippingViaSavingId}
+            />
+          </div>
           <SendQueueCard
             title="Motoboy para Enviar"
             icon={<Motorbike className="w-4 h-4" />}
