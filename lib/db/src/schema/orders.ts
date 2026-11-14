@@ -72,6 +72,8 @@ export const ordersTable = mysqlTable("orders", {
   pixCode: mediumtext("pix_code"),
   pixBase64: mediumtext("pix_base64"),
   enviado: boolean("enviado").notNull().default(false),
+  /** null = envio normal do card. "shopee" = coluna Envio Shopee. Não muda status nem estoque. */
+  shippingVia: varchar("shipping_via", { length: 16 }),
   /** Data (YYYY-MM-DD) que o admin informa ao cliente como previsão de envio. Não marca enviado nem baixa estoque. */
   shippingForecastDate: varchar("shipping_forecast_date", { length: 10 }),
   /** Momento em que `enviado` passou a true (manual ou EE). Usado p/ “Entregue” após 25 dias no envio manual. */

@@ -72,6 +72,7 @@ export type AdminOrder = {
   inventoryPool?: string | null;
   inventoryReserved?: boolean | null;
   shippingForecastDate?: string | null;
+  shippingVia?: string | null;
   trackingCode?: string | null;
   trackingLabelUrl?: string | null;
   envioecomBarcode?: string | null;

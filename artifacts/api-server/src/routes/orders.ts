@@ -72,6 +72,7 @@ import { announceTrackingCode } from "../lib/order-tracking-whatsapp";
 import { customerVisibleObservation, isObservationVisibleToCustomer } from "../lib/order-observation-visibility";
 import { formatShippingForecastDateBR, normalizeShippingForecastDate } from "../lib/shipping-forecast";
 import { listOrderActivity, recordAdminActivity, recordOrderActivity } from "../lib/order-activity";
+import { parseShippingVia } from "../lib/shipping-via";
 import { diffEditedOrderProducts, snapshotProductImage, type OrderEditProductLine } from "../lib/order-activity-format";
 import { clampLineDiscount, lineNetAmount } from "../lib/line-discount";
 import { isMotoboyShippingType, parseFreeShippingMinSubtotalSetting, pickFreeShippingMinSubtotal, resolveShippingCostWithFreeThreshold, shippingTypeAfterMotoboyToNormal } from "../lib/free-shipping";
@@ -3008,6 +3009,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
     isPrioridade:           !!(o as any).isPrioridade,
     clientDataCorrectedAt:  o.clientDataCorrectedAt?.toISOString?.() ?? null,
     enviado:                !!o.enviado,
+    shippingVia:            String((o as { shippingVia?: string | null }).shippingVia || "").trim().toLowerCase() === "shopee" ? "shopee" : null,
     shippingForecastDate:   String((o as { shippingForecastDate?: string | null }).shippingForecastDate || "").trim().slice(0, 10) || null,
     aguardandoEstoque:      !!(o as { aguardandoEstoque?: boolean }).aguardandoEstoque,
     enviadoAt:              (o as { enviadoAt?: Date | null }).enviadoAt?.toISOString?.()
@@ -3051,7 +3053,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect) {
 
 function mapOrderForCustomer(o: typeof ordersTable.$inferSelect) {
   const mapped = mapOrder(o);
-  const { observationVisibleToCustomer: _flag, aguardandoEstoque: _park, ...rest } = mapped;
+  const { observationVisibleToCustomer: _flag, aguardandoEstoque: _park, shippingVia: _via, ...rest } = mapped;
   return {
     ...rest,
     observation: customerVisibleObservation({
@@ -3438,6 +3440,57 @@ router.patch("/admin/orders/:id/shipping-forecast", requireAdminAuth, async (req
   } catch (err) {
     console.error("Update shipping forecast error:", err);
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar a previsão de envio." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/admin/orders/:id/shipping-channel
+// Marca o pedido na coluna Envio Shopee. Não muda status, PIX nem estoque.
+// ---------------------------------------------------------------------------
+router.patch("/admin/orders/:id/shipping-channel", requireAdminAuth, async (req, res) => {
+  try {
+    const adminScope = ensureSellerScopeOnOrderQuery(req, res);
+    if (!adminScope) return;
+
+    let id = req.params.id;
+    if (Array.isArray(id)) id = id[0];
+
+    const body = req.body as { shippingVia?: unknown };
+    if (!body || !Object.prototype.hasOwnProperty.call(body, "shippingVia")) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe shippingVia." });
+      return;
+    }
+    const shippingVia = parseShippingVia(body.shippingVia);
+    if (shippingVia === undefined) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Canal de envio inválido." });
+      return;
+    }
+
+    const existing = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(buildAdminOrderWhere(id, adminScope))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Pedido não encontrado." });
+      return;
+    }
+
+    await db.update(ordersTable).set({
+      shippingVia,
+      updatedAt: new Date(),
+    }).where(buildAdminOrderWhere(id, adminScope));
+
+    recordAdminActivity(
+      req,
+      id,
+      "shipping_channel",
+      shippingVia === "shopee" ? "Moveu o pedido para Envio Shopee" : "Devolveu o pedido para envio normal",
+    );
+    res.json({ ok: true, id, shippingVia });
+  } catch (err) {
+    console.error("Update shipping channel error:", err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar o canal de envio." });
   }
 });
 
